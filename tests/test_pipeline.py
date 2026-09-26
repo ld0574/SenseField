@@ -929,17 +929,18 @@ def test_profile_bundle_contains_android_templates(tmp_path: Path) -> None:
         tmp_path / "enemy.png").read_bytes()
 
 
-def test_bundled_android_profile_matches_development_profile() -> None:
+def test_frozen_fixed_roi_android_profile_matches_development_profile() -> None:
     root = Path(__file__).resolve().parents[1]
     desktop = json.loads((root / "profiles/hok_minimap_development.json").read_text())
     bundled = json.loads(
         (root / "profiles/hok_minimap_development.android.json").read_text()
     )
-    android = json.loads((root / "android/app/src/main/assets/profile.json").read_text())
-    assert android == bundled
     for key in ("schema_version", "name", "profile_version", "game", "verified", "rois",
                 "detectors", "thresholds", "events"):
-        assert android[key] == desktop[key]
+        assert bundled[key] == desktop[key]
+    assert hashlib.sha256(
+        (root / "profiles/hok_minimap_development.android.json").read_bytes()
+    ).hexdigest() == "999f44ecfa9e58b3704439be45f53dd95e21f0fef64051dd730c9f7a1f752a3e"
 
 
 def test_bundled_android_profile_enables_only_experimental_yolox_minimap() -> None:
@@ -959,7 +960,7 @@ def test_bundled_android_profile_enables_only_experimental_yolox_minimap() -> No
     assert profile["events"]["min_confidence"] == pytest.approx(0.29)
 
 
-def test_adaptive_minimap_profile_is_importable_and_keeps_frozen_default() -> None:
+def test_adaptive_minimap_profile_is_bundled_default_and_keeps_frozen_evidence() -> None:
     root = Path(__file__).resolve().parents[1]
     source = json.loads(
         (root / "profiles/hok_minimap_adaptive.experimental.json").read_text()
@@ -967,22 +968,26 @@ def test_adaptive_minimap_profile_is_importable_and_keeps_frozen_default() -> No
     bundled = json.loads(
         (root / "profiles/hok_minimap_adaptive.experimental.android.json").read_text()
     )
-    frozen_default = json.loads(
+    android_default = json.loads(
         (root / "android/app/src/main/assets/profile.json").read_text()
+    )
+    frozen_fixed = json.loads(
+        (root / "profiles/hok_minimap_development.android.json").read_text()
     )
 
     assert bundled["templates_b64"] == {}
     assert bundled["layout"] == source["layout"]
+    assert android_default == bundled
     locator = bundled["layout"]["minimap_locator"]
     descriptor = base64.b64decode(locator["descriptor_b64"], validate=True)
     assert len(descriptor) == locator["grid_width"] * locator["grid_height"]
     assert hashlib.sha256(descriptor).hexdigest() == locator["descriptor_sha256"]
     assert locator["training_match_count"] == 6
     assert locator["training_frame_count"] == 573
-    # video8 was frozen against this exact fixed-ROI profile.  The adaptive
-    # profile remains an explicit import until that one-shot evaluation ends.
-    assert "layout" not in frozen_default
-    assert frozen_default["profile_version"] == "0.5.0-yolox-nano-dense-320-dev"
+    # video8 remains bound to the archived fixed-ROI profile even though the
+    # completed one-shot evaluation no longer constrains the development APK.
+    assert "layout" not in frozen_fixed
+    assert frozen_fixed["profile_version"] == "0.5.0-yolox-nano-dense-320-dev"
 
 
 def test_android_ncnn_assets_match_metadata_and_patched_focus() -> None:

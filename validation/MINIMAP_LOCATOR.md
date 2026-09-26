@@ -35,19 +35,21 @@ PYTHONPATH=python .venv/bin/python -m mapassist.calibrate_minimap_anchor \
   --output build/minimap-locator-dev.json
 ```
 
-可导入 Android 应用的实验配置是 `profiles/hok_minimap_adaptive.experimental.android.json`。当前 APK 内置配置仍保留固定 ROI；video8 的冻结检测盲测已经完成，但检测 precision 尚未达标，自适应配置也尚未在实体 Android 13/14 上验收，因此继续作为手动导入的实验项。
+0.3.0 开发 APK 已内置 `profiles/hok_minimap_adaptive.experimental.android.json`。它仍是 `verified:false` 的实验配置，只有测试者明确开启实验识别器后才运行。用于 video8 一次性检测盲测的固定 ROI 文件 `profiles/hok_minimap_development.android.json` 保持原哈希并作为历史证据保留。
 
 定位层可独立回放，不执行 YOLOX：
 
 ```sh
 PYTHONPATH=python .venv/bin/python -m mapassist.minimap_locator_evaluate \
-  data/private/minimap-video7-holdout-v1/review-manifest.json \
-  --locator build/minimap-locator-dev.json \
+  data/private/minimap-video8-holdout-v1/blind-review-v1/review-manifest.json \
+  --locator android/app/src/main/assets/profile.json \
   --library build/native/libmapassist.dylib \
-  --output build/minimap-locator-video7.json
+  --output build/minimap-locator-video8-apk-profile.json
 ```
 
-本次记录绑定的 video7 manifest SHA-256 为 `33e3fd6394f7ac871156ac92d056a672ccea7e469f7b18d272e8a20efe1c7603`，定位器 JSON 为 `41f8e6a7aa0c2aeb350bddfc7fc562803505e0b198ff3977ddfa7b6bdb4f4397`，其中描述符仍为 `38104234d46f12e8e33db5a377bcd0b703ca8429b48065c82c2b77209c993ac7`。状态、分数和 ROI 可由相同输入复算；耗时是开发机上的单次测量，会受机器负载影响。
+`--locator` 既接受单独的 `mapassist.minimap_locator` JSON，也接受包含 `layout.minimap_locator` 的完整 GameProfile，便于直接验证 APK 内置配置。
+
+video7 表格绑定的 manifest SHA-256 为 `33e3fd6394f7ac871156ac92d056a672ccea7e469f7b18d272e8a20efe1c7603`，原始定位器 JSON 为 `41f8e6a7aa0c2aeb350bddfc7fc562803505e0b198ff3977ddfa7b6bdb4f4397`。完整 APK profile 内嵌同一描述符，SHA-256 为 `38104234d46f12e8e33db5a377bcd0b703ca8429b48065c82c2b77209c993ac7`。状态、分数和 ROI 可由相同输入复算；耗时是开发机上的单次测量，会受机器负载影响。
 
 ## video7 开发诊断
 
@@ -82,7 +84,11 @@ video8 未参与描述符生成，定位回放不执行 YOLOX，也不改动已�
 | 与原人工裁剪 IoU 中位数 / 最低值 | 95.36% / 93.76% |
 | 开发机单次 Release C++ P95 | 约 6.02 ms |
 
-video8 review manifest SHA-256 为 `7927c5692d6cfc4397ef874873a8c7f2e9c365744202ed5fd949f3ecbf13ee38`，定位报告 SHA-256 为 `e411ad109583d4b043b155dcea5d3779ea6df91d5ce79556cd8e8068d3a5725e`。这些结果证明同一开发描述符能在该全面屏录像上稳定取得不会明显裁掉人工复核区域的检测框；实体 `MediaProjection` 像素格式、刘海安全区和自定义 HUD 仍需真机覆盖。
+video8 数据在定位回放前已经完成三分片人工审计和像素仲裁：120 个唯一时间点中 102 张为 `corrected`、17 张为 `negative`、1 张结算切换帧为 `excluded`，119 张有效帧含 215 个框。最终 review manifest SHA-256 为 `7927c5692d6cfc4397ef874873a8c7f2e9c365744202ed5fd949f3ecbf13ee38`。
+
+随后直接以 APK 内置完整 GameProfile 重跑定位层。profile SHA-256 为 `8c98248b896483c71c4a2ed4152aaac64ba878c1bb48d6b69942adba0431f3c3`，报告 SHA-256 为 `a4f65bcfcb05f3826b00c287fb10d957aaf1eb43c0d9b6f5f84ddd61c8af41a5`；除机器耗时外，状态、分数、ROI 和覆盖指标与单独 locator JSON 报告逐项一致。这些结果证明 APK profile 能在该全面屏录像上稳定取得不会明显裁掉人工复核区域的检测框；实体 `MediaProjection` 像素格式、刘海安全区和自定义 HUD 仍需真机覆盖。
+
+这次 video8 回放只运行布局层，没有再次执行 YOLOX。固定 ROI 检测的一次性成绩仍绑定 `profiles/hok_minimap_development.android.json` 的 SHA-256 `999f44ecfa9e58b3704439be45f53dd95e21f0fef64051dd730c9f7a1f752a3e`。
 
 ## 边界
 

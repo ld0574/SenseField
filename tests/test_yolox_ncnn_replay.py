@@ -107,8 +107,9 @@ def test_frozen_replay_is_event_evaluation_compatible(tmp_path: Path) -> None:
 
     records = [json.loads(line) for line in output.read_text().splitlines()]
     assert len(records) == 84
-    assert all({"frame_index", "timestamp_ms", "observations", "detections", "cues"}
+    assert all({"frame_index", "timestamp_ms", "observations", "detections", "cues", "layout"}
                <= set(record) for record in records)
+    assert all(record["layout"]["state"] == "fixed" for record in records)
     predictions = read_predictions(output)
     labels = read_labels(ROOT / "build/synthetic/labels.json")
     report = evaluate(predictions, labels)
@@ -117,6 +118,9 @@ def test_frozen_replay_is_event_evaluation_compatible(tmp_path: Path) -> None:
     assert report["overall"]["fn"] == 0
     assert result["fps"] == 12
     assert result["replay_fps"] > 0
+    assert result["layout_states"] == {
+        "fixed": 84, "searching": 0, "locked": 0, "held": 0,
+    }
     timestamps = [record["timestamp_ms"] for record in records]
     assert timestamps == sorted(timestamps)
     assert len(set(timestamps)) == len(timestamps)

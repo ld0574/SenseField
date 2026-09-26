@@ -54,11 +54,8 @@ def _integer(data: dict[str, Any], key: str) -> int:
     return int(value)
 
 
-def _load_locator(path: Path) -> tuple[MinimapLocatorConfig, bytes, dict[str, Any]]:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise ValueError(f"Cannot read locator {path}: {error}") from error
+def parse_locator(data: object) -> tuple[MinimapLocatorConfig, bytes, dict[str, Any]]:
+    """Validate a locator object shared by diagnostics and full ncnn replay."""
     if not isinstance(data, dict) or data.get("schema") != "mapassist.minimap_locator" or \
             data.get("schema_version") != 1 or data.get("version") != 1 or \
             data.get("coordinate_space") != "short_edge":
@@ -166,6 +163,24 @@ def _load_locator(path: Path) -> tuple[MinimapLocatorConfig, bytes, dict[str, An
     return config, descriptor, data
 
 
+def _load_locator(path: Path) -> tuple[MinimapLocatorConfig, bytes, dict[str, Any]]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"Cannot read locator {path}: {error}") from error
+    if isinstance(data, dict) and data.get("schema") == "mapassist.minimap_locator":
+        locator = data
+    else:
+        layout = data.get("layout") if isinstance(data, dict) else None
+        locator = layout.get("minimap_locator") if isinstance(layout, dict) else None
+        if locator is None:
+            raise ValueError(
+                "Expected a minimap locator document or GameProfile with "
+                "layout.minimap_locator"
+            )
+    return parse_locator(locator)
+
+
 def _percentile(values: list[float], percentile: float) -> float | None:
     if not values:
         return None
@@ -260,6 +275,11 @@ def evaluate(manifest: Path, locator_path: Path, library_path: Path | None = Non
         raise ValueError("Expected review manifest schema_version 1")
     samples = _sample_frame_paths(manifest, manifest_data)
     config, descriptor_bytes, locator_data = _load_locator(locator_path)
+    locator_document = json.loads(locator_path.read_text(encoding="utf-8"))
+    locator_source_kind = (
+        "locator" if locator_document.get("schema") == "mapassist.minimap_locator"
+        else "game_profile"
+    )
     library = load_library(library_path)
     descriptor = (C.c_int8 * len(descriptor_bytes)).from_buffer_copy(descriptor_bytes)
     handle = library.ma_minimap_locator_create(
@@ -316,6 +336,7 @@ def evaluate(manifest: Path, locator_path: Path, library_path: Path | None = Non
         "scope": "layout acquisition only; YOLOX is not executed",
         "manifest_sha256": _sha256(manifest),
         "locator_sha256": _sha256(locator_path),
+        "locator_source_kind": locator_source_kind,
         "locator_descriptor_sha256": locator_data.get("descriptor_sha256"),
         "overall": _summary(records),
         "matches": matches,
@@ -325,8 +346,11 @@ def evaluate(manifest: Path, locator_path: Path, library_path: Path | None = Non
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("manifest", type=Path, help="manually reviewed review-manifest.json")
-    parser.add_argument("--locator", type=Path, required=True,
-                        help="calibrated mapassist.minimap_locator JSON")
+    parser.add_argument(
+        "--locator", type=Path, required=True,
+        help=("calibrated mapassist.minimap_locator JSON or a GameProfile "
+              "containing layout.minimap_locator"),
+    )
     parser.add_argument("--library", type=Path,
                         help="native library (default: build/native/libmapassist)")
     parser.add_argument("--output", type=Path, help="write the JSON report here")

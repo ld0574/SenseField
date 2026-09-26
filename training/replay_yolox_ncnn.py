@@ -1,10 +1,11 @@
-"""Replay a recording through the frozen ncnn YOLOX model and native event engine.
+"""Replay a recording through the Android-equivalent locator, ncnn, and event path.
 
 This is the desktop equivalent of the Android path in ``native_bridge.cpp``:
-frames are cropped with the profile ROI, passed through ncnn's Android resize
-and right/bottom padding path, decoded with YOLOX's three strides, and then
-fed into the existing C++ detector and event engine.  The JSONL output keeps
-the event-layer ``cues`` shape consumed by :mod:`mapassist.evaluate`.
+when configured, the native locator first acquires and tracks the minimap ROI;
+minimap inference stays silent while searching. Ready frames are cropped with the resolved ROI,
+passed through ncnn's Android resize and right/bottom padding path, decoded
+with YOLOX's three strides, and then fed into the C++ event engine. The JSONL
+output keeps the event-layer ``cues`` shape consumed by :mod:`mapassist.evaluate`.
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ except ImportError:  # pragma: no cover - exercised by the command-line path.
     )
 
 from mapassist import native
+from mapassist.minimap_locator_evaluate import parse_locator
 from mapassist.replay import decoded_frames, video_dimensions
 
 
@@ -182,6 +184,24 @@ class FrozenReplay:
         self.engine = self.lib.ma_engine_create(C.byref(self.engine_config))
         if not self.engine:
             raise RuntimeError("Could not create native event engine")
+        self.locator = None
+        self.locator_config = None
+        layout = self.profile_json.get("layout")
+        locator_json = layout.get("minimap_locator") if isinstance(layout, dict) else None
+        try:
+            if locator_json is not None:
+                self.locator_config, descriptor_bytes, _ = parse_locator(locator_json)
+                descriptor = (C.c_int8 * len(descriptor_bytes)).from_buffer_copy(
+                    descriptor_bytes
+                )
+                self.locator = self.lib.ma_minimap_locator_create(
+                    C.byref(self.locator_config), descriptor, len(descriptor_bytes)
+                )
+                if not self.locator:
+                    raise RuntimeError("Native minimap locator rejected profile")
+        except Exception:
+            self.close()
+            raise
         self.net = None
         self.live_layers = None
         try:
@@ -211,6 +231,9 @@ class FrozenReplay:
         if getattr(self, "engine", None):
             self.lib.ma_engine_destroy(self.engine)
             self.engine = None
+        if getattr(self, "locator", None):
+            self.lib.ma_minimap_locator_destroy(self.locator)
+            self.locator = None
 
     def __enter__(self) -> "FrozenReplay":
         return self
@@ -219,14 +242,49 @@ class FrozenReplay:
         self.close()
 
     def step(self, rgba: bytes, width: int, height: int,
-             timestamp_ms: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+             timestamp_ms: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]],
+                                         list[dict[str, Any]], dict[str, Any]]:
         expected = width * height * 4
         if len(rgba) != expected:
             raise ValueError(f"Expected {expected} RGBA bytes, got {len(rgba)}")
         frame = (C.c_uint8 * expected).from_buffer_copy(rgba)
+        frame_profile = native.Profile.from_buffer_copy(self.profile)
+        minimap_ready = True
+        layout = {
+            "state": "fixed",
+            "score": None,
+            "roi": [round(float(getattr(frame_profile.minimap, key)), 8)
+                    for key in ("x", "y", "w", "h")],
+            "content": None,
+        }
+        if self.locator:
+            located = native.Rect()
+            content = native.Rect()
+            score = C.c_float()
+            locator_state = self.lib.ma_minimap_locator_update(
+                self.locator, frame, width, height, width * 4,
+                C.byref(located), C.byref(content), C.byref(score),
+            )
+            if locator_state not in (0, 1, 2):
+                raise RuntimeError(f"Native locator returned invalid state {locator_state}")
+            minimap_ready = locator_state != 0
+            layout = {
+                "state": {0: "searching", 1: "locked", 2: "held"}[locator_state],
+                "score": round(float(score.value), 6),
+                "roi": ([round(float(getattr(located, key)), 8)
+                         for key in ("x", "y", "w", "h")]
+                        if minimap_ready else None),
+                "content": [round(float(getattr(content, key)), 8)
+                            for key in ("x", "y", "w", "h")],
+            }
+            if minimap_ready:
+                frame_profile.minimap = located
+            else:
+                frame_profile.enable_minimap_template = 0
+                frame_profile.enable_minimap_red_ring = 0
         native_observations = (native.Observation * 64)()
         native_count = self.lib.ma_detect_rgba(
-            frame, width, height, width * 4, timestamp_ms, C.byref(self.profile),
+            frame, width, height, width * 4, timestamp_ms, C.byref(frame_profile),
             C.byref(self.enemy_template) if self.enemy_template else None,
             C.byref(self.ping_template) if self.ping_template else None,
             native_observations, len(native_observations),
@@ -235,37 +293,39 @@ class FrozenReplay:
             raise RuntimeError(f"Native detector returned invalid count {native_count}")
 
         frame_array = np.frombuffer(rgba, dtype=np.uint8).reshape((height, width, 4))
-        area = _pixel_roi(self.profile.minimap, width, height)
+        area = _pixel_roi(frame_profile.minimap, width, height)
         x0, y0, x1, y1 = area
-        crop_rgba = frame_array[y0:y1, x0:x1]
-        if crop_rgba.shape[0] < 2 or crop_rgba.shape[1] < 2:
-            raise RuntimeError("Profile minimap ROI is smaller than 2x2 pixels")
-        crop = np.ascontiguousarray(crop_rgba)
-        crop_height, crop_width = crop.shape[:2]
-        scale = min(self.input_size / crop_width, self.input_size / crop_height)
-        resized_width = max(1, int(crop_width * scale))
-        resized_height = max(1, int(crop_height * scale))
-        resized = self.ncnn.Mat.from_pixels_resize(
-            crop, self.ncnn.Mat.PixelType.PIXEL_RGBA2BGR,
-            crop_width, crop_height, resized_width, resized_height,
-        )
-        if resized.empty():
-            raise RuntimeError("ncnn RGBA resize returned an empty tensor")
-        runtime_input = self.ncnn.copy_make_border(
-            resized, 0, self.input_size - resized_height,
-            0, self.input_size - resized_width,
-            self.ncnn.BorderType.BORDER_CONSTANT, 114.0,
-        )
-        if runtime_input.empty():
-            raise RuntimeError("ncnn padding returned an empty tensor")
-        raw = _ncnn_output(
-            self.net, runtime_input, self.input_name, self.output_name,
-            self.ncnn, self.np,
-        )
-        detections = _decode_and_nms(
-            raw, self.input_size, x1 - x0, y1 - y0,
-            self.confidence, self.nms_threshold, self.np,
-        )
+        detections = []
+        if minimap_ready:
+            crop_rgba = frame_array[y0:y1, x0:x1]
+            if crop_rgba.shape[0] < 2 or crop_rgba.shape[1] < 2:
+                raise RuntimeError("Resolved minimap ROI is smaller than 2x2 pixels")
+            crop = np.ascontiguousarray(crop_rgba)
+            crop_height, crop_width = crop.shape[:2]
+            scale = min(self.input_size / crop_width, self.input_size / crop_height)
+            resized_width = max(1, int(crop_width * scale))
+            resized_height = max(1, int(crop_height * scale))
+            resized = self.ncnn.Mat.from_pixels_resize(
+                crop, self.ncnn.Mat.PixelType.PIXEL_RGBA2BGR,
+                crop_width, crop_height, resized_width, resized_height,
+            )
+            if resized.empty():
+                raise RuntimeError("ncnn RGBA resize returned an empty tensor")
+            runtime_input = self.ncnn.copy_make_border(
+                resized, 0, self.input_size - resized_height,
+                0, self.input_size - resized_width,
+                self.ncnn.BorderType.BORDER_CONSTANT, 114.0,
+            )
+            if runtime_input.empty():
+                raise RuntimeError("ncnn padding returned an empty tensor")
+            raw = _ncnn_output(
+                self.net, runtime_input, self.input_name, self.output_name,
+                self.ncnn, self.np,
+            )
+            detections = _decode_and_nms(
+                raw, self.input_size, x1 - x0, y1 - y0,
+                self.confidence, self.nms_threshold, self.np,
+            )
         observations = [native_observations[index] for index in range(native_count)]
         detection_dicts = []
         for detection in detections:
@@ -299,7 +359,7 @@ class FrozenReplay:
             raise RuntimeError(f"Native event engine returned invalid count {cue_count}")
         observations_json = [native.observation_dict(item) for item in observations]
         cues_json = [native.cue_dict(cues_buffer[index]) for index in range(cue_count)]
-        return observations_json, detection_dicts, cues_json
+        return observations_json, detection_dicts, cues_json, layout
 
 
 def run(video: Path, profile: Path, param: Path, model_bin: Path,
@@ -345,6 +405,7 @@ def run(video: Path, profile: Path, param: Path, model_bin: Path,
     total_detections = 0
     total_cues = 0
     total_frames = 0
+    layout_states = {"fixed": 0, "searching": 0, "locked": 0, "held": 0}
     started = time.perf_counter()
     try:
         with FrozenReplay(profile, param, model_bin, library, threads,
@@ -353,7 +414,7 @@ def run(video: Path, profile: Path, param: Path, model_bin: Path,
             for index, frame in enumerate(decoded_frames(video, width, height, fps)):
                 timestamp_ms = round(index * 1000 / fps)
                 frame_started = time.perf_counter()
-                observations, detections, cues = replay.step(
+                observations, detections, cues, layout = replay.step(
                     frame, width, height, timestamp_ms
                 )
                 processing_ms.append((time.perf_counter() - frame_started) * 1000)
@@ -363,11 +424,13 @@ def run(video: Path, profile: Path, param: Path, model_bin: Path,
                     "observations": observations,
                     "detections": detections,
                     "cues": cues,
+                    "layout": layout,
                 }, ensure_ascii=False, allow_nan=False) + "\n")
                 total_frames += 1
                 total_observations += len(observations)
                 total_detections += len(detections)
                 total_cues += len(cues)
+                layout_states[layout["state"]] += 1
         os.replace(temporary, output)
     finally:
         temporary.unlink(missing_ok=True)
@@ -387,6 +450,7 @@ def run(video: Path, profile: Path, param: Path, model_bin: Path,
         "processing_ms_p95": round(
             ordered[max(0, (95 * len(ordered) + 99) // 100 - 1)], 3
         ) if ordered else None,
+        "layout_states": layout_states,
     }
     provenance = {
         "schema_version": 1,
@@ -412,7 +476,10 @@ def run(video: Path, profile: Path, param: Path, model_bin: Path,
             "input_name": input_name,
             "output_name": output_name,
             "threads": threads,
-            "preprocessing": "RGBA crop -> ncnn PIXEL_RGBA2BGR resize -> right/bottom 114 border",
+            "preprocessing": (
+                "native minimap locator when configured -> RGBA crop -> ncnn "
+                "PIXEL_RGBA2BGR resize -> right/bottom 114 border"
+            ),
             "determinism": "float32 ncnn arithmetic; Android packing may differ",
             "postprocess": {
                 "confidence": json.loads(profile.read_text(encoding="utf-8"))

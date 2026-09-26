@@ -172,3 +172,24 @@ def test_locator_evaluator_rejects_corrupted_descriptor_provenance(tmp_path: Pat
     output.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(ValueError, match="SHA-256 mismatch"):
         _load_locator(output)
+
+
+def test_locator_evaluator_reads_embedded_game_profile(tmp_path: Path) -> None:
+    image = Image.new("RGB", (20, 20), (20, 20, 20))
+    ImageDraw.Draw(image).rectangle((0, 0, 5, 19), fill=(100, 100, 100))
+    image.save(tmp_path / "frame.png")
+    manifest = _manifest(tmp_path, ["frame.png"], roi=[0, 0, 1, 1])
+    locator_path = tmp_path / "locator.json"
+    calibrate(manifest, locator_path, 4, 4)
+    locator = json.loads(locator_path.read_text(encoding="utf-8"))
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(
+        json.dumps({"schema_version": 1, "layout": {"minimap_locator": locator}}),
+        encoding="utf-8",
+    )
+
+    config, descriptor, parsed = _load_locator(profile_path)
+
+    assert config.descriptor_width == 4
+    assert len(descriptor) == 16
+    assert parsed == locator
