@@ -79,6 +79,22 @@ PYTHONPATH=build/third_party/YOLOX:python \
 
 `metrics.json` 保存数据、实验配置和预训练权重哈希、YOLOX 提交号、逐轮损失及验证阈值。`best_ckpt.pth` 是开发验证 F1 最好的权重。只有新录、未参与调参的连续对局可以用于最终成绩。
 
+## 用冻结 ncnn 模型回放完整录像
+
+桌面端的完整录像回放使用冻结的 CFR 媒体时间轴：按 `ffmpeg fps` 采样，时间戳为 `round(frame_index * 1000 / fps)`，并以零排队延迟把该时间戳传给 C++ `ma_engine`。它用于可复现的媒体时间事件评测；实际处理耗时只记录为桌面性能信息，不代表 Android 端到端时延。输出 JSONL 同时包含逐帧 `observations`、YOLOX `detections` 和事件层 `cues`，可交给 `mapassist.evaluate` 或 validation gate：
+
+```sh
+PYTHONPATH=python .venv/bin/python training/replay_yolox_ncnn.py path/to/match.mp4 \
+  --profile android/app/src/main/assets/profile.json \
+  --param android/app/src/main/assets/minimap-yolox-nano-320.param \
+  --bin android/app/src/main/assets/minimap-yolox-nano-320.bin \
+  --output build/replay/match.predictions.jsonl \
+  --metadata build/replay/match.predictions.meta.json \
+  --fps 12
+```
+
+`*.meta.json` 会记录录像、profile、ncnn param/bin、native library 的路径、大小和 SHA-256，以及 sampling、timeline、event_now_policy、帧数、事件数、回放吞吐量和桌面逐帧处理耗时。回放要求 `detectors.minimap_yolox=true` 且输入尺寸为 320。输入 profile 的 confidence、NMS 和事件参数保持冻结；不要用回放录像结果反向调整 profile 后再把同一录像当作独立验证。集成测试在缺少构建产物时会 skip；正式留出前必须实际构建并运行该测试，skip 不能视为通过。
+
 ## 导出与一致性检查
 
 ```sh

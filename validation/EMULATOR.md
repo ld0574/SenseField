@@ -1,6 +1,6 @@
-# Android 模拟器链路验证（更新于 2026-09-26）
+# Android 模拟器链路验证（最终回归，更新于 2026-09-26）
 
-测试设备是本机 AOSP ARM64 虚拟设备，分别运行 API 33（Android 13）和 API 34（Android 14），横屏为 2400×1080。这里播放的是程序生成的合成图形，**没有使用《王者荣耀》画面**。
+测试设备是本机 AOSP ARM64 虚拟设备，分别运行 API 33（Android 13）和 API 34（Android 14），横屏为 2400×1080。早期模板和旋转测试使用程序生成图形；最终 YOLOX 回归使用 video7 人机局 80,520 ms 的一张 2712×1220 完整游戏帧，经系统 Gallery 全屏显示后由 MediaProjection 采集。该私有测试帧不进入仓库。
 
 ## 复现素材
 
@@ -34,21 +34,25 @@ adb logcat -d -v time -s 'MapAssistCapture:*'
 
 | 系统 | 已观察到的结果 |
 | --- | --- |
-| Android 13 / API 33 | APK 安装成功，通知权限和整屏截屏授权成功；前台服务与 MediaProjection 活跃。系统设置页面滚动后处理帧数从 1 增到 62；横屏尺寸更新为 2400×1080。模板配置中三类事件均出现 `Cue kind=1/2/3`，对应方向为左／右／不指定，三类均有 `audioQueued=true`。改用红环配置后再次出现 `Cue kind=2 direction=2 audioQueued=true`，确认小地图红环事件已进入 Android 音频队列。 |
-| Android 14 / API 34 | 同一 APK 安装并授权成功；横屏采集、通知暂停／继续、停止均已操作。模板配置中三类事件均出现 `Cue kind=1/2/3` 且 `audioQueued=true`；竖屏授权后切横屏也观察到持续取帧和三类事件。生成器输出的 JSON 已在应用中导入，应用私有文件与生成文件的 SHA-256 一致。改用红环配置后出现 `Cue kind=2 direction=2 audioQueued=true`；同一配置中的 `kind=1/3` 也被触发。 |
+| Android 13 / API 33 | 使用本次 APK 全新安装；启用 YOLOX 后设置页为 `1/5`，系统授权文字明确为整个屏幕，横屏采集尺寸为 2400×1080。暂停、恢复、停止均已操作。最终 `processedFrames=210`、`landscapeProcessedFrames=187`、`detected=5`、`queued=4`、`stale=1`、`audioFailures=0`；真实游戏帧触发的非过期 `kind=2` 事件进入音频队列。 |
+| Android 14 / API 34 | 使用本次 APK 全新安装；启用 YOLOX 后设置页为 `1/5`，整屏授权与 `mediaProjection` 前台服务类型正常，横屏采集尺寸为 2400×1080。暂停、恢复、停止均已操作。最终 `processedFrames=235`、`landscapeProcessedFrames=217`、`detected=5`、`queued=4`、`stale=1`、`audioFailures=0`；真实游戏帧触发的非过期 `kind=2` 事件进入音频队列。 |
 
-追加的 API 34 方向切换复测：竖屏时通知标题为“等待横屏”；9 秒内帧计数从 231 增至 313，提示计数保持 6。切回横屏后通知恢复“正在处理画面”，提示计数增至 9，日志再次出现三类 `audioQueued=true` 事件。最后一次仅调整通知帧计数的文字和竖屏识别耗时显示，已重新构建 APK；上述方向切换行为由调整前的同一识别逻辑版本验证。
+两台模拟器的最终回归均使用同一个 APK，且每台都从全新安装开始；`1/5` 是 YOLOX 识别器状态，不是事件数量。`CueEvent` 来自实际 ncnn 推理链路，不是仅由模板演示生成的日志。
+
+APK SHA-256：`2b21a5c71034feaab5b6dbca7cf1fce9ca99abe6430bc9c37e30d8e337d7b8d1`
+
+最终 APK 在两种 API 上都没有出现动态库／模型加载错误、`FATAL EXCEPTION`、JNI 错误、SIGSEGV 或 SIGABRT；停止后前台服务和通知均被移除。SoundPool 在首个检测前已经加载完成，因此本轮没有自然覆盖“加载期间暂存提示”分支。
+
+## 历史模板与旋转回归
+
+此前 API 34 方向切换复测中，竖屏时通知标题为“等待横屏”，提示计数不增长；切回横屏后通知恢复“正在处理画面”。模板配置曾触发三类 `audioQueued=true`，红环配置也触发 `kind=2`。这些历史结果只验证模板／红环、旋转和 JNI 事件链路，最终 YOLOX 结论以上表同一哈希 APK 的全新安装回归为准。
 
 历史 `0.1.2` 所含的诊断计数和停止竞态修复已经追加复测。红环合成配置运行时日志出现两次 `audioQueued=true` 和两次 `Dropped stale cue`，通知同步显示“音频排队 2/检测 4 · 过期 2”。设置页按钮能够暂停、恢复和停止服务。初测发现主动停止会被稍后的 `MediaProjection.onStop()` 覆盖成“系统截屏授权已结束”；修复为首个停止原因优先后，最终 APK 再次授权并主动停止，服务退出、私有首选项和设置页均显示“截屏已停止”。
 
 ## YOLOX ncnn 冒烟测试
 
-`0.2.0` 在 API 34 ARM64 模拟器上使用 APK 内置开发配置复测。启用实验识别器后，设置页状态从 `0/5` 变为 `1/5`；接受 MediaProjection 授权后服务成功进入 `mediaProjection` 前台状态，证明 JNI 会话、ncnn、Focus 自定义层和随 APK 打包的 param／bin 均成功初始化。切换横屏后日志记录 `Capture resized to 2400x1080`，处理帧数持续增长到 99，没有 `UnsatisfiedLinkError`、模型加载失败、JNI 错误、SIGSEGV 或 SIGABRT。
-
-通知中抽查到的整段 native 处理时间为 11、12、57、73 ms，多数约 11–12 ms。测试画面是系统设置页，因此 0 检测／0 音频排队符合预期。这些数字来自模拟器调度，只用于发现明显接入错误，不能作为真实手机性能或端到端延迟成绩。
-
-冒烟测试后又增加了构建期模型哈希校验、前台服务先于模型加载，以及 SoundPool 加载期间的短时提示暂存；这些改动已通过构建和 lint，但尚未重复模拟器交互测试。native 模型、预处理和解码代码没有改变，仍需在实体手机会话中整体复核。
+`0.2.0` 最终 APK 在 API 33 和 API 34 上均从 APK 内置配置加载 ncnn param／bin 与 Focus 自定义层，并从完整真实游戏帧产生 `kind=2` 检测。API 33 两条非过期事件的 `nativeMicros` 样本为 140,741 和 37,978；API 34 为 106,319 和 121,193。它们受模拟器调度影响，只能证明模型实际执行且没有明显接入错误，不能作为实体手机耗时或端到端 P95。
 
 代码中已处理一次真实发现的旋转停帧：旧 `ImageReader` 对应的 Surface 必须先从虚拟显示断开，再关闭并接入新 Surface；同时每 500 ms 独立检查屏幕尺寸，避免只依赖后续帧触发调整。修改后两种 API 的横屏处理帧数继续增长。
 
-`audioQueued=true` 表示 `SoundPool.play()` 接受了播放请求。这两台模拟器以 `-no-audio` 启动，因此**未验证扬声器实际发声**。日志中的 `frameAgeMs` 是图像时间戳到音频排队的时间，不包含听到声音的延迟，也不是端到端 P95；红环复测中也观察到超过 250 ms 有效期的事件按设计记录为 `Dropped stale cue`。模拟器数据不能证明真实手机上的游戏兼容性、准确率、帧率、发热或 250 ms 验收目标。
+`audioQueued=true` 表示 `SoundPool.play()` 接受了播放请求。这两台模拟器没有实际扬声器音频，因此**未验证扬声器实际发声，不能替代真机**。日志中的 `frameAgeMs` 是图像时间戳到音频排队的时间，不包含听到声音的延迟，也不是端到端 P95；红环复测中也观察到超过 250 ms 有效期的事件按设计记录为 `Dropped stale cue`。模拟器数据不能证明真实手机上的游戏兼容性、准确率、帧率、发热或 250 ms 验收目标。

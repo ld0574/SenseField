@@ -13,10 +13,10 @@ SESSION_ID = "session-42"
 def _session_log(*cue_lines: str, summary_overrides: str = "") -> str:
     return "\n".join(
         [
-            f"I/MapAssist: SessionStart sessionId={SESSION_ID} startId=7 "
+            f"I/MapAssistCapture: SessionStart sessionId={SESSION_ID} startId=7 "
             "startedElapsedRealtimeMs=1000",
             *cue_lines,
-            "I/MapAssist: SessionSummary "
+            "I/MapAssistCapture: SessionSummary "
             f"sessionId={SESSION_ID} durationMs=900 processedFrames=8 "
             "landscapeProcessedFrames=5 firstProcessedElapsedRealtimeMs=1000 "
             "lastProcessedElapsedRealtimeMs=1400 maxProcessedGapMs=73 "
@@ -38,7 +38,7 @@ def _cue(
 ) -> str:
     cue_id_field = "" if cue_id is None else f"cueId={cue_id} "
     return (
-        "I/MapAssist: CueEvent "
+        "I/MapAssistCapture: CueEvent "
         f"sessionId={SESSION_ID} {cue_id_field}kind={kind} direction=1 "
         f"observedAtMs={observed_at_ms} frameAgeMs={frame_age_ms} "
         f"nativeMicros={native_micros} stale={str(stale).lower()} "
@@ -157,4 +157,16 @@ def test_rejects_expired_cue_that_was_queued(
     )
 
     with pytest.raises(ValueError, match="cannot have audioQueued=true"):
+        parse_session_log(path, SESSION_ID)
+
+
+def test_ignores_records_from_other_logcat_tags(tmp_path: Path) -> None:
+    content = _session_log(
+        _cue("session-42:1"),
+        _cue("session-42:2"),
+        _cue("session-42:3", stale=True, audio_queued=False),
+    ).replace("MapAssistCapture", "UnrelatedApp")
+    path = _write_log(tmp_path, content)
+
+    with pytest.raises(ValueError, match="found 0"):
         parse_session_log(path, SESSION_ID)

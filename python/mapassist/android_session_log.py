@@ -63,6 +63,8 @@ def parse_session_log(path: Path, session_id: str) -> dict[str, object]:
     cue_records: list[dict[str, str]] = []
     with path.open(encoding="utf-8", errors="replace") as stream:
         for line in stream:
+            if "MapAssistCapture" not in line:
+                continue
             for marker, destination in (
                 ("SessionStart", starts),
                 ("CueEvent", cue_records),

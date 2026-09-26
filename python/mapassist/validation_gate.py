@@ -10,6 +10,7 @@ import math
 import re
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 from .android_session_log import parse_session_log
@@ -32,6 +33,12 @@ TARGETS = {
     "max_processed_gap_ms": 2000,
 }
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+APK_ASSETS = {
+    "profile": "assets/profile.json",
+    "model_param": "assets/minimap-yolox-nano-320.param",
+    "model_bin": "assets/minimap-yolox-nano-320.bin",
+    "model_metadata": "assets/minimap-yolox-nano-320.metadata.json",
+}
 
 
 def _sha256(path: Path) -> str:
@@ -40,6 +47,10 @@ def _sha256(path: Path) -> str:
         while block := stream.read(1024 * 1024):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _sha256_bytes(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
 
 
 def _json(path: Path, label: str) -> dict:
@@ -171,6 +182,91 @@ def _probe_external_recording(path: Path) -> dict[str, object]:
     }
 
 
+def _apk_artifacts(path: Path) -> dict[str, object]:
+    """Read and internally verify the frozen profile/model bundled in an APK."""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            contents = {
+                key: archive.read(member)
+                for key, member in APK_ASSETS.items()
+            }
+    except (OSError, KeyError, zipfile.BadZipFile) as error:
+        raise ValueError(f"APK is missing required frozen profile/model assets: {path}") from error
+    try:
+        metadata = json.loads(contents["model_metadata"].decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("APK model metadata is not valid UTF-8 JSON") from error
+    if not isinstance(metadata, dict) or metadata.get("schema_version") != 1:
+        raise ValueError("APK model metadata must use schema_version 1")
+    runtime = metadata.get("runtime")
+    if not isinstance(runtime, dict):
+        raise ValueError("APK model metadata.runtime must be an object")
+    param_sha = _sha256_bytes(contents["model_param"])
+    bin_sha = _sha256_bytes(contents["model_bin"])
+    if runtime.get("param_sha256") != param_sha:
+        raise ValueError("APK model param does not match its bundled metadata")
+    if runtime.get("bin_sha256") != bin_sha:
+        raise ValueError("APK model bin does not match its bundled metadata")
+    return {
+        "profile_sha256": _sha256_bytes(contents["profile"]),
+        "model_param_sha256": param_sha,
+        "model_bin_sha256": bin_sha,
+        "model_metadata_sha256": _sha256_bytes(contents["model_metadata"]),
+        "ncnn_version": runtime.get("version"),
+    }
+
+
+def _prediction_timeline(path: Path, fps: int) -> dict[str, object]:
+    """Verify the deterministic CFR JSONL timeline produced for final evaluation."""
+    frame_count = 0
+    cue_count = 0
+    last_timestamp = -1
+    with path.open(encoding="utf-8") as stream:
+        for line_number, raw in enumerate(stream, start=1):
+            if not raw.strip():
+                continue
+            try:
+                record = json.loads(raw)
+            except json.JSONDecodeError as error:
+                raise ValueError(
+                    f"Predictions line {line_number} is not valid JSON"
+                ) from error
+            if not isinstance(record, dict):
+                raise ValueError(f"Predictions line {line_number} must be an object")
+            frame_index = record.get("frame_index")
+            timestamp_ms = record.get("timestamp_ms")
+            expected_timestamp = round(frame_count * 1000 / fps)
+            if frame_index != frame_count:
+                raise ValueError(
+                    f"Predictions line {line_number} frame_index must be {frame_count}"
+                )
+            if timestamp_ms != expected_timestamp or timestamp_ms <= last_timestamp:
+                raise ValueError(
+                    f"Predictions line {line_number} timestamp does not match the CFR timeline"
+                )
+            for field in ("observations", "detections", "cues"):
+                if not isinstance(record.get(field), list):
+                    raise ValueError(
+                        f"Predictions line {line_number} needs a {field} list"
+                    )
+            for cue in record["cues"]:
+                if not isinstance(cue, dict) or cue.get("emitted_at_ms") != timestamp_ms:
+                    raise ValueError(
+                        f"Predictions line {line_number} has a cue outside its frame timestamp"
+                    )
+            cue_count += len(record["cues"])
+            frame_count += 1
+            last_timestamp = timestamp_ms
+    if frame_count == 0:
+        raise ValueError("Predictions JSONL contains no frames")
+    return {
+        "frame_count": frame_count,
+        "cue_count": cue_count,
+        "first_timestamp_ms": 0,
+        "last_timestamp_ms": last_timestamp,
+    }
+
+
 def evaluate_gate(evidence_file: Path) -> dict:
     evidence_file = evidence_file.resolve()
     data = _json(evidence_file, "evidence manifest")
@@ -206,6 +302,8 @@ def evaluate_gate(evidence_file: Path) -> dict:
     metadata = _json(metadata_path, "prediction metadata")
     if metadata.get("schema_version") != 1:
         raise ValueError("Expected prediction metadata schema_version 1")
+    if metadata.get("replay") != "frozen_yolox_ncnn_native_event_replay":
+        raise ValueError("Prediction metadata must come from the frozen ncnn replay")
     metadata_base = metadata_path.parent
     metadata_records = {}
     for key in ("video", "profile", "predictions", "native_library"):
@@ -218,7 +316,38 @@ def evaluate_gate(evidence_file: Path) -> dict:
         if not isinstance(asset, dict) or not _nonempty(asset.get("role")):
             raise ValueError(f"prediction metadata.profile_assets[{index}] needs a role")
         _reference(metadata_base, asset, f"prediction metadata.profile_assets[{index}]")
+    model = metadata.get("model")
+    if not isinstance(model, dict):
+        raise ValueError("prediction metadata.model must be an object")
+    model_records = {}
+    for key in ("param", "bin"):
+        path, digest = _reference(
+            metadata_base, model.get(key), f"prediction metadata.model.{key}"
+        )
+        model_records[key] = (path, digest)
 
+    _, frozen_param_sha = _reference(
+        base, holdout.get("model_param"), "holdout.model_param"
+    )
+    _, frozen_bin_sha = _reference(
+        base, holdout.get("model_bin"), "holdout.model_bin"
+    )
+    _, frozen_library_sha = _reference(
+        base, holdout.get("native_library"), "holdout.native_library"
+    )
+
+    sampling = metadata.get("sampling")
+    timeline = metadata.get("timeline")
+    runtime = metadata.get("runtime")
+    if not isinstance(sampling, dict) or not isinstance(timeline, dict) or not isinstance(
+            runtime, dict):
+        raise ValueError("Prediction metadata needs sampling, timeline, and runtime objects")
+    sampling_fps = sampling.get("fps")
+    if not isinstance(sampling_fps, int) or isinstance(sampling_fps, bool) or sampling_fps < 1:
+        raise ValueError("prediction metadata.sampling.fps must be a positive integer")
+    prediction_timeline = _prediction_timeline(predictions_path, sampling_fps)
+
+    profile_document = _json(profile_path, "holdout profile")
     labels_document = _json(labels_path, "holdout labels")
     predictions = [cue for cue in read_predictions(predictions_path)
                    if cue.get("kind") in enabled]
@@ -230,6 +359,8 @@ def evaluate_gate(evidence_file: Path) -> dict:
     )
     recording_probe = _probe_external_recording(recording_path)
     recording_duration_seconds = float(recording_probe["format_duration_seconds"])
+    apk_path, apk_sha = _reference(base, device.get("apk"), "device_session.apk")
+    apk_artifacts = _apk_artifacts(apk_path)
     device_log_path, _ = _reference(
         base, device.get("device_log"), "device_session.device_log"
     )
@@ -315,10 +446,93 @@ def evaluate_gate(evidence_file: Path) -> dict:
     check("provenance.predictions", metadata_records["predictions"][1] == predictions_sha,
           metadata_records["predictions"][1],
           f"must equal predictions SHA-256 {predictions_sha}")
+    check("provenance.model_param", model_records["param"][1] == frozen_param_sha,
+          model_records["param"][1], f"must equal frozen param SHA-256 {frozen_param_sha}")
+    check("provenance.model_bin", model_records["bin"][1] == frozen_bin_sha,
+          model_records["bin"][1], f"must equal frozen bin SHA-256 {frozen_bin_sha}")
+    check("provenance.native_library",
+          metadata_records["native_library"][1] == frozen_library_sha,
+          metadata_records["native_library"][1],
+          f"must equal frozen native library SHA-256 {frozen_library_sha}")
+    check("provenance.apk_profile", apk_artifacts["profile_sha256"] == profile_sha,
+          apk_artifacts["profile_sha256"],
+          f"APK profile must equal replay profile SHA-256 {profile_sha}")
+    check("provenance.apk_model_param",
+          apk_artifacts["model_param_sha256"] == frozen_param_sha,
+          apk_artifacts["model_param_sha256"],
+          f"APK param must equal frozen param SHA-256 {frozen_param_sha}")
+    check("provenance.apk_model_bin",
+          apk_artifacts["model_bin_sha256"] == frozen_bin_sha,
+          apk_artifacts["model_bin_sha256"],
+          f"APK bin must equal frozen bin SHA-256 {frozen_bin_sha}")
+    profile_detectors = profile_document.get("detectors")
+    profile_thresholds = profile_document.get("thresholds")
+    check("provenance.profile_yolox",
+          isinstance(profile_detectors, dict)
+          and profile_detectors.get("minimap_yolox") is True,
+          profile_detectors,
+          "frozen profile must enable minimap_yolox")
+    check("provenance.profile_input_size",
+          isinstance(profile_thresholds, dict)
+          and profile_thresholds.get("minimap_yolox_input_size", 320) == 320,
+          profile_thresholds.get("minimap_yolox_input_size")
+          if isinstance(profile_thresholds, dict) else None,
+          "frozen Android YOLOX input size must equal 320")
     replay_fps = (metadata.get("stats") or {}).get("fps") if isinstance(
         metadata.get("stats"), dict) else None
-    check("provenance.replay_fps", replay_fps == TARGETS["replay_fps"], replay_fps,
-          f"must equal {TARGETS['replay_fps']} FPS")
+    check("provenance.replay_fps",
+          replay_fps == sampling_fps == TARGETS["replay_fps"],
+          {"stats_fps": replay_fps, "sampling_fps": sampling_fps},
+          f"both must equal {TARGETS['replay_fps']} sampled FPS")
+    stats = metadata.get("stats")
+    stats_frames = stats.get("frames") if isinstance(stats, dict) else None
+    stats_cues = stats.get("cues") if isinstance(stats, dict) else None
+    check("provenance.frame_count",
+          stats_frames == sampling.get("frame_count") == prediction_timeline["frame_count"],
+          {"stats": stats_frames, "sampling": sampling.get("frame_count"),
+           "predictions": prediction_timeline["frame_count"]},
+          "stats, sampling, and predictions must contain the same frame count")
+    check("provenance.cue_count", stats_cues == prediction_timeline["cue_count"],
+          {"stats": stats_cues, "predictions": prediction_timeline["cue_count"]},
+          "stats cue count must equal predictions")
+    check("provenance.timeline",
+          timeline.get("kind") == "synthetic_media_time_ms"
+          and timeline.get("timestamp_formula") == "round(frame_index * 1000 / fps)"
+          and timeline.get("source_pts_preserved") is False,
+          timeline,
+          "declared deterministic CFR synthetic media timeline")
+    event_now_policy = metadata.get("event_now_policy")
+    check("provenance.event_now_policy",
+          isinstance(event_now_policy, str)
+          and event_now_policy.startswith("zero_queue_delay;"),
+          event_now_policy,
+          "zero queue delay media-time event policy")
+    preprocessing = runtime.get("preprocessing")
+    check("provenance.preprocessing",
+          isinstance(preprocessing, str) and "PIXEL_RGBA2BGR" in preprocessing
+          and "right/bottom 114" in preprocessing,
+          preprocessing,
+          "RGBA crop with ncnn RGBA2BGR resize and right/bottom 114 padding")
+    desktop_ncnn_version = runtime.get("ncnn")
+    apk_ncnn_version = apk_artifacts.get("ncnn_version")
+    check("provenance.ncnn_version",
+          isinstance(desktop_ncnn_version, str)
+          and isinstance(apk_ncnn_version, str)
+          and desktop_ncnn_version.split(".")[-1] == apk_ncnn_version,
+          {"desktop": desktop_ncnn_version, "apk": apk_ncnn_version},
+          "desktop replay and Android APK must use the same dated ncnn release")
+    postprocess = runtime.get("postprocess")
+    expected_confidence = profile_thresholds.get("minimap_yolox_confidence") \
+        if isinstance(profile_thresholds, dict) else None
+    expected_nms = profile_thresholds.get("minimap_yolox_nms") \
+        if isinstance(profile_thresholds, dict) else None
+    check("provenance.postprocess",
+          isinstance(postprocess, dict)
+          and postprocess.get("confidence") == expected_confidence
+          and postprocess.get("nms_iou") == expected_nms
+          and postprocess.get("strides") == [8, 16, 32],
+          postprocess,
+          "postprocess thresholds must match the frozen profile and strides 8/16/32")
 
     for kind in enabled:
         metrics = event_metrics[kind]
@@ -358,6 +572,8 @@ def evaluate_gate(evidence_file: Path) -> dict:
         ("authorized_test_scene", "test scene was permitted"),
         ("external_recording_unedited", "external recording is the unedited session capture"),
         ("latency_annotation_complete", "every non-stale logged cue was annotated"),
+        ("apk_installed_from_evidence", "the referenced APK was installed for this session"),
+        ("bundled_profile_used", "the APK bundled profile was used without importing another profile"),
     ):
         check(f"device.{field}", device.get(field) is True, device.get(field), label)
     for field in ("fps_notes", "thermal_notes", "hero_feedback", "sync_method",
@@ -464,6 +680,7 @@ def evaluate_gate(evidence_file: Path) -> dict:
         "latency_metrics": latency_metrics,
         "external_recording_probe": recording_probe,
         "android_session": android_session,
+        "apk": {"sha256": apk_sha, **apk_artifacts},
         "checks": checks,
         "failures": failures,
     }

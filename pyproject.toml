@@ -10,7 +10,7 @@ requires-python = ">=3.10"
 dependencies = ["Pillow>=10,<13"]
 
 [project.optional-dependencies]
-test = ["pytest>=8,<10"]
+test = ["pytest>=8,<10", "numpy>=1.26,<3"]
 
 [project.scripts]
 mapassist-replay = "mapassist.replay:main"

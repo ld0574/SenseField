@@ -4,6 +4,7 @@ import hashlib
 import json
 import shutil
 import subprocess
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -44,7 +45,10 @@ def _recording_probe(duration: float) -> dict:
 def _evidence_bundle(tmp_path: Path) -> tuple[Path, dict, dict]:
     video = tmp_path / "holdout.mp4"
     profile = tmp_path / "profile.json"
+    model_param = tmp_path / "model.param"
+    model_bin = tmp_path / "model.bin"
     library = tmp_path / "libmapassist.so"
+    apk = tmp_path / "mapassist.apk"
     recording = tmp_path / "external-recording.mp4"
     predictions = tmp_path / "predictions.jsonl"
     labels = tmp_path / "labels.json"
@@ -54,7 +58,19 @@ def _evidence_bundle(tmp_path: Path) -> tuple[Path, dict, dict]:
     evidence_file = tmp_path / "final-evidence.json"
 
     video.write_bytes(b"frozen holdout video")
-    profile.write_text('{"schema_version":1,"templates":{}}\n', encoding="utf-8")
+    _write_json(profile, {
+        "schema_version": 1,
+        "detectors": {"minimap_yolox": True},
+        "thresholds": {
+            "minimap_yolox_input_size": 320,
+            "minimap_yolox_confidence": 0.29,
+            "minimap_yolox_nms": 0.5,
+        },
+        "events": {},
+        "templates": {},
+    })
+    model_param.write_bytes(b"frozen ncnn param")
+    model_bin.write_bytes(b"frozen ncnn weights")
     library.write_bytes(b"frozen native engine")
     recording.write_bytes(b"physical phone screen and audible cue recording")
     cues = [
@@ -62,8 +78,21 @@ def _evidence_bundle(tmp_path: Path) -> tuple[Path, dict, dict]:
         {"kind": "minimap_enemy", "direction": "right", "emitted_at_ms": 2050},
         {"kind": "danger_ping", "direction": None, "emitted_at_ms": 3050},
     ]
-    predictions.write_text(json.dumps({"timestamp_ms": 3050, "cues": cues}) + "\n",
-                           encoding="utf-8")
+    prediction_rows = []
+    cues_by_frame = {12: [cues[0]], 24: [cues[1]], 36: [cues[2]]}
+    for frame_index in range(37):
+        timestamp_ms = round(frame_index * 1000 / 12)
+        frame_cues = []
+        for cue in cues_by_frame.get(frame_index, []):
+            frame_cues.append({**cue, "emitted_at_ms": timestamp_ms})
+        prediction_rows.append(json.dumps({
+            "frame_index": frame_index,
+            "timestamp_ms": timestamp_ms,
+            "observations": [],
+            "detections": [],
+            "cues": frame_cues,
+        }))
+    predictions.write_text("\n".join(prediction_rows) + "\n", encoding="utf-8")
     _write_json(labels, {
         "schema_version": 1,
         "video_id": "holdout-match-06",
@@ -108,14 +137,50 @@ def _evidence_bundle(tmp_path: Path) -> tuple[Path, dict, dict]:
     device_log.write_text("\n".join(device_log_rows) + "\n", encoding="utf-8")
     metadata = {
         "schema_version": 1,
+        "replay": "frozen_yolox_ncnn_native_event_replay",
         "video": _ref(video),
         "profile": _ref(profile),
         "profile_assets": [],
+        "model": {"param": _ref(model_param), "bin": _ref(model_bin)},
         "native_library": _ref(library),
         "predictions": _ref(predictions),
-        "stats": {"fps": 12},
+        "stats": {"fps": 12, "frames": 37, "cues": 3},
+        "sampling": {"method": "ffmpeg CFR fps filter", "fps": 12,
+                     "frame_count": 37},
+        "timeline": {
+            "kind": "synthetic_media_time_ms",
+            "timestamp_formula": "round(frame_index * 1000 / fps)",
+            "source_pts_preserved": False,
+        },
+        "event_now_policy": (
+            "zero_queue_delay; ma_engine_step now_ms equals synthetic frame timestamp"
+        ),
+        "runtime": {
+            "ncnn": "1.0.test-ncnn",
+            "preprocessing": (
+                "RGBA crop -> ncnn PIXEL_RGBA2BGR resize -> right/bottom 114 border"
+            ),
+            "postprocess": {
+                "confidence": 0.29,
+                "nms_iou": 0.5,
+                "strides": [8, 16, 32],
+            },
+        },
     }
     _write_json(metadata_file, metadata)
+    apk_model_metadata = json.dumps({
+        "schema_version": 1,
+        "runtime": {
+            "version": "test-ncnn",
+            "param_sha256": _sha(model_param),
+            "bin_sha256": _sha(model_bin),
+        },
+    }).encode()
+    with zipfile.ZipFile(apk, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("assets/profile.json", profile.read_bytes())
+        archive.writestr("assets/minimap-yolox-nano-320.param", model_param.read_bytes())
+        archive.writestr("assets/minimap-yolox-nano-320.bin", model_bin.read_bytes())
+        archive.writestr("assets/minimap-yolox-nano-320.metadata.json", apk_model_metadata)
     evidence = {
         "schema_version": 2,
         "enabled_kinds": ["main_enemy", "minimap_enemy", "danger_ping"],
@@ -130,6 +195,9 @@ def _evidence_bundle(tmp_path: Path) -> tuple[Path, dict, dict]:
             "continuous_recording": True,
             "video": _ref(video),
             "profile": _ref(profile),
+            "model_param": _ref(model_param),
+            "model_bin": _ref(model_bin),
+            "native_library": _ref(library),
             "labels": _ref(labels),
             "predictions": _ref(predictions),
             "prediction_metadata": _ref(metadata_file),
@@ -146,12 +214,15 @@ def _evidence_bundle(tmp_path: Path) -> tuple[Path, dict, dict]:
             "authorized_test_scene": True,
             "external_recording_unedited": True,
             "latency_annotation_complete": True,
+            "apk_installed_from_evidence": True,
+            "bundled_profile_used": True,
             "sync_method": "External recording timestamps start at its first video frame.",
             "audio_capture_method": "External camera microphone captured phone speaker audio.",
             "fps_notes": "Stable during the 16 minute practice session.",
             "thermal_notes": "Warm without thermal warning.",
             "hero_feedback": "Directional minimap cues were understandable.",
             "external_recording": _ref(recording),
+            "apk": _ref(apk),
             "device_log": _ref(device_log),
             "session_id": "session-123",
             "latency_csv": _ref(latency),
@@ -187,11 +258,18 @@ def test_validation_gate_lists_semantic_failures(
     )
     evidence_file, evidence, metadata = _evidence_bundle(tmp_path)
     predictions = tmp_path / "predictions.jsonl"
-    with predictions.open("a", encoding="utf-8") as stream:
-        stream.write(json.dumps({"timestamp_ms": 9000, "cues": [{
-            "kind": "minimap_enemy", "direction": "left", "emitted_at_ms": 9000,
-        }]}) + "\n")
+    records = [json.loads(line) for line in predictions.read_text(encoding="utf-8").splitlines()]
+    false_timestamp = records[5]["timestamp_ms"]
+    records[5]["cues"].append({
+        "kind": "minimap_enemy", "direction": "left",
+        "emitted_at_ms": false_timestamp,
+    })
+    predictions.write_text(
+        "\n".join(json.dumps(record) for record in records) + "\n",
+        encoding="utf-8",
+    )
     metadata["predictions"] = _ref(predictions)
+    metadata["stats"]["cues"] = 4
     metadata_file = tmp_path / "predictions.jsonl.meta.json"
     _write_json(metadata_file, metadata)
     evidence["holdout"]["split"] = "train"
@@ -247,6 +325,49 @@ def test_validation_gate_requires_exact_logged_cue_ids(
         "missing_from_csv": ["session-123:20"],
         "not_in_non_stale_log": ["session-123:999"],
     }
+
+
+def test_validation_gate_binds_predictions_to_frozen_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "mapassist.validation_gate._probe_external_recording",
+        lambda _: _recording_probe(960.0),
+    )
+    evidence_file, evidence, metadata = _evidence_bundle(tmp_path)
+    alternate = tmp_path / "alternate.param"
+    alternate.write_bytes(b"different ncnn graph")
+    metadata["model"]["param"] = _ref(alternate)
+    metadata_file = tmp_path / "predictions.jsonl.meta.json"
+    _write_json(metadata_file, metadata)
+    evidence["holdout"]["prediction_metadata"] = _ref(metadata_file)
+    _write_json(evidence_file, evidence)
+
+    report = evaluate_gate(evidence_file)
+    assert report["passed"] is False
+    assert "provenance.model_param" in report["failures"]
+
+
+def test_validation_gate_rejects_predictions_outside_declared_cfr_timeline(
+    tmp_path: Path,
+) -> None:
+    evidence_file, evidence, metadata = _evidence_bundle(tmp_path)
+    predictions = tmp_path / "predictions.jsonl"
+    records = [json.loads(line) for line in predictions.read_text(encoding="utf-8").splitlines()]
+    records[4]["timestamp_ms"] += 1
+    predictions.write_text(
+        "\n".join(json.dumps(record) for record in records) + "\n",
+        encoding="utf-8",
+    )
+    metadata["predictions"] = _ref(predictions)
+    metadata_file = tmp_path / "predictions.jsonl.meta.json"
+    _write_json(metadata_file, metadata)
+    evidence["holdout"]["predictions"] = _ref(predictions)
+    evidence["holdout"]["prediction_metadata"] = _ref(metadata_file)
+    _write_json(evidence_file, evidence)
+
+    with pytest.raises(ValueError, match="CFR timeline"):
+        evaluate_gate(evidence_file)
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),

@@ -9,6 +9,8 @@
 - 连续运行时长（至少 15 分钟）：
 - `SessionStart` 中的 session ID：
 - Android logcat 原始文件与 SHA-256：
+- 本次实际安装的 APK 文件与 SHA-256：
+- 是否使用 APK 内置 profile，且未导入其他配置：
 - 外部录像是否未剪辑，视频和音频是否都覆盖整段会话：
 - Android 日志与外部录像的对齐方法：
 - 实际声音的收录方法（外放／耳机及所用设备）：
@@ -39,6 +41,18 @@
 
 ## 采集可核对的真机证据
 
+先复制并固定待测 APK，再安装这一个文件。测试结束前不要重新构建或覆盖它：
+
+```sh
+mkdir -p validation/private
+cp android/app/build/outputs/apk/debug/app-debug.apk \
+  validation/private/mapassist-tested.apk
+shasum -a 256 validation/private/mapassist-tested.apk
+adb install -r validation/private/mapassist-tested.apk
+```
+
+最终门禁要求本次会话使用该 APK 内置的 `profile.json`；测试前若曾导入其他配置，请清除应用数据后重新安装，再只启用实验识别器开关。这样离线留出预测、APK 内模型和真机运行配置才是同一套冻结输入。
+
 连接手机后，先清空旧日志，再在电脑上持续保存本次会话的 logcat：
 
 ```sh
@@ -68,7 +82,7 @@ PYTHONPATH=python python3 -m mapassist.measure_latency \
 
 最终每个启用事件至少需要 5 个实际发声样本，总计至少 20 个；任何漏发声都会使验收失败。Android 日志还需证明横屏处理跨度至少 15 分钟、平均至少 8 FPS、最大处理帧间隔不超过 2 秒。
 
-完成记录后，将同一证据整理为 `FINAL_EVIDENCE.example.json` 的 schema 2 格式，填写 `device_log`、`session_id`、原始外部录像和 CSV 的 SHA-256，再运行：
+完成记录后，将同一证据整理为 `FINAL_EVIDENCE.example.json` 的 schema 2 格式，填写冻结 profile、ncnn param/bin、native library、实际安装 APK、`device_log`、`session_id`、原始外部录像和 CSV 的 SHA-256，再运行：
 
 ```sh
 PYTHONPATH=python python3 -m mapassist.validation_gate \
@@ -76,4 +90,4 @@ PYTHONPATH=python python3 -m mapassist.validation_gate \
   --output validation/private/final-report.json
 ```
 
-门禁会重新读取外部录像的音视频 packet 时间轴、Android 会话日志、延迟 CSV、留出标签、预测 provenance 和所有证据文件哈希。本页文字记录用于补充说明，不能代替机器验收报告。
+门禁会重新读取外部录像的音视频 packet 时间轴、Android 会话日志、延迟 CSV、留出标签、逐帧预测时间轴、预测 provenance 和所有证据文件哈希；还会解包 APK，确认其中 profile 和 ncnn param/bin 与离线留出预测使用的冻结文件完全一致。本页文字记录用于补充说明，不能代替机器验收报告。

@@ -11,6 +11,9 @@
 - pnnx 不支持 YOLOX Focus 的 `Slice(step=2)`。`training/convert_yolox_ncnn.py` 严格验证并将 `Input + Split + 4 Crop + Concat` 替换为运行时注册的 `YoloV5Focus`，结构不符即停止转换。
 - 30 张真实 `video6` 验证裁剪上的 TorchScript／ncnn 原始输出最大绝对误差为 `0.0004493`，低于 `0.0005` 门限。Android 的 ncnn resize 与训练侧 OpenCV resize 最多出现 1 个像素值差异；固定阈值后的逐图检测数量全部一致，最大框／置信度差异为 `0.003071`，低于 `0.01` 门限。
 - Gradle 在每次构建前按 metadata 校验 param／bin 的 SHA-256；CMake 对下载和已有缓存中的 ncnn 压缩包均校验固定哈希，避免混用模型或依赖版本。
+- `training/replay_yolox_ncnn.py` 可把完整录像按 12 FPS 送入同一 ncnn param/bin、裁剪、解码和 C++ 事件层，并把录像、APK 内 profile、模型、native library 与预测 JSONL 的 SHA-256 写入 provenance。它使用可复现的 CFR 媒体时间和零排队延迟事件时钟，不能代替真机时延。
+
+真实素材冒烟使用 video7 的 10 秒开发片段和 APK 内同哈希 `profile.json`：处理 123 帧，得到 253 个 YOLOX 检测和 2 条事件，回放约 24.9 FPS；预测时间戳严格按 83／84 ms 递增。该结果证明整段录像工具能实际执行冻结 ncnn 模型，不是独立准确率成绩。
 
 模型配置为 `verified: false`。应用首次打开时不会运行它；开发测试者必须勾选“允许未通过真人录像评测的实验识别器”，下一次截屏会话才加载模型。`video7` 人机盲测只有 65.57% precision／63.49% recall，因此不能作为发布默认能力。
 

@@ -23,6 +23,18 @@
       "path": "calibrated-profile.json",
       "sha256": "replace_with_64_character_sha256"
     },
+    "model_param": {
+      "path": "minimap-yolox-nano-320.param",
+      "sha256": "replace_with_64_character_sha256"
+    },
+    "model_bin": {
+      "path": "minimap-yolox-nano-320.bin",
+      "sha256": "replace_with_64_character_sha256"
+    },
+    "native_library": {
+      "path": "libmapassist.so",
+      "sha256": "replace_with_64_character_sha256"
+    },
     "labels": {
       "path": "holdout-labels.json",
       "sha256": "replace_with_64_character_sha256"
@@ -48,6 +60,8 @@
     "authorized_test_scene": true,
     "external_recording_unedited": true,
     "latency_annotation_complete": true,
+    "apk_installed_from_evidence": true,
+    "bundled_profile_used": true,
     "sync_method": "replace with how Android cue IDs and external video timecodes were aligned",
     "audio_capture_method": "replace with how actual speaker or headphone output was recorded",
     "fps_notes": "replace with observation and measurement method",
@@ -55,6 +69,10 @@
     "hero_feedback": "replace with Hero feedback",
     "external_recording": {
       "path": "physical-device-session.mp4",
+      "sha256": "replace_with_64_character_sha256"
+    },
+    "apk": {
+      "path": "mapassist-tested.apk",
       "sha256": "replace_with_64_character_sha256"
     },
     "device_log": {
