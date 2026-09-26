@@ -34,7 +34,7 @@ git -C build/third_party/YOLOX apply ../../../training/patches/yolox-modern-pyto
 uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -e '.[test]' torch torchvision \
   opencv-python loguru tqdm thop ninja tabulate psutil tensorboard \
-  pycocotools onnx onnxruntime
+  pycocotools onnx onnxruntime pnnx ncnn
 ```
 
 补丁将旧式张量类型转换改成当前 PyTorch 支持的设备无关写法，不改变网络结构或权重。它让同一训练脚本可在 CUDA、Apple MPS 和 CPU 上运行。
@@ -107,3 +107,52 @@ PYTHONPATH=build/third_party/YOLOX:python \
   --input-size 320 --split val \
   --output build/training/yolox-nano-minimap-dense-320/fixed-val-evaluation.json
 ```
+
+### 转换为 ncnn
+
+将固定 320 输入、输出未解码 `1×2100×6` 张量的 TorchScript 模型转换为
+ncnn：
+
+```sh
+.venv/bin/python training/convert_yolox_ncnn.py \
+  --torchscript build/models/minimap-yolox-nano-dense-320/model.torchscript.pt \
+  --output-param build/models/minimap-yolox-nano-dense-320/model.ncnn.param \
+  --output-bin build/models/minimap-yolox-nano-dense-320/model.ncnn.bin \
+  --metadata build/models/minimap-yolox-nano-dense-320/ncnn-conversion.json \
+  --input-size 320
+```
+
+转换固定使用 pnnx 的 `fp16=0`、`optlevel=2` 和 CPU 路径。当前 pnnx 会把
+YOLOX Focus 中步长为 2 的四个切片写成不受支持的 Crop 层。脚本先在 pnnx
+中间图中核对 `dims=(2,3)`、`steps=(2,2)`、四组起点和 channel 拼接顺序，再核对
+ncnn 参数确实以 `Input + Split + 4 Crop + Concat` 开头，然后替换为一个
+`YoloV5Focus`。任一结构不匹配时转换直接失败。发布前会暂存 param、bin 和
+metadata；普通文件写入错误会恢复上一组文件。`ncnn-conversion.json` 保存输入、
+原始 pnnx 输出、最终 param/bin、pnnx 启动器和实际后端程序的 SHA-256，以及
+改写前后的 layer/blob 数。
+
+在真实验证图片上比较 TorchScript 与 ncnn 的原始输出：
+
+```sh
+.venv/bin/python training/verify_yolox_ncnn.py \
+  --torchscript build/models/minimap-yolox-nano-dense-320/model.torchscript.pt \
+  --param build/models/minimap-yolox-nano-dense-320/model.ncnn.param \
+  --bin build/models/minimap-yolox-nano-dense-320/model.ncnn.bin \
+  --data-dir data/private/minimap-review-v4-dense/coco-minimap-combined-video1-6 \
+  --image-count 30 --input-size 320 \
+  --max-raw-error 5e-4 --confidence 0.29 --nms-threshold 0.5 \
+  --output build/models/minimap-yolox-nano-dense-320/ncnn-parity-30.json
+```
+
+一致性检查在 Python ncnn 中注册同一个 `YoloV5Focus`，并关闭 fp16、bf16 和
+packing，以隔离转换误差。默认还会运行与 Android 等价的 ncnn
+`Mat.from_pixels_resize(PIXEL_BGR)` 和右／下方 114 padding，再按置信度 `0.29`、
+NMS `0.5`、步长 8／16／32 解码最终检测。两个门禁分别记录，runtime 检查不会
+放宽 raw 输出的 `0.0005` 门槛。
+
+当前 30 张 `video6` 验证图片的最大 raw 输出绝对误差为 `0.0004493`；ncnn 与
+OpenCV 输入的最大像素差为 `1`，每张图的最终检测数量一致，框／置信度最大值差
+为 `0.0030708`，通过默认 `0.01` 门槛。也可省略 `--data-dir`，用
+`--images image-a.png image-b.png` 检查指定原图；报告会记录每张图片及三个模型
+文件的 SHA-256。只排查模型转换时可传 `--no-runtime-preprocess-check`。Android
+真机仍需单独验收截屏格式、精度、耗时和发热。
