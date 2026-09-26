@@ -73,6 +73,29 @@ class EngineConfig(C.Structure):
     ]
 
 
+class MinimapLocatorConfig(C.Structure):
+    _fields_ = [
+        ("base_short", Rect),
+        ("search_radius_x_short", C.c_float),
+        ("search_radius_y_short", C.c_float),
+        ("position_step_short", C.c_float),
+        ("min_scale", C.c_float),
+        ("max_scale", C.c_float),
+        ("scale_steps", C.c_int),
+        ("min_aspect", C.c_float),
+        ("max_aspect", C.c_float),
+        ("aspect_steps", C.c_int),
+        ("descriptor_width", C.c_int),
+        ("descriptor_height", C.c_int),
+        ("min_score", C.c_float),
+        ("confirm_frames", C.c_int),
+        ("hold_frames", C.c_int),
+        ("refresh_frames", C.c_int),
+        ("normalize_black_bars", C.c_int),
+        ("black_threshold", C.c_int),
+    ]
+
+
 def default_library_path() -> Path:
     root = Path(__file__).resolve().parents[2]
     for extension in ("dylib", "so"):
@@ -99,6 +122,17 @@ def load_library(path: Path | None = None) -> C.CDLL:
     lib.ma_engine_step.restype = C.c_int
     lib.ma_engine_destroy.argtypes = [C.c_void_p]
     lib.ma_engine_reset.argtypes = [C.c_void_p]
+    lib.ma_minimap_locator_create.argtypes = [
+        C.POINTER(MinimapLocatorConfig), C.POINTER(C.c_int8), C.c_int,
+    ]
+    lib.ma_minimap_locator_create.restype = C.c_void_p
+    lib.ma_minimap_locator_update.argtypes = [
+        C.c_void_p, C.POINTER(C.c_uint8), C.c_int, C.c_int, C.c_int,
+        C.POINTER(Rect), C.POINTER(Rect), C.POINTER(C.c_float),
+    ]
+    lib.ma_minimap_locator_update.restype = C.c_int
+    lib.ma_minimap_locator_reset.argtypes = [C.c_void_p]
+    lib.ma_minimap_locator_destroy.argtypes = [C.c_void_p]
     return lib
 
 

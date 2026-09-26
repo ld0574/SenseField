@@ -91,9 +91,13 @@ struct Session {
     float yolox_confidence = 0.29f;
     float yolox_nms = 0.5f;
     bool yolox_runtime_error_logged = false;
+    ma_minimap_locator *minimap_locator = nullptr;
     ncnn::Net yolox;
 
-    ~Session() { ma_engine_destroy(engine); }
+    ~Session() {
+        ma_minimap_locator_destroy(minimap_locator);
+        ma_engine_destroy(engine);
+    }
 };
 
 bool copy_template(JNIEnv *env, jbyteArray input, jint width, jint height,
@@ -197,10 +201,11 @@ bool load_yolox(AAssetManager *assets, Session &session) {
 
 void append_yolox_observations(Session &session, const uint8_t *rgba,
                                int width, int height, int row_stride,
-                               int64_t timestamp_ms,
+                               int64_t timestamp_ms, ma_rect minimap_roi,
+                               bool minimap_ready,
                                std::vector<ma_observation> &observations) {
-    if (!session.minimap_yolox) return;
-    const PixelRect area = to_pixels(session.profile.minimap, width, height);
+    if (!session.minimap_yolox || !minimap_ready) return;
+    const PixelRect area = to_pixels(minimap_roi, width, height);
     const int crop_width = area.x1 - area.x0;
     const int crop_height = area.y1 - area.y0;
     if (crop_width < 2 || crop_height < 2) return;
@@ -318,7 +323,9 @@ Java_org_openrd_mapassist_NativeBridge_nativeCreate(
         jbyteArray enemy_rgba, jint enemy_width, jint enemy_height,
         jbyteArray ping_rgba, jint ping_width, jint ping_height,
         jboolean minimap_yolox, jint yolox_input_size,
-        jfloat yolox_confidence, jfloat yolox_nms) {
+        jfloat yolox_confidence, jfloat yolox_nms,
+        jboolean minimap_locator_enabled, jfloatArray minimap_locator_floats,
+        jintArray minimap_locator_ints, jbyteArray minimap_locator_descriptor) {
     if (!rois || !flags || !tuning || !event_ints ||
         env->GetArrayLength(rois) != 12 || env->GetArrayLength(flags) != 5 ||
         env->GetArrayLength(tuning) != 5 || env->GetArrayLength(event_ints) != 5)
@@ -328,6 +335,11 @@ Java_org_openrd_mapassist_NativeBridge_nativeCreate(
          !std::isfinite(yolox_confidence) || yolox_confidence < 0.0f || yolox_confidence > 1.0f ||
          !std::isfinite(yolox_nms) || yolox_nms < 0.0f || yolox_nms > 1.0f))
         return 0;
+    if (minimap_locator_enabled &&
+        (!minimap_locator_floats || !minimap_locator_ints ||
+         !minimap_locator_descriptor ||
+         env->GetArrayLength(minimap_locator_floats) != 12 ||
+         env->GetArrayLength(minimap_locator_ints) != 9)) return 0;
 
     jfloat r[12], t[5];
     jint f[5], e[5];
@@ -360,6 +372,38 @@ Java_org_openrd_mapassist_NativeBridge_nativeCreate(
     session->yolox_input_size = yolox_input_size;
     session->yolox_confidence = yolox_confidence;
     session->yolox_nms = yolox_nms;
+    if (minimap_locator_enabled) {
+        jfloat locator_floats[12];
+        jint locator_ints[9];
+        env->GetFloatArrayRegion(
+                minimap_locator_floats, 0, 12, locator_floats);
+        env->GetIntArrayRegion(
+                minimap_locator_ints, 0, 9, locator_ints);
+        if (env->ExceptionCheck()) return 0;
+        const int descriptor_length = env->GetArrayLength(minimap_locator_descriptor);
+        const int64_t expected_descriptor_length =
+                static_cast<int64_t>(locator_ints[2]) * locator_ints[3];
+        if (expected_descriptor_length <= 0 || expected_descriptor_length > 4096 ||
+            descriptor_length != expected_descriptor_length) return 0;
+        std::vector<int8_t> descriptor(static_cast<size_t>(descriptor_length));
+        env->GetByteArrayRegion(
+                minimap_locator_descriptor, 0, descriptor_length,
+                reinterpret_cast<jbyte *>(descriptor.data()));
+        if (env->ExceptionCheck()) return 0;
+        const ma_minimap_locator_config locator_config{
+            {locator_floats[0], locator_floats[1],
+             locator_floats[2], locator_floats[3]},
+            locator_floats[4], locator_floats[5], locator_floats[6],
+            locator_floats[7], locator_floats[8], locator_ints[0],
+            locator_floats[9], locator_floats[10], locator_ints[1],
+            locator_ints[2], locator_ints[3], locator_floats[11],
+            locator_ints[4], locator_ints[5], locator_ints[6],
+            locator_ints[7], locator_ints[8],
+        };
+        session->minimap_locator = ma_minimap_locator_create(
+                &locator_config, descriptor.data(), descriptor_length);
+        if (!session->minimap_locator) return 0;
+    }
     if (session->minimap_yolox) {
         AAssetManager *assets = AAssetManager_fromJava(env, asset_manager);
         if (!load_yolox(assets, *session)) return 0;
@@ -376,7 +420,9 @@ Java_org_openrd_mapassist_NativeBridge_nativeProcess(
         JNIEnv *env, jclass, jlong handle, jobject frame,
         jint width, jint height, jint row_stride,
         jlong frame_timestamp_ms, jlong processing_now_ms) {
-    jint result[5] = {0, 0, 0, 0, 0};
+    // kind, direction, priority, observation count, processing micros,
+    // locator state/score, then normalized minimap ROI in parts per million.
+    jint result[11] = {0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0};
     auto *session = reinterpret_cast<Session *>(handle);
     auto *rgba = frame ? static_cast<uint8_t *>(env->GetDirectBufferAddress(frame)) : nullptr;
     const jlong capacity = frame ? env->GetDirectBufferCapacity(frame) : -1;
@@ -388,16 +434,45 @@ Java_org_openrd_mapassist_NativeBridge_nativeProcess(
         result[3] = -1;
     } else {
         const auto start = std::chrono::steady_clock::now();
+        ma_profile frame_profile = session->profile;
+        bool minimap_ready = true;
+        if (session->minimap_locator) {
+            ma_rect located_minimap{};
+            ma_rect content{};
+            float locator_score = -2.0f;
+            const int locator_state = ma_minimap_locator_update(
+                    session->minimap_locator, rgba, width, height, row_stride,
+                    &located_minimap, &content, &locator_score);
+            result[5] = locator_state;
+            result[6] = static_cast<jint>(std::lround(locator_score * 1000.0f));
+            minimap_ready = locator_state != MA_LOCATOR_SEARCHING;
+            if (minimap_ready) {
+                frame_profile.minimap = located_minimap;
+                result[7] = static_cast<jint>(std::lround(located_minimap.x * 1000000.0f));
+                result[8] = static_cast<jint>(std::lround(located_minimap.y * 1000000.0f));
+                result[9] = static_cast<jint>(std::lround(located_minimap.w * 1000000.0f));
+                result[10] = static_cast<jint>(std::lround(located_minimap.h * 1000000.0f));
+            } else {
+                frame_profile.enable_minimap_template = 0;
+                frame_profile.enable_minimap_red_ring = 0;
+            }
+        } else {
+            result[7] = static_cast<jint>(std::lround(frame_profile.minimap.x * 1000000.0f));
+            result[8] = static_cast<jint>(std::lround(frame_profile.minimap.y * 1000000.0f));
+            result[9] = static_cast<jint>(std::lround(frame_profile.minimap.w * 1000000.0f));
+            result[10] = static_cast<jint>(std::lround(frame_profile.minimap.h * 1000000.0f));
+        }
         ma_observation native_observations[64];
         const int native_count = ma_detect_rgba(
-                rgba, width, height, row_stride, frame_timestamp_ms, &session->profile,
-                session->profile.enable_minimap_template ? &session->enemy_template : nullptr,
-                session->profile.enable_ping_template ? &session->ping_template : nullptr,
+                rgba, width, height, row_stride, frame_timestamp_ms, &frame_profile,
+                frame_profile.enable_minimap_template ? &session->enemy_template : nullptr,
+                frame_profile.enable_ping_template ? &session->ping_template : nullptr,
                 native_observations, 64);
         std::vector<ma_observation> observations(
                 native_observations, native_observations + native_count);
         append_yolox_observations(*session, rgba, width, height, row_stride,
-                                  frame_timestamp_ms, observations);
+                                  frame_timestamp_ms, frame_profile.minimap,
+                                  minimap_ready, observations);
         std::sort(observations.begin(), observations.end(),
                   [](const ma_observation &a, const ma_observation &b) {
                       return a.confidence > b.confidence;
@@ -420,15 +495,18 @@ Java_org_openrd_mapassist_NativeBridge_nativeProcess(
         result[4] = static_cast<jint>(std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - start).count());
     }
-    jintArray output = env->NewIntArray(5);
-    if (output) env->SetIntArrayRegion(output, 0, 5, result);
+    jintArray output = env->NewIntArray(11);
+    if (output) env->SetIntArrayRegion(output, 0, 11, result);
     return output;
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_openrd_mapassist_NativeBridge_nativeReset(JNIEnv *, jclass, jlong handle) {
     auto *session = reinterpret_cast<Session *>(handle);
-    if (session) ma_engine_reset(session->engine);
+    if (session) {
+        ma_engine_reset(session->engine);
+        ma_minimap_locator_reset(session->minimap_locator);
+    }
 }
 
 extern "C" JNIEXPORT void JNICALL

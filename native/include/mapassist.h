@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define MA_API_VERSION 2
+#define MA_API_VERSION 3
 
 enum ma_kind {
     MA_MAIN_ENEMY = 1,
@@ -79,6 +79,58 @@ typedef struct ma_engine_config {
 } ma_engine_config;
 
 typedef struct ma_engine ma_engine;
+
+enum ma_locator_state {
+    MA_LOCATOR_SEARCHING = 0,
+    MA_LOCATOR_LOCKED = 1,
+    MA_LOCATOR_HELD = 2
+};
+
+/*
+ * Coordinates in base_short are measured in units of the active screen's
+ * short edge and are anchored at the active content rectangle's top-left.
+ * This keeps the coarse layout stable across different landscape ratios.
+ */
+typedef struct ma_minimap_locator_config {
+    ma_rect base_short;
+    float search_radius_x_short;
+    float search_radius_y_short;
+    float position_step_short;
+    float min_scale;
+    float max_scale;
+    int scale_steps;
+    float min_aspect;
+    float max_aspect;
+    int aspect_steps;
+    int descriptor_width;
+    int descriptor_height;
+    float min_score;
+    int confirm_frames;
+    int hold_frames;
+    int refresh_frames;
+    int normalize_black_bars;
+    int black_threshold;
+} ma_minimap_locator_config;
+
+typedef struct ma_minimap_locator ma_minimap_locator;
+
+/*
+ * The descriptor is a signed int8, row-major, low-resolution luminance
+ * template. The locator copies it, so the caller may release the input after
+ * creation. The returned ROI and content rectangle are normalized to the full
+ * input frame. A locator owns mutable tracking state: update, reset, and
+ * destroy calls on the same handle must not overlap. Separate handles may be
+ * used concurrently.
+ */
+ma_minimap_locator *ma_minimap_locator_create(
+        const ma_minimap_locator_config *config,
+        const int8_t *descriptor, int descriptor_length);
+void ma_minimap_locator_destroy(ma_minimap_locator *locator);
+void ma_minimap_locator_reset(ma_minimap_locator *locator);
+int ma_minimap_locator_update(
+        ma_minimap_locator *locator,
+        const uint8_t *rgba, int width, int height, int row_stride,
+        ma_rect *out_minimap, ma_rect *out_content, float *out_score);
 
 /* Reads only pixels supplied by the caller. All boxes are normalized to the full frame. */
 int ma_detect_rgba(const uint8_t *rgba, int width, int height, int row_stride,

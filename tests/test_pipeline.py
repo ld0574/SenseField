@@ -871,6 +871,32 @@ def test_bundled_android_profile_enables_only_experimental_yolox_minimap() -> No
     assert profile["events"]["min_confidence"] == pytest.approx(0.29)
 
 
+def test_adaptive_minimap_profile_is_importable_and_keeps_frozen_default() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = json.loads(
+        (root / "profiles/hok_minimap_adaptive.experimental.json").read_text()
+    )
+    bundled = json.loads(
+        (root / "profiles/hok_minimap_adaptive.experimental.android.json").read_text()
+    )
+    frozen_default = json.loads(
+        (root / "android/app/src/main/assets/profile.json").read_text()
+    )
+
+    assert bundled["templates_b64"] == {}
+    assert bundled["layout"] == source["layout"]
+    locator = bundled["layout"]["minimap_locator"]
+    descriptor = base64.b64decode(locator["descriptor_b64"], validate=True)
+    assert len(descriptor) == locator["grid_width"] * locator["grid_height"]
+    assert hashlib.sha256(descriptor).hexdigest() == locator["descriptor_sha256"]
+    assert locator["training_match_count"] == 6
+    assert locator["training_frame_count"] == 573
+    # video8 was frozen against this exact fixed-ROI profile.  The adaptive
+    # profile remains an explicit import until that one-shot evaluation ends.
+    assert "layout" not in frozen_default
+    assert frozen_default["profile_version"] == "0.5.0-yolox-nano-dense-320-dev"
+
+
 def test_android_ncnn_assets_match_metadata_and_patched_focus() -> None:
     root = Path(__file__).resolve().parents[1]
     assets = root / "android/app/src/main/assets"

@@ -67,6 +67,9 @@ public final class CaptureService extends Service {
     private int staleCues;
     private int audioQueueFailures;
     private int latestNativeMicros;
+    private int latestLocatorState = -1;
+    private int latestLocatorScoreMilli;
+    private int lastLoggedLocatorState = Integer.MIN_VALUE;
     private int maxObservationAgeMs;
     private int frameWidth;
     private int frameHeight;
@@ -169,7 +172,11 @@ public final class CaptureService extends Service {
                         ping == null ? 0 : ping.width,
                         ping == null ? 0 : ping.height,
                         profile.minimapYolox, profile.yoloxInputSize,
-                        profile.yoloxConfidence, profile.yoloxNms);
+                        profile.yoloxConfidence, profile.yoloxNms,
+                        profile.minimapLocatorEnabled,
+                        profile.minimapLocatorFloats,
+                        profile.minimapLocatorInts,
+                        profile.minimapLocatorDescriptor);
                 if (nativeSession == 0) throw new IllegalStateException("Native recognizer rejected profile");
 
                 // Android 14+ requires the mediaProjection foreground type before
@@ -305,9 +312,21 @@ public final class CaptureService extends Service {
                     recordLandscapeProcessedFrameLocked(processingAtMs);
                     int[] result = NativeBridge.nativeProcess(nativeSession, pixels,
                             width, height, plane.getRowStride(), observedAtMs, now);
-                    if (result != null && result.length == 5) {
+                    if (result != null && result.length >= 5) {
                         if (result[3] < 0) Log.e(TAG, "Invalid direct image buffer");
                         latestNativeMicros = result[4];
+                        if (result.length >= 11) {
+                            latestLocatorState = result[5];
+                            latestLocatorScoreMilli = result[6];
+                            if (latestLocatorState != lastLoggedLocatorState) {
+                                lastLoggedLocatorState = latestLocatorState;
+                                Log.i(TAG, "MinimapLayout sessionId=" + auditSessionId
+                                        + " state=" + locatorStateName(latestLocatorState)
+                                        + " scoreMilli=" + latestLocatorScoreMilli
+                                        + " roiPpm=" + result[7] + "," + result[8]
+                                        + "," + result[9] + "," + result[10]);
+                            }
+                        }
                         if (result[0] > 0) {
                             String cueId = auditSessionId + ":" + nextCueId++;
                             detectedCues++;
@@ -395,6 +414,9 @@ public final class CaptureService extends Service {
                         + " 帧 · 音频排队 " + queuedCues + "/检测 " + detectedCues
                         + (staleCues == 0 ? "" : " · 过期 " + staleCues)
                         + (audioQueueFailures == 0 ? "" : " · 音频失败 " + audioQueueFailures)
+                        + (latestLocatorState < 0 ? "" : " · 地图"
+                        + locatorStateName(latestLocatorState)
+                        + locatorScoreText(latestLocatorScoreMilli))
                         + " · 识别 " + latestNativeMicros / 1000 + " ms")
                 .setContentIntent(open)
                 .setOngoing(true)
@@ -435,6 +457,9 @@ public final class CaptureService extends Service {
             staleCues = 0;
             audioQueueFailures = 0;
             latestNativeMicros = 0;
+            latestLocatorState = -1;
+            latestLocatorScoreMilli = 0;
+            lastLoggedLocatorState = Integer.MIN_VALUE;
             lastFrameLandscape = false;
             profileName = "";
             auditSessionId = UUID.randomUUID().toString();
@@ -477,8 +502,24 @@ public final class CaptureService extends Service {
                 + " queued=" + queuedCues
                 + " stale=" + staleCues
                 + " audioFailures=" + audioQueueFailures
+                + " locatorState=" + locatorStateName(latestLocatorState)
+                + " locatorScoreMilli=" + latestLocatorScoreMilli
                 + " reason=" + reason);
         auditSessionActive = false;
+    }
+
+    private static String locatorStateName(int state) {
+        if (state == 0) return "搜索中";
+        if (state == 1) return "已锁定";
+        if (state == 2) return "短暂保持";
+        return "未启用";
+    }
+
+    private static String locatorScoreText(int scoreMilli) {
+        // Native uses -2 as the no-candidate sentinel. Keep that internal
+        // instead of showing a confusing “-200%” in the notification.
+        if (scoreMilli < -1000) return "";
+        return " " + Math.round(scoreMilli / 10f) + "%";
     }
 
     private void stopWithStatus(String status) {

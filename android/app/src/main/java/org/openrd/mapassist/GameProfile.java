@@ -16,6 +16,8 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 final class GameProfile {
     static final String PREFS = "mapassist_settings";
@@ -45,6 +47,11 @@ final class GameProfile {
     final int yoloxInputSize;
     final float yoloxConfidence;
     final float yoloxNms;
+    /** Optional screen-layout calibration passed to the native minimap locator. */
+    final boolean minimapLocatorEnabled;
+    final float[] minimapLocatorFloats;
+    final int[] minimapLocatorInts;
+    final byte[] minimapLocatorDescriptor;
     final TemplateData enemyTemplate;
     final TemplateData pingTemplate;
 
@@ -52,6 +59,8 @@ final class GameProfile {
                         float[] tuning, int[] eventInts, float minConfidence,
                         boolean minimapYolox, int yoloxInputSize,
                         float yoloxConfidence, float yoloxNms,
+                        boolean minimapLocatorEnabled, float[] minimapLocatorFloats,
+                        int[] minimapLocatorInts, byte[] minimapLocatorDescriptor,
                         TemplateData enemyTemplate, TemplateData pingTemplate) {
         this.name = name;
         this.version = version;
@@ -65,6 +74,10 @@ final class GameProfile {
         this.yoloxInputSize = yoloxInputSize;
         this.yoloxConfidence = yoloxConfidence;
         this.yoloxNms = yoloxNms;
+        this.minimapLocatorEnabled = minimapLocatorEnabled;
+        this.minimapLocatorFloats = minimapLocatorFloats;
+        this.minimapLocatorInts = minimapLocatorInts;
+        this.minimapLocatorDescriptor = minimapLocatorDescriptor;
         this.enemyTemplate = enemyTemplate;
         this.pingTemplate = pingTemplate;
     }
@@ -111,6 +124,11 @@ final class GameProfile {
         float yoloxConfidence = (float) thresholds.optDouble(
                 "minimap_yolox_confidence", 0.29);
         float yoloxNms = (float) thresholds.optDouble("minimap_yolox_nms", 0.5);
+        JSONObject layout = null;
+        if (data.has("layout") && !data.isNull("layout")) {
+            layout = data.getJSONObject("layout");
+        }
+        MinimapLocatorData locator = parseMinimapLocator(layout);
         int[] flags = new int[] {
             enabled && detectors.getBoolean("main_red_bar") ? 1 : 0,
             enabled && detectors.getBoolean("minimap_template") ? 1 : 0,
@@ -162,10 +180,165 @@ final class GameProfile {
         if (detectors.getBoolean("danger_ping_template") && ping == null) {
             throw new JSONException("Enabled ping detector needs embedded danger_ping PNG");
         }
+        boolean useMinimapLocator = enabled && locator != null &&
+                (minimapYolox || flags[1] != 0 || flags[2] != 0);
         return new GameProfile(data.optString("name", "unnamed"),
                 data.optString("profile_version", "unversioned"), verified, rois, flags,
                 tuning, eventInts, minConfidence, minimapYolox, yoloxInputSize,
-                yoloxConfidence, yoloxNms, enemy, ping);
+                yoloxConfidence, yoloxNms,
+                useMinimapLocator,
+                locator == null ? new float[0] : locator.floats,
+                locator == null ? new int[0] : locator.ints,
+                locator == null ? null : locator.descriptor,
+                enemy, ping);
+    }
+
+    private static final class MinimapLocatorData {
+        final float[] floats;
+        final int[] ints;
+        final byte[] descriptor;
+
+        MinimapLocatorData(float[] floats, int[] ints, byte[] descriptor) {
+            this.floats = floats;
+            this.ints = ints;
+            this.descriptor = descriptor;
+        }
+    }
+
+    /**
+     * Parse the calibration emitted by calibrate_minimap_anchor.py.  The
+     * locator is deliberately optional so old schema_version 1 profiles keep
+     * using their fixed ROI.  Once the object is present, however, its
+     * coordinate space and binary descriptor are checked before native code
+     * sees them.
+     */
+    private static MinimapLocatorData parseMinimapLocator(JSONObject layout)
+            throws JSONException {
+        if (layout == null || !layout.has("minimap_locator") ||
+                layout.isNull("minimap_locator")) return null;
+        JSONObject locator = layout.optJSONObject("minimap_locator");
+        if (locator == null) throw new JSONException("layout.minimap_locator must be an object");
+        if (!"mapassist.minimap_locator".equals(locator.getString("schema")) ||
+                locator.getInt("schema_version") != 1 || locator.getInt("version") != 1 ||
+                !"short_edge".equals(locator.getString("coordinate_space"))) {
+            throw new JSONException("Unsupported minimap locator schema");
+        }
+
+        JSONArray base = locator.getJSONArray("base_rect_short");
+        if (base.length() != 4) throw new JSONException("base_rect_short needs four numbers");
+        float[] values = new float[12];
+        for (int i = 0; i < 4; i++) values[i] = jsonFloat(base, i, -Float.MAX_VALUE, Float.MAX_VALUE);
+        if (!finiteRange(values[0], 0f, 4f) || values[0] >= 4f ||
+                !finiteRange(values[1], 0f, 1f) || values[1] >= 1f ||
+                !finiteRange(values[2], 0f, 2f) || values[2] <= 0.01f ||
+                !finiteRange(values[3], 0f, 2f) || values[3] <= 0.01f ||
+                values[0] + values[2] > 4.000001f ||
+                values[1] + values[3] > 1.000001f) {
+            throw new JSONException("Invalid minimap locator base rectangle");
+        }
+        values[4] = requiredFloat(locator, "search_radius_x_short", 0f, 1f);
+        values[5] = requiredFloat(locator, "search_radius_y_short", 0f, 1f);
+        values[6] = requiredFloat(locator, "position_step_short", 0.0005f, 0.25f);
+        if (values[6] <= 0.0005f) throw new JSONException("Invalid locator position_step_short");
+        values[7] = requiredFloat(locator, "min_scale", 0.5f, 2f);
+        values[8] = requiredFloat(locator, "max_scale", 0.5f, 2f);
+        if (values[7] > values[8]) throw new JSONException("min_scale exceeds max_scale");
+        values[9] = requiredFloat(locator, "min_aspect", 0.5f, 2f);
+        values[10] = requiredFloat(locator, "max_aspect", 0.5f, 2f);
+        if (values[9] > values[10]) throw new JSONException("min_aspect exceeds max_aspect");
+        values[11] = requiredFloat(locator, "min_score", -1f, 1f);
+
+        int gridWidth = requiredInt(locator, "grid_width", 4, 64);
+        int gridHeight = requiredInt(locator, "grid_height", 4, 64);
+        int[] ints = new int[] {
+                requiredInt(locator, "scale_steps", 1, 21),
+                requiredInt(locator, "aspect_steps", 1, 21),
+                gridWidth,
+                gridHeight,
+                requiredInt(locator, "confirm_frames", 1, 30),
+                requiredInt(locator, "hold_frames", 0, 120),
+                requiredInt(locator, "refresh_frames", 1, 600),
+                locator.getBoolean("normalize_black_bars") ? 1 : 0,
+                requiredInt(locator, "black_threshold", 0, 64),
+        };
+        long xSteps = (long) Math.ceil(values[4] / values[6]);
+        long ySteps = (long) Math.ceil(values[5] / values[6]);
+        long candidates = (xSteps * 2 + 1) * (ySteps * 2 + 1) * ints[0] * ints[1];
+        long descriptorSamples = candidates * gridWidth * gridHeight;
+        if (candidates > 20_000 || descriptorSamples > 8_000_000) {
+            throw new JSONException("Minimap locator search budget is too large");
+        }
+        String encoded = locator.getString("descriptor_b64");
+        if (encoded.length() > 2_000_000) throw new JSONException("Locator descriptor is oversized");
+        final byte[] descriptor;
+        try {
+            descriptor = Base64.decode(encoded, Base64.DEFAULT);
+        } catch (IllegalArgumentException error) {
+            throw new JSONException("Invalid minimap locator descriptor base64");
+        }
+        if (descriptor.length != gridWidth * gridHeight) {
+            throw new JSONException("Locator descriptor length does not match grid");
+        }
+        JSONObject quantization = locator.getJSONObject("quantization");
+        if (!"int8".equals(quantization.getString("dtype")) ||
+                requiredFloat(quantization, "scale", 32f, 32f) != 32f ||
+                requiredInt(quantization, "zero_point", 0, 0) != 0) {
+            throw new JSONException("Unsupported locator descriptor quantization");
+        }
+        String expectedSha256 = locator.getString("descriptor_sha256");
+        if (!expectedSha256.matches("[0-9a-fA-F]{64}") ||
+                !expectedSha256.equalsIgnoreCase(sha256(descriptor))) {
+            throw new JSONException("Locator descriptor SHA-256 mismatch");
+        }
+        boolean varied = false;
+        for (int i = 1; i < descriptor.length; i++) {
+            if (descriptor[i] != descriptor[0]) { varied = true; break; }
+        }
+        if (!varied) throw new JSONException("Locator descriptor must contain variation");
+        return new MinimapLocatorData(values, ints, descriptor);
+    }
+
+    private static String sha256(byte[] value) throws JSONException {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(value);
+            char[] alphabet = "0123456789abcdef".toCharArray();
+            char[] encoded = new char[digest.length * 2];
+            for (int i = 0; i < digest.length; i++) {
+                int item = digest[i] & 255;
+                encoded[i * 2] = alphabet[item >>> 4];
+                encoded[i * 2 + 1] = alphabet[item & 15];
+            }
+            return new String(encoded);
+        } catch (NoSuchAlgorithmException error) {
+            throw new JSONException("SHA-256 is unavailable");
+        }
+    }
+
+    private static float jsonFloat(JSONArray values, int index, float min, float max)
+            throws JSONException {
+        double value = values.getDouble(index);
+        if (!Double.isFinite(value) || value < min || value > max) {
+            throw new JSONException("Invalid locator number");
+        }
+        return (float) value;
+    }
+
+    private static float requiredFloat(JSONObject object, String key, float min, float max)
+            throws JSONException {
+        double value = object.getDouble(key);
+        if (!Double.isFinite(value) || value < min || value > max) {
+            throw new JSONException("Invalid locator " + key);
+        }
+        return (float) value;
+    }
+
+    private static int requiredInt(JSONObject object, String key, int min, int max)
+            throws JSONException {
+        double raw = object.getDouble(key);
+        if (!Double.isFinite(raw) || raw != Math.rint(raw) || raw < min || raw > max) {
+            throw new JSONException("Invalid locator " + key);
+        }
+        return (int) raw;
     }
 
     private static boolean finiteRange(float value, float min, float max) {

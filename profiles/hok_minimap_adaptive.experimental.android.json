@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "name": "hok_minimap_adaptive_experimental",
+  "profile_version": "0.6.0-yolox-nano-adaptive-roi-experimental",
+  "game": "王者荣耀",
+  "verified": false,
+  "notes": "Development-only adaptive minimap profile. The locator descriptor was calibrated from manually reviewed video1-video6 frames and has not been tuned on video8. It normalizes black bars, searches around the short-edge layout anchor, and stays silent until the ROI is confirmed. The detector and thresholds remain unverified.",
+  "rois": {
+    "minimap": [
+      0.0375,
+      0.0,
+      0.1444444444,
+      0.3333333333
+    ],
+    "ping_area": [
+      0.4027777778,
+      0.0462962963,
+      0.2222222222,
+      0.1388888889
+    ],
+    "center_mask": [
+      0.35,
+      0.35,
+      0.3,
+      0.3
+    ]
+  },
+  "detectors": {
+    "main_red_bar": false,
+    "minimap_template": false,
+    "minimap_red_ring": false,
+    "danger_ping_template": false,
+    "minimap_yolox": true
+  },
+  "templates": {
+    "minimap_enemy": null,
+    "danger_ping": null
+  },
+  "thresholds": {
+    "red_min": 90,
+    "red_dominance": 1.25,
+    "main_min_width_ratio": 0.012,
+    "main_max_height_ratio": 0.03,
+    "main_min_aspect": 3.5,
+    "template_match": 0.94,
+    "minimap_yolox_input_size": 320,
+    "minimap_yolox_confidence": 0.29,
+    "minimap_yolox_nms": 0.5
+  },
+  "events": {
+    "min_confidence": 0.29,
+    "max_observation_age_ms": 250,
+    "min_global_gap_ms": 1000,
+    "minimap_min_gap_ms": 5000,
+    "min_hits_in_three_frames": 2,
+    "reset_after_missing_frames": 3
+  },
+  "layout": {
+    "minimap_locator": {
+      "aspect_steps": 3,
+      "base_rect_short": [
+        0.08333333,
+        0.0,
+        0.32098765,
+        0.33333333
+      ],
+      "black_threshold": 12,
+      "confirm_frames": 2,
+      "coordinate_space": "short_edge",
+      "descriptor_b64": "9uPl7vP7+Pb2+Ab49vb7AfD+A+gUCQsOCRQL+/7+/vsDEQkZFBYvAf4ODgbg1fbQ1dXSzdsB/hQWCxT7DhEUFuvY49Xl6NXY4/MGCRwWFPAc++AGA+4Z4Pb70tXY2AkJDhEU9hzw2+ADKVr+1djS0tsDDgkJAwnzHOvb3QM6Sgbr293V+xHz2+4BDvMR3dLY5QscIf7d4/4R+Nvb3dUG9gbd2NjV4wYZJAsZLwnd1dvd0gYGDuXb2N3j4O4UHzIG49jl2NXYCfgn7tjY1dvg+CQsPA7z8Bnb4+AJ9i/r0uDQ4PMhNBwZJCQR49vY1Qn2H+jV2Nv4KTID6+UJGScO69vVCfYZA/jl+zI0CeDl3d3+bTf48N0L+zQRCR8vNwno293b6EV/Lwbd4BEGNzIvNzQZ6+vd4O7g+/4BGQH+JA4vLzpCHxTu493d4Nvj6N37Jyk0A0U6ND8nEf7d4OXo3evz6wsyPCz+SjwyNz8nGR8vNywZHy86PDQkCwP4+/j7Gf72/gsWA/v+CxQJA/4BBg==",
+      "descriptor_sha256": "38104234d46f12e8e33db5a377bcd0b703ca8429b48065c82c2b77209c993ac7",
+      "grid_height": 20,
+      "grid_width": 20,
+      "hold_frames": 6,
+      "input_manifest_sha256": "bcec87247304f5bbf4917cfbb73376a6aada0450da4c2b03f81c5ec527aa52bb",
+      "max_aspect": 1.05,
+      "max_scale": 1.1,
+      "min_aspect": 0.95,
+      "min_scale": 0.9,
+      "min_score": 0.4,
+      "normalization": {
+        "mean": 66.7775,
+        "stddev": 11.77000398
+      },
+      "normalize_black_bars": true,
+      "position_step_short": 0.01,
+      "quantization": {
+        "dtype": "int8",
+        "scale": 32.0,
+        "zero_point": 0
+      },
+      "refresh_frames": 30,
+      "scale_steps": 5,
+      "schema": "mapassist.minimap_locator",
+      "schema_version": 1,
+      "search_radius_x_short": 0.1,
+      "search_radius_y_short": 0.04,
+      "training_frame_count": 573,
+      "training_match_count": 6,
+      "version": 1
+    }
+  },
+  "templates_b64": {}
+}
