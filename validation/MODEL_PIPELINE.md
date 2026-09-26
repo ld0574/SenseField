@@ -1,24 +1,28 @@
-# 主画面模型接入记录
+# 模型接入记录
 
-## Android 接入审计（2026-09-26）
+## 小地图 YOLOX Android 接入（2026-09-26）
 
-当前训练产物没有接入 Android 实时截屏链路。对源码和已生成的 debug APK 做了以下核对：
+冻结的 YOLOX Nano 320 小地图模型已经接入 Android 实时截屏链路，仍属于默认关闭的实验能力：
 
-- `android/app/src/main/cpp/CMakeLists.txt` 只构建 `mapassist` 和 `mapassist_jni`，没有 `find_package(ncnn)`、ONNX Runtime 或其他模型运行时。
-- `NativeBridge.nativeProcess` 只调用 `ma_detect_rgba`；`native/src/mapassist.cpp` 实现的是主画面红色条、小地图红环和 PNG 模板匹配，没有网络推理、张量预处理或 YOLOX 输出解码。
-- `CaptureService` 将 `ImageReader` 的原始 RGBA `ByteBuffer` 直接传入 JNI。没有按模型要求裁剪小地图、BGR 转换、320×320 右下填充 114、推理或把模型框映射回整屏。
-- 已生成的 `build/models/*/model.onnx` 是忽略的本地文件，不会进入 APK。当前 APK 的资产只有 `profile.json`；APK 原生库中也没有 `onnx`、`ncnn` 或 `yolox` 符号。
-- `build/third_party/YOLOX/demo/ncnn` 只是被忽略的官方示例，且缺少 `yolox.bin`。其参考代码硬编码 640 输入和 COCO 80 类，而当前定制 ONNX 的签名是 `[1,3,320,320] -> [1,2100,6]`（单类），不能直接复用。
+- Android 构建固定使用 ncnn `20260526`。CMake 从官方 Release 下载 Android 包并校验 SHA-256 `85b18b875488585c2d21360430e0e54abb6c04aa88094b471c20208ab55ff796`，只构建 `arm64-v8a`。
+- APK 内含 `minimap-yolox-nano-320.param`、`minimap-yolox-nano-320.bin` 和模型元数据。`.param`／`.bin` 的 SHA-256 分别为 `4649269cae16fef3b64cc366f123ba58259a756b79f7f55d6be20cd3903cae14` 和 `b3dbc844cc148aaa1a794e1bf03cb02a847b9c185215045c4b19b9ba4982236a`。
+- JNI 从完整 RGBA 截屏按 `GameProfile` 裁出小地图，转换为 BGR，保持比例缩放到 320 并在右侧／下方填充 114。ncnn 输出为单类 `1×2100×6`；按 strides `8/16/32` 解码，使用 `objectness × class`、开发阈值 `0.29` 和 IoU `0.5` NMS，再把框映射回整屏归一化坐标。
+- 模型框转换为现有 `MA_MINIMAP_ENEMY` observation，继续使用两到三帧确认、空间跟踪、五秒小地图冷却、全局限流、过期丢弃和左右／上下声音方向。
+- pnnx 不支持 YOLOX Focus 的 `Slice(step=2)`。`training/convert_yolox_ncnn.py` 严格验证并将 `Input + Split + 4 Crop + Concat` 替换为运行时注册的 `YoloV5Focus`，结构不符即停止转换。
+- 30 张真实 `video6` 验证裁剪上的 TorchScript／ncnn 原始输出最大绝对误差为 `0.0004493`，低于 `0.0005` 门限。Android 的 ncnn resize 与训练侧 OpenCV resize 最多出现 1 个像素值差异；固定阈值后的逐图检测数量全部一致，最大框／置信度差异为 `0.003071`，低于 `0.01` 门限。
+- Gradle 在每次构建前按 metadata 校验 param／bin 的 SHA-256；CMake 对下载和已有缓存中的 ncnn 压缩包均校验固定哈希，避免混用模型或依赖版本。
 
-桌面侧的两个本地 ONNX 文件均已用 `training/verify_yolox_onnx.py` 做过 PyTorch 对照；报告中的最大原始误差分别为 `0.000223` 和 `0.000475`。这只证明导出和桌面预处理／解码一致，不能证明 Android 已加载模型。
+模型配置为 `verified: false`。应用首次打开时不会运行它；开发测试者必须勾选“允许未通过真人录像评测的实验识别器”，下一次截屏会话才加载模型。`video7` 人机盲测只有 65.57% precision／63.49% recall，因此不能作为发布默认能力。
 
-接入前必须固定 ncnn（或 ONNX Runtime）的 Android 依赖、由该 320 单类模型生成并随 APK 打包的 `.param`／`.bin`（含哈希），然后在 JNI 会话中完成小地图裁剪、BGR/浮点输入、YOLOX strides `8/16/32` 解码、`objectness × class` 阈值（当前开发选择为 `0.29`）、NMS 和整屏坐标映射，最后将框转换为现有 `ma_observation` 后再复用跨帧事件层。没有这些产物和运行时，不能声称模型已经接入。
+当前证据能证明模型转换、APK 打包和代码链路成立。实体 Android 13/14 上的模型加载、持续推理耗时、实际发声、游戏帧率和发热仍需真机记录；完整验收还需要未参与开发的真实匹配留出对局。
 
-当前只有实验性红色血条启发式。没有真实《王者荣耀》边框标注、训练权重或 ncnn 依赖；因此没有可验证的主画面模型 APK。以下步骤在取得多场对局后执行，任何模型都需先经过留出对局评测和真机延迟测试。
+## 主画面边缘敌人
 
-1. 按 `annotations/DETECTION.example.json` 标注敌方标记／血条的归一化框，包含没有敌人的帧与易混淆红色 UI。训练、验证和测试按**整场对局**分开。运行 `python3 -m mapassist.detection_dataset ...` 后，输出为 `train2017/`、`val2017/`、`test2017/` 与相应 COCO JSON。导出器检查相同录像路径不会跨组；不同路径的同一场副本仍需人工排除。该布局对应 [YOLOX 官方 `COCODataset` 的路径拼接](https://github.com/Megvii-BaseDetection/YOLOX/blob/main/yolox/data/datasets/coco.py)。
-2. 在有合适 GPU 的机器上安装官方 [YOLOX](https://github.com/Megvii-BaseDetection/YOLOX)，以其 [Nano 实验配置](https://github.com/Megvii-BaseDetection/YOLOX/blob/main/exps/default/yolox_nano.py)为起点；设置 `num_classes=1`、`data_dir` 为本地导出目录、`train_ann=instances_train2017.json`、`val_ann=instances_val2017.json`。固定训练代码版本、随机种子、输入尺寸和权重哈希。先在验证集选阈值，测试集只用于最终留出评测。当前尚无数据和训练环境，训练命令及超参数需要据真实数据确定。
-3. 使用官方 [ONNX 导出脚本](https://github.com/Megvii-BaseDetection/YOLOX/blob/main/tools/export_onnx.py)导出同一权重，再按 [YOLOX 的 ncnn 转换说明](https://github.com/Megvii-BaseDetection/YOLOX/blob/main/demo/ncnn/cpp/README.md)转换。官方说明指出 Focus／Slice 需要专门处理，不能把 `onnx2ncnn` 的输出直接当作可用模型。ncnn 的 [CMake 接入说明](https://github.com/Tencent/ncnn/wiki/use-ncnn-with-own-project)使用 `find_package(ncnn REQUIRED)`；版本、ABI 和模型文件哈希应随 APK 固定。
-4. 选一组私有帧，逐框比较 PyTorch、ONNX 和 ncnn 输出的类别、置信度、位置与预处理；然后接入当前 `Observation`／事件层，在 Android 13/14 上测完整采集到实际声音的 P95。只有真实留出对局达到预定准确率、召回率、方位正确率和真机延迟目标，才能把模型识别器在发布配置中打开。失败时保持主画面识别关闭，并记录误报和漏报画面。
+主画面边缘敌人目前仍只有默认关闭的红色血条启发式，没有真实标注或训练权重。后续步骤：
 
-官方 YOLOX 示例默认面向一般目标检测；其预训练权重不能证明能识别《王者荣耀》敌方 UI。当前工程未包含或声称已验证模型推理。
+1. 按 `annotations/DETECTION.example.json` 标注敌方标记／血条的归一化框，同时保留无敌人帧和易混淆红色 UI。训练、验证和测试按整场对局分开。
+2. 使用 `mapassist.detection_dataset` 导出 COCO 数据，并确认同一对局不会跨训练／留出组。
+3. 训练单独的轻量检测器，固定训练代码、随机种子、输入尺寸、权重和阈值，再执行 PyTorch／ONNX／ncnn 一致性检查。
+4. 只有真实匹配留出和实体手机端到端门禁均通过，才在现场配置中启用。
+
+小地图模型不能证明主画面检测已经完成，两类画面的目标尺度、背景和提示语义不同，需分别标注和验收。

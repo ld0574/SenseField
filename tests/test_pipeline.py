@@ -835,13 +835,63 @@ def test_profile_bundle_contains_android_templates(tmp_path: Path) -> None:
         tmp_path / "enemy.png").read_bytes()
 
 
-def test_bundled_android_profile_matches_unverified_desktop_defaults() -> None:
+def test_bundled_android_profile_matches_development_profile() -> None:
     root = Path(__file__).resolve().parents[1]
-    desktop = json.loads((root / "profiles/hok_android_unverified.json").read_text())
+    desktop = json.loads((root / "profiles/hok_minimap_development.json").read_text())
+    bundled = json.loads(
+        (root / "profiles/hok_minimap_development.android.json").read_text()
+    )
     android = json.loads((root / "android/app/src/main/assets/profile.json").read_text())
+    assert android == bundled
     for key in ("schema_version", "name", "profile_version", "game", "verified", "rois",
                 "detectors", "thresholds", "events"):
         assert android[key] == desktop[key]
+
+
+def test_bundled_android_profile_enables_only_experimental_yolox_minimap() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "android/app/src/main/assets/profile.json").read_text())
+    assert profile["verified"] is False
+    assert profile["detectors"] == {
+        "main_red_bar": False,
+        "minimap_template": False,
+        "minimap_red_ring": False,
+        "danger_ping_template": False,
+        "minimap_yolox": True,
+    }
+    assert profile["thresholds"]["minimap_yolox_input_size"] == 320
+    assert profile["thresholds"]["minimap_yolox_confidence"] == pytest.approx(0.29)
+    assert profile["thresholds"]["minimap_yolox_nms"] == pytest.approx(0.5)
+    assert profile["events"]["min_confidence"] == pytest.approx(0.29)
+
+
+def test_android_ncnn_assets_match_metadata_and_patched_focus() -> None:
+    root = Path(__file__).resolve().parents[1]
+    assets = root / "android/app/src/main/assets"
+    metadata = json.loads(
+        (assets / "minimap-yolox-nano-320.metadata.json").read_text(encoding="utf-8")
+    )
+    param = assets / "minimap-yolox-nano-320.param"
+    weights = assets / "minimap-yolox-nano-320.bin"
+
+    assert hashlib.sha256(param.read_bytes()).hexdigest() == (
+        metadata["runtime"]["param_sha256"]
+    )
+    assert hashlib.sha256(weights.read_bytes()).hexdigest() == (
+        metadata["runtime"]["bin_sha256"]
+    )
+    lines = param.read_text(encoding="utf-8").splitlines()
+    assert lines[:4] == [
+        "7767517",
+        "280 310",
+        "Input                    in0                      0 1 in0",
+        "YoloV5Focus              focus                    1 1 in0 9",
+    ]
+    assert metadata["release_status"].startswith("experimental")
+    notices = (assets / "THIRD_PARTY_NOTICES.txt").read_text(encoding="utf-8")
+    assert "Terms of the BSD 3-Clause License" in notices
+    assert "Apache License\n                           Version 2.0" in notices
+    assert "Copyright (c) 2021-2022 Megvii Inc." in notices
 
 
 def test_long_frame_gap_requires_fresh_confirmation(tmp_path: Path, native_library: Path) -> None:

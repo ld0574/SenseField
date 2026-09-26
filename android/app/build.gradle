@@ -1,3 +1,6 @@
+import groovy.json.JsonSlurper
+import java.security.MessageDigest
+
 plugins {
     id 'com.android.application'
 }
@@ -11,8 +14,8 @@ android {
         applicationId 'org.openrd.mapassist'
         minSdk 29
         targetSdk 35
-        versionCode 3
-        versionName '0.1.2'
+        versionCode 4
+        versionName '0.2.0'
         ndk {
             abiFilters 'arm64-v8a'
         }
@@ -40,4 +43,29 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+}
+
+def minimapModelDir = file('src/main/assets')
+def minimapModelMetadata = file("${minimapModelDir}/minimap-yolox-nano-320.metadata.json")
+
+tasks.register('verifyMinimapModelAssets') {
+    def param = file("${minimapModelDir}/minimap-yolox-nano-320.param")
+    def weights = file("${minimapModelDir}/minimap-yolox-nano-320.bin")
+    inputs.files(param, weights, minimapModelMetadata)
+    doLast {
+        def metadata = new JsonSlurper().parse(minimapModelMetadata)
+        [['param', param], ['bin', weights]].each { entry ->
+            def expected = metadata.runtime["${entry[0]}_sha256"]
+            def actual = MessageDigest.getInstance('SHA-256')
+                    .digest(entry[1].bytes).encodeHex().toString()
+            if (!(expected instanceof String) || actual != expected) {
+                throw new GradleException("Minimap model ${entry[0]} SHA-256 mismatch: "
+                        + "expected ${expected}, got ${actual}")
+            }
+        }
+    }
+}
+
+tasks.named('preBuild').configure {
+    dependsOn tasks.named('verifyMinimapModelAssets')
 }

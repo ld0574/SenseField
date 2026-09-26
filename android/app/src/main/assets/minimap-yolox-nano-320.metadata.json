@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "model": "YOLOX-Nano minimap enemy detector",
+  "input": [1, 3, 320, 320],
+  "output": [1, 2100, 6],
+  "classes": ["minimap_enemy"],
+  "runtime": {
+    "name": "ncnn",
+    "version": "20260526",
+    "param_sha256": "4649269cae16fef3b64cc366f123ba58259a756b79f7f55d6be20cd3903cae14",
+    "bin_sha256": "b3dbc844cc148aaa1a794e1bf03cb02a847b9c185215045c4b19b9ba4982236a"
+  },
+  "source": {
+    "checkpoint_sha256": "68b86a7a10c97d9b2c738f72b1f49a0b1dcc76d10751ee9f4e61380ee4fb93bc",
+    "onnx_sha256": "5072feba5a33dfa18c98ddf3bdf0b0d12bbd67453a599c690b7ef805c6288e32",
+    "torchscript_sha256": "83b0660eeadd69181fbb694c6ad853c5593b35503dce88c0c62dc6a41345381e"
+  },
+  "postprocess": {
+    "confidence": 0.29,
+    "nms_iou": 0.5,
+    "strides": [8, 16, 32]
+  },
+  "development_validation": {
+    "split": "video6 after it had entered model and threshold selection",
+    "precision": 0.905028,
+    "recall": 0.726457,
+    "f1": 0.80597
+  },
+  "holdout_check": {
+    "split": "video7 human-vs-bots, prediction-independent sampled frames",
+    "precision": 0.6557,
+    "recall": 0.6349,
+    "f1": 0.6452
+  },
+  "release_status": "experimental; independent real-match and physical-device gates have not passed"
+}

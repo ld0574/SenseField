@@ -6,6 +6,7 @@ import android.media.SoundPool;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.util.Log;
@@ -29,8 +30,22 @@ final class CuePlayer {
     private final Map<Integer, Integer> tones = new HashMap<>();
     private final Map<String, Integer> voices = new ConcurrentHashMap<>();
     private final Set<Integer> ready = ConcurrentHashMap.newKeySet();
+    private final Set<Integer> failed = ConcurrentHashMap.newKeySet();
     private TextToSpeech tts;
+    private PendingCue pendingTone;
     private volatile boolean closed;
+
+    private static final class PendingCue {
+        final int kind;
+        final int direction;
+        final long expiresAtMs;
+
+        PendingCue(int kind, int direction, long expiresAtMs) {
+            this.kind = kind;
+            this.direction = direction;
+            this.expiresAtMs = expiresAtMs;
+        }
+    }
 
     CuePlayer(Context context) {
         this.context = context.getApplicationContext();
@@ -40,16 +55,40 @@ final class CuePlayer {
                 .build();
         pool = new SoundPool.Builder().setMaxStreams(2).setAudioAttributes(attributes).build();
         pool.setOnLoadCompleteListener((soundPool, sampleId, status) -> {
-            if (status == 0) ready.add(sampleId);
+            synchronized (audioLock) {
+                if (closed) return;
+                if (status == 0) ready.add(sampleId);
+                else failed.add(sampleId);
+                PendingCue pending = pendingTone;
+                Integer pendingSample = pending == null ? null : tones.get(pending.kind);
+                if (pendingSample == null || pendingSample != sampleId) return;
+                pendingTone = null;
+                if (status != 0) {
+                    Log.w(TAG, "Could not load pending cue tone kind=" + pending.kind);
+                } else if (SystemClock.elapsedRealtime() <= pending.expiresAtMs) {
+                    boolean played = playToneLocked(pending.kind, pending.direction);
+                    Log.i(TAG, "Played cue after SoundPool load kind=" + pending.kind
+                            + " queued=" + played);
+                } else {
+                    Log.i(TAG, "Dropped expired cue while SoundPool was loading kind="
+                            + pending.kind);
+                }
+            }
         });
         try {
-            tones.put(1, pool.load(writeTone("main", 840).getAbsolutePath(), 1));
-            tones.put(2, pool.load(writeTone("map", 600).getAbsolutePath(), 1));
-            tones.put(3, pool.load(writeTone("ping", 1100).getAbsolutePath(), 1));
+            loadTone(1, "main", 840);
+            loadTone(2, "map", 600);
+            loadTone(3, "ping", 1100);
         } catch (IOException error) {
             Log.e(TAG, "Cannot prepare cue tones", error);
         }
         prepareVoices();
+    }
+
+    private void loadTone(int kind, String name, int frequency) throws IOException {
+        int sample = pool.load(writeTone(name, frequency).getAbsolutePath(), 1);
+        if (sample == 0) Log.e(TAG, "SoundPool rejected cue tone kind=" + kind);
+        else tones.put(kind, sample);
     }
 
     private File writeTone(String name, int frequency) throws IOException {
@@ -136,19 +175,35 @@ final class CuePlayer {
         return new File(context.getCacheDir(), "voice_" + id + ".wav");
     }
 
-    boolean play(int kind, int direction) {
+    private float volume() {
+        int volumePercent = GameProfile.settings(context).getInt("volume", 45);
+        return Math.max(0f, Math.min(1f, volumePercent / 100f));
+    }
+
+    private boolean playToneLocked(int kind, int direction) {
+        Integer tone = tones.get(kind);
+        if (tone == null || !ready.contains(tone)) return false;
+        float volume = volume();
+        float left = volume;
+        float right = volume;
+        if (direction == 1) right *= 0.12f;
+        if (direction == 2) left *= 0.12f;
+        return pool.play(tone, left, right, kind, 0, 1f) != 0;
+    }
+
+    boolean play(int kind, int direction, long expiresAtMs) {
         synchronized (audioLock) {
             if (closed) return false;
-            int volumePercent = GameProfile.settings(context).getInt("volume", 45);
-            float volume = Math.max(0f, Math.min(1f, volumePercent / 100f));
-            boolean queued = false;
+            // A newer event supersedes any cue that is still waiting for its
+            // tone sample to load.
+            pendingTone = null;
+            float volume = volume();
+            boolean queued = playToneLocked(kind, direction);
             Integer tone = tones.get(kind);
-            if (tone != null && ready.contains(tone)) {
-                float left = volume;
-                float right = volume;
-                if (direction == 1) right *= 0.12f;
-                if (direction == 2) left *= 0.12f;
-                queued = pool.play(tone, left, right, kind, 0, 1f) != 0;
+            if (!queued && tone != null && !ready.contains(tone) && !failed.contains(tone)
+                    && SystemClock.elapsedRealtime() <= expiresAtMs) {
+                pendingTone = new PendingCue(kind, direction, expiresAtMs);
+                queued = true;
             }
             String phrase = null;
             if (kind == 3) phrase = "danger";
@@ -170,7 +225,9 @@ final class CuePlayer {
             closed = true;
             if (tts != null) tts.shutdown();
             pool.release();
+            pendingTone = null;
             ready.clear();
+            failed.clear();
             voices.clear();
         }
     }

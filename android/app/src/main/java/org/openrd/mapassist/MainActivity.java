@@ -150,11 +150,12 @@ public final class MainActivity extends Activity {
     private void refreshStatus() {
         try {
             GameProfile profile = GameProfile.load(this);
-            int enabled = profile.flags[0] + profile.flags[1] + profile.flags[2] + profile.flags[3];
+            int enabled = profile.flags[0] + profile.flags[1] + profile.flags[2] + profile.flags[3]
+                    + (profile.minimapYolox ? 1 : 0);
             String lastCapture = GameProfile.settings(this).getString("last_capture_status", "");
             status.setText("配置：" + profile.name + " · " + profile.version
                     + (profile.verified ? "（已标定）" : "（未标定）")
-                    + "\n当前启用识别器：" + enabled + "/4"
+                    + "\n当前启用识别器：" + enabled + "/5"
                     + (lastCapture.isEmpty() ? "" : "\n上次截屏：" + lastCapture));
         } catch (IOException | JSONException error) {
             status.setText("配置读取失败：" + error.getMessage());

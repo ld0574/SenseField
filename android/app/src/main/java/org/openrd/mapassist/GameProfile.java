@@ -41,11 +41,17 @@ final class GameProfile {
     final float[] tuning;
     final int[] eventInts;
     final float minConfidence;
+    final boolean minimapYolox;
+    final int yoloxInputSize;
+    final float yoloxConfidence;
+    final float yoloxNms;
     final TemplateData enemyTemplate;
     final TemplateData pingTemplate;
 
     private GameProfile(String name, String version, boolean verified, float[] rois, int[] flags,
                         float[] tuning, int[] eventInts, float minConfidence,
+                        boolean minimapYolox, int yoloxInputSize,
+                        float yoloxConfidence, float yoloxNms,
                         TemplateData enemyTemplate, TemplateData pingTemplate) {
         this.name = name;
         this.version = version;
@@ -55,6 +61,10 @@ final class GameProfile {
         this.tuning = tuning;
         this.eventInts = eventInts;
         this.minConfidence = minConfidence;
+        this.minimapYolox = minimapYolox;
+        this.yoloxInputSize = yoloxInputSize;
+        this.yoloxConfidence = yoloxConfidence;
+        this.yoloxNms = yoloxNms;
         this.enemyTemplate = enemyTemplate;
         this.pingTemplate = pingTemplate;
     }
@@ -95,6 +105,12 @@ final class GameProfile {
         boolean enabled = verified || preferences.getBoolean("allow_experimental", false);
         JSONObject detectors = data.getJSONObject("detectors");
         JSONObject thresholds = data.getJSONObject("thresholds");
+        boolean minimapYolox = enabled && detectors.optBoolean("minimap_yolox", false);
+        double yoloxInputValue = thresholds.optDouble("minimap_yolox_input_size", 320);
+        int yoloxInputSize = (int) yoloxInputValue;
+        float yoloxConfidence = (float) thresholds.optDouble(
+                "minimap_yolox_confidence", 0.29);
+        float yoloxNms = (float) thresholds.optDouble("minimap_yolox_nms", 0.5);
         int[] flags = new int[] {
             enabled && detectors.getBoolean("main_red_bar") ? 1 : 0,
             enabled && detectors.getBoolean("minimap_template") ? 1 : 0,
@@ -124,6 +140,11 @@ final class GameProfile {
                 !finiteRange(tuning[2], 0f, 1f) ||
                 !finiteRange(tuning[3], 1f, 100f) ||
                 !finiteRange(tuning[4], 0f, 1f) ||
+                !Double.isFinite(yoloxInputValue) || yoloxInputValue != yoloxInputSize ||
+                // The packaged pnnx graph has fixed 320x320 reshape dimensions.
+                yoloxInputSize != 320 ||
+                !finiteRange(yoloxConfidence, 0f, 1f) ||
+                !finiteRange(yoloxNms, 0f, 1f) ||
                 !finiteRange(minConfidence, 0f, 1f) ||
                 eventInts[0] < 0 || eventInts[0] > 5000 ||
                 eventInts[1] < 0 || eventInts[1] > 60000 ||
@@ -143,7 +164,8 @@ final class GameProfile {
         }
         return new GameProfile(data.optString("name", "unnamed"),
                 data.optString("profile_version", "unversioned"), verified, rois, flags,
-                tuning, eventInts, minConfidence, enemy, ping);
+                tuning, eventInts, minConfidence, minimapYolox, yoloxInputSize,
+                yoloxConfidence, yoloxNms, enemy, ping);
     }
 
     private static boolean finiteRange(float value, float min, float max) {

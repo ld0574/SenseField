@@ -97,7 +97,6 @@ public final class CaptureService extends Service {
         workerThread = new HandlerThread("MapAssistFrames");
         workerThread.start();
         worker = new Handler(workerThread.getLooper());
-        cuePlayer = new CuePlayer(this);
     }
 
     @Override
@@ -124,12 +123,14 @@ public final class CaptureService extends Service {
         if (!ACTION_START.equals(action)) return START_NOT_STICKY;
         int resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED);
         Intent resultData = intent.getParcelableExtra(EXTRA_RESULT_DATA);
-        if (resultCode == Activity.RESULT_OK && resultData != null) startCapture(resultCode, resultData);
+        if (resultCode == Activity.RESULT_OK && resultData != null) {
+            startCapture(resultCode, resultData, startId);
+        }
         else stopWithStatus("截屏授权无效，请重新授权");
         return START_NOT_STICKY;
     }
 
-    private void startCapture(int resultCode, Intent resultData) {
+    private void startCapture(int resultCode, Intent resultData, int startId) {
         synchronized (processingLock) {
             releaseCapture();
             stopping = false;
@@ -147,12 +148,18 @@ public final class CaptureService extends Service {
             lastFrameLandscape = false;
             GameProfile.settings(this).edit().remove("last_capture_status").apply();
             try {
+                // startForegroundService() has a short system deadline. Enter
+                // foreground state before loading the model or preparing audio.
+                startForeground(NOTIFICATION_ID, notification("正在准备截屏"),
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
+                if (cuePlayer == null) cuePlayer = new CuePlayer(this);
                 GameProfile profile = GameProfile.load(this);
                 profileName = profile.name + " · " + profile.version;
                 maxObservationAgeMs = profile.eventInts[0];
                 GameProfile.TemplateData enemy = profile.enemyTemplate;
                 GameProfile.TemplateData ping = profile.pingTemplate;
                 nativeSession = NativeBridge.nativeCreate(
+                        getAssets(),
                         profile.rois, profile.flags, profile.tuning,
                         profile.eventInts, profile.minConfidence,
                         enemy == null ? null : enemy.rgba,
@@ -160,13 +167,13 @@ public final class CaptureService extends Service {
                         enemy == null ? 0 : enemy.height,
                         ping == null ? null : ping.rgba,
                         ping == null ? 0 : ping.width,
-                        ping == null ? 0 : ping.height);
+                        ping == null ? 0 : ping.height,
+                        profile.minimapYolox, profile.yoloxInputSize,
+                        profile.yoloxConfidence, profile.yoloxNms);
                 if (nativeSession == 0) throw new IllegalStateException("Native recognizer rejected profile");
 
                 // Android 14+ requires the mediaProjection foreground type before
                 // obtaining the one-use token from the consent result.
-                startForeground(NOTIFICATION_ID, notification("正在准备截屏"),
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
                 MediaProjectionManager manager = getSystemService(MediaProjectionManager.class);
                 projection = manager.getMediaProjection(resultCode, resultData);
                 if (projection == null) throw new IllegalStateException("Screen capture was not granted");
@@ -180,7 +187,9 @@ public final class CaptureService extends Service {
                         Log.i(TAG, "MediaProjection ended by Android or the user");
                         GameProfile.settings(CaptureService.this).edit()
                                 .putString("last_capture_status", "系统截屏授权已结束").apply();
-                        stopSelf();
+                        // Do not let a delayed callback from an older capture
+                        // session stop a newer start command.
+                        stopSelfResult(startId);
                     }
                 };
                 projection.registerCallback(projectionCallback, worker);
@@ -294,7 +303,9 @@ public final class CaptureService extends Service {
                                 Log.i(TAG, "Dropped stale cue kind=" + result[0]
                                         + " frameAgeMs=" + frameAgeMs);
                             } else {
-                                boolean audioQueued = cuePlayer.play(result[0], result[1]);
+                                boolean audioQueued = cuePlayer.play(
+                                        result[0], result[1],
+                                        observedAtMs + maxObservationAgeMs);
                                 Log.i(TAG, "Cue kind=" + result[0] + " direction=" + result[1]
                                         + " audioQueued=" + audioQueued
                                         + " frameAgeMs=" + frameAgeMs
@@ -382,9 +393,13 @@ public final class CaptureService extends Service {
 
     private void stopWithStatus(String status) {
         synchronized (processingLock) {
-            if (stopping) return;
-            stopping = true;
-            GameProfile.settings(this).edit().putString("last_capture_status", status).apply();
+            if (!stopping) {
+                stopping = true;
+                // Keep the first reason, but never let it prevent a later
+                // service command from completing shutdown.
+                GameProfile.settings(this).edit()
+                        .putString("last_capture_status", status).apply();
+            }
         }
         stopSelf();
     }
@@ -425,7 +440,7 @@ public final class CaptureService extends Service {
         // make the foreground-service lifecycle explicit for projection and
         // system initiated stops as well.
         stopForeground(STOP_FOREGROUND_REMOVE);
-        cuePlayer.close();
+        if (cuePlayer != null) cuePlayer.close();
         workerThread.quitSafely();
         super.onDestroy();
     }
