@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import random
 import subprocess
@@ -56,6 +57,98 @@ def _finish(tp: int, fp: int, fn: int) -> dict[str, Any]:
         "recall": round(recall, 6) if recall is not None else None,
         "f1": round(f1, 6) if f1 is not None else None,
     }
+
+
+def _metric_value(metric: dict[str, Any], name: str) -> float:
+    """Return a sortable metric value, treating an undefined metric as zero."""
+    value = metric.get(name)
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0.0
+
+
+def _selection_key(metric: dict[str, Any], minimum_precision: float) -> tuple[float, ...]:
+    """Return the explicit priority used for thresholds and checkpoints."""
+    if _metric_value(metric, "precision") >= minimum_precision:
+        return (
+            1.0,
+            _metric_value(metric, "recall"),
+            _metric_value(metric, "f1"),
+            _metric_value(metric, "precision"),
+        )
+    return (0.0, _metric_value(metric, "f1"), _metric_value(metric, "recall"))
+
+
+def _selection_policy(minimum_precision: float) -> tuple[str, str]:
+    """Describe the precision-gated selection policy and its metric ordering."""
+    threshold = f"{minimum_precision:g}"
+    return (
+        f"highest_recall_with_precision_at_least_{threshold}",
+        "recall_then_f1_then_precision_if_precision_meets_minimum_else_f1_then_recall",
+    )
+
+
+def _select_validation_metric(
+    results: list[dict[str, Any]], minimum_precision: float
+) -> tuple[dict[str, Any], str, str]:
+    """Select a confidence result without importing torch or YOLOX."""
+    _validate_range("minimum-precision", minimum_precision, 0.0, 1.0)
+    if not results:
+        raise ValueError("validation results must not be empty")
+    eligible = [
+        item for item in results
+        if _metric_value(item, "precision") >= minimum_precision
+    ]
+    if eligible:
+        selected = max(eligible, key=lambda item: _selection_key(item, minimum_precision))
+        policy, metric = _selection_policy(minimum_precision)
+        return selected, policy, metric
+    selected = max(results, key=lambda item: _selection_key(item, minimum_precision))
+    threshold = f"{minimum_precision:g}"
+    return (
+        selected,
+        f"highest_f1_no_threshold_reached_{threshold}_precision",
+        "f1_then_recall_when_no_precision_threshold_is_reached",
+    )
+
+
+def _is_better_validation_metric(
+    candidate: dict[str, Any], current: dict[str, Any] | None, minimum_precision: float
+) -> bool:
+    """Compare epoch selections using the same ordering as threshold selection."""
+    return current is None or _selection_key(candidate, minimum_precision) > _selection_key(
+        current, minimum_precision
+    )
+
+
+def _validate_range(name: str, value: float, lower: float, upper: float | None = None) -> None:
+    if not math.isfinite(value) or value < lower or (upper is not None and value > upper):
+        limit = f"{lower:g}..{upper:g}" if upper is not None else f">={lower:g}"
+        raise ValueError(f"{name} must be finite and in {limit}")
+
+
+def _validate_training_args(args: argparse.Namespace) -> None:
+    """Validate all CLI ranges before importing the heavyweight training stack."""
+    if (args.epochs < 1 or args.batch_size < 1 or args.eval_every < 1 or
+            args.log_every < 1 or args.input_size < 64 or args.lr_scale <= 0 or
+            args.input_size % 32 != 0 or args.early_stop_patience < 0 or
+            args.early_stop_min_epoch < 0):
+        raise ValueError("counts, input size, and lr-scale must be positive")
+    if args.early_stop_min_epoch > args.epochs:
+        raise ValueError("--early-stop-min-epoch cannot exceed --epochs")
+    for name in ("mosaic_prob", "flip_prob", "hsv_prob"):
+        _validate_range(name.replace("_", "-"), getattr(args, name), 0.0, 1.0)
+    _validate_range("degrees", args.degrees, 0.0, 180.0)
+    _validate_range("translate", args.translate, 0.0, 1.0)
+    _validate_range("shear", args.shear, 0.0, 180.0)
+    _validate_range("mosaic-scale-min", args.mosaic_scale_min, 0.0)
+    _validate_range("mosaic-scale-max", args.mosaic_scale_max, 0.0)
+    if args.mosaic_scale_min == 0 or args.mosaic_scale_max == 0:
+        raise ValueError("mosaic scale values must be greater than zero")
+    if args.mosaic_scale_min > args.mosaic_scale_max:
+        raise ValueError("mosaic-scale-min cannot exceed mosaic-scale-max")
+    _validate_range("nms-threshold", args.nms_threshold, 0.0, 1.0)
+    _validate_range("minimum-precision", args.minimum_precision, 0.0, 1.0)
+    if args.no_aug_epochs is not None and not 0 <= args.no_aug_epochs < args.epochs:
+        raise ValueError("no-aug-epochs must be between 0 and epochs - 1")
 
 
 def _device(torch: Any, value: str) -> Any:
@@ -129,7 +222,8 @@ def _validation_predictions(model: Any, device: Any, data_dir: Path,
 
 
 def evaluate(model: Any, device: Any, data_dir: Path,
-             input_size: tuple[int, int], nms_threshold: float) -> dict[str, Any]:
+             input_size: tuple[int, int], nms_threshold: float,
+             minimum_precision: float = 0.9) -> dict[str, Any]:
     predictions, truths = _validation_predictions(
         model, device, data_dir, input_size, nms_threshold
     )
@@ -145,16 +239,16 @@ def evaluate(model: Any, device: Any, data_dir: Path,
             fn += len(ground_truth) - matched
         result = {"confidence": threshold, **_finish(tp, fp, fn)}
         results.append(result)
-    eligible = [item for item in results if (item["precision"] or 0) >= 0.9]
-    if eligible:
-        selected = max(eligible, key=lambda item: (item["recall"] or 0,
-                                                   item["f1"] or 0))
-        policy = "highest_recall_with_precision_at_least_0.9"
-    else:
-        selected = max(results, key=lambda item: item["f1"] or 0)
-        policy = "highest_f1_no_threshold_reached_0.9_precision"
-    return {"iou_threshold": 0.5, "selection_policy": policy,
-            "selected": selected, "thresholds": results}
+    _validate_range("minimum-precision", minimum_precision, 0.0, 1.0)
+    selected, policy, metric = _select_validation_metric(results, minimum_precision)
+    return {
+        "iou_threshold": 0.5,
+        "minimum_precision": minimum_precision,
+        "selection_policy": policy,
+        "selection_metric": metric,
+        "selected": selected,
+        "thresholds": results,
+    }
 
 
 def main() -> None:
@@ -167,6 +261,15 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--input-size", type=int, default=256)
     parser.add_argument("--mosaic-prob", type=float, default=0.5)
+    parser.add_argument("--mosaic-scale-min", type=float, default=0.7)
+    parser.add_argument("--mosaic-scale-max", type=float, default=1.3)
+    parser.add_argument("--hsv-prob", type=float, default=0.8)
+    parser.add_argument("--flip-prob", type=float, default=0.5)
+    parser.add_argument("--degrees", type=float, default=5.0)
+    parser.add_argument("--translate", type=float, default=0.08)
+    parser.add_argument("--shear", type=float, default=1.0)
+    parser.add_argument("--nms-threshold", type=float, default=0.5)
+    parser.add_argument("--minimum-precision", type=float, default=0.9)
     parser.add_argument("--no-aug-epochs", type=int)
     parser.add_argument(
         "--lr-scale", type=float, default=1.0,
@@ -176,7 +279,7 @@ def main() -> None:
     parser.add_argument("--log-every", type=int, default=5)
     parser.add_argument(
         "--early-stop-patience", type=int, default=0,
-        help="Stop after this many validation checkpoints without a better selected F1; 0 disables",
+        help="Stop after this many validation checkpoints without a better selected metric; 0 disables",
     )
     parser.add_argument(
         "--early-stop-min-epoch", type=int, default=0,
@@ -186,17 +289,10 @@ def main() -> None:
     parser.add_argument("--device", default="auto")
     parser.add_argument("--seed", type=int, default=20260926)
     args = parser.parse_args()
-    if (args.epochs < 1 or args.batch_size < 1 or args.eval_every < 1 or
-            args.log_every < 1 or args.input_size < 64 or args.lr_scale <= 0 or
-            args.input_size % 32 != 0 or args.early_stop_patience < 0 or
-            args.early_stop_min_epoch < 0):
-        parser.error("counts, input size, and lr-scale must be positive")
-    if args.early_stop_min_epoch > args.epochs:
-        parser.error("--early-stop-min-epoch cannot exceed --epochs")
-    if not 0 <= args.mosaic_prob <= 1:
-        parser.error("mosaic-prob must be between 0 and 1")
-    if args.no_aug_epochs is not None and not 0 <= args.no_aug_epochs < args.epochs:
-        parser.error("no-aug-epochs must be between 0 and epochs - 1")
+    try:
+        _validate_training_args(args)
+    except ValueError as error:
+        parser.error(str(error))
 
     root = Path(__file__).resolve().parents[1]
     yolox_root = args.yolox_root.resolve()
@@ -213,7 +309,15 @@ def main() -> None:
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
+    cuda_seeded = bool(torch.cuda.is_available())
+    if cuda_seeded:
+        torch.cuda.manual_seed_all(args.seed)
     device = _device(torch, args.device)
+    mps_seeded = False
+    if (device.type == "mps" and hasattr(torch, "mps") and
+            hasattr(torch.mps, "manual_seed")):
+        torch.mps.manual_seed(args.seed)
+        mps_seeded = True
     exp_path = root / "training/yolox_nano_minimap.py"
     exp = get_exp(str(exp_path), None)
     exp.max_epoch = args.epochs
@@ -221,6 +325,14 @@ def main() -> None:
     exp.test_size = exp.input_size
     exp.random_size = (args.input_size // 32, args.input_size // 32)
     exp.mosaic_prob = args.mosaic_prob
+    exp.mosaic_scale = (args.mosaic_scale_min, args.mosaic_scale_max)
+    exp.hsv_prob = args.hsv_prob
+    exp.flip_prob = args.flip_prob
+    exp.degrees = args.degrees
+    exp.translate = args.translate
+    exp.shear = args.shear
+    exp.nmsthre = args.nms_threshold
+    exp.seed = args.seed
     exp.basic_lr_per_img *= args.lr_scale
     exp.no_aug_epochs = (args.no_aug_epochs if args.no_aug_epochs is not None else
                          min(exp.no_aug_epochs, max(1, args.epochs // 5)))
@@ -255,19 +367,61 @@ def main() -> None:
         ),
         "device": str(device),
         "seed": args.seed,
+        "seed_provenance": {
+            "python_random_seed": args.seed,
+            "numpy_random_seed": args.seed,
+            "torch_manual_seed": args.seed,
+            "torch_cuda_manual_seed_all": args.seed if cuda_seeded else None,
+            "torch_mps_manual_seed": args.seed if mps_seeded else None,
+        },
+        "determinism": {
+            "torch_deterministic_algorithms": bool(
+                getattr(torch, "are_deterministic_algorithms_enabled", lambda: False)()
+            ),
+            "cudnn_deterministic": bool(torch.backends.cudnn.deterministic),
+            "cudnn_benchmark": bool(torch.backends.cudnn.benchmark),
+            "forced": False,
+        },
         "epochs": args.epochs,
         "batch_size": args.batch_size,
         "input_size": list(exp.input_size),
         "mosaic_prob": exp.mosaic_prob,
+        "augmentation": {
+            "mosaic_prob": exp.mosaic_prob,
+            "mosaic_scale": list(exp.mosaic_scale),
+            "hsv_prob": exp.hsv_prob,
+            "flip_prob": exp.flip_prob,
+            "degrees": exp.degrees,
+            "translate": exp.translate,
+            "shear": exp.shear,
+        },
+        "nms_threshold": exp.nmsthre,
+        "minimum_precision": args.minimum_precision,
+        "selection": {
+            "minimum_precision": args.minimum_precision,
+            "policy": (
+                "precision-gated recall, then f1, then precision; "
+                "otherwise f1, then recall"
+            ),
+            "metric": (
+                "recall_then_f1_then_precision_if_precision_meets_minimum_else_f1_then_recall"
+            ),
+        },
         "lr_scale": args.lr_scale,
         "basic_lr_per_img": exp.basic_lr_per_img,
         "no_aug_epochs": exp.no_aug_epochs,
         "early_stopping": {
             "patience_checkpoints": args.early_stop_patience,
             "minimum_epoch": args.early_stop_min_epoch,
-            "selection_metric": "validation selected F1",
+            "selection_metric": "validation selection policy metric",
         },
         "yolox_revision": _git_revision(yolox_root),
+        "provenance": {
+            "trainer": {
+                "path": str(Path(__file__).resolve()),
+                "sha256": _sha256(Path(__file__).resolve()),
+            },
+        },
         "experiment": {"path": str(exp_path), "sha256": _sha256(exp_path)},
         "train_annotations_sha256": _sha256(
             data_dir / "annotations/instances_train2017.json"
@@ -280,7 +434,7 @@ def main() -> None:
                        if args.pretrained is not None else None),
         "history": [],
     }
-    best_f1 = -1.0
+    best_selected: dict[str, Any] | None = None
     best_epoch = None
     evaluations_without_improvement = 0
     stopped_early = False
@@ -332,12 +486,15 @@ def main() -> None:
                            epoch + 1 == args.epochs or no_aug and epoch + 1 == args.epochs - exp.no_aug_epochs)
         if should_evaluate:
             validation = evaluate(
-                ema.ema, device, data_dir, exp.test_size, exp.nmsthre
+                ema.ema, device, data_dir, exp.test_size, exp.nmsthre,
+                args.minimum_precision,
             )
             record["validation"] = validation
-            selected_f1 = validation["selected"]["f1"] or 0.0
-            if selected_f1 > best_f1:
-                best_f1 = selected_f1
+            selected = validation["selected"]
+            if _is_better_validation_metric(
+                selected, best_selected, args.minimum_precision
+            ):
+                best_selected = selected
                 best_epoch = epoch + 1
                 evaluations_without_improvement = 0
                 torch.save({"model": ema.ema.state_dict(), "epoch": epoch + 1,
@@ -366,7 +523,9 @@ def main() -> None:
             )
             break
 
+    best_f1 = _metric_value(best_selected, "f1") if best_selected is not None else -1.0
     metadata["best_validation_f1"] = round(best_f1, 6)
+    metadata["best_validation_metric"] = best_selected
     metadata["best_epoch"] = best_epoch
     metadata["completed_epochs"] = len(metadata["history"])
     metadata["stopped_early"] = stopped_early
@@ -374,8 +533,12 @@ def main() -> None:
     (output / "metrics.json").write_text(
         json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    print(json.dumps({"output": str(output), "best_validation_f1": best_f1,
-                      "elapsed_seconds": metadata["elapsed_seconds"]}, indent=2))
+    print(json.dumps({
+        "output": str(output),
+        "best_epoch": best_epoch,
+        "best_validation_metric": best_selected,
+        "elapsed_seconds": metadata["elapsed_seconds"],
+    }, indent=2))
 
 
 if __name__ == "__main__":

@@ -46,6 +46,7 @@ keystore.properties
 data/private/
 data/raw/
 video/
+validation/private/
 *.mp4
 *.mov
 *.mkv

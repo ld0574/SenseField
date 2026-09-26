@@ -16,6 +16,7 @@ FORBIDDEN_PREFIXES = (
     "data/private/",
     "data/raw/",
     "video/",
+    "validation/private/",
     "build/",
     "android/.gradle/",
     "android/.idea/",
@@ -116,7 +117,7 @@ def workspace_candidates(root: Path) -> list[str]:
         parts = set(path.relative_to(root).parts)
         if parts & skip_dirs:
             continue
-        if rel.startswith(("data/private/", "data/raw/")):
+        if rel.startswith(("data/private/", "data/raw/", "validation/private/")):
             continue
         if rel.startswith("docs/") and rel not in allowed_docs:
             continue
