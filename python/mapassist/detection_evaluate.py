@@ -353,11 +353,11 @@ def evaluate_review(review_manifest: Path, iou_threshold: float = 0.5,
                 elif truth_direction is not None:
                     directed.append((prediction, ground_truth))
             correct_directions = sum(
-                predicted_directions[prediction] == _direction(truth[ground_truth], roi)
+                predicted_directions[prediction] == _direction(truth[ground_truth], match_roi)
                 for prediction, ground_truth in directed
             )
             for prediction, ground_truth in directed:
-                truth_direction = _direction(truth[ground_truth], roi)
+                truth_direction = _direction(truth[ground_truth], match_roi)
                 if predicted_directions[prediction] != truth_direction:
                     direction_failures.append({
                         "match_id": match_id,

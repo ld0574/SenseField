@@ -71,11 +71,12 @@ python -m pip install -e '.[test]'
 python -m pytest -q
 ```
 
-启动统一标注网站（页面内切换新密集队列和已完成队列）：
+启动统一标注网站（页面内切换六场密集队列、video7 留出队列和历史队列）：
 
 ```sh
 PYTHONPATH=python python3 -m mapassist.annotation_server \
   --dataset dense-v1-6=data/private/minimap-review-v4-dense \
+  --dataset holdout-video7=data/private/minimap-video7-holdout-v1 \
   --dataset reviewed-v1-5=data/private/minimap-review-v3 \
   --dataset reviewed-v6=data/private/holdout-video6/blind-review \
   --host 127.0.0.1 --port 8765 --open

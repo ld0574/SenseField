@@ -14,7 +14,9 @@ from PIL import Image, ImageDraw
 from mapassist.evaluate import evaluate, read_labels, read_predictions
 from mapassist.bundle_profile import bundle
 from mapassist.annotation_server import AnnotationStore, ConflictError, _dataset_specs
+from mapassist.apply_label_shards import apply as apply_label_shards
 from mapassist.blind_review_dataset import _sample_indices
+from mapassist.combine_detection_manifests import combine as combine_detection_manifests
 from mapassist.detection_dataset import export as export_detection_dataset
 from mapassist.detection_evaluate import evaluate_review as evaluate_detection_review
 from mapassist.detection_evaluate import _match_boxes
@@ -221,6 +223,78 @@ def test_uniform_review_sampling_spans_multiple_gameplay_intervals() -> None:
                for value in timestamps)
 
 
+def test_apply_label_shards_updates_manifest_and_annotation_database(
+    annotation_dataset: Path,
+) -> None:
+    manifest = annotation_dataset / "review-manifest.json"
+    data = json.loads(manifest.read_text())
+    data["review_mode"] = "manual"
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    AnnotationStore(annotation_dataset, lease_seconds=60)
+    samples = data["matches"][0]["samples"]
+    shard = annotation_dataset / "labels.json"
+    shard.write_text(json.dumps({
+        "schema_version": 1,
+        "annotator": "test-agent",
+        "matches": [{
+            "id": "match-01",
+            "samples": [
+                {"at_ms": samples[0]["at_ms"], "review_status": "corrected",
+                 "reviewed_boxes": [[0.1, 0.1, 0.1, 0.1]]},
+                {"at_ms": samples[1]["at_ms"], "review_status": "negative",
+                 "reviewed_boxes": None},
+                {"at_ms": samples[2]["at_ms"], "review_status": "excluded",
+                 "reviewed_boxes": None},
+            ],
+        }],
+    }), encoding="utf-8")
+
+    result = apply_label_shards(manifest, [shard])
+
+    assert result["samples"] == 3
+    assert result["boxes"] == 1
+    store = AnnotationStore(annotation_dataset, lease_seconds=60)
+    assert store.stats()["completed"] == 3
+    statuses = [sample["review_status"]
+                for sample in json.loads(manifest.read_text())["matches"][0]["samples"]]
+    assert statuses == ["corrected", "negative", "excluded"]
+
+
+def test_apply_label_shards_rolls_back_database_when_manifest_replace_fails(
+    annotation_dataset: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = annotation_dataset / "review-manifest.json"
+    data = json.loads(manifest.read_text())
+    data["review_mode"] = "manual"
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    original = manifest.read_text()
+    AnnotationStore(annotation_dataset, lease_seconds=60)
+    samples = data["matches"][0]["samples"]
+    shard = annotation_dataset / "labels.json"
+    shard.write_text(json.dumps({
+        "schema_version": 1,
+        "annotator": "test-agent",
+        "matches": [{
+            "id": "match-01",
+            "samples": [
+                {"at_ms": sample["at_ms"], "review_status": "negative",
+                 "reviewed_boxes": None}
+                for sample in samples
+            ],
+        }],
+    }), encoding="utf-8")
+
+    def fail_replace(_source: object, _destination: object) -> None:
+        raise OSError("simulated manifest replace failure")
+
+    monkeypatch.setattr("mapassist.apply_label_shards.os.replace", fail_replace)
+    with pytest.raises(OSError, match="simulated manifest replace failure"):
+        apply_label_shards(manifest, [shard])
+
+    assert manifest.read_text() == original
+    assert AnnotationStore(annotation_dataset, lease_seconds=60).stats()["completed"] == 0
+
+
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg is needed for context frames")
 def test_annotation_store_extracts_cached_temporal_context(annotation_dataset: Path) -> None:
     video = annotation_dataset / "private.mp4"
@@ -372,6 +446,33 @@ def test_detection_review_joins_committed_blind_predictions(tmp_path: Path) -> N
     predictions.write_text(predictions.read_text() + "\n", encoding="utf-8")
     with pytest.raises(ValueError, match="frozen commitment"):
         evaluate_detection_review(manifest, predictions=predictions)
+
+
+def test_detection_review_uses_match_roi_for_direction_metrics(tmp_path: Path) -> None:
+    """Per-match ROI overrides must also control ground-truth direction labels."""
+    manifest = tmp_path / "review.json"
+    manifest.write_text(json.dumps({
+        "schema_version": 1,
+        "kind": "minimap_enemy",
+        # The top-level ROI is intentionally different from the match ROI.
+        "roi": [0.0, 0.0, 1.0, 1.0],
+        "matches": [{
+            "id": "phone-portrait-crop", "split": "val",
+            "roi": [0.5, 0.0, 0.5, 1.0],
+            "samples": [{
+                "at_ms": 1000, "selection": "cue", "review_status": "corrected",
+                "suggested_boxes": [[0.6, 0.45, 0.1, 0.1]],
+                "reviewed_boxes": [[0.6, 0.45, 0.1, 0.1]],
+                # Relative to the match ROI center (x=.75), this is left.
+                "directions": ["left"],
+            }],
+        }],
+    }), encoding="utf-8")
+
+    report = evaluate_detection_review(manifest)
+
+    assert report["overall"]["direction_accuracy"] == 1.0
+    assert report["direction_failures"] == []
 
 
 def test_detection_box_matching_finds_maximum_cardinality() -> None:
@@ -589,6 +690,59 @@ def test_merge_detection_manifests_requires_explicit_unique_recordings(
 
     with pytest.raises(ValueError, match="did not match"):
         merge_detection_manifests([first], tmp_path / "bad.json", {"missing": "train"})
+
+
+def test_combine_detection_manifests_adds_frames_for_same_recording(
+    tmp_path: Path,
+) -> None:
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"private fixture")
+    paths = [tmp_path / "first.json", tmp_path / "second.json"]
+    for path, timestamp in zip(paths, (100, 200)):
+        path.write_text(json.dumps({
+            "schema_version": 1,
+            "category": "minimap_enemy",
+            "roi": [0.0, 0.0, 0.25, 0.5],
+            "matches": [{
+                "id": "video1", "video": video.name, "split": "train",
+                "frames": [{"at_ms": timestamp, "boxes": []}],
+            }],
+        }), encoding="utf-8")
+
+    output = tmp_path / "combined.json"
+    summary = combine_detection_manifests(paths, output)
+
+    assert summary == {
+        "matches": 1, "frames": 2, "boxes": 0,
+        "splits": {"test": 0, "train": 2, "val": 0},
+    }
+    match = json.loads(output.read_text())["matches"][0]
+    assert [frame["at_ms"] for frame in match["frames"]] == [100, 200]
+
+
+def test_combine_detection_manifests_normalizes_missing_category(
+    tmp_path: Path,
+) -> None:
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"private fixture")
+    paths = [tmp_path / "implicit.json", tmp_path / "explicit.json"]
+    for index, path in enumerate(paths):
+        document = {
+            "schema_version": 1,
+            "matches": [{
+                "id": "video1", "video": video.name, "split": "train",
+                "roi": [0.0, 0.0, 0.25, 0.5],
+                "frames": [{"at_ms": 100 + index, "boxes": []}],
+            }],
+        }
+        if index:
+            document["category"] = "main_enemy"
+        path.write_text(json.dumps(document), encoding="utf-8")
+
+    output = tmp_path / "combined.json"
+    combine_detection_manifests(paths, output)
+
+    assert json.loads(output.read_text())["category"] == "main_enemy"
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),

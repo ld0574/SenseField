@@ -17,6 +17,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from mapassist.detection_evaluate import _match_boxes
+
 
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -36,34 +38,9 @@ def _git_revision(path: Path) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
-def _iou(left: list[float], right: list[float]) -> float:
-    lx, ly, lw, lh = left
-    rx, ry, rw, rh = right
-    x0 = max(lx, rx)
-    y0 = max(ly, ry)
-    x1 = min(lx + lw, rx + rw)
-    y1 = min(ly + lh, ry + rh)
-    intersection = max(0.0, x1 - x0) * max(0.0, y1 - y0)
-    union = lw * lh + rw * rh - intersection
-    return intersection / union if union > 0 else 0.0
-
-
 def _match(predictions: list[list[float]], truths: list[list[float]],
            threshold: float = 0.5) -> int:
-    edges = sorted(
-        (_iou(prediction, truth), prediction_index, truth_index)
-        for prediction_index, prediction in enumerate(predictions)
-        for truth_index, truth in enumerate(truths)
-        if _iou(prediction, truth) >= threshold
-    )
-    used_predictions: set[int] = set()
-    used_truths: set[int] = set()
-    for _, prediction_index, truth_index in reversed(edges):
-        if prediction_index in used_predictions or truth_index in used_truths:
-            continue
-        used_predictions.add(prediction_index)
-        used_truths.add(truth_index)
-    return len(used_predictions)
+    return len(_match_boxes(predictions, truths, threshold))
 
 
 def _finish(tp: int, fp: int, fn: int) -> dict[str, Any]:
@@ -91,17 +68,25 @@ def _device(torch: Any, value: str) -> Any:
     return torch.device("cpu")
 
 
-def _validation_predictions(model: Any, device: Any, data_dir: Path,
-                            input_size: tuple[int, int], nms_threshold: float
-                            ) -> tuple[dict[int, list[tuple[float, list[float]]]],
-                                       dict[int, list[list[float]]]]:
+def _split_predictions(model: Any, device: Any, data_dir: Path,
+                       input_size: tuple[int, int], nms_threshold: float,
+                       split: str = "val", pre_filter_confidence: float = 0.01
+                       ) -> tuple[dict[int, list[tuple[float, list[float]]]],
+                                  dict[int, list[list[float]]]]:
     import cv2
     import torch
     from yolox.data import ValTransform
     from yolox.utils import postprocess
 
+    if split not in {"train", "val", "test"}:
+        raise ValueError(f"Unsupported COCO split: {split}")
+    if not 0 <= pre_filter_confidence <= 1:
+        raise ValueError("pre_filter_confidence must be between 0 and 1")
+    split_name = f"{split}2017"
     annotation = json.loads(
-        (data_dir / "annotations/instances_val2017.json").read_text(encoding="utf-8")
+        (data_dir / "annotations" / f"instances_{split_name}.json").read_text(
+            encoding="utf-8"
+        )
     )
     truths: dict[int, list[list[float]]] = {image["id"]: [] for image in annotation["images"]}
     for item in annotation["annotations"]:
@@ -111,7 +96,7 @@ def _validation_predictions(model: Any, device: Any, data_dir: Path,
     model.eval()
     with torch.inference_mode():
         for image_info in annotation["images"]:
-            image = cv2.imread(str(data_dir / "val2017" / image_info["file_name"]))
+            image = cv2.imread(str(data_dir / split_name / image_info["file_name"]))
             if image is None:
                 raise FileNotFoundError(image_info["file_name"])
             height, width = image.shape[:2]
@@ -120,7 +105,7 @@ def _validation_predictions(model: Any, device: Any, data_dir: Path,
             tensor = torch.from_numpy(transformed).unsqueeze(0).float().to(device)
             raw = model(tensor).detach().cpu()
             detected = postprocess(
-                raw, 1, conf_thre=0.01, nms_thre=nms_threshold,
+                raw, 1, conf_thre=pre_filter_confidence, nms_thre=nms_threshold,
                 class_agnostic=True,
             )[0]
             found = []
@@ -134,6 +119,13 @@ def _validation_predictions(model: Any, device: Any, data_dir: Path,
                     ))
             predictions[image_info["id"]] = found
     return predictions, truths
+
+
+def _validation_predictions(model: Any, device: Any, data_dir: Path,
+                            input_size: tuple[int, int], nms_threshold: float
+                            ) -> tuple[dict[int, list[tuple[float, list[float]]]],
+                                       dict[int, list[list[float]]]]:
+    return _split_predictions(model, device, data_dir, input_size, nms_threshold, "val")
 
 
 def evaluate(model: Any, device: Any, data_dir: Path,
@@ -182,14 +174,25 @@ def main() -> None:
     )
     parser.add_argument("--eval-every", type=int, default=5)
     parser.add_argument("--log-every", type=int, default=5)
+    parser.add_argument(
+        "--early-stop-patience", type=int, default=0,
+        help="Stop after this many validation checkpoints without a better selected F1; 0 disables",
+    )
+    parser.add_argument(
+        "--early-stop-min-epoch", type=int, default=0,
+        help="Do not early-stop before this epoch",
+    )
     parser.add_argument("--no-cache", action="store_true")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--seed", type=int, default=20260926)
     args = parser.parse_args()
     if (args.epochs < 1 or args.batch_size < 1 or args.eval_every < 1 or
             args.log_every < 1 or args.input_size < 64 or args.lr_scale <= 0 or
-            args.input_size % 32 != 0):
+            args.input_size % 32 != 0 or args.early_stop_patience < 0 or
+            args.early_stop_min_epoch < 0):
         parser.error("counts, input size, and lr-scale must be positive")
+    if args.early_stop_min_epoch > args.epochs:
+        parser.error("--early-stop-min-epoch cannot exceed --epochs")
     if not 0 <= args.mosaic_prob <= 1:
         parser.error("mosaic-prob must be between 0 and 1")
     if args.no_aug_epochs is not None and not 0 <= args.no_aug_epochs < args.epochs:
@@ -259,6 +262,11 @@ def main() -> None:
         "lr_scale": args.lr_scale,
         "basic_lr_per_img": exp.basic_lr_per_img,
         "no_aug_epochs": exp.no_aug_epochs,
+        "early_stopping": {
+            "patience_checkpoints": args.early_stop_patience,
+            "minimum_epoch": args.early_stop_min_epoch,
+            "selection_metric": "validation selected F1",
+        },
         "yolox_revision": _git_revision(yolox_root),
         "experiment": {"path": str(exp_path), "sha256": _sha256(exp_path)},
         "train_annotations_sha256": _sha256(
@@ -273,6 +281,9 @@ def main() -> None:
         "history": [],
     }
     best_f1 = -1.0
+    best_epoch = None
+    evaluations_without_improvement = 0
+    stopped_early = False
     no_aug = False
     started = time.monotonic()
     for epoch in range(args.epochs):
@@ -327,8 +338,12 @@ def main() -> None:
             selected_f1 = validation["selected"]["f1"] or 0.0
             if selected_f1 > best_f1:
                 best_f1 = selected_f1
+                best_epoch = epoch + 1
+                evaluations_without_improvement = 0
                 torch.save({"model": ema.ema.state_dict(), "epoch": epoch + 1,
                             "validation": validation}, output / "best_ckpt.pth")
+            else:
+                evaluations_without_improvement += 1
         metadata["history"].append(record)
         torch.save({"model": ema.ema.state_dict(), "optimizer": optimizer.state_dict(),
                     "epoch": epoch + 1}, output / "latest_ckpt.pth")
@@ -340,8 +355,21 @@ def main() -> None:
                            if "validation" in record else "")
         print(f"epoch {epoch + 1}/{args.epochs} loss={record['loss']['total_loss']:.4f}"
               f" elapsed={record['elapsed_seconds']:.1f}s{validation_text}", flush=True)
+        if ("validation" in record and args.early_stop_patience and
+                epoch + 1 >= args.early_stop_min_epoch and
+                evaluations_without_improvement >= args.early_stop_patience):
+            stopped_early = True
+            print(
+                f"early stop after epoch {epoch + 1}: no validation improvement for "
+                f"{evaluations_without_improvement} checkpoints",
+                flush=True,
+            )
+            break
 
     metadata["best_validation_f1"] = round(best_f1, 6)
+    metadata["best_epoch"] = best_epoch
+    metadata["completed_epochs"] = len(metadata["history"])
+    metadata["stopped_early"] = stopped_early
     metadata["elapsed_seconds"] = round(time.monotonic() - started, 3)
     (output / "metrics.json").write_text(
         json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

@@ -421,6 +421,10 @@ public final class CaptureService extends Service {
         synchronized (processingLock) {
             releaseCapture();
         }
+        // stopSelf() normally removes the notification with the service, but
+        // make the foreground-service lifecycle explicit for projection and
+        // system initiated stops as well.
+        stopForeground(STOP_FOREGROUND_REMOVE);
         cuePlayer.close();
         workerThread.quitSafely();
         super.onDestroy();
