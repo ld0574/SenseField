@@ -86,12 +86,65 @@ def sample_timestamps(intervals: list[tuple[int, int]], count: int) -> list[int]
     return result
 
 
-def build(manifest: Path, output: Path, samples_per_match: int = 100) -> dict:
+def exclude_timestamp_windows(intervals: list[tuple[int, int]], timestamps: list[int],
+                              gap_ms: int) -> list[tuple[int, int]]:
+    """Remove half-open windows whose timestamps are within ``gap_ms`` of prior samples."""
+    if not isinstance(gap_ms, int) or isinstance(gap_ms, bool) or gap_ms < 0:
+        raise ValueError("exclude gap must be a nonnegative integer")
+    remaining = list(intervals)
+    for timestamp in sorted(set(timestamps)):
+        if not isinstance(timestamp, int) or isinstance(timestamp, bool) or timestamp < 0:
+            raise ValueError("excluded timestamps must be nonnegative integers")
+        cut_start = max(0, timestamp - gap_ms)
+        cut_end = timestamp + gap_ms + 1
+        updated = []
+        for start, end in remaining:
+            if cut_end <= start or cut_start >= end:
+                updated.append((start, end))
+                continue
+            if start < cut_start:
+                updated.append((start, cut_start))
+            if cut_end < end:
+                updated.append((cut_end, end))
+        remaining = updated
+    return [interval for interval in remaining if interval[1] > interval[0]]
+
+
+def _exclusions(path: Path | None) -> tuple[dict[str, list[int]], str | None]:
+    if path is None:
+        return {}, None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"Cannot read exclusion manifest {path}: {error}") from error
+    if not isinstance(data, dict) or data.get("schema_version") != 1:
+        raise ValueError("Exclusion manifest must use schema_version 1")
+    result: dict[str, list[int]] = {}
+    for match in data.get("matches", []):
+        if not isinstance(match, dict) or not isinstance(match.get("id"), str):
+            raise ValueError("Exclusion manifest has an invalid match")
+        times = []
+        for sample in match.get("samples", []):
+            if not isinstance(sample, dict):
+                raise ValueError("Exclusion manifest samples must be objects")
+            timestamp = sample.get("at_ms")
+            if not isinstance(timestamp, int) or isinstance(timestamp, bool) or timestamp < 0:
+                raise ValueError("Exclusion manifest has an invalid at_ms")
+            times.append(timestamp)
+        if match["id"] in result:
+            raise ValueError(f"Duplicate exclusion match id: {match['id']}")
+        result[match["id"]] = times
+    return result, _sha256(path)
+
+
+def build(manifest: Path, output: Path, samples_per_match: int = 100,
+          exclude_manifest: Path | None = None, exclude_gap_ms: int = 1000) -> dict:
     data = json.loads(manifest.read_text(encoding="utf-8"))
     if data.get("schema_version") != 1:
         raise ValueError("Expected source manifest schema_version 1")
     top_roi = _roi(data.get("roi"), "roi")
     top_orientation = from_manifest(data)
+    excluded_by_match, exclusion_sha256 = _exclusions(exclude_manifest)
     matches = data.get("matches")
     if not isinstance(matches, list) or not matches:
         raise ValueError("Source manifest needs matches")
@@ -106,6 +159,10 @@ def build(manifest: Path, output: Path, samples_per_match: int = 100) -> dict:
             "strategy": "uniform_gameplay_interval_midpoints",
             "predictions_used_for_selection": False,
             "samples_per_match": samples_per_match,
+            "exclude_gap_ms": exclude_gap_ms if exclude_manifest is not None else None,
+            "exclude_manifest": str(exclude_manifest.resolve())
+            if exclude_manifest is not None else None,
+            "exclude_manifest_sha256": exclusion_sha256,
         },
         "warning": (
             "Every frame needs manual boxes or an explicit negative/excluded decision; "
@@ -135,13 +192,18 @@ def build(manifest: Path, output: Path, samples_per_match: int = 100) -> dict:
         if previous_split != split:
             raise ValueError(f"One recording cannot cross splits: {video}")
         intervals = _intervals(match.get("active_intervals_ms"), match_id)
+        available_intervals = exclude_timestamp_windows(
+            intervals, excluded_by_match.get(match_id, []), exclude_gap_ms
+        )
+        if not available_intervals:
+            raise ValueError(f"No sampling time remains after exclusions for {match_id}")
         match_roi = _roi(match.get("roi", top_roi), f"roi for {match_id}")
         match_orientation = resolve(
             video, from_manifest(match, f"{match_id}") or top_orientation)
 
         samples = []
         overlays = []
-        for timestamp in sample_timestamps(intervals, samples_per_match):
+        for timestamp in sample_timestamps(available_intervals, samples_per_match):
             stem = f"{match_id}_{timestamp:09d}"
             frame = output / split / match_id / f"{stem}.png"
             overlay = output / split / match_id / f"{stem}-overlay.jpg"
@@ -195,9 +257,16 @@ def main() -> None:
     parser.add_argument("manifest", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--samples-per-match", type=int, default=100)
+    parser.add_argument("--exclude-manifest", type=Path,
+                        help="review manifest whose timestamps must not be sampled again")
+    parser.add_argument("--exclude-gap-ms", type=int, default=1000,
+                        help="also exclude this many milliseconds around prior samples")
     args = parser.parse_args()
     try:
-        result = build(args.manifest, args.output, args.samples_per_match)
+        result = build(
+            args.manifest, args.output, args.samples_per_match,
+            args.exclude_manifest, args.exclude_gap_ms,
+        )
         print(json.dumps(result, ensure_ascii=False, indent=2))
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
         print(f"error: {error}", file=sys.stderr)

@@ -28,7 +28,7 @@ from mapassist.native import Cue, EngineConfig, Observation, Pipeline, Rect, loa
 from mapassist.replay import run
 from mapassist.review_dataset import build as build_review_dataset
 from mapassist.synthetic import create
-from mapassist.uniform_review_dataset import sample_timestamps
+from mapassist.uniform_review_dataset import exclude_timestamp_windows, sample_timestamps
 
 
 @pytest.fixture
@@ -221,6 +221,20 @@ def test_uniform_review_sampling_spans_multiple_gameplay_intervals() -> None:
     assert timestamps == [1250, 1750, 5250, 5750, 6250, 6750]
     assert all(1000 <= value < 2000 or 5000 <= value < 7000
                for value in timestamps)
+
+
+def test_uniform_review_can_exclude_windows_around_prior_samples() -> None:
+    remaining = exclude_timestamp_windows(
+        [(1000, 3000), (5000, 7000)], [1500, 6000], gap_ms=250
+    )
+
+    assert remaining == [(1000, 1250), (1751, 3000), (5000, 5750), (6251, 7000)]
+    timestamps = sample_timestamps(remaining, 8)
+    assert len(timestamps) == len(set(timestamps)) == 8
+    assert all(abs(value - 1500) > 250 and abs(value - 6000) > 250
+               for value in timestamps)
+    with pytest.raises(ValueError, match="nonnegative"):
+        exclude_timestamp_windows([(0, 100)], [50], gap_ms=-1)
 
 
 def test_apply_label_shards_updates_manifest_and_annotation_database(

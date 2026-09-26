@@ -77,6 +77,7 @@ python -m pytest -q
 ```sh
 PYTHONPATH=python python3 -m mapassist.annotation_server \
   --dataset dense-v1-6=data/private/minimap-review-v4-dense \
+  --dataset expanded-video7=data/private/minimap-review-v6-video7-expanded \
   --dataset holdout-video7=data/private/minimap-video7-holdout-v1 \
   --dataset holdout-video8=data/private/minimap-video8-holdout-v1/blind-review-v1 \
   --dataset reviewed-v1-5=data/private/minimap-review-v3 \
