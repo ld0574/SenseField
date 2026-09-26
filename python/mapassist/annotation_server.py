@@ -542,13 +542,11 @@ class AnnotationHandler(BaseHTTPRequestHandler):
         match = re.fullmatch(rf"/api/tasks/(\d+){re.escape(suffix)}", path)
         return int(match.group(1)) if match else None
 
-    def _store(self, parsed: urllib.parse.ParseResult) -> AnnotationStore:
+    def _store(self, parsed: urllib.parse.ParseResult,
+               fallback_unknown: bool = False) -> AnnotationStore:
         query = urllib.parse.parse_qs(parsed.query)
         dataset_id = query.get("dataset", [self.server.default_dataset])[0]
-        try:
-            return self.server.stores[dataset_id]
-        except KeyError as error:
-            raise ValueError(f"unknown dataset: {dataset_id}") from error
+        return self.server.resolve_store(dataset_id, fallback_unknown)
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urllib.parse.urlparse(self.path)
@@ -561,7 +559,10 @@ class AnnotationHandler(BaseHTTPRequestHandler):
                     raise ValueError("invalid asset")
                 self._asset(self.server.web_root / name)
             elif parsed.path == "/api/bootstrap":
-                store = self._store(parsed)
+                # A browser can remember a dataset from an older server
+                # catalog. Bootstrap must recover to the current default so
+                # the user can reach the dataset picker again.
+                store = self._store(parsed, fallback_unknown=True)
                 bootstrap = store.bootstrap()
                 bootstrap["current_dataset"] = self.server.dataset_id(store)
                 bootstrap["datasets"] = self.server.catalog()
@@ -656,6 +657,15 @@ class AnnotationHTTPServer(ThreadingHTTPServer):
 
     def dataset_id(self, store: AnnotationStore) -> str:
         return next(key for key, candidate in self.stores.items() if candidate is store)
+
+    def resolve_store(self, dataset_id: str,
+                      fallback_unknown: bool = False) -> AnnotationStore:
+        try:
+            return self.stores[dataset_id]
+        except KeyError as error:
+            if fallback_unknown:
+                return self.stores[self.default_dataset]
+            raise ValueError(f"unknown dataset: {dataset_id}") from error
 
     def catalog(self) -> list[dict]:
         return [{

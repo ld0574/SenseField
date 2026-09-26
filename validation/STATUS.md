@@ -4,7 +4,7 @@
 
 | 项目 | 结果 |
 | --- | --- |
-| 桌面共享 C++ 引擎与录像回放 | `PYTHONPATH=.:python .venv/bin/python -m pytest -q`：100 项通过、1 项条件跳过；覆盖小地图自动定位、带 Display Matrix 录像的显示方向抽帧与旧复核帧恢复、辅助建议安全附加、困难误报数据加权、增量抽样排除窗口、红环几何过滤、相邻头像分框、非对局静默、空间跟踪去重、冷却与抢占、标注／数据集、冻结模型与 Android 资产哈希、会话日志、最终门禁及 ncnn 回放约束。跳过项需要专用合成 YOLOX profile；同一回放入口已另用 video7 真实开发片段成功执行。 |
+| 桌面共享 C++ 引擎与录像回放 | `PYTHONPATH=.:python .venv/bin/python -m pytest -q`：101 项通过、1 项条件跳过；覆盖小地图自动定位、带 Display Matrix 录像的显示方向抽帧与旧复核帧恢复、辅助建议安全附加、标注站旧数据集恢复、困难误报数据加权、增量抽样排除窗口、红环几何过滤、相邻头像分框、非对局静默、空间跟踪去重、冷却与抢占、标注／数据集、冻结模型与 Android 资产哈希、会话日志、最终门禁及 ncnn 回放约束。跳过项需要专用合成 YOLOX profile；同一回放入口已另用 video7 真实开发片段成功执行。 |
 | 主画面检测数据准备 | 已能从逐场边框清单导出带负样本、符合 YOLOX 目录约定的 COCO 数据集，并拒绝同一录像路径跨训练／留出组；尚无真实标注和模型，见 [模型接入记录](MODEL_PIPELINE.md) |
 | 端到端延迟统计工具 | 已能从外部记录的证据／实际发声配对时间计算逐类及总体 P95，并单列漏提示；尚无真机样本 |
 | Android debug 构建 | 使用 Android Studio JBR 执行 `./gradlew assembleDebug lintDebug`：构建成功，lint 通过；构建任务会按 metadata 校验模型 param／bin 哈希，CMake 同时校验 ncnn 下载包及已有缓存包哈希 |

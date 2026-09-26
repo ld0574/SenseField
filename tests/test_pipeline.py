@@ -13,7 +13,12 @@ from PIL import Image, ImageDraw
 
 from mapassist.evaluate import evaluate, read_labels, read_predictions
 from mapassist.bundle_profile import bundle
-from mapassist.annotation_server import AnnotationStore, ConflictError, _dataset_specs
+from mapassist.annotation_server import (
+    AnnotationHTTPServer,
+    AnnotationStore,
+    ConflictError,
+    _dataset_specs,
+)
 from mapassist.apply_label_shards import apply as apply_label_shards
 from mapassist.blind_review_dataset import _sample_indices
 from mapassist.combine_detection_manifests import combine as combine_detection_manifests
@@ -79,6 +84,21 @@ def test_annotation_server_accepts_multiple_named_datasets() -> None:
     ]
     with pytest.raises(ValueError, match="duplicate dataset name"):
         _dataset_specs(["dev=/tmp/a", "dev=/tmp/b"])
+
+
+def test_annotation_server_bootstrap_can_recover_stale_dataset(
+    annotation_dataset: Path,
+) -> None:
+    store = AnnotationStore(annotation_dataset, lease_seconds=60)
+    server = AnnotationHTTPServer(
+        ("127.0.0.1", 0), {"current": store}, annotation_dataset
+    )
+    try:
+        assert server.resolve_store("old-name", fallback_unknown=True) is store
+        with pytest.raises(ValueError, match="unknown dataset"):
+            server.resolve_store("old-name")
+    finally:
+        server.server_close()
 
 
 def test_annotation_store_coordinates_collaborators_and_exports(
