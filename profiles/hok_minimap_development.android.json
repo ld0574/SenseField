@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "name": "hok_minimap_development",
+  "profile_version": "0.4.0-red-ring-split-dev",
+  "game": "王者荣耀",
+  "verified": false,
+  "notes": "Development-only profile calibrated on video1-video5. It is not an independent holdout result or a verified phone configuration.",
+  "rois": {
+    "minimap": [
+      0.0375,
+      0.0,
+      0.1444444444,
+      0.3333333333
+    ],
+    "ping_area": [
+      0.4027777778,
+      0.0462962963,
+      0.2222222222,
+      0.1388888889
+    ],
+    "center_mask": [
+      0.35,
+      0.35,
+      0.3,
+      0.3
+    ]
+  },
+  "detectors": {
+    "main_red_bar": false,
+    "minimap_template": false,
+    "minimap_red_ring": true,
+    "danger_ping_template": false
+  },
+  "templates": {
+    "minimap_enemy": null,
+    "danger_ping": null
+  },
+  "thresholds": {
+    "red_min": 90,
+    "red_dominance": 1.25,
+    "main_min_width_ratio": 0.012,
+    "main_max_height_ratio": 0.03,
+    "main_min_aspect": 3.5,
+    "template_match": 0.94
+  },
+  "events": {
+    "min_confidence": 0.75,
+    "max_observation_age_ms": 250,
+    "min_global_gap_ms": 1000,
+    "minimap_min_gap_ms": 5000,
+    "min_hits_in_three_frames": 2,
+    "reset_after_missing_frames": 3
+  },
+  "templates_b64": {}
+}

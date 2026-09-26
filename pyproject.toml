@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mapassist-replay"
+version = "0.1.0"
+description = "Local replay and event evaluation for a low-vision game assistant"
+requires-python = ">=3.10"
+dependencies = ["Pillow>=10,<13"]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+
+[project.scripts]
+mapassist-replay = "mapassist.replay:main"
+mapassist-evaluate = "mapassist.evaluate:main"
+mapassist-synthetic = "mapassist.synthetic:main"
+mapassist-synthetic-android = "mapassist.synthetic_android:main"
+mapassist-bundle-profile = "mapassist.bundle_profile:main"
+mapassist-extract-frame = "mapassist.extract_frame:main"
+mapassist-detection-dataset = "mapassist.detection_dataset:main"
+mapassist-detection-evaluate = "mapassist.detection_evaluate:main"
+mapassist-detection-replay-evaluate = "mapassist.detection_replay_evaluate:main"
+mapassist-merge-detection-manifests = "mapassist.merge_detection_manifests:main"
+mapassist-review-dataset = "mapassist.review_dataset:main"
+mapassist-blind-review-dataset = "mapassist.blind_review_dataset:main"
+mapassist-finalize-review = "mapassist.finalize_review:main"
+mapassist-annotation-server = "mapassist.annotation_server:main"
+mapassist-measure-latency = "mapassist.measure_latency:main"
+mapassist-validation-gate = "mapassist.validation_gate:main"
+
+[tool.setuptools.packages.find]
+where = ["python"]
+
+[tool.setuptools.package-data]
+mapassist = ["annotation_web/*.html", "annotation_web/*.css", "annotation_web/*.js"]

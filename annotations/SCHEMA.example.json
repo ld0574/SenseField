@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "video_id": "holdout-match-01",
+  "events": [
+    {
+      "kind": "main_enemy",
+      "start_ms": 12000,
+      "end_ms": 13500,
+      "direction": "left",
+      "notes": "Only label an enemy visibly rendered in the main game view."
+    },
+    {
+      "kind": "minimap_enemy",
+      "start_ms": 21000,
+      "end_ms": 23500,
+      "direction": "right",
+      "notes": "Direction is the icon's location within the minimap, not relative to the player's heading."
+    },
+    {
+      "kind": "danger_ping",
+      "start_ms": 30000,
+      "end_ms": 31000,
+      "direction": null,
+      "notes": "Visible teammate danger signal."
+    }
+  ]
+}

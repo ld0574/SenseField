@@ -1,0 +1,94 @@
+diff --git a/tools/export_onnx.py b/tools/export_onnx.py
+index 8703166..b42c6e0 100644
+--- a/tools/export_onnx.py
++++ b/tools/export_onnx.py
+@@ -76,7 +76,7 @@ def main():
+         ckpt_file = args.ckpt
+ 
+     # load the model state dict
+-    ckpt = torch.load(ckpt_file, map_location="cpu")
++    ckpt = torch.load(ckpt_file, map_location="cpu", weights_only=False)
+ 
+     model.eval()
+     if "model" in ckpt:
+@@ -88,7 +88,7 @@ def main():
+     logger.info("loading checkpoint done.")
+     dummy_input = torch.randn(args.batch_size, 3, exp.test_size[0], exp.test_size[1])
+ 
+-    torch.onnx._export(
++    torch.onnx.export(
+         model,
+         dummy_input,
+         args.output_name,
+@@ -97,6 +97,7 @@ def main():
+         dynamic_axes={args.input: {0: 'batch'},
+                       args.output: {0: 'batch'}} if args.dynamic else None,
+         opset_version=args.opset,
++        dynamo=False,
+     )
+     logger.info("generated onnx model named {}".format(args.output_name))
+ 
+diff --git a/tools/export_torchscript.py b/tools/export_torchscript.py
+index 16a563b..19d55c2 100644
+--- a/tools/export_torchscript.py
++++ b/tools/export_torchscript.py
+@@ -60,7 +60,7 @@ def main():
+         ckpt_file = args.ckpt
+ 
+     # load the model state dict
+-    ckpt = torch.load(ckpt_file, map_location="cpu")
++    ckpt = torch.load(ckpt_file, map_location="cpu", weights_only=False)
+ 
+     model.eval()
+     if "model" in ckpt:
+diff --git a/yolox/models/losses.py b/yolox/models/losses.py
+index 77b4d8e..d80014c 100644
+--- a/yolox/models/losses.py
++++ b/yolox/models/losses.py
+@@ -27,7 +27,7 @@ class IOUloss(nn.Module):
+         area_p = torch.prod(pred[:, 2:], 1)
+         area_g = torch.prod(target[:, 2:], 1)
+ 
+-        en = (tl < br).type(tl.type()).prod(dim=1)
++        en = (tl < br).to(dtype=tl.dtype).prod(dim=1)
+         area_i = torch.prod(br - tl, 1) * en
+         area_u = area_p + area_g - area_i
+         iou = (area_i) / (area_u + 1e-16)
+diff --git a/yolox/models/yolo_head.py b/yolox/models/yolo_head.py
+index 3e51768..327fcd3 100644
+--- a/yolox/models/yolo_head.py
++++ b/yolox/models/yolo_head.py
+@@ -220,7 +220,9 @@ class YOLOXHead(nn.Module):
+         hsize, wsize = output.shape[-2:]
+         if grid.shape[2:4] != output.shape[2:4]:
+             yv, xv = meshgrid([torch.arange(hsize), torch.arange(wsize)])
+-            grid = torch.stack((xv, yv), 2).view(1, 1, hsize, wsize, 2).type(dtype)
++            grid = torch.stack((xv, yv), 2).view(1, 1, hsize, wsize, 2).to(
++                device=output.device, dtype=output.dtype
++            )
+             self.grids[k] = grid
+ 
+         output = output.view(batch_size, 1, n_ch, hsize, wsize)
+@@ -242,8 +244,8 @@ class YOLOXHead(nn.Module):
+             shape = grid.shape[:2]
+             strides.append(torch.full((*shape, 1), stride))
+ 
+-        grids = torch.cat(grids, dim=1).type(dtype)
+-        strides = torch.cat(strides, dim=1).type(dtype)
++        grids = torch.cat(grids, dim=1).to(device=outputs.device, dtype=outputs.dtype)
++        strides = torch.cat(strides, dim=1).to(device=outputs.device, dtype=outputs.dtype)
+ 
+         outputs = torch.cat([
+             (outputs[..., 0:2] + grids) * strides,
+diff --git a/yolox/utils/boxes.py b/yolox/utils/boxes.py
+index f71e8d9..922caf1 100644
+--- a/yolox/utils/boxes.py
++++ b/yolox/utils/boxes.py
+@@ -97,6 +97,6 @@ def bboxes_iou(bboxes_a, bboxes_b, xyxy=True):
+ 
+         area_a = torch.prod(bboxes_a[:, 2:], 1)
+         area_b = torch.prod(bboxes_b[:, 2:], 1)
+-    en = (tl < br).type(tl.type()).prod(dim=2)
++    en = (tl < br).to(dtype=tl.dtype).prod(dim=2)
+     area_i = torch.prod(br - tl, 2) * en  # * ((tl < br).all())
+     return area_i / (area_a[:, None] + area_b - area_i)

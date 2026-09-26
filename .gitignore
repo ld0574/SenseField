@@ -1,0 +1,59 @@
+# Operating system and editor files
+.DS_Store
+Thumbs.db
+.Rhistory
+.idea/
+.vscode/
+*.swp
+*.log
+
+# Python local environments and generated files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Native and local build outputs
+build/
+*.so
+*.dylib
+*.o
+*.class
+
+# Android local state and build outputs
+android/.gradle/
+android/.idea/
+android/.cxx/
+android/**/.cxx/
+android/local.properties
+android/**/build/
+
+# Credentials and signing material
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+keystore.properties
+*.pem
+
+# Private recordings, annotations and derived datasets
+data/private/
+data/raw/
+video/
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.webm
+
+# Supplied competition/reference material needs publication permission first.
+# Keep project-authored public documentation explicitly allowlisted.
+docs/*
+!docs/团队协作与本地运行.md
+!docs/GITHUB发布检查清单.md

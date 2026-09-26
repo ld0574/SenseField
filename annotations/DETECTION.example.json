@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "matches": [
+    {
+      "id": "train-match-01",
+      "video": "train-match-01.mp4",
+      "split": "train",
+      "frames": [
+        {
+          "at_ms": 12000,
+          "boxes": [[0.04, 0.42, 0.08, 0.025]]
+        },
+        {
+          "at_ms": 13000,
+          "boxes": []
+        }
+      ]
+    },
+    {
+      "id": "holdout-match-01",
+      "video": "holdout-match-01.mp4",
+      "split": "test",
+      "frames": [
+        {
+          "at_ms": 8000,
+          "boxes": [[0.84, 0.30, 0.07, 0.03]]
+        }
+      ]
+    }
+  ]
+}

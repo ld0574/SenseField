@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>小地图数据标注台</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div id="loginDialog" class="modal" aria-modal="true" role="dialog">
+    <form id="loginForm" class="login-card">
+      <div class="eyebrow">MAP ASSIST · LOCAL DATA</div>
+      <h1>开始标注</h1>
+      <p>输入你的名字。系统会自动分配未被其他人领取的图片，并记录每个人的贡献。</p>
+      <label for="annotatorInput">标注员名字</label>
+      <input id="annotatorInput" maxlength="40" autocomplete="name" placeholder="例如：Ada" required>
+      <button class="primary large" type="submit">进入标注台</button>
+      <small>数据和进度保存在运行网站的这台电脑上。</small>
+    </form>
+  </div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">M</div>
+      <div>
+        <strong>小地图数据标注台</strong>
+        <span id="datasetLabel">正在连接数据集</span>
+      </div>
+    </div>
+    <label class="dataset-switcher">数据集
+      <select id="datasetSelect" aria-label="切换数据集"><option>正在载入</option></select>
+    </label>
+    <div class="progress-wrap" aria-label="总体进度">
+      <div class="progress-copy"><span id="progressText">0 / 0</span><span id="progressPercent">0%</span></div>
+      <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+    </div>
+    <div class="user-chip">
+      <span class="status-dot"></span>
+      <span id="annotatorName">未登录</span>
+      <button id="changeUserButton" class="text-button" type="button">切换</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="queue-panel panel">
+      <div class="panel-heading">
+        <div><span class="kicker">QUEUE</span><h2>任务队列</h2></div>
+        <button id="refreshQueueButton" class="icon-button" type="button" title="刷新">↻</button>
+      </div>
+      <div class="filters">
+        <label>对局<select id="matchFilter"><option value="">全部对局</option></select></label>
+        <label>状态
+          <select id="statusFilter">
+            <option value="pending">待标注</option>
+            <option value="accepted">已接受</option>
+            <option value="corrected">已修正</option>
+            <option value="negative">负样本</option>
+            <option value="excluded">非对局界面</option>
+            <option value="skip">已跳过</option>
+          </select>
+        </label>
+        <label class="check-row"><input id="mineFilter" type="checkbox">只看我的结果</label>
+      </div>
+      <button id="nextButton" class="primary next-button" type="button">领取下一张 <kbd>Enter</kbd></button>
+      <div id="queueSummary" class="queue-summary"></div>
+      <div id="taskList" class="task-list" aria-live="polite"></div>
+    </aside>
+
+    <section class="annotation-panel panel">
+      <div class="annotation-heading">
+        <div>
+          <span id="taskMeta" class="kicker">尚未领取任务</span>
+          <h2 id="taskTitle">从左侧领取一张图片</h2>
+        </div>
+        <div class="segmented" aria-label="查看模式">
+          <button id="minimapMode" class="active" type="button">放大小地图 <kbd>Z</kbd></button>
+          <button id="fullMode" type="button">完整画面</button>
+        </div>
+      </div>
+
+      <button id="contextPreview" class="context-preview empty" type="button" disabled
+              aria-label="查看完整画面上下文">
+        <span class="context-copy">
+          <strong>完整画面上下文</strong>
+          <small>先确认这是对局中画面，再标小地图</small>
+        </span>
+        <span class="context-image-wrap">
+          <img id="contextImage" alt="">
+          <i id="contextMinimapMarker" aria-hidden="true"></i>
+          <span id="contextEmpty">领取图片后显示</span>
+        </span>
+      </button>
+
+      <section id="temporalContext" class="temporal-context hidden" aria-label="相邻帧参考">
+        <div class="temporal-copy">
+          <strong>相邻帧参考</strong>
+          <small>移动头像会改变位置；固定图标通常保持不动</small>
+        </div>
+        <figure>
+          <canvas id="contextBeforeCanvas" aria-label="当前帧之前 0.5 秒的小地图"></canvas>
+          <figcaption>前 0.5 秒</figcaption>
+        </figure>
+        <figure>
+          <canvas id="contextAfterCanvas" aria-label="当前帧之后 0.5 秒的小地图"></canvas>
+          <figcaption>后 0.5 秒</figcaption>
+        </figure>
+      </section>
+
+      <div id="canvasShell" class="canvas-shell empty">
+        <canvas id="annotationCanvas" tabindex="0" aria-label="标注画布"></canvas>
+        <div id="emptyState" class="empty-state">
+          <div class="empty-icon">⌖</div>
+          <strong>等待领取图片</strong>
+          <span>建议先处理待标注任务。多人同时工作时，每张图片只会分配给一人。</span>
+        </div>
+        <div id="loadingState" class="loading-state hidden"><span class="spinner"></span>正在载入图片</div>
+      </div>
+
+      <div class="canvas-toolbar">
+        <div class="tool-group">
+          <button id="resetBoxesButton" type="button">恢复建议框 <kbd>R</kbd></button>
+          <button id="deleteBoxButton" type="button">删除选中框 <kbd>Del</kbd></button>
+          <button id="releaseTaskButton" type="button">释放任务</button>
+        </div>
+        <div class="box-counter"><span id="boxCount">0</span> 个框</div>
+      </div>
+
+      <div class="decision-grid">
+        <button id="acceptButton" class="decision accept" type="button">
+          <span class="decision-key">A</span><strong>建议框正确</strong><small>直接接受当前建议</small>
+        </button>
+        <button id="correctButton" class="decision correct" type="button">
+          <span class="decision-key">C</span><strong>保存修正</strong><small>采用画布中的全部框</small>
+        </button>
+        <button id="negativeButton" class="decision negative" type="button">
+          <span class="decision-key">N</span><strong>没有敌人</strong><small>标记为负样本</small>
+        </button>
+        <button id="excludedButton" class="decision excluded" type="button">
+          <span class="decision-key">E</span><strong>非对局界面</strong><small>准备、选人或结算画面</small>
+        </button>
+        <button id="skipButton" class="decision skip" type="button">
+          <span class="decision-key">S</span><strong>无法判断</strong><small>跳过模糊或遮挡画面</small>
+        </button>
+      </div>
+    </section>
+
+    <aside class="info-panel panel">
+      <section>
+        <span class="kicker">GUIDE</span>
+        <h2>标注规则</h2>
+        <ul class="guide-list">
+          <li><span class="guide-number">1</span><div><strong>只框红方英雄头像</strong><p>框住头像和红色阵营环，尽量贴边。</p></div></li>
+          <li><span class="guide-number">2</span><div><strong>补齐所有漏框</strong><p>一张图里有多个敌人时必须全部框出。</p></div></li>
+          <li><span class="guide-number">3</span><div><strong>排除地图符号</strong><p>防御塔、路径、基地、技能特效和信号圈都不标。</p></div></li>
+          <li><span class="guide-number">4</span><div><strong>识别对局边界</strong><p>准备、选人、加载和结算画面选择“非对局界面”，不要当负样本。</p></div></li>
+        </ul>
+      </section>
+      <section class="how-to">
+        <h3>画框操作</h3>
+        <p>在空白处拖动新增框；拖动框内部可移动；拖动右下角圆点可缩放；选中后按 Delete 删除。</p>
+      </section>
+      <section>
+        <div class="section-title"><h3>团队进度</h3><button id="refreshStatsButton" class="text-button" type="button">刷新</button></div>
+        <div id="contributors" class="contributors"><span class="muted">还没有提交记录</span></div>
+      </section>
+      <section class="status-legend">
+        <h3>数据状态</h3>
+        <div><i class="dot accepted"></i>接受</div>
+        <div><i class="dot corrected"></i>修正</div>
+        <div><i class="dot negative"></i>负样本</div>
+        <div><i class="dot excluded"></i>非对局</div>
+        <div><i class="dot skip"></i>跳过</div>
+      </section>
+    </aside>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

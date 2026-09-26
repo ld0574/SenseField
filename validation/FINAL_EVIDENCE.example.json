@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "enabled_kinds": [
+    "minimap_enemy",
+    "danger_ping"
+  ],
+  "directional_kinds": [
+    "minimap_enemy"
+  ],
+  "holdout": {
+    "id": "holdout-match-06",
+    "split": "test",
+    "profile_frozen_before_review": true,
+    "used_for_tuning": false,
+    "video": {
+      "path": "match-holdout.mp4",
+      "sha256": "replace_with_64_character_sha256"
+    },
+    "profile": {
+      "path": "calibrated-profile.json",
+      "sha256": "replace_with_64_character_sha256"
+    },
+    "labels": {
+      "path": "holdout-labels.json",
+      "sha256": "replace_with_64_character_sha256"
+    },
+    "predictions": {
+      "path": "holdout-predictions.jsonl",
+      "sha256": "replace_with_64_character_sha256"
+    },
+    "prediction_metadata": {
+      "path": "holdout-predictions.jsonl.meta.json",
+      "sha256": "replace_with_64_character_sha256"
+    }
+  },
+  "device_session": {
+    "physical_device": true,
+    "model": "replace with phone model",
+    "android_api": 34,
+    "duration_minutes": 15,
+    "full_screen_capture_ok": true,
+    "landscape_rotation_ok": true,
+    "actual_audio_verified": true,
+    "game_audio_mix_ok": true,
+    "authorized_test_scene": true,
+    "fps_notes": "replace with observation and measurement method",
+    "thermal_notes": "replace with temperature or observed heating",
+    "hero_feedback": "replace with Hero feedback",
+    "external_recording": {
+      "path": "physical-device-session.mp4",
+      "sha256": "replace_with_64_character_sha256"
+    },
+    "latency_csv": {
+      "path": "latency.csv",
+      "sha256": "replace_with_64_character_sha256"
+    }
+  }
+}
