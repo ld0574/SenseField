@@ -27,6 +27,7 @@ import org.json.JSONException;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.UUID;
 
 public final class CaptureService extends Service {
     static final String ACTION_START = "org.openrd.mapassist.START";
@@ -70,6 +71,15 @@ public final class CaptureService extends Service {
     private int frameWidth;
     private int frameHeight;
     private boolean lastFrameLandscape;
+    private String auditSessionId;
+    private long auditSessionStartedAtMs;
+    private long nextCueId;
+    private int landscapeProcessedFrames;
+    private long firstLandscapeProcessedAtMs;
+    private long lastLandscapeProcessedAtMs;
+    private long maxLandscapeProcessedGapMs;
+    private boolean auditSessionActive;
+    private int latestServiceStartId;
     private final Runnable displayWatchdog = new Runnable() {
         @Override public void run() {
             synchronized (processingLock) {
@@ -104,14 +114,19 @@ public final class CaptureService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent == null) return START_NOT_STICKY;
         String action = intent.getAction();
+        if (!ACTION_START.equals(action) && !ACTION_STOP.equals(action)
+                && !ACTION_TOGGLE_PAUSE.equals(action)) return START_NOT_STICKY;
+        synchronized (processingLock) {
+            latestServiceStartId = startId;
+        }
         if (ACTION_STOP.equals(action)) {
             stopWithStatus("截屏已停止");
             return START_NOT_STICKY;
         }
         if (ACTION_TOGGLE_PAUSE.equals(action)) {
             synchronized (processingLock) {
-                if (nativeSession == 0) {
-                    stopSelf();
+                if (stopping || nativeSession == 0) {
+                    stopSelfResult(startId);
                     return START_NOT_STICKY;
                 }
                 paused = !paused;
@@ -120,33 +135,18 @@ public final class CaptureService extends Service {
             refreshNotification();
             return START_NOT_STICKY;
         }
-        if (!ACTION_START.equals(action)) return START_NOT_STICKY;
+        beginCaptureAttempt(startId);
         int resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED);
         Intent resultData = intent.getParcelableExtra(EXTRA_RESULT_DATA);
         if (resultCode == Activity.RESULT_OK && resultData != null) {
-            startCapture(resultCode, resultData, startId);
+            startCapture(resultCode, resultData);
         }
         else stopWithStatus("截屏授权无效，请重新授权");
         return START_NOT_STICKY;
     }
 
-    private void startCapture(int resultCode, Intent resultData, int startId) {
+    private void startCapture(int resultCode, Intent resultData) {
         synchronized (processingLock) {
-            releaseCapture();
-            stopping = false;
-            paused = false;
-            startedAtMs = SystemClock.elapsedRealtime();
-            lastProcessedAtMs = 0;
-            lastNotificationAtMs = 0;
-            blackSinceMs = 0;
-            processedFrames = 0;
-            detectedCues = 0;
-            queuedCues = 0;
-            staleCues = 0;
-            audioQueueFailures = 0;
-            latestNativeMicros = 0;
-            lastFrameLandscape = false;
-            GameProfile.settings(this).edit().remove("last_capture_status").apply();
             try {
                 // startForegroundService() has a short system deadline. Enter
                 // foreground state before loading the model or preparing audio.
@@ -180,16 +180,18 @@ public final class CaptureService extends Service {
                 MediaProjection currentProjection = projection;
                 projectionCallback = new MediaProjection.Callback() {
                     @Override public void onStop() {
+                        int stopThroughStartId;
                         synchronized (processingLock) {
                             if (stopping || projection != currentProjection) return;
                             stopping = true;
+                            stopThroughStartId = latestServiceStartId;
                         }
                         Log.i(TAG, "MediaProjection ended by Android or the user");
                         GameProfile.settings(CaptureService.this).edit()
                                 .putString("last_capture_status", "系统截屏授权已结束").apply();
                         // Do not let a delayed callback from an older capture
                         // session stop a newer start command.
-                        stopSelfResult(startId);
+                        stopSelfResult(stopThroughStartId);
                     }
                 };
                 projection.registerCallback(projectionCallback, worker);
@@ -249,12 +251,16 @@ public final class CaptureService extends Service {
     private void onImageAvailable(ImageReader source) {
         Image image = null;
         boolean resizeAfterClose = false;
+        boolean refreshAfterFrame = false;
         try {
             image = source.acquireLatestImage();
             if (image == null) return;
             final long now = SystemClock.elapsedRealtime();
-            if (now - lastProcessedAtMs < FRAME_PERIOD_MS) return;
-            lastProcessedAtMs = now;
+            synchronized (processingLock) {
+                if (stopping || source != reader) return;
+                if (now - lastProcessedAtMs < FRAME_PERIOD_MS) return;
+                lastProcessedAtMs = now;
+            }
             Image.Plane plane = image.getPlanes()[0];
             if (plane.getPixelStride() != 4) {
                 Log.e(TAG, "Unexpected RGBA pixel stride: " + plane.getPixelStride());
@@ -270,58 +276,74 @@ public final class CaptureService extends Service {
             if (frameTimestampNs > 0 && ageNs >= 0 && ageNs < 2_000_000_000L) {
                 observedAtMs = now - ageNs / 1_000_000L;
             }
-            if (!landscape) {
-                blackSinceMs = 0;
-            } else if (allBlack(pixels, width, height, plane.getRowStride())) {
-                if (blackSinceMs == 0) blackSinceMs = now;
-            } else {
-                blackSinceMs = 0;
-            }
-            if (landscape && now - startedAtMs > BLACK_FRAME_GRACE_MS
-                    && blackSinceMs > 0 && now - blackSinceMs >= BLACK_STOP_AFTER_MS) {
-                Log.w(TAG, "Capture is consistently black; protected or unavailable content");
-                stopWithStatus("画面持续黑屏，采集已停止；可能是受保护内容或系统限制");
-                return;
-            }
+            boolean blackFrame = landscape
+                    && allBlack(pixels, width, height, plane.getRowStride());
             synchronized (processingLock) {
+                // A newer ACTION_START can replace the reader while this
+                // callback is inspecting an already acquired old frame.
+                if (stopping || source != reader) return;
+                processedFrames++;
+                resizeAfterClose = processedFrames % 12 == 0;
+                if (!landscape || !blackFrame) {
+                    blackSinceMs = 0;
+                } else if (blackSinceMs == 0) {
+                    blackSinceMs = now;
+                }
+                if (landscape && now - startedAtMs > BLACK_FRAME_GRACE_MS
+                        && blackSinceMs > 0 && now - blackSinceMs >= BLACK_STOP_AFTER_MS) {
+                    Log.w(TAG, "Capture is consistently black; protected or unavailable content");
+                    stopWithStatus("画面持续黑屏，采集已停止；可能是受保护内容或系统限制");
+                    return;
+                }
                 if (landscape != lastFrameLandscape && nativeSession != 0) {
                     NativeBridge.nativeReset(nativeSession);
                     if (!landscape) latestNativeMicros = 0;
                 }
                 lastFrameLandscape = landscape;
                 if (landscape && !paused && nativeSession != 0) {
+                    long processingAtMs = SystemClock.elapsedRealtime();
+                    recordLandscapeProcessedFrameLocked(processingAtMs);
                     int[] result = NativeBridge.nativeProcess(nativeSession, pixels,
                             width, height, plane.getRowStride(), observedAtMs, now);
                     if (result != null && result.length == 5) {
                         if (result[3] < 0) Log.e(TAG, "Invalid direct image buffer");
                         latestNativeMicros = result[4];
                         if (result[0] > 0) {
+                            String cueId = auditSessionId + ":" + nextCueId++;
                             detectedCues++;
                             long frameAgeMs = SystemClock.elapsedRealtime() - observedAtMs;
-                            if (frameAgeMs > maxObservationAgeMs) {
+                            boolean stale = frameAgeMs > maxObservationAgeMs;
+                            boolean audioQueued = false;
+                            if (stale) {
                                 staleCues++;
-                                Log.i(TAG, "Dropped stale cue kind=" + result[0]
-                                        + " frameAgeMs=" + frameAgeMs);
                             } else {
-                                boolean audioQueued = cuePlayer.play(
+                                audioQueued = cuePlayer.play(
                                         result[0], result[1],
                                         observedAtMs + maxObservationAgeMs);
-                                Log.i(TAG, "Cue kind=" + result[0] + " direction=" + result[1]
-                                        + " audioQueued=" + audioQueued
-                                        + " frameAgeMs=" + frameAgeMs
-                                        + " nativeMicros=" + latestNativeMicros);
                                 if (audioQueued) queuedCues++;
                                 else audioQueueFailures++;
                             }
+                            Log.i(TAG, "CueEvent sessionId=" + auditSessionId
+                                    + " cueId=" + cueId
+                                    + " kind=" + result[0]
+                                    + " direction=" + result[1]
+                                    + " observedAtMs=" + observedAtMs
+                                    + " frameAgeMs=" + frameAgeMs
+                                    + " nativeMicros=" + latestNativeMicros
+                                    + " stale=" + stale
+                                    + " audioQueued=" + audioQueued);
                         }
                     }
                 }
+                if (now - lastNotificationAtMs > 5000) {
+                    lastNotificationAtMs = now;
+                    refreshAfterFrame = true;
+                }
             }
-            processedFrames++;
-            resizeAfterClose = processedFrames % 12 == 0;
-            if (now - lastNotificationAtMs > 5000) {
-                lastNotificationAtMs = now;
-                refreshNotification();
+            if (refreshAfterFrame) {
+                synchronized (processingLock) {
+                    if (!stopping && source == reader) refreshNotification();
+                }
             }
         } catch (IllegalStateException error) {
             Log.w(TAG, "A stale ImageReader frame was dropped", error);
@@ -329,7 +351,9 @@ public final class CaptureService extends Service {
             if (image != null) image.close();
             if (resizeAfterClose) {
                 try {
-                    resizeIfNeeded();
+                    synchronized (processingLock) {
+                        if (!stopping && source == reader) resizeIfNeeded();
+                    }
                 } catch (RuntimeException error) {
                     Log.e(TAG, "Could not resize capture after rotation", error);
                     stopWithStatus("横屏切换后无法继续截屏");
@@ -391,7 +415,74 @@ public final class CaptureService extends Service {
                         frameWidth <= frameHeight ? "等待横屏" : "正在处理画面"));
     }
 
+    private void beginCaptureAttempt(int startId) {
+        synchronized (processingLock) {
+            finishAuditSessionLocked("restarted");
+            releaseCapture();
+            if (cuePlayer != null) {
+                cuePlayer.close();
+                cuePlayer = null;
+            }
+            stopping = false;
+            paused = false;
+            startedAtMs = SystemClock.elapsedRealtime();
+            lastProcessedAtMs = 0;
+            lastNotificationAtMs = 0;
+            blackSinceMs = 0;
+            processedFrames = 0;
+            detectedCues = 0;
+            queuedCues = 0;
+            staleCues = 0;
+            audioQueueFailures = 0;
+            latestNativeMicros = 0;
+            lastFrameLandscape = false;
+            profileName = "";
+            auditSessionId = UUID.randomUUID().toString();
+            auditSessionStartedAtMs = startedAtMs;
+            nextCueId = 1;
+            landscapeProcessedFrames = 0;
+            firstLandscapeProcessedAtMs = -1;
+            lastLandscapeProcessedAtMs = -1;
+            maxLandscapeProcessedGapMs = 0;
+            auditSessionActive = true;
+            GameProfile.settings(this).edit().remove("last_capture_status").apply();
+            Log.i(TAG, "SessionStart sessionId=" + auditSessionId
+                    + " startId=" + startId
+                    + " startedElapsedRealtimeMs=" + auditSessionStartedAtMs);
+        }
+    }
+
+    private void recordLandscapeProcessedFrameLocked(long processedAtMs) {
+        if (firstLandscapeProcessedAtMs < 0) {
+            firstLandscapeProcessedAtMs = processedAtMs;
+        } else {
+            maxLandscapeProcessedGapMs = Math.max(maxLandscapeProcessedGapMs,
+                    processedAtMs - lastLandscapeProcessedAtMs);
+        }
+        lastLandscapeProcessedAtMs = processedAtMs;
+        landscapeProcessedFrames++;
+    }
+
+    private void finishAuditSessionLocked(String reason) {
+        if (!auditSessionActive) return;
+        long endedAtMs = SystemClock.elapsedRealtime();
+        Log.i(TAG, "SessionSummary sessionId=" + auditSessionId
+                + " durationMs=" + Math.max(0, endedAtMs - auditSessionStartedAtMs)
+                + " processedFrames=" + processedFrames
+                + " landscapeProcessedFrames=" + landscapeProcessedFrames
+                + " firstProcessedElapsedRealtimeMs=" + firstLandscapeProcessedAtMs
+                + " lastProcessedElapsedRealtimeMs=" + lastLandscapeProcessedAtMs
+                + " maxProcessedGapMs=" + maxLandscapeProcessedGapMs
+                + " detected=" + detectedCues
+                + " queued=" + queuedCues
+                + " stale=" + staleCues
+                + " audioFailures=" + audioQueueFailures
+                + " reason=" + reason);
+        auditSessionActive = false;
+    }
+
     private void stopWithStatus(String status) {
+        int stopThroughStartId;
         synchronized (processingLock) {
             if (!stopping) {
                 stopping = true;
@@ -400,8 +491,10 @@ public final class CaptureService extends Service {
                 GameProfile.settings(this).edit()
                         .putString("last_capture_status", status).apply();
             }
+            stopThroughStartId = latestServiceStartId;
         }
-        stopSelf();
+        if (stopThroughStartId > 0) stopSelfResult(stopThroughStartId);
+        else stopSelf();
     }
 
     private void releaseCapture() {
@@ -434,6 +527,7 @@ public final class CaptureService extends Service {
     @Override
     public void onDestroy() {
         synchronized (processingLock) {
+            finishAuditSessionLocked("destroyed");
             releaseCapture();
         }
         // stopSelf() normally removes the notification with the service, but

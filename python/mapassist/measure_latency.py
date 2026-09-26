@@ -11,6 +11,10 @@ from pathlib import Path
 
 from .evaluate import KINDS
 
+REQUIRED_COLUMNS = {
+    "event_id", "cue_id", "kind", "evidence_ms", "audio_ms", "source_note",
+}
+
 
 def _p95(values: list[float]) -> float | None:
     if not values:
@@ -23,7 +27,24 @@ def _p95(values: list[float]) -> float | None:
 def measure(rows: list[dict[str, str]]) -> dict:
     delays: dict[str, list[float]] = {kind: [] for kind in KINDS}
     missing: dict[str, int] = {kind: 0 for kind in KINDS}
+    event_ids: set[str] = set()
+    cue_ids: set[str] = set()
     for line_number, row in enumerate(rows, start=2):
+        event_id = (row.get("event_id") or "").strip()
+        cue_id = (row.get("cue_id") or "").strip()
+        source_note = (row.get("source_note") or "").strip()
+        if not event_id:
+            raise ValueError(f"Line {line_number}: event_id is required")
+        if event_id in event_ids:
+            raise ValueError(f"Line {line_number}: duplicate event_id {event_id!r}")
+        if not cue_id:
+            raise ValueError(f"Line {line_number}: cue_id is required")
+        if cue_id in cue_ids:
+            raise ValueError(f"Line {line_number}: duplicate cue_id {cue_id!r}")
+        if not source_note:
+            raise ValueError(f"Line {line_number}: source_note is required")
+        event_ids.add(event_id)
+        cue_ids.add(cue_id)
         kind = (row.get("kind") or "").strip()
         if kind not in KINDS:
             raise ValueError(f"Line {line_number}: unknown kind {kind!r}")
@@ -65,8 +86,10 @@ def main() -> None:
     try:
         with args.csv_file.open(newline="", encoding="utf-8-sig") as stream:
             reader = csv.DictReader(stream)
-            if reader.fieldnames is None or not {"kind", "evidence_ms", "audio_ms"}.issubset(reader.fieldnames):
-                raise ValueError("CSV needs kind,evidence_ms,audio_ms columns")
+            if reader.fieldnames is None or not REQUIRED_COLUMNS.issubset(reader.fieldnames):
+                raise ValueError(
+                    "CSV needs event_id,cue_id,kind,evidence_ms,audio_ms,source_note columns"
+                )
             result = measure(list(reader))
         report = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
         if args.output:

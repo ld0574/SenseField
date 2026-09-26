@@ -811,16 +811,22 @@ def test_extract_missing_frame_does_not_reuse_existing_image(tmp_path: Path) -> 
 
 def test_external_latency_report_counts_missing_and_uses_p95() -> None:
     rows = [
-        {"kind": "main_enemy", "evidence_ms": "1000", "audio_ms": str(1000 + delay)}
-        for delay in range(0, 400, 20)
+        {"event_id": f"event-{index}", "cue_id": f"session:cue-{index}",
+         "kind": "main_enemy", "evidence_ms": "1000",
+         "audio_ms": str(1000 + delay), "source_note": "frame checked"}
+        for index, delay in enumerate(range(0, 400, 20))
     ]
-    rows.append({"kind": "danger_ping", "evidence_ms": "5000", "audio_ms": ""})
+    rows.append({"event_id": "event-missing", "cue_id": "session:cue-missing",
+                 "kind": "danger_ping", "evidence_ms": "5000", "audio_ms": "",
+                 "source_note": "no audible onset"})
     result = measure(rows)
     assert result["by_kind"]["main_enemy"]["p95_ms"] == 360.0
     assert result["overall"] == {"paired_events": 20, "missing_audio": 1,
                                  "p95_ms": 360.0}
     with pytest.raises(ValueError, match="precedes evidence"):
-        measure([{"kind": "main_enemy", "evidence_ms": "1000", "audio_ms": "900"}])
+        measure([{"event_id": "event-1", "cue_id": "session:1",
+                  "kind": "main_enemy", "evidence_ms": "1000", "audio_ms": "900",
+                  "source_note": "frame checked"}])
 
 
 def test_profile_bundle_contains_android_templates(tmp_path: Path) -> None:

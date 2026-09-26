@@ -1,4 +1,4 @@
-kind,evidence_ms,audio_ms
-main_enemy,12000,12190
-minimap_enemy,21100,21320
-danger_ping,30100,
+event_id,cue_id,kind,evidence_ms,audio_ms,source_note
+ext-001,session-123:1,main_enemy,12000,12190,external video frame/timecode checked
+ext-002,session-123:2,minimap_enemy,21100,21320,external video frame/timecode checked
+ext-003,session-123:3,danger_ping,30100,,cue logged but no audible onset

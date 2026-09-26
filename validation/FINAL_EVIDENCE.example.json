@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "enabled_kinds": [
     "minimap_enemy",
     "danger_ping"
@@ -11,7 +11,10 @@
     "id": "holdout-match-06",
     "split": "test",
     "profile_frozen_before_review": true,
+    "predictions_frozen_before_label_review": true,
     "used_for_tuning": false,
+    "real_match": true,
+    "continuous_recording": true,
     "video": {
       "path": "match-holdout.mp4",
       "sha256": "replace_with_64_character_sha256"
@@ -43,6 +46,10 @@
     "actual_audio_verified": true,
     "game_audio_mix_ok": true,
     "authorized_test_scene": true,
+    "external_recording_unedited": true,
+    "latency_annotation_complete": true,
+    "sync_method": "replace with how Android cue IDs and external video timecodes were aligned",
+    "audio_capture_method": "replace with how actual speaker or headphone output was recorded",
     "fps_notes": "replace with observation and measurement method",
     "thermal_notes": "replace with temperature or observed heating",
     "hero_feedback": "replace with Hero feedback",
@@ -50,6 +57,11 @@
       "path": "physical-device-session.mp4",
       "sha256": "replace_with_64_character_sha256"
     },
+    "device_log": {
+      "path": "physical-device-logcat.txt",
+      "sha256": "replace_with_64_character_sha256"
+    },
+    "session_id": "replace with UUID from SessionStart",
     "latency_csv": {
       "path": "latency.csv",
       "sha256": "replace_with_64_character_sha256"

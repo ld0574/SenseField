@@ -12,8 +12,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .android_session_log import parse_session_log
 from .evaluate import KINDS, evaluate, read_labels, read_predictions
-from .measure_latency import measure
+from .measure_latency import REQUIRED_COLUMNS, measure
 
 
 TARGETS = {
@@ -23,6 +24,12 @@ TARGETS = {
     "physical_p95_ms": 250.0,
     "session_minutes": 15.0,
     "replay_fps": 12,
+    "latency_samples_per_kind": 5,
+    "latency_samples_overall": 20,
+    "max_recording_packet_gap_seconds": 2.0,
+    "max_recording_av_offset_seconds": 2.0,
+    "minimum_landscape_fps": 8.0,
+    "max_processed_gap_ms": 2000,
 }
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -72,27 +79,103 @@ def _number(value: object) -> float | None:
     return None
 
 
-def _probe_duration_seconds(path: Path) -> float:
+def _packet_timeline(path: Path, selector: str) -> dict[str, float | int]:
     try:
         process = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+            ["ffprobe", "-v", "error", "-select_streams", selector,
+             "-show_entries", "packet=dts_time,pts_time,duration_time",
              "-of", "json", str(path)],
             check=True, text=True, capture_output=True,
         )
-        duration = float(json.loads(process.stdout)["format"]["duration"])
+        packets = json.loads(process.stdout)["packets"]
     except (FileNotFoundError, subprocess.CalledProcessError, KeyError, TypeError,
             ValueError, json.JSONDecodeError) as error:
-        raise ValueError(f"Could not read external recording duration: {path}") from error
+        raise ValueError(
+            f"Could not read {selector} packet timeline from external recording: {path}"
+        ) from error
+    if not isinstance(packets, list):
+        raise ValueError(f"External recording has no {selector} packet list: {path}")
+    first: float | None = None
+    previous: float | None = None
+    previous_duration = 0.0
+    end: float | None = None
+    maximum_gap = 0.0
+    count = 0
+    for packet in packets:
+        if not isinstance(packet, dict):
+            continue
+        raw_timestamp = packet.get("dts_time", packet.get("pts_time"))
+        try:
+            timestamp = float(raw_timestamp)
+            duration = float(packet.get("duration_time", 0.0))
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(timestamp) or not math.isfinite(duration) or duration < 0:
+            continue
+        if previous is not None:
+            if timestamp < previous - 1e-6:
+                raise ValueError(
+                    f"External recording {selector} packet timestamps are not monotonic"
+                )
+            maximum_gap = max(
+                maximum_gap, max(0.0, timestamp - (previous + previous_duration))
+            )
+        if first is None:
+            first = timestamp
+        previous = timestamp
+        previous_duration = duration
+        end = timestamp + duration
+        count += 1
+    if first is None or end is None or count < 2 or end <= first:
+        raise ValueError(f"External recording has insufficient {selector} packets: {path}")
+    return {
+        "packet_count": count,
+        "start_seconds": first,
+        "end_seconds": end,
+        "span_seconds": end - first,
+        "max_packet_gap_seconds": maximum_gap,
+    }
+
+
+def _probe_external_recording(path: Path) -> dict[str, object]:
+    try:
+        process = subprocess.run(
+            ["ffprobe", "-v", "error",
+             "-show_entries", "format=duration:stream=codec_type",
+             "-of", "json", str(path)],
+            check=True, text=True, capture_output=True,
+        )
+        payload = json.loads(process.stdout)
+        duration = float(payload["format"]["duration"])
+        stream_types = [item.get("codec_type") for item in payload["streams"]
+                        if isinstance(item, dict)]
+    except (FileNotFoundError, subprocess.CalledProcessError, KeyError, TypeError,
+            ValueError, json.JSONDecodeError) as error:
+        raise ValueError(f"Could not inspect external recording: {path}") from error
     if not math.isfinite(duration) or duration <= 0:
         raise ValueError(f"External recording has invalid duration: {path}")
-    return duration
+    if "video" not in stream_types or "audio" not in stream_types:
+        raise ValueError("External recording must contain both video and audio streams")
+    video = _packet_timeline(path, "v:0")
+    audio = _packet_timeline(path, "a:0")
+    return {
+        "format_duration_seconds": duration,
+        "video": video,
+        "audio": audio,
+        "start_offset_seconds": abs(
+            float(video["start_seconds"]) - float(audio["start_seconds"])
+        ),
+        "end_offset_seconds": abs(
+            float(video["end_seconds"]) - float(audio["end_seconds"])
+        ),
+    }
 
 
 def evaluate_gate(evidence_file: Path) -> dict:
     evidence_file = evidence_file.resolve()
     data = _json(evidence_file, "evidence manifest")
-    if data.get("schema_version") != 1:
-        raise ValueError("Expected evidence schema_version 1")
+    if data.get("schema_version") != 2:
+        raise ValueError("Expected evidence schema_version 2")
     base = evidence_file.parent
 
     enabled = data.get("enabled_kinds")
@@ -145,15 +228,24 @@ def evaluate_gate(evidence_file: Path) -> dict:
     recording_path, _ = _reference(
         base, device.get("external_recording"), "device_session.external_recording"
     )
-    recording_duration_seconds = _probe_duration_seconds(recording_path)
+    recording_probe = _probe_external_recording(recording_path)
+    recording_duration_seconds = float(recording_probe["format_duration_seconds"])
+    device_log_path, _ = _reference(
+        base, device.get("device_log"), "device_session.device_log"
+    )
+    session_id = device.get("session_id")
+    if not _nonempty(session_id):
+        raise ValueError("device_session.session_id is required")
+    android_session = parse_session_log(device_log_path, session_id.strip())
     latency_path, _ = _reference(
         base, device.get("latency_csv"), "device_session.latency_csv"
     )
     with latency_path.open(newline="", encoding="utf-8-sig") as stream:
         reader = csv.DictReader(stream)
-        if reader.fieldnames is None or not {"kind", "evidence_ms", "audio_ms"}.issubset(
-                reader.fieldnames):
-            raise ValueError("Latency CSV needs kind,evidence_ms,audio_ms columns")
+        if reader.fieldnames is None or not REQUIRED_COLUMNS.issubset(reader.fieldnames):
+            raise ValueError(
+                "Latency CSV needs event_id,cue_id,kind,evidence_ms,audio_ms,source_note columns"
+            )
         latency_rows = list(reader)
     unexpected_latency_kinds = sorted({(row.get("kind") or "").strip()
                                        for row in latency_rows} - set(enabled))
@@ -162,6 +254,34 @@ def evaluate_gate(evidence_file: Path) -> dict:
             f"Latency CSV contains disabled or unknown kinds: {unexpected_latency_kinds}"
         )
     latency_metrics = measure(latency_rows)
+    latency_by_cue_id = {
+        str(row["cue_id"]).strip(): row
+        for row in latency_rows
+    }
+    logged_cues = {
+        str(cue["cue_id"]): cue
+        for cue in android_session["cues"]
+        if not cue["stale"]
+    }
+    latency_cue_ids = set(latency_by_cue_id)
+    logged_cue_ids = set(logged_cues)
+    missing_latency_cues = sorted(logged_cue_ids - latency_cue_ids)
+    unknown_latency_cues = sorted(latency_cue_ids - logged_cue_ids)
+    cue_kind_mismatches = sorted(
+        cue_id for cue_id in logged_cue_ids & latency_cue_ids
+        if str(latency_by_cue_id[cue_id]["kind"]).strip()
+        != str(logged_cues[cue_id]["kind"])
+    )
+    recording_duration_ms = recording_duration_seconds * 1000.0
+    for line_number, row in enumerate(latency_rows, start=2):
+        evidence_ms = float(row["evidence_ms"])
+        audio_text = (row.get("audio_ms") or "").strip()
+        audio_ms = float(audio_text) if audio_text else None
+        if evidence_ms > recording_duration_ms or (
+                audio_ms is not None and audio_ms > recording_duration_ms):
+            raise ValueError(
+                f"Latency CSV line {line_number} lies outside the external recording"
+            )
 
     checks = []
 
@@ -178,8 +298,16 @@ def evaluate_gate(evidence_file: Path) -> dict:
     check("holdout.profile_frozen", holdout.get("profile_frozen_before_review") is True,
           holdout.get("profile_frozen_before_review"),
           "profile frozen before reviewing holdout")
+    check("holdout.predictions_frozen", holdout.get(
+              "predictions_frozen_before_label_review") is True,
+          holdout.get("predictions_frozen_before_label_review"),
+          "predictions frozen before reviewing holdout labels")
     check("holdout.not_used_for_tuning", holdout.get("used_for_tuning") is False,
           holdout.get("used_for_tuning"), "holdout was not used for tuning")
+    check("holdout.real_match", holdout.get("real_match") is True,
+          holdout.get("real_match"), "recording is a real player match")
+    check("holdout.continuous_recording", holdout.get("continuous_recording") is True,
+          holdout.get("continuous_recording"), "recording is a continuous match timeline")
     check("provenance.video", metadata_records["video"][1] == video_sha,
           metadata_records["video"][1], f"must equal holdout video SHA-256 {video_sha}")
     check("provenance.profile", metadata_records["profile"][1] == profile_sha,
@@ -228,9 +356,12 @@ def evaluate_gate(evidence_file: Path) -> dict:
         ("actual_audio_verified", "cue was audibly verified"),
         ("game_audio_mix_ok", "cue and game audio were checked together"),
         ("authorized_test_scene", "test scene was permitted"),
+        ("external_recording_unedited", "external recording is the unedited session capture"),
+        ("latency_annotation_complete", "every non-stale logged cue was annotated"),
     ):
         check(f"device.{field}", device.get(field) is True, device.get(field), label)
-    for field in ("fps_notes", "thermal_notes", "hero_feedback"):
+    for field in ("fps_notes", "thermal_notes", "hero_feedback", "sync_method",
+                  "audio_capture_method"):
         check(f"device.{field}", _nonempty(device.get(field)), device.get(field),
               "nonempty observation")
     check("device.external_recording", recording_path.stat().st_size > 0,
@@ -239,17 +370,82 @@ def evaluate_gate(evidence_file: Path) -> dict:
           recording_duration_seconds >= TARGETS["session_minutes"] * 60,
           round(recording_duration_seconds, 3),
           f">= {TARGETS['session_minutes']:.0f} continuous minutes")
+    check("device.duration_within_recording",
+          duration is not None and duration * 60 <= recording_duration_seconds + 1.0,
+          duration, "declared session duration must fit inside external recording")
+    minimum_stream_seconds = TARGETS["session_minutes"] * 60
+    for stream_kind in ("video", "audio"):
+        stream = recording_probe[stream_kind]
+        check(f"device.external_recording_{stream_kind}_duration",
+              float(stream["span_seconds"]) >= minimum_stream_seconds,
+              round(float(stream["span_seconds"]), 3),
+              f">= {minimum_stream_seconds:.0f} seconds")
+        check(f"device.external_recording_{stream_kind}_continuity",
+              float(stream["max_packet_gap_seconds"])
+              <= TARGETS["max_recording_packet_gap_seconds"],
+              round(float(stream["max_packet_gap_seconds"]), 6),
+              f"maximum packet gap <= {TARGETS['max_recording_packet_gap_seconds']:.1f} seconds")
+    for edge in ("start", "end"):
+        value = float(recording_probe[f"{edge}_offset_seconds"])
+        check(f"device.external_recording_av_{edge}_alignment",
+              value <= TARGETS["max_recording_av_offset_seconds"],
+              round(value, 6),
+              f"audio/video {edge} offset <= "
+              f"{TARGETS['max_recording_av_offset_seconds']:.1f} seconds")
+
+    summary = android_session["summary"]
+    logged_duration_ms = int(summary["durationMs"])
+    landscape_span_ms = int(android_session["landscape_span_ms"])
+    average_landscape_fps = float(android_session["average_landscape_fps"])
+    check("device.session_id", android_session["session_id"] == session_id.strip(),
+          android_session["session_id"], "must select the captured Android session")
+    check("device.log_duration",
+          logged_duration_ms >= TARGETS["session_minutes"] * 60_000,
+          logged_duration_ms,
+          f">= {TARGETS['session_minutes']:.0f} continuous minutes")
+    check("device.log_duration_within_recording",
+          logged_duration_ms <= recording_duration_ms + 2000,
+          logged_duration_ms,
+          "logged session must fit inside the external recording")
+    check("device.landscape_processed_span",
+          landscape_span_ms >= TARGETS["session_minutes"] * 60_000,
+          landscape_span_ms,
+          f">= {TARGETS['session_minutes']:.0f} minutes of landscape processing")
+    check("device.landscape_average_fps",
+          average_landscape_fps >= TARGETS["minimum_landscape_fps"],
+          average_landscape_fps,
+          f">= {TARGETS['minimum_landscape_fps']:.1f} processed frames per second")
+    check("device.landscape_max_gap",
+          int(summary["maxProcessedGapMs"]) <= TARGETS["max_processed_gap_ms"],
+          int(summary["maxProcessedGapMs"]),
+          f"<= {TARGETS['max_processed_gap_ms']} ms between processed frames")
+    check("device.logged_audio_queue_failures", int(summary["audioFailures"]) == 0,
+          int(summary["audioFailures"]), "0 non-stale cues rejected by the audio queue")
+    check("device.latency_cue_ids",
+          not missing_latency_cues and not unknown_latency_cues,
+          {"missing_from_csv": missing_latency_cues,
+           "not_in_non_stale_log": unknown_latency_cues},
+          "latency CSV cue IDs must exactly equal all non-stale Android CueEvent IDs")
+    check("device.latency_cue_kinds", not cue_kind_mismatches,
+          cue_kind_mismatches,
+          "each latency CSV kind must match its Android CueEvent kind")
 
     for kind in enabled:
         metrics = latency_metrics["by_kind"][kind]
-        check(f"latency.{kind}.paired", metrics["paired_events"] >= 1,
-              metrics["paired_events"], "at least one audible matched event")
+        check(f"latency.{kind}.paired",
+              metrics["paired_events"] >= TARGETS["latency_samples_per_kind"],
+              metrics["paired_events"],
+              f">= {TARGETS['latency_samples_per_kind']} audible matched events")
         check(f"latency.{kind}.missing_audio", metrics["missing_audio"] == 0,
               metrics["missing_audio"], "0 missing audible cues")
         check(f"latency.{kind}.p95_ms",
               metrics["p95_ms"] is not None and metrics["p95_ms"] <= TARGETS["physical_p95_ms"],
               metrics["p95_ms"], f"<= {TARGETS['physical_p95_ms']:.0f} ms")
     overall_latency = latency_metrics["overall"]
+    check("latency.overall.paired",
+          overall_latency["paired_events"] >= TARGETS["latency_samples_overall"],
+          overall_latency["paired_events"],
+          f">= {TARGETS['latency_samples_overall']} audible matched events")
     check("latency.overall.missing_audio", overall_latency["missing_audio"] == 0,
           overall_latency["missing_audio"], "0 missing audible cues")
     check("latency.overall.p95_ms",
@@ -259,13 +455,15 @@ def evaluate_gate(evidence_file: Path) -> dict:
 
     failures = [item["id"] for item in checks if not item["passed"]]
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "passed": not failures,
         "enabled_kinds": enabled,
         "directional_kinds": directional,
         "targets": TARGETS,
         "event_metrics": event_metrics,
         "latency_metrics": latency_metrics,
+        "external_recording_probe": recording_probe,
+        "android_session": android_session,
         "checks": checks,
         "failures": failures,
     }

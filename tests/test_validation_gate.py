@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from mapassist.validation_gate import evaluate_gate
+from mapassist.validation_gate import _probe_external_recording, evaluate_gate
 
 
 def _sha(path: Path) -> str:
@@ -22,6 +24,23 @@ def _write_json(path: Path, value: dict) -> None:
                     encoding="utf-8")
 
 
+def _recording_probe(duration: float) -> dict:
+    timeline = {
+        "packet_count": 1000,
+        "start_seconds": 0.0,
+        "end_seconds": duration,
+        "span_seconds": duration,
+        "max_packet_gap_seconds": 0.04,
+    }
+    return {
+        "format_duration_seconds": duration,
+        "video": dict(timeline),
+        "audio": dict(timeline),
+        "start_offset_seconds": 0.0,
+        "end_offset_seconds": 0.0,
+    }
+
+
 def _evidence_bundle(tmp_path: Path) -> tuple[Path, dict, dict]:
     video = tmp_path / "holdout.mp4"
     profile = tmp_path / "profile.json"
@@ -30,6 +49,7 @@ def _evidence_bundle(tmp_path: Path) -> tuple[Path, dict, dict]:
     predictions = tmp_path / "predictions.jsonl"
     labels = tmp_path / "labels.json"
     latency = tmp_path / "latency.csv"
+    device_log = tmp_path / "device-logcat.txt"
     metadata_file = tmp_path / "predictions.jsonl.meta.json"
     evidence_file = tmp_path / "final-evidence.json"
 
@@ -56,13 +76,36 @@ def _evidence_bundle(tmp_path: Path) -> tuple[Path, dict, dict]:
              "direction": None},
         ],
     })
-    latency.write_text(
-        "kind,evidence_ms,audio_ms\n"
-        "main_enemy,1000,1100\n"
-        "minimap_enemy,2000,2120\n"
-        "danger_ping,3000,3130\n",
-        encoding="utf-8",
+    latency_rows = ["event_id,cue_id,kind,evidence_ms,audio_ms,source_note"]
+    kinds = ("main_enemy", "minimap_enemy", "danger_ping")
+    kind_codes = {"main_enemy": 1, "minimap_enemy": 2, "danger_ping": 3}
+    delays = (100, 110, 120, 130)
+    device_log_rows = [
+        "I/MapAssistCapture: SessionStart sessionId=session-123 startId=1 "
+        "startedElapsedRealtimeMs=1000"
+    ]
+    for index in range(20):
+        evidence_ms = 1000 + index * 1000
+        kind = kinds[index % 3]
+        latency_rows.append(
+            f"ext-{index + 1:03d},session-123:{index + 1},{kind},"
+            f"{evidence_ms},{evidence_ms + delays[index % 4]},frame checked"
+        )
+        device_log_rows.append(
+            "I/MapAssistCapture: CueEvent sessionId=session-123 "
+            f"cueId=session-123:{index + 1} kind={kind_codes[kind]} direction=1 "
+            f"observedAtMs={2000 + index * 1000} frameAgeMs=20 nativeMicros=12000 "
+            "stale=false audioQueued=true"
+        )
+    device_log_rows.append(
+        "I/MapAssistCapture: SessionSummary sessionId=session-123 durationMs=960000 "
+        "processedFrames=11521 landscapeProcessedFrames=11521 "
+        "firstProcessedElapsedRealtimeMs=1000 lastProcessedElapsedRealtimeMs=961000 "
+        "maxProcessedGapMs=84 detected=20 queued=20 stale=0 audioFailures=0 "
+        "reason=stopped"
     )
+    latency.write_text("\n".join(latency_rows) + "\n", encoding="utf-8")
+    device_log.write_text("\n".join(device_log_rows) + "\n", encoding="utf-8")
     metadata = {
         "schema_version": 1,
         "video": _ref(video),
@@ -74,14 +117,17 @@ def _evidence_bundle(tmp_path: Path) -> tuple[Path, dict, dict]:
     }
     _write_json(metadata_file, metadata)
     evidence = {
-        "schema_version": 1,
+        "schema_version": 2,
         "enabled_kinds": ["main_enemy", "minimap_enemy", "danger_ping"],
         "directional_kinds": ["main_enemy", "minimap_enemy"],
         "holdout": {
             "id": "holdout-match-06",
             "split": "test",
             "profile_frozen_before_review": True,
+            "predictions_frozen_before_label_review": True,
             "used_for_tuning": False,
+            "real_match": True,
+            "continuous_recording": True,
             "video": _ref(video),
             "profile": _ref(profile),
             "labels": _ref(labels),
@@ -98,10 +144,16 @@ def _evidence_bundle(tmp_path: Path) -> tuple[Path, dict, dict]:
             "actual_audio_verified": True,
             "game_audio_mix_ok": True,
             "authorized_test_scene": True,
+            "external_recording_unedited": True,
+            "latency_annotation_complete": True,
+            "sync_method": "External recording timestamps start at its first video frame.",
+            "audio_capture_method": "External camera microphone captured phone speaker audio.",
             "fps_notes": "Stable during the 16 minute practice session.",
             "thermal_notes": "Warm without thermal warning.",
             "hero_feedback": "Directional minimap cues were understandable.",
             "external_recording": _ref(recording),
+            "device_log": _ref(device_log),
+            "session_id": "session-123",
             "latency_csv": _ref(latency),
         },
     }
@@ -112,19 +164,27 @@ def _evidence_bundle(tmp_path: Path) -> tuple[Path, dict, dict]:
 def test_validation_gate_accepts_complete_holdout_and_phone_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("mapassist.validation_gate._probe_duration_seconds", lambda _: 960.0)
+    monkeypatch.setattr(
+        "mapassist.validation_gate._probe_external_recording",
+        lambda _: _recording_probe(960.0),
+    )
     evidence_file, _, _ = _evidence_bundle(tmp_path)
     report = evaluate_gate(evidence_file)
     assert report["passed"] is True
     assert report["failures"] == []
     assert report["event_metrics"]["overall"]["precision"] == 1.0
     assert report["latency_metrics"]["overall"]["p95_ms"] == 130.0
+    assert report["android_session"]["average_landscape_fps"] == 12.0
+    assert report["android_session"]["summary"]["audioFailures"] == 0
 
 
 def test_validation_gate_lists_semantic_failures(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("mapassist.validation_gate._probe_duration_seconds", lambda _: 800.0)
+    monkeypatch.setattr(
+        "mapassist.validation_gate._probe_external_recording",
+        lambda _: _recording_probe(800.0),
+    )
     evidence_file, evidence, metadata = _evidence_bundle(tmp_path)
     predictions = tmp_path / "predictions.jsonl"
     with predictions.open("a", encoding="utf-8") as stream:
@@ -160,3 +220,58 @@ def test_validation_gate_rejects_changed_evidence_file(tmp_path: Path) -> None:
     _write_json(evidence_file, evidence)
     with pytest.raises(ValueError, match="SHA-256 mismatch"):
         evaluate_gate(evidence_file)
+
+
+def test_validation_gate_requires_exact_logged_cue_ids(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "mapassist.validation_gate._probe_external_recording",
+        lambda _: _recording_probe(960.0),
+    )
+    evidence_file, evidence, _ = _evidence_bundle(tmp_path)
+    latency = tmp_path / "latency.csv"
+    rows = latency.read_text(encoding="utf-8").splitlines()
+    fields = rows[-1].split(",")
+    fields[1] = "session-123:999"
+    rows[-1] = ",".join(fields)
+    latency.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    evidence["device_session"]["latency_csv"] = _ref(latency)
+    _write_json(evidence_file, evidence)
+
+    report = evaluate_gate(evidence_file)
+    assert report["passed"] is False
+    cue_check = next(item for item in report["checks"]
+                     if item["id"] == "device.latency_cue_ids")
+    assert cue_check["actual"] == {
+        "missing_from_csv": ["session-123:20"],
+        "not_in_non_stale_log": ["session-123:999"],
+    }
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
+                    reason="ffmpeg and ffprobe are required")
+def test_external_recording_probe_requires_continuous_audio_and_video(
+    tmp_path: Path,
+) -> None:
+    recording = tmp_path / "external.mp4"
+    subprocess.run([
+        "ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+        "color=c=black:s=160x90:r=30:d=2", "-f", "lavfi", "-i",
+        "sine=frequency=600:sample_rate=48000:duration=2", "-shortest",
+        "-c:v", "mpeg4", "-c:a", "aac", "-y", str(recording),
+    ], check=True)
+    probe = _probe_external_recording(recording)
+    assert probe["video"]["packet_count"] >= 50
+    assert probe["audio"]["packet_count"] >= 80
+    assert probe["video"]["max_packet_gap_seconds"] < 0.1
+    assert probe["audio"]["max_packet_gap_seconds"] < 0.1
+
+    video_only = tmp_path / "video-only.mp4"
+    subprocess.run([
+        "ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+        "color=c=black:s=160x90:r=30:d=1", "-c:v", "mpeg4", "-an", "-y",
+        str(video_only),
+    ], check=True)
+    with pytest.raises(ValueError, match="both video and audio"):
+        _probe_external_recording(video_only)
