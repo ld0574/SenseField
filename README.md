@@ -56,7 +56,7 @@
 | 简短声音提示 | 已实现 | 事件合并、冷却与优先级规则可用 |
 | 空间音频与触觉编码 | 计划中 | 尚未完成真实玩家验收 |
 | 录像回放、多人标注与离线评测 | 已实现 | 支持 COCO 数据导出 |
-| 独立留出对局与实体机验收 | 待完成 | 当前开发集召回率尚未达到比赛指标 |
+| 独立留出对局与实体机验收 | 进行中 | video8 真人排位局已冻结为独立留出集，正在盲标；实体机仍待验收 |
 
 完整指标、证据边界与待验证项见 [当前验证状态](validation/STATUS.md)。
 
@@ -71,12 +71,13 @@ python -m pip install -e '.[test]'
 python -m pytest -q
 ```
 
-启动统一标注网站（页面内切换六场密集队列、video7 留出队列和历史队列）：
+启动统一标注网站（页面内切换开发队列、video7 和 video8 队列）：
 
 ```sh
 PYTHONPATH=python python3 -m mapassist.annotation_server \
   --dataset dense-v1-6=data/private/minimap-review-v4-dense \
   --dataset holdout-video7=data/private/minimap-video7-holdout-v1 \
+  --dataset holdout-video8=data/private/minimap-video8-holdout-v1/blind-review-v1 \
   --dataset reviewed-v1-5=data/private/minimap-review-v3 \
   --dataset reviewed-v6=data/private/holdout-video6/blind-review \
   --host 127.0.0.1 --port 8765 --open
