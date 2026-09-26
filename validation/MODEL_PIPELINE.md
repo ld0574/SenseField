@@ -15,7 +15,9 @@
 
 0.2.0 的历史固定 ROI 冒烟使用 video7 的 10 秒开发片段：处理 123 帧，得到 253 个 YOLOX 检测和 2 条事件，回放约 24.9 FPS。
 
-0.3.0 自适应链路使用同一 video7 开发片段和当前 APK 内置 profile 重跑：122 帧中首帧为 `searching` 并保持静默，随后 121 帧为 `locked`；得到 31 个 YOLOX 检测、31 个 observation 和 2 条事件，开发机单次回放约 33.1 FPS、处理 P95 约 28.1 ms。输入片段 SHA-256 为 `7e9ef922c19f52200946eecd281d95cee2a5c5bd7eec941b9ba640acf4941746`，profile 为 `8c98248b896483c71c4a2ed4152aaac64ba878c1bb48d6b69942adba0431f3c3`，预测 JSONL 为 `e603f129aaadd676199a463b7ab12d63d1000b77658bc80a1d89e808ddc483a8`，provenance 为 `3f74e29ee7544a1737f4863ad3014e8f101bf697a099337c23a3d1b3b572ab65`。这项开发冒烟证明定位器、动态 ROI、ncnn 和事件层已连通，不是独立准确率或真机时延成绩。
+自适应候选链路使用另一段 video7 的 10 秒开发片段重跑：122 帧中首帧为 `searching` 并保持小地图静默，随后 121 帧为 `locked`；得到 31 个 YOLOX 检测、31 个 observation 和 2 条事件，开发机单次回放约 33.1 FPS、处理 P95 约 28.1 ms。输入片段 SHA-256 为 `7e9ef922c19f52200946eecd281d95cee2a5c5bd7eec941b9ba640acf4941746`，候选 profile 为 `8c98248b896483c71c4a2ed4152aaac64ba878c1bb48d6b69942adba0431f3c3`，预测 JSONL 为 `e603f129aaadd676199a463b7ab12d63d1000b77658bc80a1d89e808ddc483a8`，provenance 为 `3f74e29ee7544a1737f4863ad3014e8f101bf697a099337c23a3d1b3b572ab65`。这项开发冒烟证明定位器、动态 ROI、ncnn 和事件层已连通。
+
+随后在 video8 修正标签上做的 post-hoc 配对诊断发现，固定 ROI 与自适应候选在同一 ncnn 路径下分别为 58.14% / 81.40% 和 52.16% / 78.60%（precision / recall）。动态并集裁剪会改变旧 YOLOX 的输入分布，因此候选配置暂不内置；这项诊断也不作为新的独立留出成绩。详细边界见[定位器记录](MINIMAP_LOCATOR.md)。
 
 模型配置为 `verified: false`。应用首次打开时不会运行它；开发测试者必须勾选“允许未通过真人录像评测的实验识别器”，下一次截屏会话才加载模型。`video7` 人机盲测只有 65.57% precision／63.49% recall，因此不能作为发布默认能力。
 

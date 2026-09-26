@@ -960,7 +960,7 @@ def test_bundled_android_profile_enables_only_experimental_yolox_minimap() -> No
     assert profile["events"]["min_confidence"] == pytest.approx(0.29)
 
 
-def test_adaptive_minimap_profile_is_bundled_default_and_keeps_frozen_evidence() -> None:
+def test_adaptive_minimap_profile_is_importable_and_keeps_frozen_default() -> None:
     root = Path(__file__).resolve().parents[1]
     source = json.loads(
         (root / "profiles/hok_minimap_adaptive.experimental.json").read_text()
@@ -968,26 +968,26 @@ def test_adaptive_minimap_profile_is_bundled_default_and_keeps_frozen_evidence()
     bundled = json.loads(
         (root / "profiles/hok_minimap_adaptive.experimental.android.json").read_text()
     )
-    android_default = json.loads(
+    frozen_default = json.loads(
         (root / "android/app/src/main/assets/profile.json").read_text()
-    )
-    frozen_fixed = json.loads(
-        (root / "profiles/hok_minimap_development.android.json").read_text()
     )
 
     assert bundled["templates_b64"] == {}
     assert bundled["layout"] == source["layout"]
-    assert android_default == bundled
+    assert frozen_default == json.loads(
+        (root / "profiles/hok_minimap_development.android.json").read_text()
+    )
     locator = bundled["layout"]["minimap_locator"]
     descriptor = base64.b64decode(locator["descriptor_b64"], validate=True)
     assert len(descriptor) == locator["grid_width"] * locator["grid_height"]
     assert hashlib.sha256(descriptor).hexdigest() == locator["descriptor_sha256"]
     assert locator["training_match_count"] == 6
     assert locator["training_frame_count"] == 573
-    # video8 remains bound to the archived fixed-ROI profile even though the
-    # completed one-shot evaluation no longer constrains the development APK.
-    assert "layout" not in frozen_fixed
-    assert frozen_fixed["profile_version"] == "0.5.0-yolox-nano-dense-320-dev"
+    # The locator is stable, but the enlarged crop changes the detector input
+    # distribution. Keep the fixed profile as the APK default until a detector
+    # trained on adaptive crops passes a new independent evaluation.
+    assert "layout" not in frozen_default
+    assert frozen_default["profile_version"] == "0.5.0-yolox-nano-dense-320-dev"
 
 
 def test_android_ncnn_assets_match_metadata_and_patched_focus() -> None:
