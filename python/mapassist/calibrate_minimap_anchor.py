@@ -24,6 +24,8 @@ from typing import Iterable
 
 from PIL import Image, UnidentifiedImageError
 
+from .orientation import from_manifest
+
 
 _IGNORED_STATUSES = {"pending", "skip", "excluded"}
 _VALID_STATUSES = {"accepted", "corrected", "negative"}
@@ -137,8 +139,51 @@ def _quantize(values: Iterable[float]) -> bytes:
     return bytes(encoded)
 
 
-def _sample_frame_paths(manifest_path: Path, data: dict) -> list[tuple[str, Path, list[float], int, int]]:
-    """Return (match id, frame path, roi, width, height) for valid samples."""
+def _display_image(path: Path, orientation: dict | None) -> Image.Image:
+    """Load queue pixels in the same orientation as an Android screen frame.
+
+    Older review queues can contain coded portrait pixels plus an EXIF rotation,
+    while newer queues store physically oriented pixels.  The manifest display
+    size makes those cases unambiguous and avoids applying EXIF twice.
+    """
+    with Image.open(path) as opened:
+        image = opened.copy()
+    if orientation is None:
+        return image
+    display_size = orientation.get("display_size")
+    coded_size = orientation.get("source_coded_size")
+    if not isinstance(display_size, list) or len(display_size) != 2:
+        raise ValueError("Review orientation needs display_size")
+    expected = (int(display_size[0]), int(display_size[1]))
+    if image.size == expected:
+        return image
+    if (not isinstance(coded_size, list) or len(coded_size) != 2 or
+            image.size != (int(coded_size[0]), int(coded_size[1]))):
+        raise ValueError(
+            f"Review frame {path} is {image.width}x{image.height}; expected "
+            f"display {expected[0]}x{expected[1]} or coded "
+            f"{coded_size}"
+        )
+    transpose = {
+        90: Image.Transpose.ROTATE_90,
+        180: Image.Transpose.ROTATE_180,
+        270: Image.Transpose.ROTATE_270,
+    }
+    rotation = int(orientation["display_rotation_degrees"])
+    if rotation in transpose:
+        image = image.transpose(transpose[rotation])
+    if image.size != expected:
+        raise ValueError(
+            f"Review frame rotation produced {image.width}x{image.height}; "
+            f"expected {expected[0]}x{expected[1]}"
+        )
+    return image
+
+
+def _sample_frame_paths(
+    manifest_path: Path, data: dict
+) -> list[tuple[str, Path, list[float], int, int, dict | None]]:
+    """Return reviewed frame paths, display sizes, ROIs, and orientation."""
     matches = data.get("matches")
     if not isinstance(matches, list) or not matches:
         raise ValueError("Review manifest needs matches")
@@ -146,9 +191,10 @@ def _sample_frame_paths(manifest_path: Path, data: dict) -> list[tuple[str, Path
     if default_roi is not None:
         default_roi = _roi(default_roi, "Review manifest roi")
 
-    result: list[tuple[str, Path, list[float], int, int]] = []
+    result: list[tuple[str, Path, list[float], int, int, dict | None]] = []
     seen_ids: set[str] = set()
     match_sizes: dict[str, tuple[int, int]] = {}
+    default_orientation = from_manifest(data)
     for match in matches:
         if not isinstance(match, dict):
             raise ValueError("Review manifest matches must be objects")
@@ -156,6 +202,7 @@ def _sample_frame_paths(manifest_path: Path, data: dict) -> list[tuple[str, Path
         if not isinstance(match_id, str) or not match_id or match_id in seen_ids:
             raise ValueError(f"Invalid or duplicate match id: {match_id}")
         seen_ids.add(match_id)
+        match_orientation = from_manifest(match, f"match {match_id}") or default_orientation
         match_roi_value = match.get("roi", default_roi)
         if match_roi_value is None:
             # A match without a usable ROI cannot contribute a calibration
@@ -186,8 +233,8 @@ def _sample_frame_paths(manifest_path: Path, data: dict) -> list[tuple[str, Path
             if not frame_path.is_file():
                 raise ValueError(f"Missing reviewed frame for {match_id}: {frame_path}")
             try:
-                with Image.open(frame_path) as opened:
-                    width, height = opened.size
+                image = _display_image(frame_path, match_orientation)
+                width, height = image.size
             except (OSError, UnidentifiedImageError) as error:
                 raise ValueError(f"Cannot read reviewed frame {frame_path}: {error}") from error
             if width < 2 or height < 2:
@@ -198,7 +245,8 @@ def _sample_frame_paths(manifest_path: Path, data: dict) -> list[tuple[str, Path
                     f"Inconsistent frame dimensions for {match_id}: "
                     f"{prior_size[0]}x{prior_size[1]} and {width}x{height}"
                 )
-            result.append((match_id, frame_path, match_roi, width, height))
+            result.append((match_id, frame_path, match_roi, width, height,
+                           match_orientation))
     if not result:
         raise ValueError("Review manifest has no valid reviewed frames")
     return result
@@ -221,9 +269,8 @@ def calibrate(manifest: Path, output: Path, grid_width: int = 20,
     samples = _sample_frame_paths(manifest, data)
     grids: list[list[int]] = []
     match_rects: dict[str, list[list[float]]] = {}
-    for match_id, frame_path, roi, width, height in samples:
-        with Image.open(frame_path) as opened:
-            image = opened.copy()
+    for match_id, frame_path, roi, width, height, orientation in samples:
+        image = _display_image(frame_path, orientation)
         grids.append(_crop_grid(image, roi, grid_width, grid_height))
         match_rects.setdefault(match_id, []).append(
             _short_rect(roi, width, height, _content_rect(image))
@@ -272,6 +319,10 @@ def calibrate(manifest: Path, output: Path, grid_width: int = 20,
         "refresh_frames": 30,
         "normalize_black_bars": True,
         "black_threshold": 12,
+        # The appearance matcher tends to align the stable map interior. Keep
+        # the coarse profile rectangle in the detector crop so edge icons are
+        # not removed by a tighter, higher-scoring anchor candidate.
+        "preserve_base_roi": True,
         "training_frame_count": len(samples),
         "training_match_count": len(rects),
         "input_manifest_sha256": _sha256(manifest),

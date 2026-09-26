@@ -22,7 +22,7 @@ from typing import Any
 
 from PIL import Image, UnidentifiedImageError
 
-from .calibrate_minimap_anchor import _sample_frame_paths
+from .calibrate_minimap_anchor import _display_image, _sample_frame_paths
 from .native import MinimapLocatorConfig, Rect, load_library
 
 
@@ -121,6 +121,7 @@ def _load_locator(path: Path) -> tuple[MinimapLocatorConfig, bytes, dict[str, An
     refresh_frames = _integer(data, "refresh_frames")
     normalize_black_bars = data.get("normalize_black_bars")
     black_threshold = _integer(data, "black_threshold")
+    preserve_base_roi = data.get("preserve_base_roi", False)
     if (not 0 <= search_radius_x <= 1 or not 0 <= search_radius_y <= 1 or
             not 0.0005 < position_step <= 0.25 or
             not 0.5 <= min_scale <= max_scale <= 2 or
@@ -132,6 +133,7 @@ def _load_locator(path: Path) -> tuple[MinimapLocatorConfig, bytes, dict[str, An
             not 0 <= hold_frames <= 120 or
             not 1 <= refresh_frames <= 600 or
             not isinstance(normalize_black_bars, bool) or
+            not isinstance(preserve_base_roi, bool) or
             not 0 <= black_threshold <= 64):
         raise ValueError("Invalid minimap locator search configuration")
     x_steps = math.ceil(search_radius_x / position_step)
@@ -159,6 +161,7 @@ def _load_locator(path: Path) -> tuple[MinimapLocatorConfig, bytes, dict[str, An
         refresh_frames,
         int(normalize_black_bars),
         black_threshold,
+        int(preserve_base_roi),
     )
     return config, descriptor, data
 
@@ -177,7 +180,32 @@ def _summary(records: list[dict[str, Any]]) -> dict[str, Any]:
     contents = [record["content"] for record in records]
     scores = [record["score"] for record in records]
     durations = [record["processing_ms"] for record in records]
-    return {
+    available = [record for record in records if record["state"] != 0]
+    agreement = []
+    for record in available:
+        predicted = record["roi"]
+        reference = record["reference_roi"]
+        px0, py0, pw, ph = predicted
+        rx0, ry0, rw, rh = reference
+        px1, py1 = px0 + pw, py0 + ph
+        rx1, ry1 = rx0 + rw, ry0 + rh
+        intersection = max(0.0, min(px1, rx1) - max(px0, rx0)) * \
+            max(0.0, min(py1, ry1) - max(py0, ry0))
+        union = pw * ph + rw * rh - intersection
+        width, height = record["frame_size"]
+        edge_errors = [abs(px0 - rx0) * width, abs(py0 - ry0) * height,
+                       abs(px1 - rx1) * width, abs(py1 - ry1) * height]
+        agreement.append({
+            "iou": intersection / union if union > 0 else 0.0,
+            "reference_coverage": intersection / (rw * rh),
+            "predicted_content_ratio": intersection / (pw * ph),
+            "max_edge_error_px": max(edge_errors),
+            "center_error_px": math.hypot(
+                ((px0 + px1) - (rx0 + rx1)) * width / 2,
+                ((py0 + py1) - (ry0 + ry1)) * height / 2,
+            ),
+        })
+    result = {
         "frames": len(records),
         "states": {name: states[value] for value, name in _STATE_NAMES.items()},
         "available_ratio": round((states[1] + states[2]) / len(records), 6),
@@ -196,6 +224,28 @@ def _summary(records: list[dict[str, Any]]) -> dict[str, Any]:
             "mean": round(statistics.mean(durations), 6),
         },
     }
+    if agreement:
+        ious = [item["iou"] for item in agreement]
+        edge_errors = [item["max_edge_error_px"] for item in agreement]
+        center_errors = [item["center_error_px"] for item in agreement]
+        reference_coverage = [item["reference_coverage"] for item in agreement]
+        predicted_content = [item["predicted_content_ratio"] for item in agreement]
+        result["reference_crop_agreement"] = {
+            "scope": "agreement with the reviewed dataset crop; not an independently traced HUD boundary",
+            "available_frames": len(agreement),
+            "iou_median": round(statistics.median(ious), 6),
+            "iou_p05": round(_percentile(ious, 0.05) or 0.0, 6),
+            "iou_minimum": round(min(ious), 6),
+            "iou_at_least_0_8_ratio": round(sum(value >= 0.8 for value in ious) / len(ious), 6),
+            "reference_coverage_median": round(statistics.median(reference_coverage), 6),
+            "reference_coverage_p05": round(_percentile(reference_coverage, 0.05) or 0.0, 6),
+            "predicted_content_ratio_median": round(statistics.median(predicted_content), 6),
+            "max_edge_error_px_median": round(statistics.median(edge_errors), 3),
+            "max_edge_error_px_p95": round(_percentile(edge_errors, 0.95) or 0.0, 3),
+            "center_error_px_median": round(statistics.median(center_errors), 3),
+            "center_error_px_p95": round(_percentile(center_errors, 0.95) or 0.0, 3),
+        }
+    return result
 
 
 def evaluate(manifest: Path, locator_path: Path, library_path: Path | None = None) -> dict[str, Any]:
@@ -221,12 +271,12 @@ def evaluate(manifest: Path, locator_path: Path, library_path: Path | None = Non
     records: list[dict[str, Any]] = []
     current_match: str | None = None
     try:
-        for match_id, frame_path, _reference_roi, expected_width, expected_height in samples:
+        for (match_id, frame_path, reference_roi, expected_width, expected_height,
+             orientation) in samples:
             if current_match != match_id:
                 library.ma_minimap_locator_reset(handle)
                 current_match = match_id
-            with Image.open(frame_path) as opened:
-                frame = opened.convert("RGBA")
+            frame = _display_image(frame_path, orientation).convert("RGBA")
             if frame.size != (expected_width, expected_height):
                 raise ValueError(f"Frame dimensions changed while reading {frame_path}")
             raw = frame.tobytes()
@@ -248,6 +298,8 @@ def evaluate(manifest: Path, locator_path: Path, library_path: Path | None = Non
                 "score": score.value,
                 "roi": [roi.x, roi.y, roi.w, roi.h],
                 "content": [content.x, content.y, content.w, content.h],
+                "reference_roi": reference_roi,
+                "frame_size": [frame.width, frame.height],
                 "processing_ms": duration_ms,
             })
     finally:

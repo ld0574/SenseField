@@ -93,6 +93,7 @@ class MinimapLocatorConfig(C.Structure):
         ("refresh_frames", C.c_int),
         ("normalize_black_bars", C.c_int),
         ("black_threshold", C.c_int),
+        ("preserve_base_roi", C.c_int),
     ]
 
 

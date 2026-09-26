@@ -71,8 +71,38 @@ def _config(hold_frames: int = 2, confirm_frames: int = 2,
         Rect(10 / 180, 10 / 180, 60 / 180, 60 / 180),
         radius_x, 10 / 180, 10 / 180,
         1.0, 1.0, 1, 1.0, 1.0, 1,
-        8, 8, 0.95, confirm_frames, hold_frames, 30, 1, 5,
+        8, 8, 0.95, confirm_frames, hold_frames, 30, 1, 5, 0,
     )
+
+
+def test_detector_roi_can_preserve_coarse_profile_coverage(native_library) -> None:
+    library = load_library(native_library)
+    descriptor_values = _descriptor()
+    descriptor = (ctypes.c_int8 * len(descriptor_values))(*descriptor_values)
+    config = _config(confirm_frames=1)
+    config.preserve_base_roi = 1
+    locator = library.ma_minimap_locator_create(
+        ctypes.byref(config), descriptor, len(descriptor_values)
+    )
+    roi = Rect()
+    content = Rect()
+    score = ctypes.c_float()
+    frame = _frame(anchor_x=50)
+    raw = frame.tobytes()
+    rgba = (ctypes.c_uint8 * len(raw)).from_buffer_copy(raw)
+    try:
+        assert library.ma_minimap_locator_update(
+            locator, rgba, frame.width, frame.height, frame.width * 4,
+            ctypes.byref(roi), ctypes.byref(content), ctypes.byref(score),
+        ) == 1
+        # Active content starts at x=20 and base_short adds 10 pixels, while
+        # the detected anchor starts at x=50. The detector crop is their union.
+        assert roi.x == pytest.approx(30 / 360, abs=0.005)
+        assert roi.w == pytest.approx(80 / 360, abs=0.005)
+        assert roi.y == pytest.approx(10 / 180, abs=0.005)
+        assert roi.h == pytest.approx(60 / 180, abs=0.005)
+    finally:
+        library.ma_minimap_locator_destroy(locator)
 
 
 def test_locator_normalizes_bars_confirms_and_expires(

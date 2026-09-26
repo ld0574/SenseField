@@ -260,6 +260,7 @@ final class GameProfile {
                 requiredInt(locator, "refresh_frames", 1, 600),
                 locator.getBoolean("normalize_black_bars") ? 1 : 0,
                 requiredInt(locator, "black_threshold", 0, 64),
+                locator.optBoolean("preserve_base_roi", false) ? 1 : 0,
         };
         long xSteps = (long) Math.ceil(values[4] / values[6]);
         long ySteps = (long) Math.ceil(values[5] / values[6]);

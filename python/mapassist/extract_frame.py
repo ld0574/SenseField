@@ -37,8 +37,16 @@ def extract(video: Path, at_ms: int, output: Path,
         # container loses its Display Matrix metadata during a copy.
         command = [
             "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-            "-noautorotate", "-ss", f"{at_ms / 1000:.3f}", "-i", str(video),
+            "-noautorotate",
         ]
+        # ffmpeg otherwise copies the source Display Matrix into still images.
+        # That leaves physically rotated pixels carrying a second EXIF rotation,
+        # so browsers and Pillow's exif_transpose() rotate the frame twice.
+        # The manifest-provided rotation is authoritative; clear the input
+        # display metadata before applying the explicit pixel transform below.
+        if display_rotation is not None:
+            command += ["-display_rotation:v:0", "0"]
+        command += ["-ss", f"{at_ms / 1000:.3f}", "-i", str(video)]
         filters = {
             90: "transpose=cclock",
             180: "hflip,vflip",

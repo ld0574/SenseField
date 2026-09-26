@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define MA_API_VERSION 3
+#define MA_API_VERSION 4
 
 enum ma_kind {
     MA_MAIN_ENEMY = 1,
@@ -110,6 +110,8 @@ typedef struct ma_minimap_locator_config {
     int refresh_frames;
     int normalize_black_bars;
     int black_threshold;
+    /* Keep the coarse profile ROI inside the detector crop after anchor search. */
+    int preserve_base_roi;
 } ma_minimap_locator_config;
 
 typedef struct ma_minimap_locator ma_minimap_locator;

@@ -685,6 +685,14 @@ def test_detection_dataset_exports_display_oriented_rotated_video(tmp_path: Path
     with Image.open(output / "test2017/rotated_000000000.png") as image:
         assert image.size == (12, 8)
 
+    # A full-frame extraction must also clear the container rotation metadata.
+    # Otherwise a browser applies EXIF after pixels were already rotated.
+    frame = tmp_path / "display-frame.png"
+    assert extract(rotated, 0, frame, display_rotation=90) == (12, 8)
+    with Image.open(frame) as image:
+        assert image.size == (12, 8)
+        assert image.getexif().get(274) is None
+
 
 def test_merge_detection_manifests_requires_explicit_unique_recordings(
     tmp_path: Path,

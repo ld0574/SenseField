@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from PIL import Image, ImageDraw
 
-from mapassist.calibrate_minimap_anchor import calibrate
+from mapassist.calibrate_minimap_anchor import _display_image, calibrate
 from mapassist.minimap_locator_evaluate import _load_locator
 
 
@@ -71,6 +71,35 @@ def test_short_edge_coordinates_use_actual_frame_dimensions(tmp_path: Path) -> N
     # The short edge is 100: normalized x/y/w/h become pixel units / 100.
     assert locator["coordinate_space"] == "short_edge"
     assert locator["base_rect_short"] == [0.2, 0.2, 0.8, 0.5]
+
+
+def test_coded_portrait_review_frame_is_loaded_in_display_orientation(
+    tmp_path: Path,
+) -> None:
+    coded = Image.new("RGB", (10, 20), (15, 15, 15))
+    ImageDraw.Draw(coded).rectangle((0, 0, 9, 5), fill=(180, 100, 40))
+    frame = tmp_path / "coded.png"
+    coded.save(frame)
+    orientation = {
+        "source_coded_size": [10, 20],
+        "display_size": [20, 10],
+        "display_rotation_degrees": 90,
+        "queue_frames_must_be_display_oriented": True,
+    }
+    displayed = _display_image(frame, orientation)
+    assert displayed.size == (20, 10)
+    # A 90 degree counterclockwise display transform moves the coded top band
+    # to the left side of the landscape frame.
+    assert displayed.getpixel((1, 5)) == (180, 100, 40)
+    assert displayed.getpixel((18, 5)) == (15, 15, 15)
+
+    manifest = _manifest(tmp_path, [frame.name], roi=[0, 0, 0.5, 1])
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload["orientation"] = orientation
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
+    locator = calibrate(manifest, tmp_path / "locator.json", 4, 4)
+    assert locator["base_rect_short"] == [0.0, 0.0, 1.0, 1.0]
+    assert locator["preserve_base_roi"] is True
 
 
 def test_short_edge_coordinates_are_relative_to_detected_black_bars(tmp_path: Path) -> None:

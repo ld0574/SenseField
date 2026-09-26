@@ -50,7 +50,8 @@ bool valid_config(const ma_minimap_locator_config &config) {
            config.hold_frames >= 0 && config.hold_frames <= 120 &&
            config.refresh_frames >= 1 && config.refresh_frames <= 600 &&
            (config.normalize_black_bars == 0 || config.normalize_black_bars == 1) &&
-           config.black_threshold >= 0 && config.black_threshold <= 64;
+           config.black_threshold >= 0 && config.black_threshold <= 64 &&
+           (config.preserve_base_roi == 0 || config.preserve_base_roi == 1);
     if (!fields_valid) return false;
 
     // Imported profiles must not be able to combine individually valid maxima
@@ -132,6 +133,19 @@ float rectangle_iou(const PixelRect &a, const PixelRect &b) {
 
 ma_rect normalized(const PixelRect &rect, int width, int height) {
     return {rect.x / width, rect.y / height, rect.w / width, rect.h / height};
+}
+
+PixelRect detector_rect(const ma_minimap_locator_config &config,
+                        const PixelRect &base, const PixelRect &anchor,
+                        const PixelRect &content) {
+    if (!config.preserve_base_roi) return anchor;
+    const float x0 = std::max(content.x, std::min(base.x, anchor.x));
+    const float y0 = std::max(content.y, std::min(base.y, anchor.y));
+    const float x1 = std::min(content.x + content.w,
+                              std::max(base.x + base.w, anchor.x + anchor.w));
+    const float y1 = std::min(content.y + content.h,
+                              std::max(base.y + base.h, anchor.y + anchor.h));
+    return {x0, y0, x1 - x0, y1 - y0};
 }
 
 float luma_at(const uint8_t *rgba, int row_stride, float x, float y) {
@@ -291,7 +305,8 @@ extern "C" int ma_minimap_locator_update(
             locator->pending_hits = 0;
             locator->pending = {};
             ++locator->frames_since_search;
-            *out_minimap = normalized(locator->current, width, height);
+            *out_minimap = normalized(
+                    detector_rect(config, base, locator->current, content), width, height);
             return MA_LOCATOR_LOCKED;
         }
     }
@@ -371,12 +386,14 @@ extern "C" int ma_minimap_locator_update(
         // and could keep that stale location alive indefinitely.
         if (locator->has_current &&
             rectangle_iou(locator->current, best) >= 0.50f) {
-            *out_minimap = normalized(locator->current, width, height);
+            *out_minimap = normalized(
+                    detector_rect(config, base, locator->current, content), width, height);
             return MA_LOCATOR_LOCKED;
         }
         if (locator->has_current && locator->misses < config.hold_frames) {
             ++locator->misses;
-            *out_minimap = normalized(locator->current, width, height);
+            *out_minimap = normalized(
+                    detector_rect(config, base, locator->current, content), width, height);
             return MA_LOCATOR_HELD;
         }
         locator->has_current = false;
@@ -386,7 +403,8 @@ extern "C" int ma_minimap_locator_update(
         locator->pending_hits = 0;
         if (locator->has_current && locator->misses < config.hold_frames) {
             ++locator->misses;
-            *out_minimap = normalized(locator->current, width, height);
+            *out_minimap = normalized(
+                    detector_rect(config, base, locator->current, content), width, height);
             return MA_LOCATOR_HELD;
         }
         locator->has_current = false;

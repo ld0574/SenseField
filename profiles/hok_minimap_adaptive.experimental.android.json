@@ -84,6 +84,7 @@
       },
       "normalize_black_bars": true,
       "position_step_short": 0.01,
+      "preserve_base_roi": true,
       "quantization": {
         "dtype": "int8",
         "scale": 32.0,

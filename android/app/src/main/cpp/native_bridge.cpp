@@ -339,7 +339,7 @@ Java_org_openrd_mapassist_NativeBridge_nativeCreate(
         (!minimap_locator_floats || !minimap_locator_ints ||
          !minimap_locator_descriptor ||
          env->GetArrayLength(minimap_locator_floats) != 12 ||
-         env->GetArrayLength(minimap_locator_ints) != 9)) return 0;
+         env->GetArrayLength(minimap_locator_ints) != 10)) return 0;
 
     jfloat r[12], t[5];
     jint f[5], e[5];
@@ -374,11 +374,11 @@ Java_org_openrd_mapassist_NativeBridge_nativeCreate(
     session->yolox_nms = yolox_nms;
     if (minimap_locator_enabled) {
         jfloat locator_floats[12];
-        jint locator_ints[9];
+        jint locator_ints[10];
         env->GetFloatArrayRegion(
                 minimap_locator_floats, 0, 12, locator_floats);
         env->GetIntArrayRegion(
-                minimap_locator_ints, 0, 9, locator_ints);
+                minimap_locator_ints, 0, 10, locator_ints);
         if (env->ExceptionCheck()) return 0;
         const int descriptor_length = env->GetArrayLength(minimap_locator_descriptor);
         const int64_t expected_descriptor_length =
@@ -398,7 +398,7 @@ Java_org_openrd_mapassist_NativeBridge_nativeCreate(
             locator_floats[9], locator_floats[10], locator_ints[1],
             locator_ints[2], locator_ints[3], locator_floats[11],
             locator_ints[4], locator_ints[5], locator_ints[6],
-            locator_ints[7], locator_ints[8],
+            locator_ints[7], locator_ints[8], locator_ints[9],
         };
         session->minimap_locator = ma_minimap_locator_create(
                 &locator_config, descriptor.data(), descriptor_length);
