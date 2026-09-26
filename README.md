@@ -95,6 +95,7 @@ Android Studio 直接打开 `android/`。调试 APK 的命令行构建方式也�
 
 ## 文档
 
+- [赛题背景（公开脱敏版）](docs/赛题背景.md)
 - [团队协作与本地运行](docs/团队协作与本地运行.md)
 - [当前验证状态](validation/STATUS.md)
 - [GitHub 发布检查清单](docs/GITHUB发布检查清单.md)
