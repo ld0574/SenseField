@@ -8,6 +8,8 @@ import re
 import sys
 from pathlib import Path
 
+from .orientation import from_manifest
+
 
 SPLITS = {"train", "val", "test"}
 CATEGORY = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -34,6 +36,7 @@ def combine(manifests: list[Path], output: Path,
     grouped: dict[Path, dict] = {}
     ids: dict[str, Path] = {}
     used_overrides: set[str] = set()
+    orientations = []
     for manifest in manifests:
         data = json.loads(manifest.read_text(encoding="utf-8"))
         if data.get("schema_version") != 1 or not isinstance(data.get("matches"), list):
@@ -46,6 +49,8 @@ def combine(manifests: list[Path], output: Path,
         elif current_category != category:
             raise ValueError("Detection categories differ")
         default_roi = data.get("roi")
+        default_orientation = from_manifest(data, str(manifest))
+        orientations.append(default_orientation)
         for source in data["matches"]:
             match_id = source.get("id")
             if not isinstance(match_id, str) or not match_id:
@@ -60,6 +65,7 @@ def combine(manifests: list[Path], output: Path,
             if prior_video != video:
                 raise ValueError(f"Match id {match_id} refers to different recordings")
             roi = _roi(source.get("roi", default_roi), f"{match_id} roi")
+            match_orientation = from_manifest(source, f"{match_id}") or default_orientation
             split = split_overrides.get(match_id, source.get("split"))
             if split not in SPLITS:
                 raise ValueError(f"Invalid split for {match_id}: {split}")
@@ -67,10 +73,11 @@ def combine(manifests: list[Path], output: Path,
                 used_overrides.add(match_id)
             record = grouped.setdefault(video, {
                 "id": match_id, "video": str(video), "split": split,
-                "roi": roi, "frames": {},
+                "roi": roi, "orientation": match_orientation, "frames": {},
             })
             if (record["id"] != match_id or record["roi"] != roi or
-                    record["split"] != split):
+                    record["split"] != split or
+                    record["orientation"] != match_orientation):
                 raise ValueError(f"Metadata differs for repeated recording {match_id}")
             for frame in source.get("frames", []):
                 timestamp = frame.get("at_ms")
@@ -93,7 +100,12 @@ def combine(manifests: list[Path], output: Path,
             "frames": [{"at_ms": timestamp, "boxes": boxes}
                        for timestamp, boxes in sorted(record["frames"].items())],
         })
+        if record["orientation"] is not None:
+            matches[-1]["orientation"] = record["orientation"]
     result = {"schema_version": 1, "category": category, "matches": matches}
+    if orientations and all(item == orientations[0] for item in orientations):
+        if orientations[0] is not None:
+            result["orientation"] = orientations[0]
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n",
                       encoding="utf-8")

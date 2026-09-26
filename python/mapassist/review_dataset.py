@@ -16,6 +16,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from .extract_frame import extract
+from .orientation import from_manifest, resolve, rotation
 
 
 SPLITS = ("train", "val", "test")
@@ -179,6 +180,7 @@ def build(manifest: Path, output: Path, positives_per_match: int = 20,
         raise ValueError("Review manifest needs matches")
 
     seen_ids = set()
+    top_orientation = from_manifest(data)
     video_splits: dict[Path, str] = {}
     prepared = []
     for match in matches:
@@ -203,17 +205,21 @@ def build(manifest: Path, output: Path, positives_per_match: int = 20,
                      for value in match_roi))):
             raise ValueError(f"roi for {match_id} must be normalized [x, y, width, height]")
         intervals = _active_intervals(match.get("active_intervals_ms"), match_id)
+        match_orientation = resolve(
+            video, from_manifest(match, f"{match_id}") or top_orientation)
         prepared.append((match_id, split, video, predictions, intervals, match_roi,
-                         "roi" in match))
+                         "roi" in match, match_orientation))
 
     output.mkdir(parents=True, exist_ok=True)
     exported = {"schema_version": 1, "kind": kind, "roi": roi,
                 "warning": "Suggested boxes are unreviewed and are not ground truth.",
                 "matches": []}
+    if top_orientation is not None:
+        exported["orientation"] = top_orientation
     summary = {split: {"matches": 0, "cue_samples": 0, "background_samples": 0}
                for split in SPLITS}
     for (match_id, split, video, predictions, intervals, match_roi,
-         has_roi_override) in prepared:
+         has_roi_override, match_orientation) in prepared:
         positive, negative = _prediction_frames(predictions, kind, intervals)
         selected = [("cue", item) for item in _evenly(positive, positives_per_match)]
         selected += [("background", item) for item in _evenly(negative, negatives_per_match)]
@@ -224,7 +230,8 @@ def build(manifest: Path, output: Path, positives_per_match: int = 20,
             stem = f"{match_id}_{timestamp:09d}"
             frame = output / split / match_id / f"{stem}.png"
             overlay = output / split / match_id / f"{stem}-overlay.jpg"
-            extract(video, timestamp, frame)
+            extract(video, timestamp, frame,
+                    display_rotation=rotation(match_orientation))
             sample = {"at_ms": timestamp, "selection": selection,
                       "suggested_boxes": item["suggested_boxes"],
                       "directions": item["directions"], "review_status": "pending",
@@ -244,6 +251,7 @@ def build(manifest: Path, output: Path, positives_per_match: int = 20,
         summary[split]["matches"] += 1
         exported_match = {"id": match_id, "split": split,
                           "video": str(video), "video_sha256": _sha256(video),
+                          "orientation": match_orientation,
                           "predictions": str(predictions), "samples": samples}
         if has_roi_override:
             exported_match["roi"] = match_roi

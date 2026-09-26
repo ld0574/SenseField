@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 from .extract_frame import extract
+from .orientation import from_manifest, resolve, rotation
 from .review_dataset import _contact_sheet, _draw_overlay, _minimap_contact_sheet
 
 
@@ -90,6 +91,7 @@ def build(manifest: Path, output: Path, samples_per_match: int = 100) -> dict:
     if data.get("schema_version") != 1:
         raise ValueError("Expected source manifest schema_version 1")
     top_roi = _roi(data.get("roi"), "roi")
+    top_orientation = from_manifest(data)
     matches = data.get("matches")
     if not isinstance(matches, list) or not matches:
         raise ValueError("Source manifest needs matches")
@@ -111,6 +113,8 @@ def build(manifest: Path, output: Path, samples_per_match: int = 100) -> dict:
         ),
         "matches": [],
     }
+    if top_orientation is not None:
+        exported["orientation"] = top_orientation
     summary = {split: {"matches": 0, "samples": 0} for split in SPLITS}
     seen_ids: set[str] = set()
     seen_videos: dict[Path, str] = {}
@@ -132,6 +136,8 @@ def build(manifest: Path, output: Path, samples_per_match: int = 100) -> dict:
             raise ValueError(f"One recording cannot cross splits: {video}")
         intervals = _intervals(match.get("active_intervals_ms"), match_id)
         match_roi = _roi(match.get("roi", top_roi), f"roi for {match_id}")
+        match_orientation = resolve(
+            video, from_manifest(match, f"{match_id}") or top_orientation)
 
         samples = []
         overlays = []
@@ -139,7 +145,8 @@ def build(manifest: Path, output: Path, samples_per_match: int = 100) -> dict:
             stem = f"{match_id}_{timestamp:09d}"
             frame = output / split / match_id / f"{stem}.png"
             overlay = output / split / match_id / f"{stem}-overlay.jpg"
-            extract(video, timestamp, frame)
+            extract(video, timestamp, frame,
+                    display_rotation=rotation(match_orientation))
             sample = {
                 "at_ms": timestamp,
                 "selection": "systematic_development",
@@ -164,6 +171,7 @@ def build(manifest: Path, output: Path, samples_per_match: int = 100) -> dict:
             "split": split,
             "video": str(video),
             "video_sha256": _sha256(video),
+            "orientation": match_orientation,
             "active_intervals_ms": [list(item) for item in intervals],
             "samples": samples,
         }

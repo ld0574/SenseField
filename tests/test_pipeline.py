@@ -599,7 +599,8 @@ def test_overlapping_events_use_maximum_one_to_one_matching() -> None:
     assert result["main_enemy"]["direction_accuracy"] == 1.0
 
 
-@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg is needed to extract frames")
+@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
+                    reason="ffmpeg and ffprobe are needed to extract frames")
 def test_detection_dataset_exports_boxes_and_negative_frames(tmp_path: Path) -> None:
     fixture = create(tmp_path)
     val_fixture = create(tmp_path / "other_match")
@@ -648,6 +649,41 @@ def test_detection_dataset_exports_boxes_and_negative_frames(tmp_path: Path) -> 
     with pytest.raises(ValueError, match="cannot cross splits"):
         export_detection_dataset(manifest, tmp_path / "leaked")
     assert not (tmp_path / "leaked").exists()
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
+                    reason="ffmpeg and ffprobe are needed for rotated video")
+def test_detection_dataset_exports_display_oriented_rotated_video(tmp_path: Path) -> None:
+    """Normalized labels are measured on display frames, including Display Matrix media."""
+    coded = tmp_path / "coded.mp4"
+    rotated = tmp_path / "rotated.mp4"
+    subprocess.run([
+        "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "color=c=red:s=8x12:d=1:r=1",
+        "-frames:v", "1", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(coded),
+    ], check=True)
+    subprocess.run([
+        "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+        "-display_rotation:v:0", "90", "-i", str(coded), "-c", "copy", str(rotated),
+    ], check=True)
+    manifest = tmp_path / "detections.json"
+    # Deliberately omit orientation: the exporter must resolve it from the video,
+    # which also repairs legacy manifests produced before orientation metadata.
+    manifest.write_text(json.dumps({"schema_version": 1, "roi": [0, 0, 1, 1],
+                                    "matches": [{
+        "id": "rotated", "video": rotated.name, "split": "test",
+        "frames": [{"at_ms": 0, "boxes": [[0.25, 0.25, 0.25, 0.25]]}],
+    }]}), encoding="utf-8")
+    output = tmp_path / "dataset"
+    export_detection_dataset(manifest, output, crop_roi=True)
+    coco = json.loads(
+        (output / "annotations/instances_test2017.json").read_text()
+    )
+    assert coco["images"][0]["width"] == 12
+    assert coco["images"][0]["height"] == 8
+    assert coco["annotations"][0]["bbox"] == [3.0, 2.0, 3.0, 2.0]
+    with Image.open(output / "test2017/rotated_000000000.png") as image:
+        assert image.size == (12, 8)
 
 
 def test_merge_detection_manifests_requires_explicit_unique_recordings(
@@ -758,6 +794,7 @@ def test_review_dataset_keeps_suggestions_pending(
         "schema_version": 1,
         "kind": "minimap_enemy",
         "roi": [0.0, 0.0, 0.25, 0.34],
+        "orientation": {"display_rotation_degrees": 0},
         "matches": [{
             "id": "match-01", "split": "train",
             "video": str(fixture["video"].relative_to(tmp_path)),
@@ -771,6 +808,8 @@ def test_review_dataset_keeps_suggestions_pending(
     assert result["train"] == {"matches": 1, "cue_samples": 1,
                                "background_samples": 1}
     exported = json.loads((output / "review-manifest.json").read_text())
+    assert exported["orientation"]["display_rotation_degrees"] == 0
+    assert exported["matches"][0]["orientation"]["display_rotation_degrees"] == 0
     samples = exported["matches"][0]["samples"]
     assert exported["matches"][0]["active_intervals_ms"] == [[2000, 6000]]
     assert all(2000 <= sample["at_ms"] <= 6000 for sample in samples)
@@ -793,6 +832,8 @@ def test_review_dataset_keeps_suggestions_pending(
     assert finalized["frames"] == 2
     detections = json.loads((output / "detections.json").read_text())
     assert detections["roi"] == [0.0, 0.0, 0.25, 0.34]
+    assert detections["orientation"]["display_rotation_degrees"] == 0
+    assert detections["matches"][0]["orientation"]["display_rotation_degrees"] == 0
     coco_dir = output / "coco"
     export_detection_dataset(output / "detections.json", coco_dir)
     coco = json.loads((coco_dir / "annotations/instances_train2017.json").read_text())

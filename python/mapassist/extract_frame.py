@@ -10,21 +10,44 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from .native import Pipeline, read_profile
+from .orientation import VALID_ROTATIONS
 
 
-def extract(video: Path, at_ms: int, output: Path) -> tuple[int, int]:
+def extract(video: Path, at_ms: int, output: Path,
+            display_rotation: int | None = None) -> tuple[int, int]:
+    """Extract a frame, optionally honoring the recording's display matrix.
+
+    The historical default keeps ``-noautorotate`` for callers that consume
+    coded pixels. Dataset manifests pass the declared display rotation so
+    annotations and exported images use the same display coordinate system.
+    """
     if at_ms < 0:
         raise ValueError("at_ms must be nonnegative")
+    if (display_rotation is not None and
+            (not isinstance(display_rotation, int) or isinstance(display_rotation, bool) or
+             display_rotation not in VALID_ROTATIONS)):
+        raise ValueError("display_rotation must be 0, 90, 180, or 270")
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(dir=output.parent, suffix=output.suffix,
                                      delete=False) as file:
         temporary = Path(file.name)
     try:
-        subprocess.run([
+        # Apply the declared transform ourselves instead of relying on ffmpeg's
+        # autorotate flag.  This keeps the manifest authoritative even when a
+        # container loses its Display Matrix metadata during a copy.
+        command = [
             "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
             "-noautorotate", "-ss", f"{at_ms / 1000:.3f}", "-i", str(video),
-            "-frames:v", "1", str(temporary),
-        ], check=True)
+        ]
+        filters = {
+            90: "transpose=cclock",
+            180: "hflip,vflip",
+            270: "transpose=clock",
+        }
+        if display_rotation in filters:
+            command += ["-vf", filters[display_rotation]]
+        command += ["-frames:v", "1", str(temporary)]
+        subprocess.run(command, check=True)
         if temporary.stat().st_size == 0:
             raise ValueError("No frame at that timestamp")
         with Image.open(temporary) as image:

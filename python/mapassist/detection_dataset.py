@@ -12,6 +12,7 @@ from pathlib import Path
 from PIL import Image
 
 from .extract_frame import extract
+from .orientation import from_manifest, resolve, rotation
 
 
 SPLITS = ("train", "val", "test")
@@ -64,13 +65,14 @@ def export(manifest: Path, output: Path, crop_roi: bool = False) -> dict:
     default_roi_value = data.get("roi")
     default_roi = (_roi(default_roi_value, "Detection manifest roi")
                    if default_roi_value is not None else None)
+    default_orientation = from_manifest(data)
     if crop_roi and default_roi is None and not all(
             isinstance(match, dict) and match.get("roi") is not None for match in matches
     ):
         raise ValueError("--crop-roi needs a top-level roi or one roi per match")
 
     prepared: dict[str, list[tuple[str, Path, int, list[list[float]],
-                                  list[float] | None]]] = {
+                                  list[float] | None, int]]] = {
         split: [] for split in SPLITS
     }
     seen_ids: set[str] = set()
@@ -102,6 +104,8 @@ def export(manifest: Path, output: Path, crop_roi: bool = False) -> dict:
         match_roi = None
         if crop_roi:
             match_roi = _roi(match.get("roi", default_roi), f"{match_id} roi")
+        match_orientation = resolve(
+            video, from_manifest(match, f"{match_id}") or default_orientation)
         seen_times: set[int] = set()
         for frame in frames:
             if not isinstance(frame, dict):
@@ -112,7 +116,8 @@ def export(manifest: Path, output: Path, crop_roi: bool = False) -> dict:
             if at_ms in seen_times:
                 raise ValueError(f"Duplicate frame time in {match_id}: {at_ms}")
             seen_times.add(at_ms)
-            prepared[split].append((match_id, video, at_ms, _boxes(frame), match_roi))
+            prepared[split].append((match_id, video, at_ms, _boxes(frame), match_roi,
+                                    rotation(match_orientation)))
 
     # Validate all metadata before writing output so bad splits do not produce partial datasets.
     summary = {}
@@ -122,10 +127,12 @@ def export(manifest: Path, output: Path, crop_roi: bool = False) -> dict:
         split_name = SPLIT_DIRS[split]
         split_dir = output / split_name
         split_dir.mkdir(parents=True, exist_ok=True)
-        for image_id, (match_id, video, at_ms, boxes, roi) in enumerate(frames, start=1):
+        for image_id, (match_id, video, at_ms, boxes, roi, display_rotation) in enumerate(
+                frames, start=1):
             filename = f"{match_id}_{at_ms:09d}.png"
             frame_path = split_dir / filename
-            full_width, full_height = extract(video, at_ms, frame_path)
+            full_width, full_height = extract(
+                video, at_ms, frame_path, display_rotation=display_rotation)
             crop_x = 0
             crop_y = 0
             width = full_width
@@ -169,7 +176,7 @@ def export(manifest: Path, output: Path, crop_roi: bool = False) -> dict:
         (annotation_dir / f"instances_{split_name}.json").write_text(
             json.dumps(coco, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         summary[split] = {"images": len(images), "boxes": len(annotations),
-                          "negative_images": sum(1 for _, _, _, boxes, _ in frames
+                          "negative_images": sum(1 for _, _, _, boxes, _, _ in frames
                                                  if not boxes)}
     return summary
 

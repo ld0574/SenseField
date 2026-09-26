@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from .extract_frame import extract
+from .orientation import resolve, rotation
 from .review_dataset import _contact_sheet, _draw_overlay, _minimap_contact_sheet
 
 
@@ -87,6 +88,7 @@ def build(video: Path, prediction_metadata: Path, output: Path, match_id: str,
     if not match_id or any(character in match_id for character in "/\\"):
         raise ValueError("match_id must be a nonempty path-safe name")
     roi = _normalized_roi(roi)
+    orientation = resolve(video)
     fps, frame_count, commitment = _prediction_commitment(
         prediction_metadata, video)
     indices = _sample_indices(frame_count, sample_count)
@@ -99,7 +101,8 @@ def build(video: Path, prediction_metadata: Path, output: Path, match_id: str,
         stem = f"{match_id}_{timestamp:09d}"
         frame = output / "test" / match_id / f"{stem}.png"
         overlay = output / "test" / match_id / f"{stem}-overlay.jpg"
-        extract(video, timestamp, frame)
+        extract(video, timestamp, frame,
+                display_rotation=rotation(orientation))
         sample = {
             "at_ms": timestamp,
             "frame_index": frame_index,
@@ -125,6 +128,7 @@ def build(video: Path, prediction_metadata: Path, output: Path, match_id: str,
         "kind": "minimap_enemy",
         "review_mode": "blind",
         "roi": roi,
+        "orientation": orientation,
         "warning": (
             "Frames were sampled uniformly without detector suggestions. "
             "Use corrected for targets, negative for target-free gameplay, "

@@ -8,6 +8,8 @@ import json
 import sys
 from pathlib import Path
 
+from .orientation import from_manifest
+
 
 SPLITS = {"train", "val", "test"}
 
@@ -35,6 +37,7 @@ def merge(manifests: list[Path], output: Path,
     seen_ids: set[str] = set()
     seen_videos: set[Path] = set()
     used_overrides: set[str] = set()
+    orientations = []
     for manifest in manifests:
         data = json.loads(manifest.read_text(encoding="utf-8"))
         if data.get("schema_version") != 1:
@@ -49,6 +52,8 @@ def merge(manifests: list[Path], output: Path,
                 f"Detection categories differ: {category} and {current_category}"
             )
         default_roi = data.get("roi")
+        default_orientation = from_manifest(data, str(manifest))
+        orientations.append(default_orientation)
         source_matches = data.get("matches")
         if not isinstance(source_matches, list) or not source_matches:
             raise ValueError(f"Detection manifest has no matches: {manifest}")
@@ -76,11 +81,17 @@ def merge(manifests: list[Path], output: Path,
             exported["video"] = str(video)
             exported["split"] = split
             exported["roi"] = roi
+            if (exported.get("orientation") is None and
+                    default_orientation is not None):
+                exported["orientation"] = default_orientation
             matches.append(exported)
     unused = sorted(set(split_overrides) - used_overrides)
     if unused:
         raise ValueError(f"Split overrides did not match a recording: {', '.join(unused)}")
     result = {"schema_version": 1, "category": category, "matches": matches}
+    if orientations and all(item == orientations[0] for item in orientations):
+        if orientations[0] is not None:
+            result["orientation"] = orientations[0]
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
         json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

@@ -7,6 +7,8 @@ import json
 import sys
 from pathlib import Path
 
+from .orientation import from_manifest
+
 
 FINAL_STATUSES = {"accepted", "corrected", "negative", "skip", "excluded"}
 
@@ -37,6 +39,7 @@ def finalize(review_manifest: Path, output: Path) -> dict:
     default_roi_value = data.get("roi")
     default_roi = (_roi(default_roi_value, "Review roi")
                    if default_roi_value is not None else None)
+    default_orientation = from_manifest(data)
 
     pending = []
     exported_matches = []
@@ -67,6 +70,9 @@ def finalize(review_manifest: Path, output: Path) -> dict:
         if frames:
             exported = {"id": match["id"], "video": match["video"],
                         "split": match["split"], "frames": frames}
+            match_orientation = from_manifest(match, f"{match.get('id')}")
+            if match_orientation is not None:
+                exported["orientation"] = match_orientation
             match_roi_value = match.get("roi")
             if match_roi_value is not None:
                 exported["roi"] = _roi(match_roi_value, f"{match.get('id')} roi")
@@ -81,6 +87,8 @@ def finalize(review_manifest: Path, output: Path) -> dict:
     result = {"schema_version": 1, "category": kind, "matches": exported_matches}
     if default_roi is not None:
         result["roi"] = default_roi
+    if default_orientation is not None:
+        result["orientation"] = default_orientation
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n",
                       encoding="utf-8")

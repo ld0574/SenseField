@@ -52,11 +52,11 @@
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
 | Android 13/14 截屏与横屏取帧 | 已实现 | 已完成模拟器链路验证 |
-| 小地图敌方头像识别 | 已接入实验 APK | YOLOX Nano 320 / ncnn 推理；可导入自动定位 ROI 的实验配置，默认关闭且留出指标未过门禁 |
+| 小地图敌方头像识别 | 已接入实验 APK | YOLOX Nano 320 / ncnn；video8 真人排位冻结评测为 58.84% precision、80.47% recall，未过整体门禁，默认关闭 |
 | 简短声音提示 | 已实现 | 事件合并、冷却与优先级规则可用 |
 | 空间音频与触觉编码 | 计划中 | 尚未完成真实玩家验收 |
 | 录像回放、多人标注与离线评测 | 已实现 | 支持 COCO 数据导出 |
-| 独立留出对局与实体机验收 | 进行中 | video8 真人排位局已冻结为独立留出集，正在盲标；实体机仍待验收 |
+| 独立留出对局与实体机验收 | 未通过／待测 | video8 逐帧留出因 precision 未过门禁；Android 13/14 实体机仍待验收 |
 
 完整指标、证据边界与待验证项见 [当前验证状态](validation/STATUS.md)。
 
@@ -101,6 +101,7 @@ Android Studio 直接打开 `android/`。首次原生构建会下载并校验固
 - [团队协作与本地运行](docs/团队协作与本地运行.md)
 - [当前验证状态](validation/STATUS.md)
 - [小地图自动定位器](validation/MINIMAP_LOCATOR.md)
+- [video8 真人排位冻结盲测](validation/VIDEO8.md)
 - [GitHub 发布检查清单](docs/GITHUB发布检查清单.md)
 - [参与开发](CONTRIBUTING.md)
 
