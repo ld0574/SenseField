@@ -204,8 +204,13 @@ def test_manual_review_rejects_accepting_empty_suggestions(
     assert store.bootstrap()["review_mode"] == review_mode
     task = store.claim_next("Blind reviewer")
     assert task is not None
-    with pytest.raises(ValueError, match="no suggestions"):
+    with pytest.raises(ValueError, match="human confirmation"):
         store.save(task["id"], "Blind reviewer", task["version"], "accepted")
+
+
+def test_annotation_bootstrap_reports_seeded_suggestions(annotation_dataset: Path) -> None:
+    store = AnnotationStore(annotation_dataset, lease_seconds=60)
+    assert store.bootstrap()["suggestions_available"] is True
 
 
 def test_blind_review_sampling_is_uniform_and_prediction_independent() -> None:

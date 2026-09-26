@@ -66,6 +66,19 @@ def _roi(value: object) -> list[float]:
     return result
 
 
+def _normalized_box(roi: list[float], crop_x: int, crop_y: int,
+                    full_width: int, full_height: int,
+                    x0: float, y0: float, x1: float, y1: float) -> list[float] | None:
+    """Map a crop-pixel box to the frame and clip floor/ceil spill to the ROI."""
+    left = max(roi[0], (crop_x + x0) / full_width)
+    top = max(roi[1], (crop_y + y0) / full_height)
+    right = min(roi[0] + roi[2], (crop_x + x1) / full_width)
+    bottom = min(roi[1] + roi[3], (crop_y + y1) / full_height)
+    if right <= left or bottom <= top:
+        return None
+    return [left, top, right - left, bottom - top]
+
+
 def _page(images: list, captions: list[str], output: Path, columns: int = 4) -> None:
     from PIL import Image, ImageDraw
 
@@ -155,12 +168,15 @@ def build(manifest: Path, model: Path, output: Path, input_size: int = 320,
                 y1 = float(np.clip(y1, 0, crop_height))
                 if x1 <= x0 or y1 <= y0:
                     continue
-                normalized = [
-                    (crop_x + x0) / full_width,
-                    (crop_y + y0) / full_height,
-                    (x1 - x0) / full_width,
-                    (y1 - y0) / full_height,
-                ]
+                # floor/ceil makes the pixel crop fractionally larger than the
+                # normalized ROI at its right and bottom edges.  Clamp the
+                # exported coordinates back to the declared ROI so an edge
+                # suggestion remains a valid editable annotation.
+                normalized = _normalized_box(
+                    roi, crop_x, crop_y, full_width, full_height, x0, y0, x1, y1
+                )
+                if normalized is None:
+                    continue
                 score = float(scores[index])
                 found.append({"bbox": [round(value, 8) for value in normalized],
                               "confidence": round(score, 6)})

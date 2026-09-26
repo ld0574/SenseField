@@ -103,6 +103,7 @@ Android Studio 直接打开 `android/`。首次原生构建会下载并校验固
 - [团队协作与本地运行](docs/团队协作与本地运行.md)
 - [当前验证状态](validation/STATUS.md)
 - [小地图自动定位器](validation/MINIMAP_LOCATOR.md)
+- [video7 扩展人工标注](validation/VIDEO7_EXPANDED.md)
 - [困难误报加权实验](validation/HARD_NEGATIVES.md)
 - [video8 真人排位冻结盲测](validation/VIDEO8.md)
 - [GitHub 发布检查清单](docs/GITHUB发布检查清单.md)

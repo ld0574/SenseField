@@ -214,7 +214,13 @@ class AnnotationStore:
                 SELECT match_id AS id, split, COUNT(*) AS samples
                 FROM tasks GROUP BY match_id, split ORDER BY MIN(id)
             """)]
+            suggestions_available = connection.execute("""
+                SELECT EXISTS(
+                    SELECT 1 FROM tasks WHERE suggested_boxes != '[]' LIMIT 1
+                )
+            """).fetchone()[0] == 1
         return {"kind": self.kind, "review_mode": self.review_mode,
+                "suggestions_available": suggestions_available,
                 "roi": self.roi, "matches": matches,
                 "context_offsets_ms": (list(CONTEXT_OFFSETS_MS)
                                        if self._ffmpeg and self._videos else []),
@@ -375,7 +381,7 @@ class AnnotationStore:
             raise ValueError("invalid final status")
         if self.review_mode in {"blind", "manual"} and status == "accepted":
             raise ValueError(
-                "manual review has no suggestions to accept; use corrected or negative"
+                "manual review requires explicit human confirmation; use corrected or negative"
             )
         reviewed_boxes = _validate_boxes(boxes or []) if status == "corrected" else None
         if status == "corrected" and not reviewed_boxes:

@@ -74,9 +74,12 @@ async function bootstrap() {
     option.selected = dataset.id === state.dataset;
     datasetSelect.appendChild(option);
   });
-  const mode = ({blind: "盲标测试", manual: "人工框标注"})[
-    state.bootstrap.review_mode
-  ] || "建议框复核";
+  const assistedManual = state.bootstrap.review_mode === "manual" &&
+    state.bootstrap.suggestions_available;
+  const mode = assistedManual ? "模型辅助人工标注" :
+    ({blind: "盲标测试", manual: "人工框标注"})[
+      state.bootstrap.review_mode
+    ] || "建议框复核";
   $("#datasetLabel").textContent = `${state.bootstrap.kind} · ${mode} · ${state.bootstrap.stats.total} 张图片`;
   const accept = $("#acceptButton");
   accept.querySelector("strong").textContent = "建议框正确";
@@ -84,9 +87,13 @@ async function bootstrap() {
   accept.title = "";
   if (["blind", "manual"].includes(state.bootstrap.review_mode)) {
     accept.disabled = true;
-    accept.title = "没有建议框：有目标请画框保存，无目标请标负样本";
-    accept.querySelector("strong").textContent = "人工标注无建议";
-    accept.querySelector("small").textContent = "有目标按 C，无目标按 N";
+    accept.title = assistedManual ?
+      "请逐个检查建议框后按 C 保存；漏框、错框需先修改" :
+      "没有建议框：有目标请画框保存，无目标请标负样本";
+    accept.querySelector("strong").textContent = assistedManual ?
+      "逐框人工确认" : "人工标注无建议";
+    accept.querySelector("small").textContent = assistedManual ?
+      "检查或修改后按 C，无目标按 N" : "有目标按 C，无目标按 N";
   }
   const filter = $("#matchFilter");
   filter.innerHTML = '<option value="">全部对局</option>';
