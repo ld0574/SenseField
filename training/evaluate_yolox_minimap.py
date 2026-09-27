@@ -13,7 +13,11 @@ import os
 import sys
 from pathlib import Path
 
-from mapassist.detection_evaluate import _direction, _direction_state, _match_boxes
+from mapassist.detection_evaluate import _direction, _direction_state, _iou, _match_boxes
+from mapassist.roi_safety import (
+    assert_coco_boxes_within_images,
+    assert_coco_roi_safe,
+)
 
 if __package__:
     from .train_yolox_minimap import (
@@ -43,6 +47,15 @@ def _checkpoint_threshold(checkpoint: dict) -> float:
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         raise ValueError("Checkpoint validation confidence is invalid")
     return float(value)
+
+
+def _read_evaluation_annotations(data_dir: Path, split: str) -> tuple[Path, dict]:
+    split_name = f"{split}2017"
+    annotation_path = data_dir / "annotations" / f"instances_{split_name}.json"
+    annotation = json.loads(annotation_path.read_text(encoding="utf-8"))
+    assert_coco_roi_safe(annotation, split)
+    assert_coco_boxes_within_images(annotation, split)
+    return annotation_path, annotation
 
 
 def _fixed_metrics(predictions: dict[int, list[tuple[float, list[float]]]],
@@ -106,6 +119,91 @@ def _fixed_metrics(predictions: dict[int, list[tuple[float, list[float]]]],
     return metrics, per_image
 
 
+def _direction_event_metrics(
+    predictions: dict[int, list[tuple[float, list[float]]]],
+    truths: dict[int, list[list[float]]],
+    confidence: float,
+    iou_threshold: float,
+    image_sizes: dict[int, tuple[int, int]],
+) -> dict:
+    """Score the unique cardinal directions present in each frame.
+
+    Ground-truth boxes with ambiguous or center directions are excluded. Multiple
+    boxes in the same direction contribute one event per frame. ``set`` scores
+    direction-set overlap alone; ``iou_gated`` additionally requires a predicted
+    box in that direction to overlap a non-ambiguous ground-truth box of the same
+    direction by at least ``iou_threshold``.
+    """
+    set_tp = set_fp = set_fn = 0
+    gated_tp = gated_fp = gated_fn = 0
+    truth_boxes = usable_truth_boxes = ambiguous_truth_boxes = 0
+    center_truth_boxes = truth_events = 0
+    roi = [0.0, 0.0, 1.0, 1.0]
+
+    for image_id, ground_truth in truths.items():
+        width, height = image_sizes[image_id]
+        ground_truth_by_direction: dict[str, list[list[float]]] = {}
+        for truth in ground_truth:
+            truth_boxes += 1
+            normalized_truth = [
+                truth[0] / width, truth[1] / height,
+                truth[2] / width, truth[3] / height,
+            ]
+            direction, ambiguous, _, _ = _direction_state(normalized_truth, roi)
+            if ambiguous:
+                ambiguous_truth_boxes += 1
+            elif direction is None:
+                center_truth_boxes += 1
+            else:
+                usable_truth_boxes += 1
+                ground_truth_by_direction.setdefault(direction, []).append(truth)
+
+        ground_truth_directions = set(ground_truth_by_direction)
+        truth_events += len(ground_truth_directions)
+
+        predicted_by_direction: dict[str, list[list[float]]] = {}
+        for score, prediction in predictions.get(image_id, []):
+            if score < confidence:
+                continue
+            normalized_prediction = [
+                prediction[0] / width, prediction[1] / height,
+                prediction[2] / width, prediction[3] / height,
+            ]
+            direction = _direction(normalized_prediction, roi)
+            if direction is not None:
+                predicted_by_direction.setdefault(direction, []).append(prediction)
+
+        predicted_directions = set(predicted_by_direction)
+        image_set_tp = len(ground_truth_directions & predicted_directions)
+        set_tp += image_set_tp
+        set_fp += len(predicted_directions) - image_set_tp
+        set_fn += len(ground_truth_directions) - image_set_tp
+
+        image_gated_directions = {
+            direction
+            for direction in ground_truth_directions & predicted_directions
+            if any(
+                _iou(prediction, truth) >= iou_threshold
+                for prediction in predicted_by_direction[direction]
+                for truth in ground_truth_by_direction[direction]
+            )
+        }
+        image_gated_tp = len(image_gated_directions)
+        gated_tp += image_gated_tp
+        gated_fp += len(predicted_directions) - image_gated_tp
+        gated_fn += len(ground_truth_directions) - image_gated_tp
+
+    return {
+        "set": _finish(set_tp, set_fp, set_fn),
+        "iou_gated": _finish(gated_tp, gated_fp, gated_fn),
+        "truth_boxes": truth_boxes,
+        "usable_truth_boxes": usable_truth_boxes,
+        "ambiguous_truth_boxes": ambiguous_truth_boxes,
+        "center_truth_boxes": center_truth_boxes,
+        "truth_events": truth_events,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--yolox-root", type=Path, required=True)
@@ -134,6 +232,10 @@ def main() -> None:
     data_dir = args.data_dir.resolve()
     checkpoint_path = args.checkpoint.resolve()
     output = args.output.resolve()
+    try:
+        annotation_path, annotation = _read_evaluation_annotations(data_dir, args.split)
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+        parser.error(str(error))
     sys.path.insert(0, str(yolox_root))
     os.environ["MAPASSIST_COCO_DIR"] = str(data_dir)
 
@@ -155,14 +257,14 @@ def main() -> None:
         model, device, data_dir, exp.test_size, args.nms_threshold, args.split,
         pre_filter_confidence=min(confidence, 0.01),
     )
-    split_name = f"{args.split}2017"
-    annotation_path = data_dir / "annotations" / f"instances_{split_name}.json"
-    annotation = json.loads(annotation_path.read_text(encoding="utf-8"))
     image_sizes = {
         item["id"]: (int(item["width"]), int(item["height"]))
         for item in annotation["images"]
     }
     metrics, per_image = _fixed_metrics(
+        predictions, truths, confidence, args.iou_threshold, image_sizes
+    )
+    direction_events = _direction_event_metrics(
         predictions, truths, confidence, args.iou_threshold, image_sizes
     )
 
@@ -213,6 +315,7 @@ def main() -> None:
         "experiment": {"path": str(exp_path), "sha256": _sha256(exp_path)},
         "yolox_revision": _git_revision(yolox_root),
         "metrics": metrics,
+        "direction_events": direction_events,
         "per_image": per_image,
     }
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -223,6 +326,7 @@ def main() -> None:
         "split": args.split,
         "confidence": confidence,
         **metrics,
+        "direction_events": direction_events,
     }, ensure_ascii=False, indent=2))
 
 

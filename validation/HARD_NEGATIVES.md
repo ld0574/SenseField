@@ -2,7 +2,7 @@
 
 ## 目的与数据边界
 
-video8 真人排位冻结评测显示 precision 只有 58.84%。该录像继续保持只读，本实验不读取其逐帧预测或失败案例，只使用已经降级为开发数据的 video1–7。
+video8 的旧冻结流程曾记录 precision 58.84%，但固定 ROI 截掉右侧头像；该值只保留为受截断污染的历史 crop-relative 数值，不能作为完整地图误报率或模型效果结论。video8 不用于本实验的选型或复训；本实验只使用已经降级为开发数据的 video1–7。
 
 开发集仍按完整录像分组：video1–5 和 video7 为 train，video6 为 val。训练集有 708 张人工复核帧／1,109 个框，其中 97 张为纯负样本；验证集保持 152 张／223 个框不变。
 
@@ -60,4 +60,4 @@ PYTHONPATH=.:python .venv/bin/python training/reweight_coco_hard_examples.py \
 固定 video6 开发评测：d6fdfac89eb795e7b99001ca1a25de335f4e595438d735023c0c3cee17e1d148
 ```
 
-这些是开发指标。video6 已用于 checkpoint 和 threshold 选择，不能当作独立成绩；video8 也没有用新候选重跑。
+这些是 legacy fixed-ROI crop-relative 开发指标，不代表完整地图覆盖。video6 已用于 checkpoint 和 threshold 选择，不能当作独立成绩；video8 的历史 ROI 有截断污染，也没有用新候选重跑。

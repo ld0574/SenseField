@@ -47,6 +47,7 @@ final class GameProfile {
     final int yoloxInputSize;
     final float yoloxConfidence;
     final float yoloxNms;
+    final String minimapYoloxBinSha256;
     /** Optional screen-layout calibration passed to the native minimap locator. */
     final boolean minimapLocatorEnabled;
     final float[] minimapLocatorFloats;
@@ -59,6 +60,7 @@ final class GameProfile {
                         float[] tuning, int[] eventInts, float minConfidence,
                         boolean minimapYolox, int yoloxInputSize,
                         float yoloxConfidence, float yoloxNms,
+                        String minimapYoloxBinSha256,
                         boolean minimapLocatorEnabled, float[] minimapLocatorFloats,
                         int[] minimapLocatorInts, byte[] minimapLocatorDescriptor,
                         TemplateData enemyTemplate, TemplateData pingTemplate) {
@@ -74,6 +76,7 @@ final class GameProfile {
         this.yoloxInputSize = yoloxInputSize;
         this.yoloxConfidence = yoloxConfidence;
         this.yoloxNms = yoloxNms;
+        this.minimapYoloxBinSha256 = minimapYoloxBinSha256;
         this.minimapLocatorEnabled = minimapLocatorEnabled;
         this.minimapLocatorFloats = minimapLocatorFloats;
         this.minimapLocatorInts = minimapLocatorInts;
@@ -95,6 +98,7 @@ final class GameProfile {
             if (profile.minimapYolox) {
                 requireAsset(context, "minimap-yolox-nano-320.param");
                 requireAsset(context, "minimap-yolox-nano-320.bin");
+                verifyMinimapYoloxBinBinding(context, profile.minimapYoloxBinSha256);
             }
             return profile;
         }
@@ -110,6 +114,45 @@ final class GameProfile {
                             + "minimap-yolox-nano-320.param 和 minimap-yolox-nano-320.bin。"
                             + "请按团队本地运行文档放置模型后重新构建。",
                     missing);
+        }
+    }
+
+    private static void verifyMinimapYoloxBinBinding(Context context, String profileSha256)
+            throws IOException {
+        if (profileSha256 == null || !profileSha256.matches("[0-9a-f]{64}")) {
+            throw new IOException("启用 minimap_yolox 的 GameProfile 必须在 "
+                    + "models.minimap_yolox_bin_sha256 中绑定 64 位小写 SHA-256。");
+        }
+
+        final String metadataText;
+        try (InputStream stream = context.getAssets().open(
+                "minimap-yolox-nano-320.metadata.json")) {
+            metadataText = readText(stream);
+        } catch (IOException missing) {
+            throw new IOException("APK 缺少 minimap-yolox-nano-320.metadata.json，"
+                    + "无法核对启用的 YOLOX 权重。", missing);
+        }
+
+        final String runtimeSha256;
+        try {
+            JSONObject metadata = new JSONObject(metadataText);
+            JSONObject runtime = metadata.optJSONObject("runtime");
+            Object value = runtime == null ? null : runtime.opt("bin_sha256");
+            if (!(value instanceof String)) {
+                throw new JSONException("runtime.bin_sha256 is missing or is not a string");
+            }
+            runtimeSha256 = (String) value;
+        } catch (JSONException malformed) {
+            throw new IOException("APK 模型 metadata 格式无效，必须包含 "
+                    + "runtime.bin_sha256。", malformed);
+        }
+        if (!runtimeSha256.matches("[0-9a-f]{64}")) {
+            throw new IOException("APK 模型 metadata 的 runtime.bin_sha256 格式无效，"
+                    + "必须是 64 位小写 SHA-256。");
+        }
+        if (!profileSha256.equals(runtimeSha256)) {
+            throw new IOException("GameProfile 绑定的 ncnn bin SHA-256 与 APK 模型不一致；"
+                    + "请导入与当前 APK 权重匹配的 profile。");
         }
     }
 
@@ -135,6 +178,9 @@ final class GameProfile {
         boolean verified = data.optBoolean("verified", false);
         boolean enabled = verified || preferences.getBoolean("allow_experimental", false);
         JSONObject detectors = data.getJSONObject("detectors");
+        JSONObject models = data.optJSONObject("models");
+        String minimapYoloxBinSha256 = models == null ? null
+                : models.optString("minimap_yolox_bin_sha256", null);
         JSONObject thresholds = data.getJSONObject("thresholds");
         boolean minimapYolox = enabled && detectors.optBoolean("minimap_yolox", false);
         double yoloxInputValue = thresholds.optDouble("minimap_yolox_input_size", 320);
@@ -203,7 +249,7 @@ final class GameProfile {
         return new GameProfile(data.optString("name", "unnamed"),
                 data.optString("profile_version", "unversioned"), verified, rois, flags,
                 tuning, eventInts, minConfidence, minimapYolox, yoloxInputSize,
-                yoloxConfidence, yoloxNms,
+                yoloxConfidence, yoloxNms, minimapYoloxBinSha256,
                 useMinimapLocator,
                 locator == null ? new float[0] : locator.floats,
                 locator == null ? new int[0] : locator.ints,

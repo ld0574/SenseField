@@ -499,6 +499,43 @@ function pointFromEvent(event) {
 
 function clamp(value, low, high) { return Math.max(low, Math.min(high, value)); }
 
+function roiBoundaryContacts(boxes) {
+  if (!state.task || !state.image || state.bootstrap?.kind === "minimap_region") {
+    return {crop: [], physical: []};
+  }
+  const [x, y, width, height] = taskRoi();
+  const frameWidth = state.image.naturalWidth || state.image.width;
+  const frameHeight = state.image.naturalHeight || state.image.height;
+  const cropLeft = Math.floor(x * frameWidth);
+  const cropTop = Math.floor(y * frameHeight);
+  const cropRight = Math.ceil((x + width) * frameWidth);
+  const cropBottom = Math.ceil((y + height) * frameHeight);
+  const crop = [];
+  const physical = [];
+  boxes.forEach((box, index) => {
+    const sides = {crop: [], physical: []};
+    const boxLeft = box[0] * frameWidth;
+    const boxTop = box[1] * frameHeight;
+    const boxRight = (box[0] + box[2]) * frameWidth;
+    const boxBottom = (box[1] + box[3]) * frameHeight;
+    if (boxLeft <= cropLeft + 1 && boxRight >= cropLeft - 1e-9) {
+      (cropLeft <= 0 ? sides.physical : sides.crop).push("左");
+    }
+    if (boxRight >= cropRight - 1 && boxLeft <= cropRight + 1e-9) {
+      (cropRight >= frameWidth ? sides.physical : sides.crop).push("右");
+    }
+    if (boxTop <= cropTop + 1 && boxBottom >= cropTop - 1e-9) {
+      (cropTop <= 0 ? sides.physical : sides.crop).push("上");
+    }
+    if (boxBottom >= cropBottom - 1 && boxTop <= cropBottom + 1e-9) {
+      (cropBottom >= frameHeight ? sides.physical : sides.crop).push("下");
+    }
+    if (sides.crop.length) crop.push({index: index + 1, sides: sides.crop});
+    if (sides.physical.length) physical.push({index: index + 1, sides: sides.physical});
+  });
+  return {crop, physical};
+}
+
 function hitBox(point) {
   const view = viewRect();
   const handle = 11 * canvas.width / Math.max(1, canvas.clientWidth);
@@ -579,6 +616,17 @@ canvas.addEventListener("pointercancel", () => { state.drag = null; draw(); });
 function renderBoxCount() {
   $("#boxCount").textContent = state.boxes.length;
   $("#deleteBoxButton").disabled = !state.task || state.selected < 0;
+  const contacts = roiBoundaryContacts(state.boxes);
+  const warning = $("#roiBoundaryWarning");
+  const messages = [];
+  if (contacts.crop.length) {
+    messages.push(`${contacts.crop.length} 个框距可扩展的小地图裁剪边缘不足 1 像素，可能目标已被切断。请扩大标注数据 ROI 后重标；无法确认完整目标时选“无法判断”。`);
+  }
+  if (contacts.physical.length) {
+    messages.push(`${contacts.physical.length} 个框碰到原始画面边缘；无法确认完整目标时选“无法判断”。`);
+  }
+  warning.classList.toggle("hidden", messages.length === 0);
+  warning.textContent = messages.join(" ");
 }
 
 function deleteSelected() {
@@ -604,6 +652,12 @@ async function save(status) {
   if (state.busy) return;
   if (status === "corrected" && !state.boxes.length) {
     toast("没有框时请使用“没有敌人”", true);
+    return;
+  }
+  if (["corrected", "accepted"].includes(status) &&
+      state.bootstrap?.kind !== "minimap_region" &&
+      roiBoundaryContacts(state.boxes).crop.length) {
+    toast("目标框碰到可扩展的小地图裁剪边缘，可能不完整；请选“无法判断”或扩大数据 ROI 后重标", true);
     return;
   }
   state.busy = true;

@@ -2,12 +2,14 @@
 
 ## 已验证
 
+下列 video6 检测 P/R/F1 与方向事件数值均来自 legacy fixed-ROI crop，只是内部开发对照；已发现的边界缺口意味着它们不代表完整小地图覆盖或召回。
+
 | 项目 | 结果 |
 | --- | --- |
-| 桌面共享 C++ 引擎与录像回放 | `PYTHONPATH=.:python .venv/bin/python -m pytest -q`：134 项通过、1 项条件跳过；覆盖完整 GameProfile 定位读取、小地图自动定位、带 Display Matrix 录像的显示方向抽帧与旧复核帧恢复、辅助建议安全附加、标注站旧数据集恢复、困难误报数据加权、增量抽样排除窗口、红环几何过滤、相邻头像分框、非对局静默、空间跟踪去重、冷却与抢占、标注／数据集、冻结模型与 Android 资产哈希、会话日志、最终门禁及 ncnn 回放约束。跳过项需要专用合成 YOLOX profile；同一回放入口已另用 video7 真实开发片段成功执行。 |
+| 桌面共享 C++ 引擎与录像回放 | 最终门禁全量 `PYTHONPATH=.:python:training .venv/bin/python -m pytest -q`：168 项通过、1 项条件跳过。覆盖完整 GameProfile 定位读取、小地图自动定位、带 Display Matrix 录像的显示方向抽帧与旧复核帧恢复、队列帧与全屏坐标尺寸一致性、辅助建议安全附加、标注站旧数据集恢复、困难误报数据加权、增量抽样排除窗口、红环几何过滤、相邻头像分框、非对局静默、空间跟踪去重、冷却与抢占、标注／数据集、冻结模型与 Android 资产哈希、会话日志、最终门禁及 ncnn 回放约束。跳过项需要专用合成 YOLOX profile；同一回放入口已另用 video7 真实开发片段成功执行。 |
 | 主画面检测数据准备 | 已能从逐场边框清单导出带负样本、符合 YOLOX 目录约定的 COCO 数据集，并拒绝同一录像路径跨训练／留出组；尚无真实标注和模型，见 [模型接入记录](MODEL_PIPELINE.md) |
 | 端到端延迟统计工具 | 已能从外部记录的证据／实际发声配对时间计算逐类及总体 P95，并单列漏提示；尚无真机样本 |
-| Android debug 构建 | 使用 Android Studio JBR 执行 `./gradlew assembleDebug lintDebug`：构建成功，lint 通过；构建任务会按 metadata 校验模型 param／bin 哈希，CMake 同时校验 ncnn 下载包及已有缓存包哈希 |
+| Android debug 构建 | 最终门禁执行 clean `./gradlew clean assembleDebug lintDebug`：成功，lint 通过；APK SHA-256 `ec1254455c65838308d24ffe0875490bd5ddd2e33cbc55e173d3ae527eb00e98`，仅 arm64、minSdk 29、targetSdk 35、debug 签名。构建按 tracked metadata 校验本机 ignored param／bin 哈希；CMake 同时校验 ncnn 下载包和缓存包哈希。 |
 | APK 结构 | Android 29 起、目标 35；只包含 arm64 ABI。APK 已打包 ncnn 静态运行时、3.4 MiB YOLOX 权重、Focus 修复后的 param、哈希元数据、完整第三方许可文本和未验证开发配置；实验开关默认关闭 |
 | APK 签名 | debug APK 的 v2 签名通过 `apksigner verify` |
 | Android 会话健壮性 | 当前 `0.2.0` 在加载模型前先进入前台服务状态；SoundPool 尚未完成异步加载时会暂存仍在证据有效期内的最近提示。每次启动生成 UUID，并输出可解析的 `SessionStart`、逐事件 `CueEvent` 和唯一 `SessionSummary`；汇总横屏处理跨度、平均采样所需帧数、最大帧间隔、过期和音频排队失败。旧 ImageReader 回调不会污染新会话。黑屏停止按连续时长判断；VirtualDisplay 在 ImageReader 前释放；系统或投屏授权结束时显式移除前台通知。 |
@@ -20,19 +22,22 @@
 | 五场录像扩充 | 五场共处理 56,978 帧；地图结构门控移除了已确认的英雄选择／加载界面误报，最终分别输出 102/141/105/126/123 条小地图提示。150 张抽样帧已全部复核；排除 29 张非对局画面后，121 张有效帧含 190 个敌方头像框。COCO 已按整场对局导出为 train 76 张／111 框、val 45 张／79 框。所有五场均参与过规则复核，不再算独立留出数据。见 [五场录像记录](VIDEO3_5.md)。 |
 | video6 历史逐帧盲测 | 60 帧已全部盲标并在解封预测时重新核对全部承诺哈希。当时 IoU 0.5 下准确率 57.58%、召回率 21.59%、方位正确率 94.44%，前两项未达门禁。后续已查看失败案例并用它选择 YOLOX 权重和阈值，所以 video6 现为开发数据；历史过程见 [video6 盲测记录](VIDEO6.md)。 |
 | YOLOX-Nano 小地图模型 | 600 张密集队列完成独立复核后，与旧标注合并为 749 张／1,143 框，仍按 video1–5 train、video6 val。Nano 320 最佳点为 epoch 20：precision 90.50%、recall 72.65%、F1 80.60%、几何方位正确率 96.10%；第 40 轮早停。低 Mosaic 对照为 92.02% / 67.26% / 77.72%，416 输入为 90.63% / 65.02% / 75.72%，均较差。冻结选择已导出 ONNX，12 张真实验证裁剪的最大原始输出误差 0.000223，小于 0.0005 门限。开发召回仍未达到 80%。 |
-| 困难误报加权候选 | 只用 video1–7 开发数据：冻结模型在 708 张 train 帧产生 115 个 FP，98 张含 FP 的完整人工复核画面被重复加权，train 增至 826 张／1,316 框；video6 val 保持 152 张／223 框不变。低学习率微调第 10 轮达到 precision 90.27%、recall 74.89%、F1 81.86%、方向正确率 97.50%，第 30 轮早停。相对冻结基线召回提高 2.24 点，但仍未过 80%，没有替换 APK 模型，也没有在 video8 重跑；详见[困难误报实验](HARD_NEGATIVES.md)。 |
-| video7 扩展数据微调候选 | 7 场开发数据合计 1,079 张／1,666 框；train 为 video1–5＋video7 的 927 张／1,443 框（video7 330 张／523 框），val 仅 video6 的 152 张／223 框，未读取 video8。MPS、seed `20260926`、320 输入、batch 16、`lr_scale=0.1`，最多 40 轮、第 30 轮早停；最佳 epoch 10。video6 开发验证 TP/FP/FN `158/17/65`，precision / recall / F1 `90.2857% / 70.8520% / 79.3970%`，方向正确率 `97.3856%`；confidence `0.43`。相对 dense baseline 的 P/R/F1 变化为 `−0.2171 / −1.7937 / −1.2000` 个百分点，相对困难误报候选为 `+0.0154 / −4.0359 / −2.4657` 个百分点，因此不替换 APK 模型。这只是 video6 开发集比较；video7 AI 辅助标签仍建议队友抽查。数据、checkpoint 与评估哈希见 [video7 扩展记录](VIDEO7_EXPANDED.md)。 |
-| YOLOX Android 接入 | 冻结的 Nano 320 已转换为 ncnn 并进入 APK。构建固定 ncnn `20260526` 及下载包 SHA-256；JNI 完成小地图裁剪、BGR／320 右下填充、strides 8/16/32 解码、0.29 阈值、0.5 NMS、整屏坐标映射和 observation 注入。30 张真实裁剪的 TorchScript／ncnn 最大原始误差 0.0004493，小于 0.0005；Android 等价预处理后的检测数量逐图一致，最大框／置信度差异 0.003071。自适应候选的全链路 video7 冒烟证明定位器、动态 ROI、ncnn 和事件层已连通，但 video8 post-hoc 配对诊断显示旧模型随裁剪变化退化，候选暂不内置。详细哈希和边界见 [模型接入记录](MODEL_PIPELINE.md)。尚无实体机持续运行证据。 |
-| 小地图自动定位 | 新增黑边内容区归一化、短边布局锚点、位置／缩放／宽高比搜索、两帧确认、短时保持和周期重定位；ROI Correction 取粗略布局框与锚点框的并集，防止高相关的紧框裁掉边缘敌人。描述符只使用 video1–6 人工复核开发帧生成。video7 为 1/109/1 帧搜索/锁定/保持，可用率 99.10%，人工裁剪覆盖率中位数和 P05 均为 100%；修正标注与显示方向后的 video8 为 1/113/5、可用率 99.16%，人工裁剪覆盖率中位数和 P05 均为 99.74%。完整候选 profile 的布局指标与单独 locator JSON 一致；但同一 ncnn 路径的 post-hoc 检测对照从固定 ROI 的 58.14% / 81.40% 降到 52.16% / 78.60%，因此候选仍为手动导入。详见[定位器记录](MINIMAP_LOCATOR.md)。 |
+| 困难误报加权候选 | 只用 video1–7 开发数据：冻结模型在 708 张 train 帧产生 115 个 FP，98 张含 FP 的完整人工复核画面被重复加入训练，train 增至 826 条记录／1,316 个既有标注框；video6 val 保持 152 张／223 框不变。低学习率微调第 10 轮达到 precision 90.27%、recall 74.89%、F1 81.86%、方向正确率 97.50%，第 30 轮早停；confidence `0.19`、NMS `0.5`。方向事件 `set` TP/FP/FN `148/10/26`、P/R/F1 `93.6709% / 85.0575% / 89.1566%`；`iou_gated` TP/FP/FN `144/14/30`、P/R/F1 `91.1392% / 82.7586% / 86.7470%`，这些只是在 legacy fixed-ROI crop 内的开发数值，不代表完整地图覆盖。checkpoint `f7176b7ea9de65fb0f1fe4262514992fdda2ed8691a7a87851a2d27a910c7cfb` 已接入本机固定 ROI Android 开发资产；video6 不是独立留出，APK 公共默认 profile 仍关闭检测器。ncnn raw parity 和集成状态见[模型接入记录](MODEL_PIPELINE.md)。 |
+| video7 扩展数据微调对照 | 这是另一项 video7 标签微调，使用 video6 开发验证：TP/FP/FN `158/17/65`，P/R/F1 `90.2857% / 70.8520% / 79.3970%`，confidence `0.43`。该 checkpoint 未接入本机开发资产；当前本机候选为 hard-FP `f7176b7ea9de65fb0f1fe4262514992fdda2ed8691a7a87851a2d27a910c7cfb`，默认 profile 仍关闭检测。video7 AI 辅助标签仍建议抽查，详情见[video7 扩展记录](VIDEO7_EXPANDED.md)。 |
+| 扩大 hard-FP 后续实验（失败） | 从 dense checkpoint 沿用相同参数训练；150 个 hard sources（20 个纯负样本）通过重复既有已标注样本加入 188 条训练记录／283 个既有框，train 为 1,115 条记录／1,726 个框。video6 confidence `0.47` 下 P/R/F1 `90.1163% / 69.5067% / 78.4810%`；该失败 checkpoint 未接入本机开发 profile，当前候选仍是 `f7176b7ea9de65fb0f1fe4262514992fdda2ed8691a7a87851a2d27a910c7cfb`，默认关闭。详情见 [video7 扩展记录](VIDEO7_EXPANDED.md)。 |
+| FP+FN hard-errors 对照（失败） | 重复加入既有 hard sources 后 train 为 875 条记录／1,429 个框。video6 confidence `0.29` 下 P/R/F1 `91.3295% / 70.8520% / 79.7980%`；该失败 checkpoint 未接入本机开发 profile，当前候选仍是 `f7176b7ea9de65fb0f1fe4262514992fdda2ed8691a7a87851a2d27a910c7cfb`，默认关闭。最终验收和更换为独立真人对局仍待完成，详情见 [video7 扩展记录](VIDEO7_EXPANDED.md)。 |
+| YOLOX Android 本机开发候选 | checkpoint `f7176b7ea9de65fb0f1fe4262514992fdda2ed8691a7a87851a2d27a910c7cfb`、confidence `0.19`、NMS `0.5` 的固定 ROI 候选已接入本机 ignored ncnn param／bin、tracked metadata 和开发 profile；APK 默认 profile `detectors.minimap_yolox=false`。ONNX parity 152/152 图通过，TorchScript/ncnn raw parity `0.000515342 > 0.0005`，严格门槛失败；Android 等价最终检测计数 152/152 图和 185/185 检测一致，最大值差 `0.005043 < 0.01`。video6 方向事件子指标只代表 legacy crop 内的开发结果，不是独立留出或完整地图覆盖证据。详情见 [模型接入记录](MODEL_PIPELINE.md)。 |
+| video7 开发冒烟 | 负样本段 61.551–72.312 s：5 个人工抽样点均无真值框，新候选在 122 帧回放中 0 检测；同一 122 帧片段中旧 fixed／adaptive profile 分别产生 6／31 个检测，提示开发误报减少。正样本段 74–92 s：216 帧、501 detections/observations、4 cues，桌面处理 P95 29.938 ms；7 个人工抽样点的预测／真值框数逐点一致。均为开发冒烟，不代表独立精度或真机时延。详见[模型接入记录](MODEL_PIPELINE.md)。 |
+| 小地图自动定位 | 定位器搜索、确认、保持与重定位仍属于独立开发功能；旧自适应 profile 绑定旧 dense baseline checkpoint `68b86a7a10c97d9b2c738f72b1f49a0b1dcc76d10751ee9f4e61380ee4fb93bc`，不要与当前 f717 固定 ROI 候选混用或直接导入。video8 布局边界框已于 2026-09-27 重校，定位器 v2 已重训重评：video6 val IoU≥0.75 100%、覆盖率 100%（IoU 中位 0.8369）；另 120 张 video8 布局评测帧未用于训练，但与 train 中的 16 张来自同场，只能作为 same-match development diagnostic（IoU 中位 0.8822、IoU≥0.75 99.17%、覆盖率中位 100%），不能称独立测试或诚实留出。描述符定位器对 reviewed crop 的修正参考一致性为 IoU 中位 0.8986、覆盖率中位 98.29%，不是独立描出的 HUD 边界。详见[定位器记录](MINIMAP_LOCATOR.md)。 |
 | video7 高分辨率历史盲测 | 2712×1220、30 FPS、约 8 Mbps 的人机局；预测无关均匀抽取 120 张并由两人分片盲标、三层复核，最终 111 张有效帧／189 框。模型和阈值先在 video6 冻结。历史模型固定阈值结果为 precision 61.96%、recall 60.32%、F1 61.13%；密集 320 模型为 65.57% / 63.49% / 64.52%，几何方位正确率 99.11%。有改善但未过 90% / 80% 门禁；video7 后续进入开发训练和复核，以上是历史盲测结果，不再是独立留出成绩。人机逐帧结果也不能代替真实匹配事件级和真机验收。 |
-| video8 真人排位留出集 | 录制者确认为 5v5 真人排位局。120 张预测无关均匀抽样帧完成分片标注和独立审计，排除结算切换帧后为 119 帧／215 框。固定 YOLOX Nano 320、confidence 0.29、NMS 0.5 只运行一次：TP/FP/FN 173/121/42，precision 58.84%、recall 80.47%、F1 67.98%、几何方位正确率 96.86%。召回和方向过线，但准确率未过 90%，整体门禁未通过；详见 [video8 记录](VIDEO8.md)。后续自适应 ncnn 运行明确降级为 post-hoc 集成诊断，不改写冻结成绩，也不再作为独立留出证据。 |
-| 多人标注网站 | 已实现原图／小地图切换、框新增／移动／缩放／删除、筛选、团队进度和自动下一张。所有队列共用一个 `8765` 网站并可在顶部切换，数据库仍各自独立。`manual` 模式可载入模型建议但禁止直接接受，逐图保存 `corrected`、`negative`、`excluded` 或 `skip` 状态；video1–6 的 600 张密集队列已经完成。video7 扩展队列的 240 张抽样不读取预测，并排除旧标签前后 1 秒，实际最近间隔 2.552 秒；抽样后生成 442 个低阈值建议框。该队列现已完成 AI 辅助初标和两路分层交叉审计：186 张 `corrected`／334 框、33 `negative`、16 `excluded`、5 `skip`、0 `pending`；交叉审计 0 修改，数据库与 manifest 一致，0 框越 ROI。该流程不是人工真值，仍建议队友抽查。详情和 review manifest SHA-256 见 [video7 扩展记录](VIDEO7_EXPANDED.md)。SQLite WAL、15 分钟租约和乐观锁保护多人写入；`excluded` 状态将准备、选人、加载和结算画面排除在负样本、指标与训练集之外。 |
+| video8 旧冻结运行（已降级） | 旧流程在 119 帧／215 框上记录的 precision 58.84%、recall 80.47%、F1 67.98%、方位率 96.86% 仅是受截断污染的历史 crop-relative 数值，不能作为完整地图效果或独立留出结论。复核界面暴露固定 ROI 截掉右侧头像；裁剪完整性未审计。固定 ROI 风险适用于使用同一裁剪的其他录像，受影响帧数未知。不得据此直接扩大当前 Android ROI；敌人权重未按新裁剪重训。`blind-review-v2-roi-recalibrated` 因 348×344 crop 与全屏 manifest 坐标错配而无效；现用 v3 队列在新路径，120 个时间点均为 `pending`，全屏帧／overlay 为 2376×1080，ROI 和标注规则见 [video8 记录](VIDEO8.md)。v1 标注原样保留。 |
+| 多人标注网站 | 已实现原图／小地图切换、框新增／移动／缩放／删除、筛选、团队进度和自动下一张。所有队列共用一个 `8765` 网站并可在顶部切换，数据库仍各自独立。`manual` 模式可载入模型建议但禁止直接接受，逐图保存 `corrected`、`negative`、`excluded` 或 `skip` 状态；video1–6 的 600 张密集队列已经完成。video7 扩展队列的 240 张抽样不读取预测，并排除旧标签前后 1 秒，实际最近间隔 2.552 秒；抽样后生成 442 个低阈值建议框。该队列现已完成 AI 辅助初标和两路分层交叉审计：186 张 `corrected`／334 框、33 `negative`、16 `excluded`、5 `skip`、0 `pending`；交叉审计 0 修改，数据库与 manifest 一致，0 框越 ROI。**“框在 ROI 内”只说明坐标合法，不证明小地图和头像没有被 ROI 切掉；旧队列尚未做边界触碰复核。** 该流程不是人工真值，仍建议队友抽查。详情和 review manifest SHA-256 见 [video7 扩展记录](VIDEO7_EXPANDED.md)。SQLite WAL、15 分钟租约和乐观锁保护多人写入；`excluded` 状态将准备、选人、加载和结算画面排除在负样本、指标与训练集之外。 |
 | 小地图逐框诊断 | 150 张开发样本已全部复核并以 IoU 0.5 评测。原始 v3 建议框在 121 张有效帧上为准确率 58.43%、召回率 54.74%；加入小组件过滤和相邻头像分框后，用当前原生库重新推理同一批帧得到准确率 71.07%、召回率 59.47%、匹配框平均 IoU 76.98%、可判断方向正确率 97.80%。该分层抽样覆盖的五场录像全部参与过开发，只用于回归诊断，不能代替独立留出事件评测。 |
 | 最终验收门禁 | `mapassist.validation_gate` 从独立留出预测／标签和真机延迟 CSV 重算指标，验证逐帧 CFR 时间轴、回放 provenance、冻结 ncnn param/bin/native library 与所有证据文件 SHA-256；门禁还解包实际安装 APK，要求其中 profile 和模型与离线预测完全一致。`ffprobe` 验证外部真机录像的音视频流各自连续至少 15 分钟。另强制 test 分组、未参与调参、逐类事件支持、90%/80%/90% 指标、实体 Android 13/14 声明、实际发声样本及 P95 ≤250 ms。通过、语义失败、模型错配、时间轴错配和哈希篡改测试均已覆盖。 |
 
 APK：`android/app/build/outputs/apk/debug/app-debug.apk`
 版本：`0.2.0`（versionCode 4）
-SHA-256：`ca97542ca2fb353749311c19a42b3c2e2226b9e9c0d553f968d66528ed05086e`
+SHA-256：`ec1254455c65838308d24ffe0875490bd5ddd2e33cbc55e173d3ae527eb00e98`
 
 公开仓库检查通过；当前公开版本不再跟踪模型文件，默认 profile 已关闭 `minimap_yolox`。旧 Git 历史仍含模型文件；历史清理的 force-push 尚未执行，仍待明确授权。
 
@@ -54,9 +59,10 @@ SHA-256：`ca97542ca2fb353749311c19a42b3c2e2226b9e9c0d553f968d66528ed05086e`
 
 ## 等待输入与验证
 
-1. **降低误报并准备新的独立留出**：video8 真人排位冻结评测的 recall 和方向达到目标，但 precision 只有 58.84%。不得用 video8 调参后继续称其为独立成绩；下一轮在 video1–7 或新开发录像上分析误报、训练和选阈值，再录制另一场从未参与开发的真人对局做新盲测。当前“撤退”模板只覆盖一种队友信号。
-2. **video7 扩展标签抽查**：本轮微调和 video6 开发集比较已完成，候选不替换 APK 模型。video7 扩展标注是 AI 辅助初标与交叉审计，不是人工真值；仍建议队友抽查，特别是边缘和重叠目标。
+1. **复核误报并提高尺度鲁棒性**：扩大 hard-FP 后续实验和 FP+FN hard-errors 对照的 video6 开发 F1 分别为 78.48% 和 79.80%，均未超过 `81.8627%` 替换门槛。继续盲目重复加权会更差。下一步优先人工复核误报来源、检查和去除重复样本，并研究尺度鲁棒性。video8 旧 P/R 数值已因裁剪截断降级，不能作为模型结论；新策略需在开发数据上完成分析与选型，再用另一场从未参与开发的真人对局做新盲测。当前“撤退”模板只覆盖一种队友信号。
+2. **video7 扩展标签抽查**：video7 扩展标签微调 checkpoint 没有替换当前 hard-FP 开发候选。video7 扩展标注是 AI 辅助初标与交叉审计，不是人工真值；仍建议队友抽查，特别是边缘和重叠目标。
 3. **Android 13/14 测试手机**：目前没有实体手机连接。安装 APK 后仍需在目标手机上验证整屏授权、横屏切换、持续截屏、`FLAG_SECURE` 场景、坐标映射、实际 TTS／震动与游戏音频关系，以及黑屏／授权终止处理。
 4. **端到端验收**：需要至少 15 分钟真机运行，并用同时拍到屏幕、录到声音的外部录像对齐证据首次可见与提示发声时间，测量 P95、帧率及发热。桌面回放时间轴不能替代该测量。
+5. **video8 v3 敌人标注**：使用 `blind-review-v3-safe-roi` 队列（120 个时间点，均为 `pending`）；帧／overlay 为 2376×1080，检测裁剪使用控件外扩 27 px 的安全 ROI。只标图标中心位于真实小地图控件内的敌方英雄，安全边距内但控件外的 HUD 头像不标。v2 仍作为坐标错配的无效证据，不能启动；v3 尚未完成标注或用于敌人检测重训。AnnotationStore 会拦截 display_size 不匹配，临时 API 的 corrected 往返检查通过。定位器的全屏布局评测是独立产物：video6 val 覆盖率 100%；120 张 video8 布局评测帧虽未进训练，但与训练中的 16 张同属 video8，只能作 same-match development diagnostic（IoU 中位 0.8822），见[定位器记录](MINIMAP_LOCATOR.md)。
 
 后续录像按 [README](../README.md) 标定和评测；真机测试按 [会话记录模板](SESSION_TEMPLATE.md) 留存结果。未达标的识别器保持关闭。

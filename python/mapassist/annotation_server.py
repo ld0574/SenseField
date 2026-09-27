@@ -22,6 +22,11 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from PIL import Image
+
+from .orientation import normalize as normalize_orientation
+from .roi_safety import DEFAULT_ROI_EDGE_TOLERANCE_PX, inspect_box_roi
+
 
 FINAL_STATUSES = {"accepted", "corrected", "negative", "skip", "excluded"}
 ALL_STATUSES = {"pending", *FINAL_STATUSES}
@@ -57,6 +62,24 @@ def _validate_roi(value: object, label: str = "roi") -> list[float]:
             x + width > 1.000001 or y + height > 1.000001):
         raise ValueError(f"{label} is outside the normalized frame")
     return roi
+
+
+def _display_frame_size(value: object, label: str) -> tuple[int, int] | None:
+    """Return the required image size for display-oriented review media."""
+    if not isinstance(value, dict):
+        return None
+    requires_display = value.get("queue_frames_must_be_display_oriented") is True
+    if not requires_display and "display_size" not in value:
+        return None
+    orientation = normalize_orientation(value, label)
+    size = orientation.get("display_size")
+    if size is None and requires_display:
+        raise ValueError(
+            f"{label} must declare display_size when queue frames must be display-oriented"
+        )
+    if size is None:
+        return None
+    return size[0], size[1]
 
 
 def _annotator(value: object) -> str:
@@ -104,6 +127,7 @@ class AnnotationStore:
         if self.review_mode not in {"suggestion", "blind", "manual"}:
             raise ValueError("review_mode must be suggestion, blind, or manual")
         self.roi = _validate_roi(data.get("roi"), "Review manifest roi")
+        top_orientation = data.get("orientation")
         self.match_rois: dict[str, list[float]] = {}
         self.database.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
@@ -140,6 +164,10 @@ class AnnotationStore:
                     self.match_rois[match_id] = _validate_roi(
                         match.get("roi", self.roi), f"{match_id} roi"
                     )
+                    orientation_value = match.get("orientation", top_orientation)
+                    expected_frame_size = _display_frame_size(
+                        orientation_value, f"{match_id} orientation"
+                    )
                     video_value = match.get("video")
                     if isinstance(match_id, str) and isinstance(video_value, str):
                         video = Path(video_value)
@@ -159,6 +187,17 @@ class AnnotationStore:
                                     candidate.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}):
                                 raise ValueError(f"Invalid review media path: {relative}")
                             self._media_files.add(relative)
+                            if expected_frame_size is not None:
+                                with Image.open(candidate) as image:
+                                    media_size = image.size
+                                if media_size != expected_frame_size:
+                                    raise ValueError(
+                                        f"Review {media_key} {relative} is "
+                                        f"{media_size[0]}x{media_size[1]}, but "
+                                        f"{match_id} orientation declares display_size "
+                                        f"{list(expected_frame_size)}; full display-frame "
+                                        "coordinates require matching media dimensions"
+                                    )
                         status = sample.get("review_status", "pending")
                         if status not in ALL_STATUSES:
                             status = "pending"
@@ -399,7 +438,7 @@ class AnnotationStore:
                 row = connection.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
                 if row is None:
                     raise KeyError(task_id)
-                if reviewed_boxes is not None:
+                if reviewed_boxes is not None and self.kind == "minimap_region":
                     roi_x, roi_y, roi_width, roi_height = self.match_rois[row["match_id"]]
                     for x, y, width, height in reviewed_boxes:
                         if (x < roi_x - 0.000001 or y < roi_y - 0.000001 or
@@ -407,6 +446,38 @@ class AnnotationStore:
                                 y + height > roi_y + roi_height + 0.000001):
                             raise ValueError(
                                 "corrected boxes must stay inside the minimap roi"
+                            )
+                if self.kind != "minimap_region":
+                    boxes_for_roi_check = reviewed_boxes
+                    if status == "accepted":
+                        boxes_for_roi_check = json.loads(row["suggested_boxes"])
+                    if boxes_for_roi_check:
+                        frame_path = self.media_path(row["frame"])
+                        with Image.open(frame_path) as frame:
+                            frame_width, frame_height = frame.size
+                        roi = self.match_rois[row["match_id"]]
+                        contacts = [
+                            {"box": index + 1, **inspect_box_roi(
+                                box, roi, frame_width, frame_height,
+                                DEFAULT_ROI_EDGE_TOLERANCE_PX,
+                            )}
+                            for index, box in enumerate(boxes_for_roi_check)
+                        ]
+                        if status == "corrected" and any(
+                                item["outside"] for item in contacts):
+                            raise ValueError(
+                                "corrected boxes must stay inside the minimap roi"
+                            )
+                        suspects = [
+                            item for item in contacts
+                            if item["outside"] or item["crop_touches"]
+                        ]
+                        if suspects:
+                            raise ValueError(
+                                "target boxes touch an expandable minimap crop boundary "
+                                "or cross the minimap roi; "
+                                "use skip for uncertain gameplay frames, or correct the "
+                                "dataset ROI and re-annotate before export"
                             )
                 if row["version"] != version:
                     raise ConflictError("Task changed in another browser; reload it")

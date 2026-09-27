@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,11 +10,28 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "training"))
 
 from train_yolox_minimap import (
+    _assert_roi_boundaries_clear,
     _is_better_validation_metric,
     _select_validation_metric,
     _validate_range,
     _validate_training_args,
 )
+
+
+def _roi_audit(crop_contacts: list[dict] | None = None,
+               physical_contacts: list[dict] | None = None) -> dict:
+    crop_contacts = crop_contacts or []
+    eligible = not crop_contacts
+    return {
+        "schema_version": 1,
+        "edge_tolerance_px": 1.0,
+        "crop_edge_contacts": crop_contacts,
+        "physical_edge_contacts": physical_contacts or [],
+        "edge_contacts": crop_contacts,
+        "training_eligible": eligible,
+        "usable_for_training_or_evaluation": eligible,
+        "policy": "Targets at expandable crop edges require review.",
+    }
 
 
 def test_selection_prefers_recall_then_f1_then_precision_after_gate() -> None:
@@ -81,3 +99,65 @@ def test_training_args_reject_zero_mosaic_scale() -> None:
 
     with pytest.raises(ValueError, match="greater than zero"):
         _validate_training_args(args)
+
+
+def test_training_gate_rejects_exporter_marked_crop_edge_contacts(tmp_path: Path) -> None:
+    annotation_dir = tmp_path / "annotations"
+    annotation_dir.mkdir()
+    clean = {
+        "images": [{"id": 1, "width": 100, "height": 100}],
+        "annotations": [{"id": 1, "image_id": 1, "bbox": [20, 20, 10, 10]}],
+        "info": {"roi_boundary_audit": _roi_audit()},
+    }
+    (annotation_dir / "instances_train2017.json").write_text(
+        json.dumps(clean), encoding="utf-8"
+    )
+    (annotation_dir / "instances_val2017.json").write_text(
+        json.dumps(clean), encoding="utf-8"
+    )
+
+    _assert_roi_boundaries_clear(tmp_path)
+
+    dirty = dict(clean)
+    dirty["info"] = {"roi_boundary_audit": _roi_audit([{
+        "match_id": "m1", "at_ms": 1000, "box_index": 1, "sides": ["right"],
+    }])}
+    (annotation_dir / "instances_val2017.json").write_text(
+        json.dumps(dirty), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="expandable crop edge"):
+        _assert_roi_boundaries_clear(tmp_path)
+
+
+def test_training_gate_allows_physical_screen_edge_contacts(tmp_path: Path) -> None:
+    annotation_dir = tmp_path / "annotations"
+    annotation_dir.mkdir()
+    document = {
+        "images": [{"id": 1, "width": 100, "height": 100}],
+        "annotations": [{"id": 1, "image_id": 1, "bbox": [0, 20, 10, 10]}],
+        "info": {"roi_boundary_audit": _roi_audit(physical_contacts=[{
+            "match_id": "m1", "at_ms": 1000, "box_index": 1, "sides": ["left"],
+        }])},
+    }
+    for split in ("train", "val"):
+        (annotation_dir / f"instances_{split}2017.json").write_text(
+            json.dumps(document), encoding="utf-8"
+        )
+
+    _assert_roi_boundaries_clear(tmp_path)
+
+
+def test_training_gate_rejects_bbox_outside_image(tmp_path: Path) -> None:
+    annotation_dir = tmp_path / "annotations"
+    annotation_dir.mkdir()
+    document = {
+        "images": [{"id": 1, "width": 100, "height": 100}],
+        "annotations": [{"id": 1, "image_id": 1, "bbox": [95, 20, 10, 10]}],
+    }
+    for split in ("train", "val"):
+        (annotation_dir / f"instances_{split}2017.json").write_text(
+            json.dumps(document), encoding="utf-8"
+        )
+
+    with pytest.raises(ValueError, match="outside or invalid"):
+        _assert_roi_boundaries_clear(tmp_path)

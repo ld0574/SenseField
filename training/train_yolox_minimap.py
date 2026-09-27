@@ -19,6 +19,10 @@ from pathlib import Path
 from typing import Any
 
 from mapassist.detection_evaluate import _match_boxes
+from mapassist.roi_safety import (
+    assert_coco_boxes_within_images,
+    assert_coco_roi_safe,
+)
 
 
 def _sha256(path: Path) -> str:
@@ -149,6 +153,17 @@ def _validate_training_args(args: argparse.Namespace) -> None:
     _validate_range("minimum-precision", args.minimum_precision, 0.0, 1.0)
     if args.no_aug_epochs is not None and not 0 <= args.no_aug_epochs < args.epochs:
         raise ValueError("no-aug-epochs must be between 0 and epochs - 1")
+
+
+def _assert_roi_boundaries_clear(data_dir: Path) -> None:
+    """Block training when train/val targets may have been cut by the crop."""
+    for split in ("train", "val"):
+        annotation_path = data_dir / "annotations" / f"instances_{split}2017.json"
+        if not annotation_path.is_file():
+            raise ValueError(f"Missing {split} annotations: {annotation_path}")
+        document = json.loads(annotation_path.read_text(encoding="utf-8"))
+        assert_coco_roi_safe(document, split)
+        assert_coco_boxes_within_images(document, split)
 
 
 def _device(torch: Any, value: str) -> Any:
@@ -298,6 +313,10 @@ def main() -> None:
     yolox_root = args.yolox_root.resolve()
     data_dir = args.data_dir.resolve()
     output = args.output.resolve()
+    try:
+        _assert_roi_boundaries_clear(data_dir)
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+        parser.error(str(error))
     sys.path.insert(0, str(yolox_root))
     os.environ["MAPASSIST_COCO_DIR"] = str(data_dir)
 

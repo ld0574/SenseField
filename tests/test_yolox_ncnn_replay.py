@@ -47,13 +47,40 @@ def test_android_roi_pixel_rounding_and_direction() -> None:
 
 def test_replay_requires_android_yolox_profile() -> None:
     base = {"detectors": {"minimap_yolox": True},
-            "thresholds": {"minimap_yolox_input_size": 320}}
+            "thresholds": {"minimap_yolox_input_size": 320},
+            "models": {"minimap_yolox_bin_sha256": "a" * 64}}
     _validate_replay_profile(base)
     with pytest.raises(ValueError, match="minimap_yolox=true"):
         _validate_replay_profile({"detectors": {}, "thresholds": {}})
     with pytest.raises(ValueError, match="320"):
         _validate_replay_profile({"detectors": {"minimap_yolox": True},
-                                  "thresholds": {"minimap_yolox_input_size": 640}})
+                                  "thresholds": {"minimap_yolox_input_size": 640},
+                                  "models": {"minimap_yolox_bin_sha256": "a" * 64}})
+
+
+def test_replay_profile_requires_and_checks_ncnn_bin_sha256(tmp_path: Path) -> None:
+    model_bin = tmp_path / "model.bin"
+    model_bin.write_bytes(b"candidate ncnn weights")
+    actual_sha256 = hashlib.sha256(model_bin.read_bytes()).hexdigest()
+    profile = {
+        "detectors": {"minimap_yolox": True},
+        "thresholds": {"minimap_yolox_input_size": 320},
+        "models": {"minimap_yolox_bin_sha256": actual_sha256},
+    }
+
+    _validate_replay_profile(profile, model_bin)
+
+    profile["models"]["minimap_yolox_bin_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="does not match.*supplied ncnn bin"):
+        _validate_replay_profile(profile, model_bin)
+
+    del profile["models"]["minimap_yolox_bin_sha256"]
+    with pytest.raises(ValueError, match="64 lowercase hex"):
+        _validate_replay_profile(profile, model_bin)
+
+    del profile["models"]
+    with pytest.raises(ValueError, match="needs models.minimap_yolox_bin_sha256"):
+        _validate_replay_profile(profile, model_bin)
 
 
 def test_frozen_replay_releases_engine_when_setup_fails(monkeypatch: pytest.MonkeyPatch,
@@ -69,9 +96,13 @@ def test_frozen_replay_releases_engine_when_setup_fails(monkeypatch: pytest.Monk
             self.destroyed.append(handle)
 
     fake = FakeLib()
+    model_bin = tmp_path / "model.bin"
+    model_bin.write_bytes(b"test weights")
     profile_json = {
         "detectors": {"minimap_yolox": True},
         "thresholds": {"minimap_yolox_input_size": 320},
+        "models": {"minimap_yolox_bin_sha256": hashlib.sha256(
+            model_bin.read_bytes()).hexdigest()},
         "events": {"min_confidence": 0.1, "max_observation_age_ms": 100,
                     "min_global_gap_ms": 100, "minimap_min_gap_ms": 100,
                     "min_hits_in_three_frames": 1, "reset_after_missing_frames": 1},
@@ -82,7 +113,7 @@ def test_frozen_replay_releases_engine_when_setup_fails(monkeypatch: pytest.Monk
     monkeypatch.setattr(native, "read_template", lambda _path: (_ for _ in ()).throw(RuntimeError("bad template")))
     with pytest.raises(RuntimeError, match="bad template"):
         FrozenReplay(tmp_path / "profile.json", tmp_path / "model.param",
-                     tmp_path / "model.bin", tmp_path / "native", 2,
+                     model_bin, tmp_path / "native", 2,
                      "in0", "out0", object())
     assert fake.destroyed == [123]
 

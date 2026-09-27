@@ -1,6 +1,21 @@
 # 模型接入记录
 
-## 小地图 YOLOX Android 接入（2026-09-26）
+## hard-FP 固定 ROI Android 开发候选（2026-09-27）
+
+当前本机开发 APK 使用 checkpoint `f7176b7ea9de65fb0f1fe4262514992fdda2ed8691a7a87851a2d27a910c7cfb`，输入 320、confidence `0.19`、NMS `0.5`。它只使用 video1–7 开发数据，尚未通过新的独立真人对局或实体手机门禁；APK 默认 profile 仍设置 `detectors.minimap_yolox=false`。
+
+本页 video6 检测指标是 legacy fixed-ROI crop-relative 内部开发对照。video8 的边界复核发现该 ROI 会截掉右侧目标；video6 同一固定 ROI 的指标不能代表完整小地图覆盖或召回。
+
+- ncnn param SHA-256 为 `4649269cae16fef3b64cc366f123ba58259a756b79f7f55d6be20cd3903cae14`，bin SHA-256 为 `34b2cc80e47bd197e52a40ff69e39d60aea363de2071c8a89510c6398bbfbc56`。ONNX 和 TorchScript SHA-256 分别为 `f45fe90e6cbc87e891fe18846f57a89d4eb63eb2d8a5de814e554050d39ecb00`、`d1398a939db88f6e0e7979dbbaf6a8f76c18c3a433974c3c4625e631e3ddc23f`。
+- video6 开发验证的框级 TP/FP/FN 为 `167/18/56`，P/R/F1 为 `90.2703% / 74.8879% / 81.8627%`。同帧同方向合并后的 `set` 事件为 `148/10/26`，P/R/F1 为 `93.6709% / 85.0575% / 89.1566%`；要求同方向且 IoU 达标的 `iou_gated` 事件为 `144/14/30`，P/R/F1 为 `91.1392% / 82.7586% / 86.7470%`。两种事件口径均越过开发门槛 P≥90%、R≥80%，但 video6 已用于选模和选阈值，因此不是独立留出成绩。评估 JSON SHA-256 为 `117561be1bb634cb2caf327bbb106bd27820716ccbde74adde5114504506c95e`。
+- PyTorch／ONNX 在 152 张 video6 开发图上的 raw 最大误差为 `0.000477791 < 0.0005`，通过。TorchScript／ncnn raw 最大误差为 `0.000515342 > 0.0005`，其中一张图超过严格门槛，所以总体 raw parity 如实记为失败。Android 等价预处理后的最终检测计数在 152/152 张图上一致，总实例为 185/185，最大框或置信度差为 `0.005043 < 0.01`，检测层门禁通过。ONNX 与 ncnn 报告 SHA-256 分别为 `2afee938651f1c8df9fe55f104e39cf4641e349077c873bb0fee8c993614ee33` 和 `0341ac24e364994b554c9997aaf3a744dc41e07872935425d7a4d067ef5dc119`。
+- video7 开发负样本片段覆盖 5 个零框人工采样点。新候选回放 122 帧得到 0 detection、0 observation、0 cue；旧 fixed 与 adaptive 链路在同片段分别产生 6 和 31 个检测。片段、预测和 metadata SHA-256 分别为 `7e9ef922c19f52200946eecd281d95cee2a5c5bd7eec941b9ba640acf4941746`、`457840c948751f8cbcf42d278bde3add9b46cf537814e36cf6c37f0d3a690745`、`52e57c6b163ff5da95fc86e253efe27d95932f043b398d82f28ef16d484eea70`。
+- video7 开发正样本片段取原录像 74–92 秒：216 帧产生 501 detection／observation 和 4 条冷却后的 cue，桌面处理 P95 为 29.938 ms。7 个既有人工采样点的预测／真值框数逐点为 `1/1、1/1、2/2、3/3、3/3、3/3、3/3`。片段、预测和 metadata SHA-256 分别为 `98f6bb7abcb688afe02e221c39abfe5f9312fef4f92be603d69da74915b80f4e`、`c29bb9f17a67650342b689de6fc3ca2f3ad4c48ba050b489ed86dc8472d4e787`、`43e08e146518ad3f716204a657c2d1a0fa46952084c31c63cfd4e1570c89e029`。这两段只证明开发数据上的正负链路行为，不是独立质量评测，桌面 P95 也不是真机端到端时延。
+- 集成后全量 pytest 为 144 passed、1 skipped；clean `assembleDebug lintDebug` 成功并执行模型哈希校验。debug APK 只含 arm64-v8a，minSdk 29、targetSdk 35，SHA-256 为 `7778468c64c07444767b7bddc9f5578e5639db319e9c4e695afcf45519f6125e`。
+
+本机模型文件由 Git 忽略。测试人员需先安装包含上述 param／bin 的本机 APK，再导入 `profiles/hok_minimap_development.android.json` 并打开实验识别器。旧自适应 profile 绑定 dense baseline checkpoint，与当前权重不兼容，不应导入当前 APK。
+
+## dense baseline 历史 Android 接入（2026-09-26）
 
 冻结的 YOLOX Nano 320 小地图模型已经接入 Android 实时截屏链路，仍属于默认关闭的实验能力：
 
@@ -15,11 +30,11 @@
 
 0.2.0 的历史固定 ROI 冒烟使用 video7 的 10 秒开发片段：处理 123 帧，得到 253 个 YOLOX 检测和 2 条事件，回放约 24.9 FPS。
 
-自适应候选链路使用另一段 video7 的 10 秒开发片段重跑：122 帧中首帧为 `searching` 并保持小地图静默，随后 121 帧为 `locked`；得到 31 个 YOLOX 检测、31 个 observation 和 2 条事件，开发机单次回放约 33.1 FPS、处理 P95 约 28.1 ms。输入片段 SHA-256 为 `7e9ef922c19f52200946eecd281d95cee2a5c5bd7eec941b9ba640acf4941746`，候选 profile 为 `8c98248b896483c71c4a2ed4152aaac64ba878c1bb48d6b69942adba0431f3c3`，预测 JSONL 为 `e603f129aaadd676199a463b7ab12d63d1000b77658bc80a1d89e808ddc483a8`，provenance 为 `3f74e29ee7544a1737f4863ad3014e8f101bf697a099337c23a3d1b3b572ab65`。这项开发冒烟证明定位器、动态 ROI、ncnn 和事件层已连通。
+自适应候选链路使用另一段 video7 的 10 秒开发片段重跑：122 帧中首帧为 `searching` 并保持小地图静默，随后 121 帧为 `locked`；得到 31 个 YOLOX 检测、31 个 observation 和 2 条事件，开发机单次回放约 33.1 FPS、处理 P95 约 28.1 ms。输入片段 SHA-256 为 `7e9ef922c19f52200946eecd281d95cee2a5c5bd7eec941b9ba640acf4941746`，候选 profile 为 `8c98248b896483c71c4a2ed4152aaac64ba878c1bb48d6b69942adba0431f3c3`，预测 JSONL 为 `e603f129aaadd676199a463b7ab12d63d1000b77658bc80a1d89e808ddc483a8`，provenance 为 `3f74e29ee7544a1737f4863ad3014e8f101bf697a099337c23a3d1b3b572ab65`。它当时证明定位器、动态 ROI、ncnn 和事件层已连通；后续核对该时段的 5 个人工采样点均为零框，因此 31 个检测也暴露了旧模型误报。
 
-随后在 video8 修正标签上做的 post-hoc 配对诊断发现，固定 ROI 与自适应候选在同一 ncnn 路径下分别为 58.14% / 81.40% 和 52.16% / 78.60%（precision / recall）。动态并集裁剪会改变旧 YOLOX 的输入分布，因此候选配置暂不内置；这项诊断也不作为新的独立留出成绩。详细边界见[定位器记录](MINIMAP_LOCATOR.md)。
+随后在 video8 修正标签上做的 post-hoc 配对诊断记录了固定 ROI 与自适应候选在同一 ncnn 路径下分别为 58.14% / 81.40% 和 52.16% / 78.60%（precision / recall）。这些仅是受右缘截断污染的旧 crop-relative 历史值；标签和裁剪完整性没有边界触碰审计，不能据此比较模型或判断完整地图效果。动态并集裁剪也会改变旧 YOLOX 输入分布；当前 Android ROI 与权重不变，不能直接扩大 ROI 并沿用旧权重。详细边界见[定位器记录](MINIMAP_LOCATOR.md)。
 
-模型配置为 `verified: false`。应用首次打开时不会运行它；开发测试者必须勾选“允许未通过真人录像评测的实验识别器”，下一次截屏会话才加载模型。`video7` 人机盲测只有 65.57% precision／63.49% recall，因此不能作为发布默认能力。
+模型配置为 `verified: false`。当前 APK 默认 profile 还显式设置 `minimap_yolox:false`；开发测试者必须先导入与权重匹配的固定 ROI 开发 profile，再勾选“允许未通过真人录像评测的实验识别器”，下一次截屏会话才加载模型。`video7` 人机历史盲测只有 65.57% precision／63.49% recall，因此不能作为发布默认能力。
 
 当前证据能证明模型转换、APK 打包和代码链路成立。实体 Android 13/14 上的模型加载、持续推理耗时、实际发声、游戏帧率和发热仍需真机记录；完整验收还需要未参与开发的真实匹配留出对局。
 

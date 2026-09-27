@@ -16,6 +16,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import statistics
 import subprocess
 import sys
@@ -90,7 +91,8 @@ def _profile_assets(profile_path: Path, profile_json: dict[str, Any]) -> list[di
     return assets
 
 
-def _validate_replay_profile(profile_json: dict[str, Any]) -> None:
+def _validate_replay_profile(profile_json: dict[str, Any],
+                             model_bin: Path | None = None) -> None:
     detectors = profile_json.get("detectors", {})
     if not isinstance(detectors, dict) or detectors.get("minimap_yolox") is not True:
         raise ValueError("Frozen ncnn replay requires detectors.minimap_yolox=true")
@@ -99,6 +101,22 @@ def _validate_replay_profile(profile_json: dict[str, Any]) -> None:
         raise ValueError("Profile thresholds must be an object")
     if int(thresholds.get("minimap_yolox_input_size", 320)) != 320:
         raise ValueError("Android YOLOX replay requires minimap_yolox_input_size=320")
+    models = profile_json.get("models")
+    if not isinstance(models, dict):
+        raise ValueError("YOLOX replay profile needs models.minimap_yolox_bin_sha256")
+    bound_sha256 = models.get("minimap_yolox_bin_sha256")
+    if not isinstance(bound_sha256, str) or re.fullmatch(r"[0-9a-f]{64}", bound_sha256) is None:
+        raise ValueError(
+            "YOLOX replay profile models.minimap_yolox_bin_sha256 must be "
+            "64 lowercase hex characters"
+        )
+    if model_bin is not None:
+        actual_sha256 = _sha256(model_bin)
+        if actual_sha256 != bound_sha256:
+            raise ValueError(
+                "Profile models.minimap_yolox_bin_sha256 does not match "
+                f"the supplied ncnn bin ({actual_sha256})"
+            )
 
 
 def _pixel_roi(rect: native.Rect, width: int, height: int) -> tuple[int, int, int, int]:
@@ -156,9 +174,9 @@ class FrozenReplay:
         self.np = np
         self.input_name = input_name
         self.output_name = output_name
-        self.lib = native.load_library(self.library_path)
         self.profile, self.profile_json = native.read_profile(self.profile_path)
-        _validate_replay_profile(self.profile_json)
+        _validate_replay_profile(self.profile_json, self.model_bin)
+        self.lib = native.load_library(self.library_path)
         thresholds = self.profile_json.get("thresholds", {})
         if not isinstance(thresholds, dict):  # validated above; keeps type narrowing explicit
             raise ValueError("Profile thresholds must be an object")

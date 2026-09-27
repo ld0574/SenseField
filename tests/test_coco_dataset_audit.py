@@ -124,3 +124,89 @@ def test_audit_rejects_image_paths_outside_split_directory(tmp_path: Path) -> No
 
     with pytest.raises(ValueError, match="Unsafe COCO image file_name"):
         audit_coco_dataset(tmp_path)
+
+
+def test_audit_reports_unclassified_image_edge_boxes_without_blocking_external_coco(
+    tmp_path: Path,
+) -> None:
+    _write_split(tmp_path, "train", "train.jpg", "minimap_enemy")
+    _write_split(tmp_path, "test", "test.jpg", "minimap_enemy")
+    (tmp_path / "test2017/test.jpg").write_bytes(b"different image")
+    annotation = tmp_path / "annotations/instances_train2017.json"
+    document = json.loads(annotation.read_text(encoding="utf-8"))
+    document["annotations"][0]["bbox"] = [0, 2, 3, 4]
+    annotation.write_text(json.dumps(document), encoding="utf-8")
+
+    report = audit_coco_dataset(tmp_path)
+
+    assert report["splits"]["train"]["roi_crop_completeness"] == "unknown"
+    assert report["splits"]["train"]["roi_edge_touch_annotations"] == [{
+        "annotation_id": 1, "image_id": 1, "sides": ["left"],
+    }]
+    assert not any("crop edge" in blocker for blocker in report["training_blockers"])
+
+
+def test_audit_blocks_exporter_dataset_with_expandable_roi_edge_contacts(
+    tmp_path: Path,
+) -> None:
+    _write_split(tmp_path, "train", "train.jpg", "minimap_enemy")
+    annotation = tmp_path / "annotations/instances_train2017.json"
+    document = json.loads(annotation.read_text(encoding="utf-8"))
+    document["info"] = {"roi_boundary_audit": {
+        "schema_version": 1,
+        "edge_tolerance_px": 1.0,
+        "crop_edge_contacts": [{"match_id": "m1", "at_ms": 1000,
+                                "box_index": 1, "sides": ["right"]}],
+        "physical_edge_contacts": [],
+        "edge_contacts": [{"match_id": "m1", "at_ms": 1000,
+                           "box_index": 1, "sides": ["right"]}],
+        "training_eligible": False,
+        "usable_for_training_or_evaluation": False,
+        "policy": "Target boxes within an expandable crop-edge safety band require review.",
+    }}
+    annotation.write_text(json.dumps(document), encoding="utf-8")
+
+    report = audit_coco_dataset(tmp_path)
+
+    assert report["splits"]["train"]["roi_crop_completeness"] == "blocked"
+    assert any("expandable crop edge" in blocker for blocker in report["training_blockers"])
+
+
+def test_audit_reports_incomplete_roi_provenance_as_unknown(tmp_path: Path) -> None:
+    _write_split(tmp_path, "train", "train.jpg", "minimap_enemy")
+    _write_split(tmp_path, "test", "test.jpg", "minimap_enemy")
+    (tmp_path / "test2017/test.jpg").write_bytes(b"different image")
+    annotation = tmp_path / "annotations/instances_train2017.json"
+    document = json.loads(annotation.read_text(encoding="utf-8"))
+    document["annotations"][0]["bbox"] = [0, 2, 3, 4]
+    document["info"] = {"roi_boundary_audit": {
+        "schema_version": 99,
+        "crop_edge_contacts": [{"sides": ["left"]}],
+        "training_eligible": False,
+    }}
+    annotation.write_text(json.dumps(document), encoding="utf-8")
+
+    report = audit_coco_dataset(tmp_path)
+
+    assert report["splits"]["train"]["roi_crop_completeness"] == "unknown"
+    assert report["splits"]["train"]["roi_edge_touch_annotations"] == [{
+        "annotation_id": 1, "image_id": 1, "sides": ["left"],
+    }]
+    assert not any("crop edge" in blocker for blocker in report["training_blockers"])
+
+
+@pytest.mark.parametrize("bad_value", [float("nan"), float("inf"), float("-inf")])
+def test_audit_reports_non_finite_boxes_as_invalid(tmp_path: Path, bad_value: float) -> None:
+    _write_split(tmp_path, "train", "train.jpg", "minimap_enemy")
+    _write_split(tmp_path, "test", "test.jpg", "minimap_enemy")
+    (tmp_path / "test2017/test.jpg").write_bytes(b"different image")
+    annotation = tmp_path / "annotations/instances_train2017.json"
+    document = json.loads(annotation.read_text(encoding="utf-8"))
+    document["annotations"][0]["bbox"] = [bad_value, 2, 3, 4]
+    annotation.write_text(json.dumps(document), encoding="utf-8")
+
+    report = audit_coco_dataset(tmp_path)
+
+    assert report["splits"]["train"]["invalid_annotation_boxes"] == [1]
+    assert any("annotation boxes are outside or invalid" in blocker
+               for blocker in report["training_blockers"])

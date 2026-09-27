@@ -54,13 +54,13 @@
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
 | Android 13/14 截屏与横屏取帧 | 已实现 | 已完成模拟器链路验证 |
-| 小地图敌方头像识别 | 已接入实验 APK | YOLOX Nano 320 / ncnn；video8 真人排位冻结评测为 58.84% precision、80.47% recall，未过整体门禁，默认关闭 |
-| 小地图自适应定位 | 学习定位器开发中 | 128 张全屏边界已复核；单类 YOLOX Nano 在 video6 开发验证 IoU 中位数 0.8988，2.5% 安全扩边后真值覆盖率 100%；尚未接入 APK |
+| 小地图敌方头像识别 | 本机开发候选已接入 | checkpoint `f7176b7ea9de65fb0f1fe4262514992fdda2ed8691a7a87851a2d27a910c7cfb`，YOLOX Nano 320 / ncnn，confidence `0.19`、NMS `0.5`；video6 方向事件子指标只是在 legacy fixed-ROI crop 内的开发结果，不代表完整地图覆盖；ncnn raw parity 超过严格门槛；video8 旧分数受右缘截断污染，不能作为模型效果结论；APK 公共默认 profile 仍关闭检测器 |
+| 小地图自适应定位 | 学习定位器 v2 已完成开发评测，尚未接入 Android | 128 张全屏边界中 video8 的 16 张已重校；video6 val 16/16 覆盖真值，另 120 张 video8 布局帧是同场开发诊断（同场 16 帧参与训练），不是独立留出。布局成绩不代表敌人检测已修好，也不代表独立发布门禁通过；见[定位器记录](validation/MINIMAP_LOCATOR.md) |
 | 简短声音提示 | 已实现 | 事件合并、冷却与优先级规则可用 |
 | 视野记忆 | 已实现实验版 | APPEAR / TRACK / DISAPPEAR / LAST_DIRECTION；连续命中后才显示，消失需多帧确认，DISAPPEAR 后最后位置与移动方向保留 4 秒 |
 | 空间音频与触觉编码 | 已接入实验版 | 左右声道增益和方向震动已实现；尚未完成真实玩家验收 |
 | 录像回放、多人标注与离线评测 | 已实现 | 支持 COCO 数据导出 |
-| 独立留出对局与实体机验收 | 未通过／待测 | video8 逐帧留出因 precision 未过门禁；Android 13/14 实体机仍待验收 |
+| 独立留出对局与实体机验收 | 未通过／待测 | video8 固定 ROI 截断目标，旧逐帧分数不能作为完整小地图模型结论；需要新留出对局，Android 13/14 实体机也仍待验收 |
 
 完整指标、证据边界与待验证项见 [当前验证状态](validation/STATUS.md)。
 
@@ -75,7 +75,7 @@ python -m pip install -e '.[test]'
 python -m pytest -q
 ```
 
-启动统一标注网站（页面内切换开发队列、video7 和 video8 队列）：
+启动统一标注网站（页面内切换开发队列、video7 和 video8-v3 队列）：
 
 ```sh
 PYTHONPATH=python python3 -m mapassist.annotation_server \
@@ -84,11 +84,13 @@ PYTHONPATH=python python3 -m mapassist.annotation_server \
   --dataset dense-v1-6=data/private/minimap-review-v4-dense \
   --dataset expanded-video7=data/private/minimap-review-v6-video7-expanded \
   --dataset holdout-video7=data/private/minimap-video7-holdout-v1 \
-  --dataset holdout-video8=data/private/minimap-video8-holdout-v1/blind-review-v1 \
+  --dataset video8-v3=data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi \
   --dataset reviewed-v1-5=data/private/minimap-review-v3 \
   --dataset reviewed-v6=data/private/holdout-video6/blind-review \
   --host 127.0.0.1 --port 8765 --open
 ```
+
+video8-v3 的 120 张帧和标注叠图均为 2376×1080，目前全部待标。敌方英雄只在图标中心位于小地图控件 `[106,0,454,344]` 内时标注；外扩安全裁剪 `[79,0,481,371]` 仅为保留周边像素，控件外 HUD 头像不标。v2 队列坐标错配，不能启动；详见[团队协作文档](docs/团队协作与本地运行.md)和[video8 记录](validation/VIDEO8.md)。
 
 Android Studio 直接打开 `android/`。首次原生构建会下载并校验固定版本的 ncnn Android 依赖；调试 APK 的命令行构建方式记录在[团队协作文档](docs/团队协作与本地运行.md)。
 

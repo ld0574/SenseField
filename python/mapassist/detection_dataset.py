@@ -17,6 +17,7 @@ from .extract_frame import extract
 from .minimap_locator_evaluate import _load_locator
 from .native import Rect, default_library_path, load_library
 from .orientation import from_manifest, resolve, rotation
+from .roi_safety import DEFAULT_ROI_EDGE_TOLERANCE_PX, inspect_box_roi
 
 
 SPLITS = ("train", "val", "test")
@@ -224,6 +225,8 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
             skipped_boxes = 0
             skipped_samples = []
             negative_images = 0
+            roi_boundary_contacts = []
+            physical_edge_contacts = []
             split_name = SPLIT_DIRS[split]
             split_dir = output / split_name
             split_dir.mkdir(parents=True, exist_ok=True)
@@ -262,6 +265,33 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
                         raise ValueError(
                             f"Locator produced invalid roi for {match_id} at {at_ms} ms: {roi}"
                         )
+                    for box_index, box in enumerate(boxes, start=1):
+                        audit = inspect_box_roi(
+                            box, roi, full_width, full_height,
+                            DEFAULT_ROI_EDGE_TOLERANCE_PX,
+                        )
+                        if audit["outside"]:
+                            frame_path.unlink(missing_ok=True)
+                            raise ValueError(
+                                f"Detection box would be silently clipped by the crop "
+                                f"for {match_id}@{at_ms} ms, box {box_index} "
+                                f"({', '.join(audit['outside'])}); expand the dataset ROI "
+                                "and re-annotate before export"
+                            )
+                        if audit["crop_touches"]:
+                            roi_boundary_contacts.append({
+                                "match_id": match_id,
+                                "at_ms": at_ms,
+                                "box_index": box_index,
+                                "sides": audit["crop_touches"],
+                            })
+                        if audit["frame_touches"]:
+                            physical_edge_contacts.append({
+                                "match_id": match_id,
+                                "at_ms": at_ms,
+                                "box_index": box_index,
+                                "sides": audit["frame_touches"],
+                            })
                     with Image.open(frame_path) as source:
                         cropped = source.crop((crop_x, crop_y, crop_right, crop_bottom))
                         cropped.save(frame_path)
@@ -277,18 +307,9 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
                         px_box = [x * full_width, y * full_height,
                                   w * full_width, h * full_height]
                     else:
-                        left = max(float(crop_x), x * full_width)
-                        top = max(float(crop_y), y * full_height)
-                        right = min(float(crop_x + width), (x + w) * full_width)
-                        bottom = min(float(crop_y + height), (y + h) * full_height)
-                        if right <= left or bottom <= top:
-                            raise ValueError(
-                                f"Detection box outside {match_id} roi at {at_ms} ms: "
-                                f"{[x, y, w, h]}"
-                            )
                         px_box = [round(value, 6) for value in
-                                  (left - crop_x, top - crop_y,
-                                   right - left, bottom - top)]
+                                  (x * full_width - crop_x, y * full_height - crop_y,
+                                   w * full_width, h * full_height)]
                     annotations.append({"id": len(annotations) + 1,
                                         "image_id": image_id, "category_id": 1,
                                         "bbox": px_box,
@@ -298,11 +319,29 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
             coco = {"images": images, "annotations": annotations,
                     "categories": [{"id": 1, "name": category,
                                     "supercategory": "game"}]}
-            if adaptive is not None:
+            if crop_roi or adaptive is not None:
                 coco["info"] = {
+                    "roi_boundary_audit": {
+                        "schema_version": 1,
+                        "edge_tolerance_px": DEFAULT_ROI_EDGE_TOLERANCE_PX,
+                        "crop_edge_contacts": roi_boundary_contacts,
+                        "physical_edge_contacts": physical_edge_contacts,
+                        # Keep the initial key for readers of earlier reports.
+                        "edge_contacts": roi_boundary_contacts,
+                        "training_eligible": not roi_boundary_contacts,
+                        "usable_for_training_or_evaluation": not roi_boundary_contacts,
+                        "policy": (
+                            "Target boxes within an expandable crop-edge safety band "
+                            "require manual review. Physical frame-edge contacts are "
+                            "reported separately because the source cannot be expanded."
+                        ),
+                    },
+                }
+            if adaptive is not None:
+                coco.setdefault("info", {}).update({
                     "adaptive_crop": adaptive.provenance(),
                     "skipped_searching_samples": skipped_samples,
-                }
+                })
             (annotation_dir / f"instances_{split_name}.json").write_text(
                 json.dumps(coco, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             summary[split] = {"images": len(images), "boxes": len(annotations),

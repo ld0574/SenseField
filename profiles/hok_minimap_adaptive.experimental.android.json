@@ -32,6 +32,9 @@
     "danger_ping_template": false,
     "minimap_yolox": true
   },
+  "models": {
+    "minimap_yolox_bin_sha256": "b3dbc844cc148aaa1a794e1bf03cb02a847b9c185215045c4b19b9ba4982236a"
+  },
   "templates": {
     "minimap_enemy": null,
     "danger_ping": null

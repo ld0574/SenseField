@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "name": "hok_minimap_development",
-  "profile_version": "0.5.0-yolox-nano-dense-320-dev",
+  "profile_version": "0.5.1-yolox-nano-hardfp-320-candidate-dev",
   "game": "王者荣耀",
   "verified": false,
-  "notes": "Development-only YOLOX Nano 320 profile selected on video1-video6. The video7 human-vs-bot holdout did not pass the release gate, so this remains experimental.",
+  "notes": "Development-only local candidate exported from the video1-7 hard-FP checkpoint. Uses the legacy fixed minimap ROI with confidence 0.19 and NMS 0.5. Its video6 scores are crop-relative internal development comparisons only; they do not establish full-minimap coverage. The fixed ROI was measured to cut about 21 px from the right edge of the minimap in video8. Keep the runtime ROI and weights unchanged until the ROI is corrected and the detector is retrained. The video6 split was already used in model and threshold selection, so it is not release evidence. ONNX parity passed on all 152 images. The strict TorchScript/ncnn raw-output gate narrowly failed on video6_000810600.png (0.000515342 > 0.0005); final detection counts matched on all 152 images (185/185 detections), with maximum detection-value error 0.005043 < 0.01. No physical Android device test has been run.",
   "rois": {
     "minimap": [
       0.0375,
@@ -32,6 +32,13 @@
     "danger_ping_template": false,
     "minimap_yolox": false
   },
+  "models": {
+    "minimap_yolox_bin_sha256": "34b2cc80e47bd197e52a40ff69e39d60aea363de2071c8a89510c6398bbfbc56"
+  },
+  "templates": {
+    "minimap_enemy": null,
+    "danger_ping": null
+  },
   "thresholds": {
     "red_min": 90,
     "red_dominance": 1.25,
@@ -40,11 +47,11 @@
     "main_min_aspect": 3.5,
     "template_match": 0.94,
     "minimap_yolox_input_size": 320,
-    "minimap_yolox_confidence": 0.29,
+    "minimap_yolox_confidence": 0.19,
     "minimap_yolox_nms": 0.5
   },
   "events": {
-    "min_confidence": 0.29,
+    "min_confidence": 0.19,
     "max_observation_age_ms": 250,
     "min_global_gap_ms": 1000,
     "minimap_min_gap_ms": 5000,

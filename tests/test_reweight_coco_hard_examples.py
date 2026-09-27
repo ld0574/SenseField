@@ -48,9 +48,9 @@ def _fixture(root: Path) -> tuple[Path, Path]:
         "checkpoint": {"sha256": "a" * 64},
         "dataset": {"annotations_sha256": _sha256(train_path)},
         "per_image": [
-            {"image_id": 1, "truth": 1, "fp": 1},
-            {"image_id": 2, "truth": 0, "fp": 1},
-            {"image_id": 3, "truth": 0, "fp": 0},
+            {"image_id": 1, "truth": 1, "fp": 1, "fn": 0},
+            {"image_id": 2, "truth": 0, "fp": 1, "fn": 0},
+            {"image_id": 3, "truth": 0, "fp": 0, "fn": 0},
         ],
     }), encoding="utf-8")
     return data, evaluation
@@ -64,7 +64,12 @@ def test_repeats_complete_reviewed_images_and_preserves_other_splits(tmp_path: P
         (output / "annotations/instances_train2017.json").read_text(encoding="utf-8")
     )
     assert summary["hard_source_images"] == 2
+    assert summary["fp_hard_source_images"] == 2
+    assert summary["fn_hard_source_images"] == 0
     assert summary["pure_negative_hard_sources"] == 1
+    assert summary["hard_source_image_ids"] == [1, 2]
+    assert summary["fn_hard_source_image_ids"] == []
+    assert summary["policy"]["include_false_negatives"] is False
     assert summary["extra"] == {"images": 3, "boxes": 1}
     assert summary["output"] == {"images": 6, "boxes": 2}
     assert [item["hard_example_source_image_id"] for item in weighted["images"][3:]] == [1, 2, 2]
@@ -73,6 +78,44 @@ def test_repeats_complete_reviewed_images_and_preserves_other_splits(tmp_path: P
     assert (output / "train2017").resolve() == (data / "train2017").resolve()
     assert (output / "annotations/instances_val2017.json").read_bytes() == \
         (data / "annotations/instances_val2017.json").read_bytes()
+
+
+def test_repeats_false_negative_only_positive_sources_when_enabled(tmp_path: Path) -> None:
+    data, evaluation = _fixture(tmp_path)
+    payload = json.loads(evaluation.read_text(encoding="utf-8"))
+    payload["per_image"][0]["fp"] = 0
+    payload["per_image"][0]["fn"] = 1
+    payload["per_image"][1]["fp"] = 0
+    evaluation.write_text(json.dumps(payload), encoding="utf-8")
+    output = tmp_path / "fn-weighted"
+
+    summary = build(
+        data, evaluation, output, max_extra_copies=2, negative_bonus=1,
+        include_false_negatives=True,
+    )
+    weighted = json.loads(
+        (output / "annotations/instances_train2017.json").read_text(encoding="utf-8")
+    )
+
+    assert summary["hard_source_images"] == 1
+    assert summary["fp_hard_source_images"] == 0
+    assert summary["fn_hard_source_images"] == 1
+    assert summary["hard_source_image_ids"] == [1]
+    assert summary["fn_hard_source_image_ids"] == [1]
+    assert summary["extra"] == {"images": 1, "boxes": 1}
+    assert weighted["images"][-1]["hard_example_source_image_id"] == 1
+    assert summary["policy"]["include_false_negatives"] is True
+
+
+@pytest.mark.parametrize("fn", [-1, 1.5, True, None])
+def test_rejects_invalid_false_negative_counts(tmp_path: Path, fn: object) -> None:
+    data, evaluation = _fixture(tmp_path)
+    payload = json.loads(evaluation.read_text(encoding="utf-8"))
+    payload["per_image"][0]["fn"] = fn
+    evaluation.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="evaluation fn for image 1 must be an integer >= 0"):
+        build(data, evaluation, tmp_path / "invalid-fn")
 
 
 def test_rejects_stale_or_incomplete_evaluation(tmp_path: Path) -> None:

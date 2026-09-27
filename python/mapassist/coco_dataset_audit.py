@@ -12,10 +12,16 @@ import argparse
 import hashlib
 import json
 from collections import Counter, defaultdict
+from math import isfinite
 from pathlib import Path
 from typing import Any
 
 from .image_manifest import IMAGE_MANIFEST_HASH_ALGORITHM, image_manifest_sha256
+from .roi_safety import (
+    coco_roi_blocker,
+    has_supported_coco_roi_audit,
+    inspect_box_roi,
+)
 
 
 def _sha256(path: Path) -> str:
@@ -104,12 +110,52 @@ def audit_coco_dataset(root: Path) -> dict[str, Any]:
             (int(item["id"]), str(item["name"])) for item in categories
         )
         image_ids = set(image_id_values)
+        image_dimensions = {
+            int(item["id"]): (int(item["width"]), int(item["height"]))
+            for item in images
+        }
         annotation_image_ids = {int(item["image_id"]) for item in annotations}
         unknown_image_ids = sorted(annotation_image_ids - image_ids)
         category_ids = {identifier for identifier, _ in category_sets[split]}
         annotation_category_ids = {int(item["category_id"]) for item in annotations}
         referenced_category_ids.update(annotation_category_ids)
         unknown_category_ids = sorted(annotation_category_ids - category_ids)
+        edge_touch_annotations = []
+        invalid_annotation_boxes = []
+        for annotation in annotations:
+            image_id = int(annotation["image_id"])
+            bbox = annotation.get("bbox")
+            if (image_id not in image_dimensions or not isinstance(bbox, list) or
+                    len(bbox) != 4 or any(
+                        not isinstance(value, (int, float)) or isinstance(value, bool)
+                        for value in bbox
+                    )):
+                invalid_annotation_boxes.append(annotation.get("id"))
+                continue
+            box_width, box_height = image_dimensions[image_id]
+            try:
+                x, y, width, height = (float(value) for value in bbox)
+            except (OverflowError, ValueError):
+                invalid_annotation_boxes.append(annotation.get("id"))
+                continue
+            if (box_width <= 0 or box_height <= 0 or width <= 0 or height <= 0 or
+                    not all(isfinite(value) for value in (x, y, width, height)) or
+                    not isfinite(x + width) or not isfinite(y + height)):
+                invalid_annotation_boxes.append(annotation.get("id"))
+                continue
+            audit = inspect_box_roi(
+                [x / box_width, y / box_height,
+                 width / box_width, height / box_height],
+                [0.0, 0.0, 1.0, 1.0], box_width, box_height,
+            )
+            if audit["outside"]:
+                invalid_annotation_boxes.append(annotation.get("id"))
+            elif audit["touches"]:
+                edge_touch_annotations.append({
+                    "annotation_id": annotation.get("id"),
+                    "image_id": image_id,
+                    "sides": audit["touches"],
+                })
         missing_files: list[str] = []
         dimensions: Counter[str] = Counter()
         split_image_manifest_entries: list[tuple[str, str | None]] = []
@@ -147,6 +193,8 @@ def audit_coco_dataset(root: Path) -> dict[str, Any]:
             "duplicate_image_ids": duplicate_image_ids,
             "duplicate_category_ids": duplicate_category_ids,
             "duplicate_annotation_ids": duplicate_annotation_ids,
+            "roi_edge_touch_annotations": edge_touch_annotations,
+            "invalid_annotation_boxes": invalid_annotation_boxes,
         }
         if missing_files:
             blockers.append(f"{split}: {len(missing_files)} image files are missing")
@@ -160,6 +208,17 @@ def audit_coco_dataset(root: Path) -> dict[str, Any]:
             blockers.append(f"{split}: duplicate category IDs")
         if duplicate_annotation_ids:
             blockers.append(f"{split}: duplicate annotation IDs")
+        has_roi_audit = has_supported_coco_roi_audit(document)
+        crop_blocker = coco_roi_blocker(document, split)
+        crop_blocked = crop_blocker is not None
+        split_reports[split]["roi_crop_completeness"] = (
+            "blocked" if crop_blocked else
+            "provenance_clear" if has_roi_audit else "unknown"
+        )
+        if crop_blocker:
+            blockers.append(crop_blocker)
+        if invalid_annotation_boxes:
+            blockers.append(f"{split}: annotation boxes are outside or invalid for their image")
 
     if not split_reports:
         raise ValueError(

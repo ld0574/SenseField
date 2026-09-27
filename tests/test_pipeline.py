@@ -42,6 +42,7 @@ from mapassist.native import (
     load_library,
 )
 from mapassist.replay import run
+from mapassist.roi_safety import inspect_box_roi
 from mapassist.review_dataset import build as build_review_dataset
 from mapassist.synthetic import create
 from mapassist.uniform_review_dataset import exclude_timestamp_windows, sample_timestamps
@@ -198,6 +199,96 @@ def test_annotation_store_uses_match_specific_roi(annotation_dataset: Path) -> N
     saved = store.save(task["id"], "Layout reviewer", task["version"], "corrected",
                        [[0.22, 0.12, 0.05, 0.07]])
     assert saved["reviewed_boxes"] == [[0.22, 0.12, 0.05, 0.07]]
+
+
+def test_annotation_store_blocks_ground_truth_touching_expandable_crop_edge(
+    annotation_dataset: Path,
+) -> None:
+    manifest = annotation_dataset / "review-manifest.json"
+    data = json.loads(manifest.read_text())
+    data["matches"][0]["samples"][0]["suggested_boxes"] = [[0.20, 0.1, 0.05, 0.1]]
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    store = AnnotationStore(annotation_dataset, lease_seconds=60)
+    task = store.claim_next("Reviewer")
+    assert task is not None
+
+    with pytest.raises(ValueError, match="expandable minimap crop boundary"):
+        store.save(task["id"], "Reviewer", task["version"], "corrected",
+                   [[0.20, 0.1, 0.05, 0.1]])
+    with pytest.raises(ValueError, match="expandable minimap crop boundary"):
+        store.save(task["id"], "Reviewer", task["version"], "accepted")
+
+    # Negative review rejects a suggestion; it does not turn that suggestion
+    # into a ground-truth annotation and must remain savable.
+    saved = store.save(task["id"], "Reviewer", task["version"], "negative")
+    assert saved["review_status"] == "negative"
+
+
+def test_minimap_region_annotations_may_touch_full_screen_edge(
+    annotation_dataset: Path,
+) -> None:
+    manifest = annotation_dataset / "review-manifest.json"
+    data = json.loads(manifest.read_text())
+    data["kind"] = "minimap_region"
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    store = AnnotationStore(annotation_dataset, lease_seconds=60)
+    task = store.claim_next("Layout reviewer")
+    assert task is not None
+
+    saved = store.save(task["id"], "Layout reviewer", task["version"], "corrected",
+                       [[0.0, 0.05, 0.2, 0.3]])
+
+    assert saved["reviewed_boxes"] == [[0.0, 0.05, 0.2, 0.3]]
+
+
+def test_annotation_store_allows_target_touching_physical_frame_edge(
+    annotation_dataset: Path,
+) -> None:
+    store = AnnotationStore(annotation_dataset, lease_seconds=60)
+    task = store.claim_next("Reviewer")
+    assert task is not None
+
+    saved = store.save(task["id"], "Reviewer", task["version"], "corrected",
+                       [[0.05, 0.0, 0.05, 0.1]])
+
+    assert saved["reviewed_boxes"] == [[0.05, 0.0, 0.05, 0.1]]
+
+
+def test_annotation_store_uses_rounded_crop_bounds_at_physical_frame_edge(
+    annotation_dataset: Path,
+) -> None:
+    manifest = annotation_dataset / "review-manifest.json"
+    data = json.loads(manifest.read_text())
+    data["matches"][0]["roi"] = [0.0005, 0.0, 0.2495, 0.4]
+    data["matches"][0]["samples"][0]["suggested_boxes"] = [[0.0, 0.1, 0.04, 0.06]]
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    store = AnnotationStore(annotation_dataset, lease_seconds=60)
+    task = store.claim_next("Reviewer")
+    assert task is not None
+
+    saved = store.save(task["id"], "Reviewer", task["version"], "corrected",
+                       [[0.0, 0.1, 0.04, 0.06]])
+
+    assert saved["reviewed_boxes"] == [[0.0, 0.1, 0.04, 0.06]]
+
+
+def test_roi_safety_distinguishes_physical_edge_from_expandable_crop_edge() -> None:
+    roi = [0.0, 0.0, 0.25, 0.4]
+
+    ordinary = inspect_box_roi([0.05, 0.1, 0.05, 0.1], roi, 320, 180)
+    assert ordinary["outside"] == []
+    assert ordinary["crop_touches"] == []
+    assert ordinary["frame_touches"] == []
+
+    physical_left = inspect_box_roi([0.0, 0.1, 0.05, 0.1], roi, 320, 180)
+    assert physical_left["touches"] == ["left"]
+    assert physical_left["crop_touches"] == []
+    assert physical_left["frame_touches"] == ["left"]
+
+    crop_right = inspect_box_roi([0.20, 0.1, 0.05, 0.1], roi, 320, 180)
+    assert crop_right["crop_touches"] == ["right"]
+    clipped = inspect_box_roi([0.24, 0.1, 0.02, 0.1], roi, 320, 180)
+    assert clipped["outside"] == ["right"]
 
 
 def test_annotation_store_can_reopen_completed_task(annotation_dataset: Path) -> None:
@@ -702,6 +793,50 @@ def test_detection_dataset_exports_boxes_and_negative_frames(tmp_path: Path) -> 
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
+                    reason="ffmpeg and ffprobe are needed to extract frames")
+def test_detection_export_audits_crop_edge_and_rejects_silent_clipping(
+    tmp_path: Path,
+) -> None:
+    fixture = create(tmp_path)
+    manifest = tmp_path / "edge-detections.json"
+    roi = [0.05, 0.1, 0.5, 0.4]
+    manifest.write_text(json.dumps({
+        "schema_version": 1,
+        "roi": roi,
+        "matches": [{
+            "id": "edge-match", "video": fixture["video"].name, "split": "train",
+            "frames": [{"at_ms": 1000, "boxes": [[0.5, 0.2, 0.05, 0.1]]}],
+        }],
+    }), encoding="utf-8")
+
+    output = tmp_path / "edge-coco"
+    export_detection_dataset(manifest, output, crop_roi=True)
+
+    annotation = json.loads(
+        (output / "annotations/instances_train2017.json").read_text(encoding="utf-8")
+    )
+    audit = annotation["info"]["roi_boundary_audit"]
+    assert audit["training_eligible"] is False
+    assert audit["usable_for_training_or_evaluation"] is False
+    assert audit["crop_edge_contacts"] == [{
+        "match_id": "edge-match", "at_ms": 1000, "box_index": 1,
+        "sides": ["right"],
+    }]
+
+    clipped_manifest = tmp_path / "clipped-detections.json"
+    clipped_manifest.write_text(json.dumps({
+        "schema_version": 1,
+        "roi": roi,
+        "matches": [{
+            "id": "clipped-match", "video": fixture["video"].name, "split": "train",
+            "frames": [{"at_ms": 1000, "boxes": [[0.54, 0.2, 0.03, 0.1]]}],
+        }],
+    }), encoding="utf-8")
+    with pytest.raises(ValueError, match="would be silently clipped"):
+        export_detection_dataset(clipped_manifest, tmp_path / "clipped-coco", crop_roi=True)
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
                     reason="ffmpeg and ffprobe are needed for rotated video")
 def test_detection_dataset_exports_display_oriented_rotated_video(tmp_path: Path) -> None:
     """Normalized labels are measured on display frames, including Display Matrix media."""
@@ -1092,11 +1227,91 @@ def test_frozen_fixed_roi_android_profile_matches_development_profile() -> None:
         (root / "profiles/hok_minimap_development.android.json").read_text()
     )
     for key in ("schema_version", "name", "profile_version", "game", "verified", "rois",
-                "detectors", "thresholds", "events"):
+                "detectors", "models", "thresholds", "events"):
         assert bundled[key] == desktop[key]
-    assert hashlib.sha256(
-        (root / "profiles/hok_minimap_development.android.json").read_bytes()
-    ).hexdigest() == "999f44ecfa9e58b3704439be45f53dd95e21f0fef64051dd730c9f7a1f752a3e"
+    android_profile = root / "profiles/hok_minimap_development.android.json"
+    profile_sha256 = hashlib.sha256(android_profile.read_bytes()).hexdigest()
+    assert profile_sha256 == "b21d347da24bc627aea8585ba1d20d0a8915390ec42539aba890c5aec41559b3"
+    metadata_path = root / "android/app/src/main/assets/minimap-yolox-nano-320.metadata.json"
+    metadata = json.loads(
+        metadata_path.read_text(encoding="utf-8")
+    )
+    assert metadata["candidate"]["development_profile_android_sha256"] == profile_sha256
+    assert metadata["provenance"] == {
+        "direction_fixed_evaluation": {
+            "path": "build/training/yolox-nano-minimap-video1-7-hardfp-320/fixed-val-evaluation-with-direction-events.json",
+            "sha256": "117561be1bb634cb2caf327bbb106bd27820716ccbde74adde5114504506c95e",
+        },
+        "validation_annotations": {
+            "path": "data/private/minimap-review-v6-video7-expanded/coco-minimap-video1-7-expanded-video6-dev/annotations/instances_val2017.json",
+            "sha256": "954c5687978012f280c2f83b6dedf71e4e9568062cc4fd999aca96227f64b981",
+        },
+        "ncnn_conversion": {
+            "path": "build/models/minimap-yolox-nano-hardfp-320-candidate/ncnn-conversion.json",
+            "sha256": "6c36e0f0110cd96fdfc2b89be73c8578932cc7a895311894511272f178ca788b",
+        },
+        "onnx_parity_report": {
+            "path": "build/models/minimap-yolox-nano-hardfp-320-candidate/onnx-parity-video6-dev-full.json",
+            "sha256": "2afee938651f1c8df9fe55f104e39cf4641e349077c873bb0fee8c993614ee33",
+        },
+        "ncnn_parity_report": {
+            "path": "build/models/minimap-yolox-nano-hardfp-320-candidate/ncnn-parity-video6-dev-full.json",
+            "sha256": "0341ac24e364994b554c9997aaf3a744dc41e07872935425d7a4d067ef5dc119",
+        },
+    }
+
+
+def test_android_metadata_records_video7_development_replay_smokes() -> None:
+    root = Path(__file__).resolve().parents[1]
+    metadata = json.loads(
+        (root / "android/app/src/main/assets/minimap-yolox-nano-320.metadata.json")
+        .read_text(encoding="utf-8")
+    )
+    smokes = metadata["development_replay_smokes"]
+    assert "video7 development data chain" in smokes["scope"]
+    assert "not independent quality evaluations" in smokes["scope"]
+    assert smokes["runtime_artifacts"] == {
+        "candidate_profile_sha256": "ac04bdeee6fd56b3fe83a32b66ed5e743821370d59cab49508d7ba1faecc2bd1",
+        "ncnn_param_sha256": "4649269cae16fef3b64cc366f123ba58259a756b79f7f55d6be20cd3903cae14",
+        "ncnn_bin_sha256": "34b2cc80e47bd197e52a40ff69e39d60aea363de2071c8a89510c6398bbfbc56",
+    }
+
+    negative = smokes["negative_segment"]
+    assert (negative["frames"], negative["yolox_detections"], negative["cues"]) == (
+        122, 0, 0
+    )
+    assert negative["human_sampled_point_detection_counts"] == [0, 0, 0, 0, 0]
+    assert negative["same_clip_comparison_detection_counts"] == {
+        "old_fixed_profile": 6,
+        "old_adaptive_profile": 31,
+    }
+    assert {
+        name: negative[name]["sha256"]
+        for name in ("video", "predictions", "replay_metadata")
+    } == {
+        "video": "7e9ef922c19f52200946eecd281d95cee2a5c5bd7eec941b9ba640acf4941746",
+        "predictions": "457840c948751f8cbcf42d278bde3add9b46cf537814e36cf6c37f0d3a690745",
+        "replay_metadata": "52e57c6b163ff5da95fc86e253efe27d95932f043b398d82f28ef16d484eea70",
+    }
+
+    positive = smokes["positive_segment"]
+    assert positive["original_seconds"] == [74.0, 92.0]
+    assert (positive["frames"], positive["yolox_detections"], positive["cues"]) == (
+        216, 501, 4
+    )
+    assert positive["processing_ms_p95"] == pytest.approx(29.938)
+    assert positive["human_positive_point_box_counts"] == [1, 1, 2, 3, 3, 3, 3]
+    assert positive["predicted_detection_counts_at_points"] == [1, 1, 2, 3, 3, 3, 3]
+    assert positive["all_seven_point_counts_match"] is True
+    assert {
+        name: positive[name]["sha256"]
+        for name in ("source_video", "clip", "predictions", "replay_metadata")
+    } == {
+        "source_video": "026a98209b5d9a426c18087f1af032def27f7347b6e5824392d503b94797a186",
+        "clip": "98f6bb7abcb688afe02e221c39abfe5f9312fef4f92be603d69da74915b80f4e",
+        "predictions": "c29bb9f17a67650342b689de6fc3ca2f3ad4c48ba050b489ed86dc8472d4e787",
+        "replay_metadata": "43e08e146518ad3f716204a657c2d1a0fa46952084c31c63cfd4e1570c89e029",
+    }
 
 
 def test_bundled_android_public_default_disables_all_recognizers() -> None:
@@ -1111,9 +1326,36 @@ def test_bundled_android_public_default_disables_all_recognizers() -> None:
         "minimap_yolox": False,
     }
     assert profile["thresholds"]["minimap_yolox_input_size"] == 320
-    assert profile["thresholds"]["minimap_yolox_confidence"] == pytest.approx(0.29)
+    assert profile["thresholds"]["minimap_yolox_confidence"] == pytest.approx(0.19)
     assert profile["thresholds"]["minimap_yolox_nms"] == pytest.approx(0.5)
-    assert profile["events"]["min_confidence"] == pytest.approx(0.29)
+    assert profile["events"]["min_confidence"] == pytest.approx(0.19)
+    assert profile["models"]["minimap_yolox_bin_sha256"] == (
+        "34b2cc80e47bd197e52a40ff69e39d60aea363de2071c8a89510c6398bbfbc56"
+    )
+
+
+def test_schema1_yolox_profiles_bind_their_matching_ncnn_bin() -> None:
+    root = Path(__file__).resolve().parents[1]
+    expected_hashes = {
+        "hok_minimap_development.json": (
+            "34b2cc80e47bd197e52a40ff69e39d60aea363de2071c8a89510c6398bbfbc56"
+        ),
+        "hok_minimap_development.android.json": (
+            "34b2cc80e47bd197e52a40ff69e39d60aea363de2071c8a89510c6398bbfbc56"
+        ),
+        "hok_minimap_adaptive.experimental.json": (
+            "b3dbc844cc148aaa1a794e1bf03cb02a847b9c185215045c4b19b9ba4982236a"
+        ),
+        "hok_minimap_adaptive.experimental.android.json": (
+            "b3dbc844cc148aaa1a794e1bf03cb02a847b9c185215045c4b19b9ba4982236a"
+        ),
+    }
+    for name, expected_hash in expected_hashes.items():
+        profile = json.loads((root / "profiles" / name).read_text(encoding="utf-8"))
+        assert profile["schema_version"] == 1
+        assert profile["detectors"]["minimap_yolox"] is True
+        assert profile["models"]["minimap_yolox_bin_sha256"] == expected_hash
+        assert len(expected_hash) == 64 and expected_hash == expected_hash.lower()
 
 
 def test_adaptive_minimap_profile_is_importable_and_keeps_frozen_default() -> None:
@@ -1145,7 +1387,7 @@ def test_adaptive_minimap_profile_is_importable_and_keeps_frozen_default() -> No
     # distribution. Keep the fixed profile as the APK default until a detector
     # trained on adaptive crops passes a new independent evaluation.
     assert "layout" not in frozen_default
-    assert frozen_default["profile_version"] == "0.5.0-yolox-nano-dense-320-dev"
+    assert frozen_default["profile_version"] == "0.5.1-yolox-nano-hardfp-320-candidate-dev"
 
 
 def test_android_ncnn_assets_match_metadata_and_patched_focus() -> None:

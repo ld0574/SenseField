@@ -1,0 +1,185 @@
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "python"))
+sys.path.insert(0, str(ROOT / "training"))
+
+from evaluate_yolox_minimap import _direction_event_metrics, _read_evaluation_annotations
+
+
+def _roi_audit(crop_contacts: list[dict] | None = None,
+               physical_contacts: list[dict] | None = None) -> dict:
+    crop_contacts = crop_contacts or []
+    eligible = not crop_contacts
+    return {
+        "schema_version": 1,
+        "edge_tolerance_px": 1.0,
+        "crop_edge_contacts": crop_contacts,
+        "physical_edge_contacts": physical_contacts or [],
+        "edge_contacts": crop_contacts,
+        "training_eligible": eligible,
+        "usable_for_training_or_evaluation": eligible,
+        "policy": "Targets at expandable crop edges require review.",
+    }
+
+
+def _metrics(predictions: dict, truths: dict) -> dict:
+    image_sizes = {image_id: (100, 100) for image_id in truths}
+    return _direction_event_metrics(
+        predictions, truths, confidence=0.5, iou_threshold=0.5,
+        image_sizes=image_sizes,
+    )
+
+
+def test_same_direction_ground_truth_boxes_fold_into_one_event() -> None:
+    truths = {
+        1: [
+            [10.0, 20.0, 10.0, 10.0],
+            [20.0, 40.0, 10.0, 10.0],
+        ]
+    }
+    predictions = {
+        1: [
+            (0.9, [10.0, 20.0, 10.0, 10.0]),
+            (0.8, [20.0, 40.0, 10.0, 10.0]),
+        ]
+    }
+
+    result = _metrics(predictions, truths)
+
+    assert result["truth_boxes"] == 2
+    assert result["usable_truth_boxes"] == 2
+    assert result["truth_events"] == 1
+    assert result["set"]["tp"] == 1
+    assert result["set"]["fp"] == 0
+    assert result["set"]["fn"] == 0
+    assert result["iou_gated"]["tp"] == 1
+    assert result["iou_gated"]["fp"] == 0
+    assert result["iou_gated"]["fn"] == 0
+
+
+def test_direction_set_hit_without_iou_match_is_gated_as_fp_and_fn() -> None:
+    truths = {1: [[5.0, 40.0, 10.0, 10.0]]}
+    # Both boxes map to left, but they do not overlap.
+    predictions = {1: [(0.9, [30.0, 30.0, 10.0, 10.0])]}
+
+    result = _metrics(predictions, truths)
+
+    assert result["set"]["tp"] == 1
+    assert result["set"]["fp"] == 0
+    assert result["set"]["fn"] == 0
+    assert result["iou_gated"]["tp"] == 0
+    assert result["iou_gated"]["fp"] == 1
+    assert result["iou_gated"]["fn"] == 1
+
+
+def test_ambiguous_and_center_ground_truth_are_excluded() -> None:
+    truths = {
+        1: [
+            [65.0, 65.0, 10.0, 10.0],  # Diagonal boundary: ambiguous.
+            [46.0, 46.0, 8.0, 8.0],  # Center: no directional event.
+        ]
+    }
+
+    result = _metrics(
+        {1: [(0.9, [65.0, 65.0, 10.0, 10.0]), (0.9, [46.0, 46.0, 8.0, 8.0])]},
+        truths,
+    )
+
+    assert result["truth_boxes"] == 2
+    assert result["usable_truth_boxes"] == 0
+    assert result["ambiguous_truth_boxes"] == 1
+    assert result["center_truth_boxes"] == 1
+    assert result["truth_events"] == 0
+    assert result["set"]["tp"] == 0
+    assert result["set"]["fp"] == 1
+    assert result["set"]["fn"] == 0
+    assert result["iou_gated"]["tp"] == 0
+    assert result["iou_gated"]["fp"] == 1
+    assert result["iou_gated"]["fn"] == 0
+
+
+def test_empty_frame_has_no_direction_events_and_false_event_is_fp() -> None:
+    empty = _metrics({1: []}, {1: []})
+
+    assert empty["truth_boxes"] == 0
+    assert empty["truth_events"] == 0
+    assert empty["set"] == {
+        "tp": 0, "fp": 0, "fn": 0,
+        "precision": None, "recall": None, "f1": None,
+    }
+    assert empty["iou_gated"] == empty["set"]
+
+    false_event = _metrics({1: [(0.9, [10.0, 40.0, 10.0, 10.0])]}, {1: []})
+    assert false_event["set"]["tp"] == 0
+    assert false_event["set"]["fp"] == 1
+    assert false_event["set"]["fn"] == 0
+    assert false_event["iou_gated"]["fp"] == 1
+
+
+def test_evaluation_gate_rejects_exporter_marked_crop_edge_contacts(tmp_path: Path) -> None:
+    annotation_dir = tmp_path / "annotations"
+    annotation_dir.mkdir()
+    annotation = {
+        "images": [{"id": 1, "width": 100, "height": 100}],
+        "annotations": [{"id": 1, "image_id": 1, "bbox": [20, 20, 10, 10]}],
+        "info": {"roi_boundary_audit": _roi_audit([{
+            "match_id": "m1", "at_ms": 1000, "box_index": 1, "sides": ["right"],
+        }])},
+    }
+    (annotation_dir / "instances_test2017.json").write_text(
+        json.dumps(annotation), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="expandable crop edge"):
+        _read_evaluation_annotations(tmp_path, "test")
+
+
+def test_evaluation_gate_allows_physical_edge_and_unknown_coco_provenance(
+    tmp_path: Path,
+) -> None:
+    annotation_dir = tmp_path / "annotations"
+    annotation_dir.mkdir()
+    annotation = {
+        "images": [{"id": 1, "width": 100, "height": 100}],
+        "annotations": [{"id": 1, "image_id": 1, "bbox": [0, 20, 10, 10]}],
+        "info": {"roi_boundary_audit": _roi_audit(physical_contacts=[{
+            "match_id": "m1", "at_ms": 1000, "box_index": 1, "sides": ["left"],
+        }])},
+    }
+    path = annotation_dir / "instances_test2017.json"
+    path.write_text(json.dumps(annotation), encoding="utf-8")
+
+    loaded_path, _ = _read_evaluation_annotations(tmp_path, "test")
+    assert loaded_path == path
+
+    del annotation["info"]
+    path.write_text(json.dumps(annotation), encoding="utf-8")
+    assert _read_evaluation_annotations(tmp_path, "test")[0] == path
+
+    annotation["info"] = {"roi_boundary_audit": {"schema_version": 9}}
+    path.write_text(json.dumps(annotation), encoding="utf-8")
+    assert _read_evaluation_annotations(tmp_path, "test")[0] == path
+
+
+def test_evaluation_geometry_gate_matches_training_for_out_of_image_bbox(
+    tmp_path: Path,
+) -> None:
+    annotation_dir = tmp_path / "annotations"
+    annotation_dir.mkdir()
+    annotation = {
+        "images": [{"id": 1, "width": 100, "height": 100}],
+        "annotations": [{"id": 1, "image_id": 1, "bbox": [95, 20, 10, 10]}],
+    }
+    (annotation_dir / "instances_test2017.json").write_text(
+        json.dumps(annotation), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="outside or invalid"):
+        _read_evaluation_annotations(tmp_path, "test")
