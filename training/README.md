@@ -168,6 +168,40 @@ PYTHONPATH=build/third_party/YOLOX:python \
 
 本轮在第 80 轮早停，未进入最后 20 轮的 no-augmentation 阶段。video6 开发评估未达到 precision ≥90% 且 recall ≥80% 的门槛，因此该 checkpoint 不部署，也不把 video6 或 video8 结果称为独立成绩；Android profile、ROI 和权重未更新，检测器仍默认关闭。
 
+#### 均衡困难样本 v1（淘汰）
+
+从上述 safe-ROI full fine-tune checkpoint 继续微调，使用均衡困难样本集 `data/private/minimap-review-v6-video7-expanded/coco-video2-7-video1-hd-video8-safe-roi-lr1-balanced-hard-v1`。train 为 1,166 张／1,989 框，video6 val 保持 152 张／223 框；有数据 split 的 ROI provenance audit 为 `provenance_clear`，test 为空。最多训练 30 轮，第 25 轮早停；best epoch 5，confidence `0.85`、NMS `0.5`。固定 video6 val 的 TP/FP/FN 为 `72/8/151`，P/R/F1 为 `90.0000% / 32.2870% / 47.5248%`。
+
+相对 safe-ROI full fine-tune 基线 `90.1786% / 45.2915% / 60.2985%`，precision 变化 `−0.1786` 个百分点、recall `−13.0045` 个百分点、F1 `−12.7737` 个百分点。它虽达到 P≥90%，recall 没有提升，因此按开发候选门槛淘汰。video6 已用于训练中的选模／选阈值和固定复评，结果是开发集对照，不是独立成绩；不导出 Android 模型，不接入 Android，现有 Android profile、ROI 和权重不变。
+
+checkpoint SHA-256：`877fd5e5e451744227d82ace7644d16a0e2dd57d079418a57831ea7f6145c47b`；metrics SHA-256：`d2d87812f6d5e3a3dfd28e755a945319879f4c49287eb45a4412591d1e846905`；固定 video6 val 评测报告 SHA-256：`fd8981caf6c64f770de80a08097a1e3cd6eacdf10591d5cfe4ec1d5fd0ef877f`；底层 `instances_val2017.json` SHA-256：`6d1d4ad35e150533de85b965d4f2096ebc2c9b80442fdcb4ef249a140ef7754e`。
+
+复现训练和固定阈值评测：
+
+```sh
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python training/train_yolox_minimap.py \
+  --yolox-root build/third_party/YOLOX \
+  --data-dir data/private/minimap-review-v6-video7-expanded/coco-video2-7-video1-hd-video8-safe-roi-lr1-balanced-hard-v1 \
+  --pretrained build/training/yolox-nano-minimap-safe-roi-coco-lr1-320/best_ckpt.pth \
+  --epochs 30 --batch-size 16 --input-size 320 --lr-scale 0.3 \
+  --mosaic-prob 0.5 --mosaic-scale-min 0.7 --mosaic-scale-max 1.3 \
+  --hsv-prob 0.8 --flip-prob 0.5 --degrees 5 --translate 0.08 --shear 1 \
+  --nms-threshold 0.5 --minimum-precision 0.9 \
+  --eval-every 5 --log-every 5 --early-stop-patience 4 \
+  --early-stop-min-epoch 10 --no-aug-epochs 6 \
+  --device mps --seed 20260926 \
+  --output build/training/yolox-nano-minimap-safe-roi-lr1-balanced-hard-v1-320
+
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python training/evaluate_yolox_minimap.py \
+  --yolox-root build/third_party/YOLOX \
+  --data-dir data/private/minimap-review-v6-video7-expanded/coco-video2-7-video1-hd-video8-safe-roi-lr1-balanced-hard-v1 \
+  --checkpoint build/training/yolox-nano-minimap-safe-roi-lr1-balanced-hard-v1-320/best_ckpt.pth \
+  --input-size 320 --split val \
+  --output build/training/yolox-nano-minimap-safe-roi-lr1-balanced-hard-v1-320/fixed-video6-balanced-hard-v1-val.json
+```
+
 ```sh
 PYTHONPATH=python .venv/bin/python -m mapassist.finalize_review \
   data/private/minimap-review-v4-dense/review-manifest.json \
