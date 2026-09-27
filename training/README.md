@@ -174,7 +174,9 @@ PYTHONPATH=build/third_party/YOLOX:python \
 
 相对 safe-ROI full fine-tune 基线 `90.1786% / 45.2915% / 60.2985%`，precision 变化 `−0.1786` 个百分点、recall `−13.0045` 个百分点、F1 `−12.7737` 个百分点。它虽达到 P≥90%，recall 没有提升，因此按开发候选门槛淘汰。video6 已用于训练中的选模／选阈值和固定复评，结果是开发集对照，不是独立成绩；不导出 Android 模型，不接入 Android，现有 Android profile、ROI 和权重不变。
 
-checkpoint SHA-256：`877fd5e5e451744227d82ace7644d16a0e2dd57d079418a57831ea7f6145c47b`；metrics SHA-256：`d2d87812f6d5e3a3dfd28e755a945319879f4c49287eb45a4412591d1e846905`；固定 video6 val 评测报告 SHA-256：`fd8981caf6c64f770de80a08097a1e3cd6eacdf10591d5cfe4ec1d5fd0ef877f`；底层 `instances_val2017.json` SHA-256：`6d1d4ad35e150533de85b965d4f2096ebc2c9b80442fdcb4ef249a140ef7754e`。
+对冻结 best checkpoint 在同一 video6 开发 val 上追加了 confidence `0.01–0.95`、step `0.001` 的 941 点细扫。P≥0.90 的最大 recall 点为 confidence `0.848`，TP/FP/FN `74/8/149`，P/R/F1 `90.2439% / 33.1839% / 48.5246%`；全扫描 max-F1 点为 confidence `0.348`，TP/FP/FN `154/48/69`，P/R/F1 `76.2376% / 69.0583% / 72.4706%`。相同 video6 val 上的 safe-ROI full fine-tune 扫描对应点为 confidence `0.807`、P/R/F1 `90.3509% / 46.1883% / 61.1276%`，以及 max-F1 confidence `0.419`、P/R/F1 `79.1444% / 66.3677% / 72.1951%`。因此 balanced-hard 的门槛点 recall/F1 分别低 `13.0044 / 12.6030` 个百分点；max-F1 点的 recall 高 `2.6906` 个百分点、F1 仅高 `0.2755` 个百分点且 precision 低 `2.9068` 个百分点。扫描是同一 development video6 上的诊断，不改变冻结阈值或淘汰结论，也不构成独立留出成绩；实验仍不接入 Android。
+
+checkpoint SHA-256：`877fd5e5e451744227d82ace7644d16a0e2dd57d079418a57831ea7f6145c47b`；metrics SHA-256：`d2d87812f6d5e3a3dfd28e755a945319879f4c49287eb45a4412591d1e846905`；固定 video6 val 评测报告 SHA-256：`fd8981caf6c64f770de80a08097a1e3cd6eacdf10591d5cfe4ec1d5fd0ef877f`；细扫 JSON SHA-256：`c46ac2fdfa8f4aabc7073fa148979e7ba166c8214ac43904e40ce6f016f33a03`；底层 `instances_val2017.json` SHA-256：`6d1d4ad35e150533de85b965d4f2096ebc2c9b80442fdcb4ef249a140ef7754e`。
 
 复现训练和固定阈值评测：
 
@@ -200,6 +202,15 @@ PYTHONPATH=build/third_party/YOLOX:python \
   --checkpoint build/training/yolox-nano-minimap-safe-roi-lr1-balanced-hard-v1-320/best_ckpt.pth \
   --input-size 320 --split val \
   --output build/training/yolox-nano-minimap-safe-roi-lr1-balanced-hard-v1-320/fixed-video6-balanced-hard-v1-val.json
+
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python training/evaluate_yolox_minimap.py \
+  --yolox-root build/third_party/YOLOX \
+  --data-dir data/private/minimap-review-v6-video7-expanded/coco-video2-7-video1-hd-video8-safe-roi-lr1-balanced-hard-v1 \
+  --checkpoint build/training/yolox-nano-minimap-safe-roi-lr1-balanced-hard-v1-320/best_ckpt.pth \
+  --input-size 320 --split val \
+  --threshold-range 0.01 0.95 --threshold-step 0.001 \
+  --output build/training/yolox-nano-minimap-safe-roi-lr1-balanced-hard-v1-320/fixed-video6-balanced-hard-v1-confidence-sweep-001.json
 ```
 
 ```sh
