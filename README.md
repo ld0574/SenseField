@@ -91,7 +91,7 @@ PYTHONPATH=python python3 -m mapassist.annotation_server \
   --host 127.0.0.1 --port 8765 --open
 ```
 
-video8-v3 已完成 120 张安全 ROI 复核；video1-hd 是新 1080P 录像的 100 张待复核队列。旧 video1 标签只能作为仿射迁移后的建议框，不能直接作为高清真值。规则、进度和坐标见[团队协作文档](docs/团队协作与本地运行.md)、[video1 高清记录](validation/VIDEO1_HD.md)和[video8 记录](validation/VIDEO8.md)。
+video8-v3 已完成 120 张安全 ROI 复核；video1-hd 已完成 100 个任务复核（83 `corrected`／163 框、12 `negative`、5 `excluded`），并纳入合并 safe-ROI 训练集。旧 video1 标签只能作为仿射迁移后的建议框，不能直接作为高清真值。规则、进度和坐标见[团队协作文档](docs/团队协作与本地运行.md)、[video1 高清记录](validation/VIDEO1_HD.md)和[video8 记录](validation/VIDEO8.md)。
 
 Android Studio 直接打开 `android/`。首次原生构建会下载并校验固定版本的 ncnn Android 依赖；调试 APK 的命令行构建方式记录在[团队协作文档](docs/团队协作与本地运行.md)。
 
