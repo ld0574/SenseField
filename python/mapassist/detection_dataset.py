@@ -196,6 +196,7 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
     }
     seen_ids: set[str] = set()
     video_splits: dict[Path, str] = {}
+    verified_video_hashes: dict[Path, str] = {}
     for match in matches:
         if not isinstance(match, dict):
             raise ValueError("Each match must be an object")
@@ -215,6 +216,26 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
         video = (manifest.parent / video_name).resolve()
         if not video.is_file():
             raise ValueError(f"Video does not exist: {video}")
+        expected_video_sha256 = match.get("video_sha256")
+        if expected_video_sha256 is not None:
+            if (not isinstance(expected_video_sha256, str) or
+                    len(expected_video_sha256) != 64 or
+                    any(character not in "0123456789abcdefABCDEF"
+                        for character in expected_video_sha256)):
+                raise ValueError(
+                    f"{match_id} video_sha256 must be 64 hexadecimal characters"
+                )
+            expected_video_sha256 = expected_video_sha256.lower()
+            actual_video_sha256 = verified_video_hashes.get(video)
+            if actual_video_sha256 is None:
+                actual_video_sha256 = _sha256(video)
+                verified_video_hashes[video] = actual_video_sha256
+            if actual_video_sha256 != expected_video_sha256:
+                raise ValueError(
+                    f"Source video hash mismatch for {match_id}: expected "
+                    f"{expected_video_sha256}, got {actual_video_sha256}. "
+                    "The recording was replaced; create a new match id and review queue."
+                )
         prior = video_splits.setdefault(video, split)
         if prior != split:
             raise ValueError(f"One recording cannot cross splits: {video}")

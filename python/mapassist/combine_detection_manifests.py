@@ -64,6 +64,15 @@ def combine(manifests: list[Path], output: Path,
             video = (manifest.parent / video_value).resolve()
             if not video.is_file():
                 raise ValueError(f"Missing video for {match_id}: {video}")
+            video_sha256 = source.get("video_sha256")
+            if video_sha256 is not None:
+                if (not isinstance(video_sha256, str) or len(video_sha256) != 64 or
+                        any(character not in "0123456789abcdefABCDEF"
+                            for character in video_sha256)):
+                    raise ValueError(
+                        f"{match_id} video_sha256 must be 64 hexadecimal characters"
+                    )
+                video_sha256 = video_sha256.lower()
             prior_video = ids.setdefault(match_id, video)
             if prior_video != video:
                 raise ValueError(f"Match id {match_id} refers to different recordings")
@@ -80,12 +89,14 @@ def combine(manifests: list[Path], output: Path,
             record = grouped.setdefault(video, {
                 "id": match_id, "video": str(video), "split": split,
                 "roi": roi, "widget_roi": widget_roi,
-                "orientation": match_orientation, "frames": {},
+                "orientation": match_orientation, "video_sha256": video_sha256,
+                "frames": {},
             })
             if (record["id"] != match_id or record["roi"] != roi or
                     record["widget_roi"] != widget_roi or
                     record["split"] != split or
-                    record["orientation"] != match_orientation):
+                    record["orientation"] != match_orientation or
+                    record["video_sha256"] != video_sha256):
                 raise ValueError(f"Metadata differs for repeated recording {match_id}")
             for frame in source.get("frames", []):
                 timestamp = frame.get("at_ms")
@@ -110,6 +121,8 @@ def combine(manifests: list[Path], output: Path,
         }
         if record["widget_roi"] is not None:
             exported["widget_roi"] = record["widget_roi"]
+        if record["video_sha256"] is not None:
+            exported["video_sha256"] = record["video_sha256"]
         matches.append(exported)
         if record["orientation"] is not None:
             matches[-1]["orientation"] = record["orientation"]

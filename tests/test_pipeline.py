@@ -921,6 +921,15 @@ def test_detection_dataset_exports_boxes_and_negative_frames(tmp_path: Path) -> 
         export_detection_dataset(manifest, tmp_path / "leaked")
     assert not (tmp_path / "leaked").exists()
 
+    manifest.write_text(json.dumps({"schema_version": 1, "matches": [{
+        "id": "replaced", "video": fixture["video"].name, "split": "train",
+        "video_sha256": "0" * 64,
+        "frames": [{"at_ms": 1000, "boxes": []}],
+    }]}), encoding="utf-8")
+    with pytest.raises(ValueError, match="Source video hash mismatch.*new match id"):
+        export_detection_dataset(manifest, tmp_path / "hash-mismatch")
+    assert not (tmp_path / "hash-mismatch").exists()
+
 
 @pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
                     reason="ffmpeg and ffprobe are needed to extract frames")
@@ -1206,6 +1215,7 @@ def test_combine_detection_manifests_adds_frames_for_same_recording(
     video = tmp_path / "video.mp4"
     video.write_bytes(b"private fixture")
     paths = [tmp_path / "first.json", tmp_path / "second.json"]
+    video_sha256 = hashlib.sha256(video.read_bytes()).hexdigest()
     for path, timestamp in zip(paths, (100, 200)):
         path.write_text(json.dumps({
             "schema_version": 1,
@@ -1214,6 +1224,7 @@ def test_combine_detection_manifests_adds_frames_for_same_recording(
             "widget_roi": [0.02, 0.01, 0.2, 0.3],
             "matches": [{
                 "id": "video1", "video": video.name, "split": "train",
+                "video_sha256": video_sha256,
                 "frames": [{"at_ms": timestamp, "boxes": []}],
             }],
         }), encoding="utf-8")
@@ -1228,6 +1239,13 @@ def test_combine_detection_manifests_adds_frames_for_same_recording(
     match = json.loads(output.read_text())["matches"][0]
     assert [frame["at_ms"] for frame in match["frames"]] == [100, 200]
     assert match["widget_roi"] == [0.02, 0.01, 0.2, 0.3]
+    assert match["video_sha256"] == video_sha256
+
+    changed = json.loads(paths[1].read_text())
+    changed["matches"][0]["video_sha256"] = "0" * 64
+    paths[1].write_text(json.dumps(changed), encoding="utf-8")
+    with pytest.raises(ValueError, match="Metadata differs"):
+        combine_detection_manifests(paths, tmp_path / "mismatched-hashes.json")
 
 
 def test_combine_detection_manifests_normalizes_missing_category(
@@ -1284,6 +1302,8 @@ def test_review_dataset_keeps_suggestions_pending(
     exported = json.loads((output / "review-manifest.json").read_text())
     assert exported["orientation"]["display_rotation_degrees"] == 0
     assert exported["matches"][0]["orientation"]["display_rotation_degrees"] == 0
+    expected_video_sha256 = hashlib.sha256(fixture["video"].read_bytes()).hexdigest()
+    assert exported["matches"][0]["video_sha256"] == expected_video_sha256
     samples = exported["matches"][0]["samples"]
     assert exported["matches"][0]["active_intervals_ms"] == [[2000, 6000]]
     assert all(2000 <= sample["at_ms"] <= 6000 for sample in samples)
@@ -1308,6 +1328,7 @@ def test_review_dataset_keeps_suggestions_pending(
     assert detections["roi"] == [0.0, 0.0, 0.25, 0.34]
     assert detections["orientation"]["display_rotation_degrees"] == 0
     assert detections["matches"][0]["orientation"]["display_rotation_degrees"] == 0
+    assert detections["matches"][0]["video_sha256"] == expected_video_sha256
     coco_dir = output / "coco"
     export_detection_dataset(output / "detections.json", coco_dir)
     coco = json.loads((coco_dir / "annotations/instances_train2017.json").read_text())

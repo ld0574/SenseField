@@ -73,6 +73,15 @@ def finalize(review_manifest: Path, output: Path) -> dict:
         if frames:
             exported = {"id": match["id"], "video": match["video"],
                         "split": match["split"], "frames": frames}
+            video_sha256 = match.get("video_sha256")
+            if video_sha256 is not None:
+                if (not isinstance(video_sha256, str) or len(video_sha256) != 64 or
+                        any(character not in "0123456789abcdefABCDEF"
+                            for character in video_sha256)):
+                    raise ValueError(
+                        f"{match.get('id')} video_sha256 must be 64 hexadecimal characters"
+                    )
+                exported["video_sha256"] = video_sha256.lower()
             match_orientation = from_manifest(match, f"{match.get('id')}")
             if match_orientation is not None:
                 exported["orientation"] = match_orientation
