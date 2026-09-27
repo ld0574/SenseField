@@ -10,7 +10,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "python"))
 sys.path.insert(0, str(ROOT / "training"))
 
-from evaluate_yolox_minimap import _direction_event_metrics, _read_evaluation_annotations
+from evaluate_yolox_minimap import (
+    _direction_event_metrics,
+    _read_evaluation_annotations,
+    _read_image_direction_rois,
+)
 
 
 def _roi_audit(crop_contacts: list[dict] | None = None,
@@ -29,11 +33,13 @@ def _roi_audit(crop_contacts: list[dict] | None = None,
     }
 
 
-def _metrics(predictions: dict, truths: dict) -> dict:
-    image_sizes = {image_id: (100, 100) for image_id in truths}
+def _metrics(predictions: dict, truths: dict,
+             direction_rois: dict[int, list[float]] | None = None,
+             image_size: tuple[int, int] = (100, 100)) -> dict:
+    image_sizes = {image_id: image_size for image_id in truths}
     return _direction_event_metrics(
         predictions, truths, confidence=0.5, iou_threshold=0.5,
-        image_sizes=image_sizes,
+        image_sizes=image_sizes, direction_rois=direction_rois,
     )
 
 
@@ -121,6 +127,38 @@ def test_empty_frame_has_no_direction_events_and_false_event_is_fp() -> None:
     assert false_event["set"]["fp"] == 1
     assert false_event["set"]["fn"] == 0
     assert false_event["iou_gated"]["fp"] == 1
+
+
+def test_direction_events_use_widget_reference_inside_safe_crop() -> None:
+    # The safe crop is 402x371 from [79,0,481,371]. The actual widget is
+    # [106,0,454,344], whose local centre differs vertically from crop centre.
+    widget = {1: [27 / 402, 0, 348 / 402, 344 / 371]}
+    truth = [146.0, 107.0, 30.0, 30.0]       # center (161,122): up of widget centre
+    prediction = [140.0, 112.0, 30.0, 30.0] # center (155,127): left of widget centre
+
+    crop_center = _metrics({1: [(0.9, prediction)]}, {1: [truth]},
+                            image_size=(402, 371))
+    widget_center = _metrics({1: [(0.9, prediction)]}, {1: [truth]}, widget,
+                              image_size=(402, 371))
+
+    assert crop_center["set"]["tp"] == 1
+    assert widget_center["direction_reference_images"] == 1
+    assert widget_center["set"]["tp"] == 0
+    assert widget_center["set"]["fp"] == 1
+    assert widget_center["set"]["fn"] == 1
+
+
+@pytest.mark.parametrize("value", [
+    [float("nan"), 0.1, 0.2, 0.2],
+    [float("inf"), 0.1, 0.2, 0.2],
+    [0.1, 0.1, 0.0, 0.2],
+    [0.9, 0.1, 0.2, 0.2],
+])
+def test_direction_roi_reader_rejects_invalid_widget_rectangles(value) -> None:
+    with pytest.raises(ValueError, match="direction_roi"):
+        _read_image_direction_rois({"images": [
+            {"id": 1, "direction_roi": value},
+        ]})
 
 
 def test_evaluation_gate_rejects_exporter_marked_crop_edge_contacts(tmp_path: Path) -> None:

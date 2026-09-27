@@ -7,6 +7,7 @@ import hashlib
 import json
 import shutil
 import subprocess
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
@@ -26,7 +27,8 @@ from mapassist.calibrate_minimap_anchor import calibrate as calibrate_minimap_an
 from mapassist.combine_detection_manifests import combine as combine_detection_manifests
 from mapassist.detection_dataset import export as export_detection_dataset
 from mapassist.detection_evaluate import evaluate_review as evaluate_detection_review
-from mapassist.detection_evaluate import _match_boxes
+from mapassist.detection_evaluate import _direction_reference_roi, _match_boxes
+from mapassist import detection_replay_evaluate
 from mapassist.extract_frame import extract
 from mapassist.finalize_review import finalize as finalize_review
 from mapassist.measure_latency import measure
@@ -616,6 +618,128 @@ def test_detection_review_uses_match_roi_for_direction_metrics(tmp_path: Path) -
     assert report["direction_failures"] == []
 
 
+def test_detection_review_uses_widget_roi_separate_from_safe_crop(
+    tmp_path: Path,
+) -> None:
+    width, height = 2376, 1080
+    safe_roi = [79 / width, 0, 402 / width, 371 / height]
+    widget_roi = [106 / width, 0, 348 / width, 344 / height]
+    # At full-frame center (312,155), the safe-crop center classifies "up";
+    # the measured widget center classifies "right".
+    box = [302 / width, 145 / height, 20 / width, 20 / height]
+    manifest = tmp_path / "safe-roi-review.json"
+    manifest.write_text(json.dumps({
+        "schema_version": 1,
+        "kind": "minimap_enemy",
+        "roi": safe_roi,
+        "widget_roi": widget_roi,
+        "matches": [{"id": "video8-safe-roi", "split": "test", "samples": [{
+            "at_ms": 1000, "selection": "cue", "review_status": "corrected",
+            "suggested_boxes": [box], "reviewed_boxes": [box],
+            "directions": ["up"],
+        }]}],
+    }), encoding="utf-8")
+
+    report = evaluate_detection_review(manifest)
+
+    assert report["overall"]["directed_matches"] == 1
+    assert report["overall"]["direction_accuracy"] == 0.0
+    assert [(item["predicted_direction"], item["ground_truth_direction"])
+            for item in report["direction_failures"]] == [("up", "right")]
+
+
+@pytest.mark.parametrize("widget_roi", [
+    [float("nan"), 0.1, 0.2, 0.2],
+    [float("inf"), 0.1, 0.2, 0.2],
+    [0.1, 0.1, 0.0, 0.2],
+    [0.9, 0.1, 0.2, 0.2],
+])
+def test_detection_review_direction_reference_rejects_invalid_widget_roi(
+    widget_roi: list[float],
+) -> None:
+    with pytest.raises(ValueError):
+        _direction_reference_roi({}, {"widget_roi": widget_roi},
+                                 [0.0, 0.0, 1.0, 1.0])
+
+
+@pytest.mark.parametrize("widget_roi", [
+    [float("nan"), 0.1, 0.2, 0.2],
+    [float("inf"), 0.1, 0.2, 0.2],
+    [0.1, 0.1, 0.0, 0.2],
+    [0.9, 0.1, 0.2, 0.2],
+])
+def test_review_dataset_rejects_invalid_widget_roi_before_sampling(
+    tmp_path: Path, widget_roi: list[float],
+) -> None:
+    manifest = tmp_path / "source.json"
+    manifest.write_text(json.dumps({
+        "schema_version": 1,
+        "widget_roi": widget_roi,
+    }), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="widget_roi"):
+        build_review_dataset(manifest, tmp_path / "review")
+
+
+def test_replay_evaluator_scores_directions_against_profile_reference(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile_roi = [0.05, 0.05, 0.28, 0.44]
+    manifest = tmp_path / "review.json"
+    (tmp_path / "frame.png").parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGBA", (320, 180), (0, 0, 0, 255)).save(tmp_path / "frame.png")
+    manifest.write_text(json.dumps({
+        "schema_version": 1,
+        "kind": "minimap_enemy",
+        "roi": [0.0, 0.0, 0.4, 0.6],
+        "matches": [{
+            "id": "legacy-queue", "split": "val",
+            "samples": [{
+                "at_ms": 1000, "review_status": "corrected",
+                "frame": "frame.png", "suggested_boxes": [],
+                "reviewed_boxes": [[0.1, 0.1, 0.02, 0.02]],
+            }],
+        }],
+    }), encoding="utf-8")
+    profile = tmp_path / "profile.json"
+    profile.write_text("profile", encoding="utf-8")
+    library = tmp_path / "native.so"
+    library.write_bytes(b"native")
+
+    class FakePipeline:
+        def __init__(self, *_args):
+            self.profile = SimpleNamespace(
+                minimap_direction=Rect(*profile_roi),
+                minimap=Rect(),
+            )
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def step(self, *_args):
+            return ([{"type": "minimap_enemy", "bbox_norm": [
+                0.1, 0.1, 0.02, 0.02,
+            ], "direction": "right"}], [])
+
+    captured = {}
+
+    def capture_evaluation_manifest(path: Path) -> dict:
+        replayed = json.loads(path.read_text(encoding="utf-8"))
+        captured["widget_roi"] = replayed["matches"][0].get("widget_roi")
+        return {"overall": {}}
+
+    monkeypatch.setattr(detection_replay_evaluate, "Pipeline", FakePipeline)
+    monkeypatch.setattr(detection_replay_evaluate, "evaluate_review",
+                        capture_evaluation_manifest)
+
+    detection_replay_evaluate.evaluate_current_detector(manifest, profile, library)
+
+    assert captured["widget_roi"] == pytest.approx(profile_roi)
+
+
 def test_detection_box_matching_finds_maximum_cardinality() -> None:
     predictions = [[0.0, 0.0, 0.6, 1.0], [0.0, 0.0, 0.3, 1.0]]
     truth = [[0.0, 0.0, 0.3, 1.0], [0.3, 0.0, 0.3, 1.0]]
@@ -628,6 +752,7 @@ def test_finalize_review_omits_non_gameplay_frames(tmp_path: Path) -> None:
     manifest.write_text(json.dumps({
         "schema_version": 1,
         "kind": "minimap_enemy",
+        "widget_roi": [0.1, 0.15, 0.35, 0.3],
         "matches": [{
             "id": "match-01", "video": "match.mp4", "split": "train",
             "samples": [
@@ -642,6 +767,7 @@ def test_finalize_review_omits_non_gameplay_frames(tmp_path: Path) -> None:
     assert summary["statuses"]["excluded"] == 1
     exported = json.loads(output.read_text())
     assert exported["matches"][0]["frames"] == [{"at_ms": 1000, "boxes": []}]
+    assert exported["widget_roi"] == [0.1, 0.15, 0.35, 0.3]
 
 
 @pytest.fixture(scope="session")
@@ -747,7 +873,9 @@ def test_detection_dataset_exports_boxes_and_negative_frames(tmp_path: Path) -> 
     val_fixture = create(tmp_path / "other_match")
     manifest = tmp_path / "detections.json"
     manifest.write_text(json.dumps({"schema_version": 1,
-                                    "roi": [0.05, 0.1, 0.5, 0.4], "matches": [
+                                    "roi": [0.05, 0.1, 0.5, 0.4],
+                                    "widget_roi": [0.1, 0.15, 0.35, 0.3],
+                                    "matches": [
         {"id": "match-01", "video": fixture["video"].name, "split": "train",
          "frames": [
              {"at_ms": 1000, "boxes": [[0.1, 0.2, 0.3, 0.1]]},
@@ -777,6 +905,8 @@ def test_detection_dataset_exports_boxes_and_negative_frames(tmp_path: Path) -> 
     )
     assert cropped["images"][0]["width"] == 160
     assert cropped["images"][0]["height"] == 72
+    assert cropped["images"][0]["direction_roi"] == pytest.approx(
+        [0.1, 0.125, 0.7, 0.75])
     assert cropped["annotations"][0]["bbox"] == [16.0, 18.0, 96.0, 18.0]
     with Image.open(cropped_output / "train2017/match-01_000001000.png") as image:
         assert image.size == (160, 72)
@@ -1035,6 +1165,7 @@ def test_merge_detection_manifests_requires_explicit_unique_recordings(
         "schema_version": 1,
         "category": "minimap_enemy",
         "roi": [0.0, 0.0, 0.25, 0.5],
+        "widget_roi": [0.02, 0.01, 0.2, 0.3],
         "matches": [{"id": "video1", "video": "video1.mp4", "split": "train",
                      "frames": [{"at_ms": 10, "boxes": []}]},
                     {"id": "video2", "video": "video2.mp4", "split": "val",
@@ -1060,6 +1191,9 @@ def test_merge_detection_manifests_requires_explicit_unique_recordings(
     merged = json.loads(output.read_text())
     assert [match["split"] for match in merged["matches"]] == ["train", "train", "val"]
     assert merged["matches"][1]["roi"] == [0.0, 0.0, 0.3, 0.5]
+    assert [match.get("widget_roi") for match in merged["matches"]] == [
+        [0.02, 0.01, 0.2, 0.3], [0.02, 0.01, 0.2, 0.3], None,
+    ]
     assert all(Path(match["video"]).is_absolute() for match in merged["matches"])
 
     with pytest.raises(ValueError, match="did not match"):
@@ -1077,6 +1211,7 @@ def test_combine_detection_manifests_adds_frames_for_same_recording(
             "schema_version": 1,
             "category": "minimap_enemy",
             "roi": [0.0, 0.0, 0.25, 0.5],
+            "widget_roi": [0.02, 0.01, 0.2, 0.3],
             "matches": [{
                 "id": "video1", "video": video.name, "split": "train",
                 "frames": [{"at_ms": timestamp, "boxes": []}],
@@ -1092,6 +1227,7 @@ def test_combine_detection_manifests_adds_frames_for_same_recording(
     }
     match = json.loads(output.read_text())["matches"][0]
     assert [frame["at_ms"] for frame in match["frames"]] == [100, 200]
+    assert match["widget_roi"] == [0.02, 0.01, 0.2, 0.3]
 
 
 def test_combine_detection_manifests_normalizes_missing_category(
@@ -1486,6 +1622,31 @@ def test_centered_minimap_enemy_has_no_spurious_direction(
     assert [item["direction"] for item in observations if item["type"] == "minimap_enemy"] == [None]
     assert [(item["kind"], item["direction"]) for item in second] == [
         ("minimap_enemy", None)
+    ]
+
+
+def test_explicit_minimap_direction_reference_is_used_by_native_events(
+    tmp_path: Path, native_library: Path
+) -> None:
+    fixture = create(tmp_path)
+    profile = json.loads(fixture["profile"].read_text(encoding="utf-8"))
+    profile["rois"]["minimap"] = [0, 0, 0.4, 0.6]
+    profile["rois"]["minimap_direction"] = [0.05, 0.05, 0.28, 0.44]
+    profile["detectors"].update({"main_red_bar": False, "danger_ping_template": False})
+    fixture["profile"].write_text(json.dumps(profile), encoding="utf-8")
+    frame = Image.new("RGBA", (320, 180), (13, 19, 29, 255))
+    with Image.open(tmp_path / "enemy.png") as template:
+        frame.alpha_composite(template.convert("RGBA"), (64, 44))
+
+    with Pipeline(fixture["profile"], native_library) as pipeline:
+        observations, first = pipeline.step(frame.tobytes(), 320, 180, 1000)
+        _, second = pipeline.step(frame.tobytes(), 320, 180, 1083)
+
+    minimap = [item for item in observations if item["type"] == "minimap_enemy"]
+    assert [item["direction"] for item in minimap] == ["right"]
+    assert first == []
+    assert [(item["kind"], item["direction"]) for item in second] == [
+        ("minimap_enemy", "right")
     ]
 
 

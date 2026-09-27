@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import pytest
+
 from mapassist.roi_safety import (
     coco_roi_blocker,
     has_supported_coco_roi_audit,
     inspect_box_roi,
+    normalized_roi,
 )
 
 
@@ -42,3 +45,14 @@ def test_unknown_or_incomplete_roi_audit_is_not_treated_as_project_provenance() 
 
     assert not has_supported_coco_roi_audit(document)
     assert coco_roi_blocker(document, "train") is None
+
+
+@pytest.mark.parametrize("value", [
+    [float("nan"), 0.1, 0.2, 0.2],
+    [float("inf"), 0.1, 0.2, 0.2],
+    [0.1, 0.1, 0.0, 0.2],
+    [0.9, 0.1, 0.2, 0.2],
+])
+def test_normalized_roi_rejects_nonfinite_empty_and_outside_rectangles(value) -> None:
+    with pytest.raises(ValueError):
+        normalized_roi(value, "widget_roi")

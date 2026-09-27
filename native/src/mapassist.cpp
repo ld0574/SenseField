@@ -26,6 +26,29 @@ PixelRect pixels(ma_rect r, int width, int height) {
     return {x0, y0, std::max(x0, x1), std::max(y0, y1)};
 }
 
+PixelRect reference_pixels(ma_rect r, int width, int height) {
+    const int x0 = std::clamp(static_cast<int>(std::lround(r.x * width)), 0, width);
+    const int y0 = std::clamp(static_cast<int>(std::lround(r.y * height)), 0, height);
+    const int x1 = std::clamp(
+            static_cast<int>(std::lround((r.x + r.w) * width)), x0, width);
+    const int y1 = std::clamp(
+            static_cast<int>(std::lround((r.y + r.h) * height)), y0, height);
+    return {x0, y0, x1, y1};
+}
+
+bool has_rect(ma_rect r) {
+    return std::isfinite(r.x) && std::isfinite(r.y) &&
+           std::isfinite(r.w) && std::isfinite(r.h) &&
+           r.x >= 0.0f && r.y >= 0.0f && r.w > 0.0f && r.h > 0.0f &&
+           r.x + r.w <= 1.001f && r.y + r.h <= 1.001f;
+}
+
+PixelRect direction_reference(const ma_profile &profile, PixelRect fallback,
+                              int width, int height) {
+    return has_rect(profile.minimap_direction)
+            ? reference_pixels(profile.minimap_direction, width, height) : fallback;
+}
+
 bool contains(PixelRect r, int x, int y) {
     return x >= r.x0 && x < r.x1 && y >= r.y0 && y < r.y1;
 }
@@ -258,6 +281,7 @@ void detect_minimap_red_rings(const uint8_t *rgba, int width, int height, int ro
                               std::vector<ma_observation> &out) {
     if (!profile.enable_minimap_red_ring) return;
     const PixelRect area = pixels(profile.minimap, width, height);
+    const PixelRect reference = direction_reference(profile, area, width, height);
     const int area_w = area.x1 - area.x0;
     const int area_h = area.y1 - area.y0;
     const int short_side = std::min(area_w, area_h);
@@ -484,7 +508,8 @@ void detect_minimap_red_rings(const uint8_t *rgba, int width, int height, int ro
                                               area.y0 + window.y + portrait_height};
                     out.push_back({MA_MINIMAP_ENEMY,
                                    direction_for((split_box.x0 + split_box.x1) / 2,
-                                                 (split_box.y0 + split_box.y1) / 2, area),
+                                                 (split_box.y0 + split_box.y1) / 2,
+                                                 reference),
                                    normalized(split_box, width, height), confidence,
                                    timestamp_ms});
                 }
@@ -493,7 +518,7 @@ void detect_minimap_red_rings(const uint8_t *rgba, int width, int height, int ro
         }
         out.push_back({MA_MINIMAP_ENEMY,
                        direction_for((box.x0 + box.x1) / 2,
-                                     (box.y0 + box.y1) / 2, area),
+                                     (box.y0 + box.y1) / 2, reference),
                        normalized(box, width, height), confidence, timestamp_ms});
     }
 }
@@ -575,12 +600,13 @@ extern "C" int ma_detect_rgba(const uint8_t *rgba, int width, int height,
     if (profile->enable_minimap_template) {
         std::vector<Match> matches;
         const PixelRect area = pixels(profile->minimap, width, height);
+        const PixelRect reference = direction_reference(*profile, area, width, height);
         find_template(rgba, row_stride, area, minimap_enemy_template,
                       profile->template_threshold, 5, matches);
         for (const Match &match : matches) {
             found.push_back({MA_MINIMAP_ENEMY,
                              direction_for((match.box.x0 + match.box.x1) / 2,
-                                           (match.box.y0 + match.box.y1) / 2, area),
+                                           (match.box.y0 + match.box.y1) / 2, reference),
                              normalized(match.box, width, height), match.score,
                              timestamp_ms});
         }

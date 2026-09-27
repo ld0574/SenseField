@@ -25,7 +25,11 @@ from pathlib import Path
 from PIL import Image
 
 from .orientation import normalize as normalize_orientation
-from .roi_safety import DEFAULT_ROI_EDGE_TOLERANCE_PX, inspect_box_roi
+from .roi_safety import (
+    DEFAULT_ROI_EDGE_TOLERANCE_PX,
+    inspect_box_roi,
+    normalized_roi,
+)
 
 
 FINAL_STATUSES = {"accepted", "corrected", "negative", "skip", "excluded"}
@@ -52,16 +56,7 @@ def _validate_boxes(boxes: object) -> list[list[float]]:
 
 
 def _validate_roi(value: object, label: str = "roi") -> list[float]:
-    if (not isinstance(value, list) or len(value) != 4 or
-            any(not isinstance(item, (int, float)) or isinstance(item, bool)
-                for item in value)):
-        raise ValueError(f"{label} must be normalized [x, y, width, height]")
-    roi = [float(item) for item in value]
-    x, y, width, height = roi
-    if (x < 0 or y < 0 or width <= 0 or height <= 0 or
-            x + width > 1.000001 or y + height > 1.000001):
-        raise ValueError(f"{label} is outside the normalized frame")
-    return roi
+    return normalized_roi(value, label)
 
 
 def _display_frame_size(value: object, label: str) -> tuple[int, int] | None:
@@ -126,9 +121,15 @@ class AnnotationStore:
         self.review_mode = data.get("review_mode", "suggestion")
         if self.review_mode not in {"suggestion", "blind", "manual"}:
             raise ValueError("review_mode must be suggestion, blind, or manual")
+        assistance = data.get("label_assistance")
+        self.label_assistance = assistance if isinstance(assistance, dict) else None
         self.roi = _validate_roi(data.get("roi"), "Review manifest roi")
+        top_widget_roi = data.get("widget_roi")
+        self.widget_roi = (_validate_roi(top_widget_roi, "Review manifest widget_roi")
+                           if top_widget_roi is not None else None)
         top_orientation = data.get("orientation")
         self.match_rois: dict[str, list[float]] = {}
+        self.match_widget_rois: dict[str, list[float] | None] = {}
         self.database.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
             connection.execute("PRAGMA journal_mode = WAL")
@@ -163,6 +164,11 @@ class AnnotationStore:
                         raise ValueError("Each review match needs an id")
                     self.match_rois[match_id] = _validate_roi(
                         match.get("roi", self.roi), f"{match_id} roi"
+                    )
+                    match_widget_roi = match.get("widget_roi", top_widget_roi)
+                    self.match_widget_rois[match_id] = (
+                        _validate_roi(match_widget_roi, f"{match_id} widget_roi")
+                        if match_widget_roi is not None else None
                     )
                     orientation_value = match.get("orientation", top_orientation)
                     expected_frame_size = _display_frame_size(
@@ -236,6 +242,7 @@ class AnnotationStore:
             "at_ms": row["at_ms"], "selection": row["selection"],
             "frame": row["frame"], "overlay": row["overlay"],
             "roi": self.match_rois[row["match_id"]],
+            "widget_roi": self.match_widget_rois[row["match_id"]],
             "suggested_boxes": json.loads(row["suggested_boxes"]),
             "directions": json.loads(row["directions"]),
             "review_status": row["review_status"],
@@ -259,8 +266,10 @@ class AnnotationStore:
                 )
             """).fetchone()[0] == 1
         return {"kind": self.kind, "review_mode": self.review_mode,
+                "label_assistance": self.label_assistance,
                 "suggestions_available": suggestions_available,
-                "roi": self.roi, "matches": matches,
+                "roi": self.roi, "widget_roi": self.widget_roi,
+                "matches": matches,
                 "context_offsets_ms": (list(CONTEXT_OFFSETS_MS)
                                        if self._ffmpeg and self._videos else []),
                 "context_matches": sorted(self._videos),

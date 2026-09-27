@@ -61,3 +61,64 @@ def test_annotation_store_accepts_declared_full_display_frame(
     _write_oriented_review_queue(tmp_path, (2376, 1080))
 
     assert AnnotationStore(tmp_path).stats()["counts"]["pending"] == 1
+
+
+def test_manual_review_keeps_seeded_legacy_boxes_as_editable_suggestions(
+    tmp_path: Path,
+) -> None:
+    _write_oriented_review_queue(tmp_path, (2376, 1080))
+    manifest_path = tmp_path / "review-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["review_mode"] = "manual"
+    manifest["label_assistance"] = {
+        "source": "prior_human_review",
+        "notice": "Prior boxes are editable suggestions only.",
+    }
+    suggestion = [0.1683502, 0.1, 0.0185185, 0.04]
+    manifest["matches"][0]["samples"][0]["suggested_boxes"] = [suggestion]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    store = AnnotationStore(tmp_path, lease_seconds=60)
+    bootstrap = store.bootstrap()
+    assert bootstrap["review_mode"] == "manual"
+    assert bootstrap["suggestions_available"] is True
+    assert bootstrap["label_assistance"] == manifest["label_assistance"]
+    task = store.claim_next("Reviewer")
+    assert task is not None
+    assert task["review_status"] == "pending"
+    assert task["reviewed_boxes"] is None
+    assert task["suggested_boxes"] == [suggestion]
+
+    edited_box = [0.1683502, 0.1, 0.021, 0.04]
+    saved = store.save(task["id"], "Reviewer", task["version"], "corrected",
+                       [edited_box])
+    assert saved["review_status"] == "corrected"
+    assert saved["reviewed_boxes"] == [edited_box]
+    assert saved["suggested_boxes"] == [suggestion]
+
+
+def test_widget_roi_is_validated_and_exposed_to_annotation_clients(
+    tmp_path: Path,
+) -> None:
+    _write_oriented_review_queue(tmp_path, (2376, 1080))
+    manifest_path = tmp_path / "review-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    widget_roi = [106 / 2376, 0.0, 348 / 2376, 344 / 1080]
+    manifest["widget_roi"] = widget_roi
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    store = AnnotationStore(tmp_path)
+
+    assert store.bootstrap()["widget_roi"] == widget_roi
+    assert store.list_tasks()[0]["widget_roi"] == widget_roi
+
+
+def test_widget_roi_must_be_normalized(tmp_path: Path) -> None:
+    _write_oriented_review_queue(tmp_path, (2376, 1080))
+    manifest_path = tmp_path / "review-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["widget_roi"] = [0.9, 0.0, 0.2, 0.3]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="widget_roi is outside"):
+        AnnotationStore(tmp_path)

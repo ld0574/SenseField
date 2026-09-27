@@ -127,6 +127,35 @@ def _pixel_roi(rect: native.Rect, width: int, height: int) -> tuple[int, int, in
     return x0, y0, x1, y1
 
 
+def _direction_reference(profile: dict[str, Any], width: int, height: int,
+                         detector_area: tuple[int, int, int, int]
+                         ) -> tuple[int, int, int, int]:
+    """Resolve the optional full-frame direction reference for a minimap crop."""
+    rois = profile.get("rois", {})
+    value = rois.get("minimap_direction") if isinstance(rois, dict) else None
+    if value is None:
+        return detector_area
+    if (not isinstance(value, list) or len(value) != 4 or
+            any(not isinstance(item, (int, float)) or isinstance(item, bool)
+                or not math.isfinite(item) for item in value)):
+        raise ValueError("rois.minimap_direction must be a normalized rectangle")
+    x, y, w, h = (float(item) for item in value)
+    if (x < 0 or y < 0 or w <= 0 or h <= 0 or
+            x + w > 1.001 or y + h > 1.001):
+        raise ValueError("rois.minimap_direction is outside the normalized frame")
+    return _reference_pixel_roi(native.Rect(x, y, w, h), width, height)
+
+
+def _reference_pixel_roi(rect: native.Rect, width: int,
+                         height: int) -> tuple[int, int, int, int]:
+    """Round calibrated widget edges to pixels without growing them by 1 px."""
+    x0 = max(0, min(width, math.floor(float(rect.x) * width + 0.5)))
+    y0 = max(0, min(height, math.floor(float(rect.y) * height + 0.5)))
+    x1 = max(x0, min(width, math.floor(float(rect.x + rect.w) * width + 0.5)))
+    y1 = max(y0, min(height, math.floor(float(rect.y + rect.h) * height + 0.5)))
+    return x0, y0, x1, y1
+
+
 def _direction_for(center_x: float, center_y: float,
                    area: tuple[int, int, int, int]) -> int:
     x0, y0, x1, y1 = area
@@ -141,7 +170,9 @@ def _direction_for(center_x: float, center_y: float,
     return 3 if dy < 0 else 4
 
 
-def _bbox_dict(box: Any, width: int, height: int, area: tuple[int, int, int, int]) -> dict[str, Any]:
+def _bbox_dict(box: Any, width: int, height: int,
+               area: tuple[int, int, int, int],
+               direction_reference: tuple[int, int, int, int]) -> dict[str, Any]:
     x0, y0, x1, y1, score = [float(value) for value in box]
     crop_x, crop_y = area[:2]
     full_x0, full_y0 = crop_x + x0, crop_y + y0
@@ -155,7 +186,8 @@ def _bbox_dict(box: Any, width: int, height: int, area: tuple[int, int, int, int
         ],
         "confidence": round(score, 6),
         "direction": {0: None, 1: "left", 2: "right", 3: "up", 4: "down"}[
-            _direction_for((full_x0 + full_x1) * 0.5, (full_y0 + full_y1) * 0.5, area)
+            _direction_for((full_x0 + full_x1) * 0.5,
+                           (full_y0 + full_y1) * 0.5, direction_reference)
         ],
     }
 
@@ -312,6 +344,8 @@ class FrozenReplay:
 
         frame_array = np.frombuffer(rgba, dtype=np.uint8).reshape((height, width, 4))
         area = _pixel_roi(frame_profile.minimap, width, height)
+        direction_reference = _direction_reference(
+            self.profile_json, width, height, area)
         x0, y0, x1, y1 = area
         detections = []
         if minimap_ready:
@@ -351,7 +385,8 @@ class FrozenReplay:
             full_x0, full_y0 = x0 + x_min, y0 + y_min
             full_x1, full_y1 = x0 + x_max, y0 + y_max
             direction = _direction_for(
-                (full_x0 + full_x1) * 0.5, (full_y0 + full_y1) * 0.5, area
+                (full_x0 + full_x1) * 0.5, (full_y0 + full_y1) * 0.5,
+                direction_reference,
             )
             observations.append(native.Observation(
                 2, direction,
@@ -361,7 +396,9 @@ class FrozenReplay:
                 ),
                 score, timestamp_ms,
             ))
-            detection_dicts.append(_bbox_dict(detection, width, height, area))
+            detection_dicts.append(
+                _bbox_dict(detection, width, height, area,
+                           direction_reference))
 
         observations.sort(key=lambda item: float(item.confidence), reverse=True)
         observations = observations[:64]

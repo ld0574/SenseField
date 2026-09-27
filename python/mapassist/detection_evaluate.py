@@ -13,6 +13,8 @@ import json
 import sys
 from pathlib import Path
 
+from .roi_safety import normalized_roi
+
 
 FINAL_STATUSES = {"accepted", "corrected", "negative", "skip", "excluded"}
 DIRECTIONS = ("left", "right", "up", "down")
@@ -180,6 +182,17 @@ def _direction(box: list[float], roi: list[float]) -> str | None:
     return direction
 
 
+def _direction_reference_roi(data: dict, match: dict,
+                             detector_roi: list[float]) -> list[float]:
+    """Use the measured widget boundary for direction, falling back for old queues."""
+    value = match.get("widget_roi")
+    if value is None:
+        value = data.get("widget_roi")
+    if value is None:
+        return detector_roi
+    return normalized_roi(value, "direction/widget roi")
+
+
 def _empty_metrics() -> dict:
     return {"frames": 0, "positive_frames": 0, "negative_frames": 0,
             "exact_frames": 0, "tp": 0, "fp": 0, "fn": 0,
@@ -287,6 +300,7 @@ def evaluate_review(review_manifest: Path, iou_threshold: float = 0.5,
                 match_roi[3] <= 0 or match_roi[0] + match_roi[2] > 1.000001 or
                 match_roi[1] + match_roi[3] > 1.000001):
             raise ValueError(f"{match_id} roi is outside the normalized frame")
+        direction_roi = _direction_reference_roi(data, match, match_roi)
         match_metrics = by_match.setdefault(match_id, _empty_metrics())
         split_metrics = splits.setdefault(split, _empty_metrics())
         for sample in match.get("samples", []):
@@ -322,7 +336,7 @@ def evaluate_review(review_manifest: Path, iou_threshold: float = 0.5,
             else:
                 truth = []
             if stored_directions is None:
-                predicted_directions = [_direction(box, match_roi) for box in predicted]
+                predicted_directions = [_direction(box, direction_roi) for box in predicted]
             else:
                 if (not isinstance(stored_directions, list) or
                         len(stored_directions) != len(predicted) or
@@ -336,7 +350,7 @@ def evaluate_review(review_manifest: Path, iou_threshold: float = 0.5,
             ambiguous_pairs = []
             for prediction, ground_truth, _ in pairs:
                 truth_direction, ambiguous, dx, dy = _direction_state(
-                    truth[ground_truth], match_roi)
+                    truth[ground_truth], direction_roi)
                 if ambiguous:
                     ambiguous_pairs.append((prediction, ground_truth))
                     direction_ambiguities.append({
@@ -353,11 +367,12 @@ def evaluate_review(review_manifest: Path, iou_threshold: float = 0.5,
                 elif truth_direction is not None:
                     directed.append((prediction, ground_truth))
             correct_directions = sum(
-                predicted_directions[prediction] == _direction(truth[ground_truth], match_roi)
+                predicted_directions[prediction] == _direction(
+                    truth[ground_truth], direction_roi)
                 for prediction, ground_truth in directed
             )
             for prediction, ground_truth in directed:
-                truth_direction = _direction(truth[ground_truth], match_roi)
+                truth_direction = _direction(truth[ground_truth], direction_roi)
                 if predicted_directions[prediction] != truth_direction:
                     direction_failures.append({
                         "match_id": match_id,

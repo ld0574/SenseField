@@ -15,7 +15,8 @@ from mapassist.native import Rect
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "training"))
 from replay_yolox_ncnn import (  # noqa: E402
-    FrozenReplay, _direction_for, _pixel_roi, _validate_replay_profile, run,
+    FrozenReplay, _direction_for, _direction_reference, _pixel_roi,
+    _validate_replay_profile, run,
 )
 
 
@@ -43,6 +44,21 @@ def test_android_roi_pixel_rounding_and_direction() -> None:
     assert _direction_for(10, 50, area) == 1
     assert _direction_for(50, 50, area) == 2
     assert _direction_for(25.5, 40.5, area) == 0
+
+
+def test_explicit_widget_reference_overrides_expanded_crop_center() -> None:
+    width, height = 2376, 1080
+    safe_crop = (79, 0, 481, 371)
+    widget = [106 / width, 0, 348 / width, 344 / height]
+    reference = _direction_reference({"rois": {"minimap_direction": widget}},
+                                     width, height, safe_crop)
+
+    assert safe_crop == (79, 0, 481, 371)
+    assert reference == (106, 0, 454, 344)
+    # The point is below the crop-centre dead zone but inside the widget-centre
+    # dead zone, so expanding the crop must not manufacture an "up" event.
+    assert _direction_for(280, 157, safe_crop) == 3
+    assert _direction_for(280, 157, reference) == 0
 
 
 def test_replay_requires_android_yolox_profile() -> None:

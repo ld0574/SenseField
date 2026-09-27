@@ -143,6 +143,9 @@ def build(manifest: Path, output: Path, samples_per_match: int = 100,
     if data.get("schema_version") != 1:
         raise ValueError("Expected source manifest schema_version 1")
     top_roi = _roi(data.get("roi"), "roi")
+    top_widget_value = data.get("widget_roi")
+    top_widget_roi = (_roi(top_widget_value, "widget_roi")
+                      if top_widget_value is not None else None)
     top_orientation = from_manifest(data)
     excluded_by_match, exclusion_sha256 = _exclusions(exclude_manifest)
     matches = data.get("matches")
@@ -170,6 +173,8 @@ def build(manifest: Path, output: Path, samples_per_match: int = 100,
         ),
         "matches": [],
     }
+    if top_widget_roi is not None:
+        exported["widget_roi"] = top_widget_roi
     if top_orientation is not None:
         exported["orientation"] = top_orientation
     summary = {split: {"matches": 0, "samples": 0} for split in SPLITS}
@@ -198,6 +203,9 @@ def build(manifest: Path, output: Path, samples_per_match: int = 100,
         if not available_intervals:
             raise ValueError(f"No sampling time remains after exclusions for {match_id}")
         match_roi = _roi(match.get("roi", top_roi), f"roi for {match_id}")
+        widget_value = match.get("widget_roi", top_widget_roi)
+        match_widget_roi = (_roi(widget_value, f"widget_roi for {match_id}")
+                            if widget_value is not None else None)
         match_orientation = resolve(
             video, from_manifest(match, f"{match_id}") or top_orientation)
 
@@ -239,6 +247,8 @@ def build(manifest: Path, output: Path, samples_per_match: int = 100,
         }
         if "roi" in match:
             exported_match["roi"] = match_roi
+        if "widget_roi" in match and match_widget_roi is not None:
+            exported_match["widget_roi"] = match_widget_roi
         exported["matches"].append(exported_match)
         summary[split]["matches"] += 1
         summary[split]["samples"] += len(samples)

@@ -78,7 +78,8 @@ def _prediction_commitment(metadata: Path, video: Path) -> tuple[int, int, dict]
 
 
 def build(video: Path, prediction_metadata: Path, output: Path, match_id: str,
-          roi: list[float], sample_count: int = 60) -> dict:
+          roi: list[float], sample_count: int = 60,
+          widget_roi: list[float] | None = None) -> dict:
     video = video.resolve()
     prediction_metadata = prediction_metadata.resolve()
     if not video.is_file():
@@ -88,6 +89,8 @@ def build(video: Path, prediction_metadata: Path, output: Path, match_id: str,
     if not match_id or any(character in match_id for character in "/\\"):
         raise ValueError("match_id must be a nonempty path-safe name")
     roi = _normalized_roi(roi)
+    if widget_roi is not None:
+        widget_roi = _normalized_roi(widget_roi)
     orientation = resolve(video)
     fps, frame_count, commitment = _prediction_commitment(
         prediction_metadata, video)
@@ -150,6 +153,8 @@ def build(video: Path, prediction_metadata: Path, output: Path, match_id: str,
             "samples": samples,
         }],
     }
+    if widget_roi is not None:
+        manifest["widget_roi"] = widget_roi
     (output / "review-manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -179,10 +184,14 @@ def main() -> None:
     parser.add_argument("--sample-count", type=int, default=60)
     parser.add_argument("--roi", type=float, nargs=4, required=True,
                         metavar=("X", "Y", "WIDTH", "HEIGHT"))
+    parser.add_argument("--widget-roi", type=float, nargs=4,
+                        metavar=("X", "Y", "WIDTH", "HEIGHT"),
+                        help="Optional normalized minimap widget/direction reference")
     args = parser.parse_args()
     try:
         result = build(args.video, args.prediction_metadata, args.output,
-                       args.match_id, args.roi, args.sample_count)
+                       args.match_id, args.roi, args.sample_count,
+                       args.widget_roi)
         print(json.dumps(result, ensure_ascii=False, indent=2))
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
         print(f"error: {error}", file=sys.stderr)

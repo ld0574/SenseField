@@ -49,6 +49,9 @@ def combine(manifests: list[Path], output: Path,
         elif current_category != category:
             raise ValueError("Detection categories differ")
         default_roi = data.get("roi")
+        default_widget_value = data.get("widget_roi")
+        default_widget_roi = (_roi(default_widget_value, f"{manifest} widget_roi")
+                              if default_widget_value is not None else None)
         default_orientation = from_manifest(data, str(manifest))
         orientations.append(default_orientation)
         for source in data["matches"]:
@@ -65,6 +68,9 @@ def combine(manifests: list[Path], output: Path,
             if prior_video != video:
                 raise ValueError(f"Match id {match_id} refers to different recordings")
             roi = _roi(source.get("roi", default_roi), f"{match_id} roi")
+            widget_value = source.get("widget_roi", default_widget_roi)
+            widget_roi = (_roi(widget_value, f"{match_id} widget_roi")
+                          if widget_value is not None else None)
             match_orientation = from_manifest(source, f"{match_id}") or default_orientation
             split = split_overrides.get(match_id, source.get("split"))
             if split not in SPLITS:
@@ -73,9 +79,11 @@ def combine(manifests: list[Path], output: Path,
                 used_overrides.add(match_id)
             record = grouped.setdefault(video, {
                 "id": match_id, "video": str(video), "split": split,
-                "roi": roi, "orientation": match_orientation, "frames": {},
+                "roi": roi, "widget_roi": widget_roi,
+                "orientation": match_orientation, "frames": {},
             })
             if (record["id"] != match_id or record["roi"] != roi or
+                    record["widget_roi"] != widget_roi or
                     record["split"] != split or
                     record["orientation"] != match_orientation):
                 raise ValueError(f"Metadata differs for repeated recording {match_id}")
@@ -94,12 +102,15 @@ def combine(manifests: list[Path], output: Path,
         raise ValueError(f"Split overrides did not match: {', '.join(unused)}")
     matches = []
     for record in sorted(grouped.values(), key=lambda item: item["id"]):
-        matches.append({
+        exported = {
             "id": record["id"], "video": record["video"],
             "split": record["split"], "roi": record["roi"],
             "frames": [{"at_ms": timestamp, "boxes": boxes}
                        for timestamp, boxes in sorted(record["frames"].items())],
-        })
+        }
+        if record["widget_roi"] is not None:
+            exported["widget_roi"] = record["widget_roi"]
+        matches.append(exported)
         if record["orientation"] is not None:
             matches[-1]["orientation"] = record["orientation"]
     result = {"schema_version": 1, "category": category, "matches": matches}

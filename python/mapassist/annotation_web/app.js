@@ -81,11 +81,16 @@ async function bootstrap() {
   });
   const assistedManual = state.bootstrap.review_mode === "manual" &&
     state.bootstrap.suggestions_available;
-  const mode = assistedManual ? "模型辅助人工标注" :
+  const mode = assistedManual ? "建议框辅助人工标注" :
     ({blind: "盲标测试", manual: "人工框标注"})[
       state.bootstrap.review_mode
     ] || "建议框复核";
   $("#datasetLabel").textContent = `${state.bootstrap.kind} · ${mode} · ${state.bootstrap.stats.total} 张图片`;
+  const assistanceNotice = $("#labelAssistanceNotice");
+  const noticeText = typeof state.bootstrap.label_assistance?.notice === "string" ?
+    state.bootstrap.label_assistance.notice.trim() : "";
+  assistanceNotice.textContent = noticeText;
+  assistanceNotice.classList.toggle("hidden", !noticeText);
   const accept = $("#acceptButton");
   accept.querySelector("strong").textContent = "建议框正确";
   accept.querySelector("small").textContent = "直接接受当前建议";
@@ -460,7 +465,27 @@ function draw() {
   context.clearRect(0, 0, canvas.width, canvas.height);
   context.imageSmoothingEnabled = state.view !== "minimap";
   context.drawImage(state.image, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  drawWidgetBoundary();
   state.boxes.forEach((box, index) => drawBox(box, index === state.selected));
+}
+
+function drawWidgetBoundary() {
+  const widget = state.task?.widget_roi || state.bootstrap?.widget_roi;
+  if (!widget) return;
+  const view = viewRect();
+  const [x, y, width, height] = widget;
+  const scale = canvas.width / Math.max(1, canvas.clientWidth);
+  context.save();
+  context.strokeStyle = "#4de1e8";
+  context.lineWidth = 2 * scale;
+  context.setLineDash([6 * scale, 4 * scale]);
+  context.strokeRect(
+    (x - view.x) / view.w * canvas.width,
+    (y - view.y) / view.h * canvas.height,
+    width / view.w * canvas.width,
+    height / view.h * canvas.height,
+  );
+  context.restore();
 }
 
 function drawBox(box, selected) {
@@ -478,10 +503,12 @@ function drawBox(box, selected) {
   context.strokeRect(x, y, w, h);
   if (selected) {
     const radius = 6 * scale;
-    context.beginPath();
-    context.arc(x + w, y + h, radius, 0, Math.PI * 2);
     context.fillStyle = "#f6c85f";
-    context.fill();
+    for (const [handleX, handleY] of [[x + w, y + h], [x + w, y + h / 2]]) {
+      context.beginPath();
+      context.arc(handleX, handleY, radius, 0, Math.PI * 2);
+      context.fill();
+    }
   }
 }
 
@@ -544,6 +571,8 @@ function hitBox(point) {
     const right = (box[0] + box[2] - view.x) / view.w * canvas.width;
     const bottom = (box[1] + box[3] - view.y) / view.h * canvas.height;
     if (Math.hypot(point.xCanvas - right, point.yCanvas - bottom) <= handle) return {index, mode: "resize"};
+    const middle = (box[1] + box[3] / 2 - view.y) / view.h * canvas.height;
+    if (Math.hypot(point.xCanvas - right, point.yCanvas - middle) <= handle) return {index, mode: "resize-x"};
     if (point.x >= box[0] && point.x <= box[0] + box[2] && point.y >= box[1] && point.y <= box[1] + box[3]) return {index, mode: "move"};
   }
   return null;
@@ -581,6 +610,8 @@ canvas.addEventListener("pointermove", (event) => {
   if (state.drag.mode === "move") {
     box[0] = clamp(box[0] + point.x - state.drag.start.x, bounds.x, bounds.x + bounds.w - box[2]);
     box[1] = clamp(box[1] + point.y - state.drag.start.y, bounds.y, bounds.y + bounds.h - box[3]);
+  } else if (state.drag.mode === "resize-x") {
+    box[2] = clamp(box[2] + point.x - state.drag.start.x, .002, bounds.x + bounds.w - box[0]);
   } else {
     box[2] = clamp(box[2] + point.x - state.drag.start.x, .002, bounds.x + bounds.w - box[0]);
     box[3] = clamp(box[3] + point.y - state.drag.start.y, .002, bounds.y + bounds.h - box[1]);

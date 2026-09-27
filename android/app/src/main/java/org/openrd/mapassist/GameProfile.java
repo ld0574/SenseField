@@ -162,10 +162,18 @@ final class GameProfile {
             throw new JSONException("Unsupported GameProfile schema");
         }
         JSONObject areas = data.getJSONObject("rois");
-        float[] rois = new float[12];
+        // The final rectangle is optional so older profiles keep following the
+        // detector crop, including a dynamically resolved locator crop.
+        float[] rois = new float[16];
         fillRect(rois, 0, areas.getJSONArray("minimap"));
         fillRect(rois, 4, areas.getJSONArray("ping_area"));
         fillRect(rois, 8, areas.getJSONArray("center_mask"));
+        if (areas.has("minimap_direction") && !areas.isNull("minimap_direction")) {
+            fillRect(rois, 12, areas.getJSONArray("minimap_direction"));
+            if (rois[14] <= 0 || rois[15] <= 0) {
+                throw new JSONException("minimap_direction must have positive dimensions");
+            }
+        }
         if (preferences.contains("center_percent")) {
             int centerPercent = preferences.getInt("center_percent", 30);
             float center = Math.max(0.10f, Math.min(0.60f, centerPercent / 100f));

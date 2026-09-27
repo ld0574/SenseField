@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define MA_API_VERSION 5
+#define MA_API_VERSION 6
 
 enum ma_kind {
     MA_MAIN_ENEMY = 1,
@@ -44,6 +44,8 @@ typedef struct ma_profile {
     float main_max_height_ratio;
     float main_min_aspect;
     float template_threshold;
+    /* Optional direction reference; zero-sized preserves the minimap ROI behavior. */
+    ma_rect minimap_direction;
 } ma_profile;
 
 typedef struct ma_template {

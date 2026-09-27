@@ -17,6 +17,7 @@ from mapassist.detection_evaluate import _direction, _direction_state, _iou, _ma
 from mapassist.roi_safety import (
     assert_coco_boxes_within_images,
     assert_coco_roi_safe,
+    normalized_roi,
 )
 
 if __package__:
@@ -61,7 +62,9 @@ def _read_evaluation_annotations(data_dir: Path, split: str) -> tuple[Path, dict
 def _fixed_metrics(predictions: dict[int, list[tuple[float, list[float]]]],
                    truths: dict[int, list[list[float]]], confidence: float,
                    iou_threshold: float,
-                   image_sizes: dict[int, tuple[int, int]]) -> tuple[dict, list[dict]]:
+                   image_sizes: dict[int, tuple[int, int]],
+                   direction_rois: dict[int, list[float]] | None = None
+                   ) -> tuple[dict, list[dict]]:
     tp = fp = fn = 0
     directed_matches = correct_directions = ambiguous_directions = 0
     per_image = []
@@ -70,7 +73,7 @@ def _fixed_metrics(predictions: dict[int, list[tuple[float, list[float]]]],
         pairs = _match_boxes(boxes, ground_truth, iou_threshold)
         matched = len(pairs)
         width, height = image_sizes[image_id]
-        roi = [0.0, 0.0, 1.0, 1.0]
+        roi = (direction_rois or {}).get(image_id, [0.0, 0.0, 1.0, 1.0])
         image_directed = image_correct = image_ambiguous = 0
         for prediction_index, truth_index, _ in pairs:
             prediction = boxes[prediction_index]
@@ -125,6 +128,7 @@ def _direction_event_metrics(
     confidence: float,
     iou_threshold: float,
     image_sizes: dict[int, tuple[int, int]],
+    direction_rois: dict[int, list[float]] | None = None,
 ) -> dict:
     """Score the unique cardinal directions present in each frame.
 
@@ -138,10 +142,11 @@ def _direction_event_metrics(
     gated_tp = gated_fp = gated_fn = 0
     truth_boxes = usable_truth_boxes = ambiguous_truth_boxes = 0
     center_truth_boxes = truth_events = 0
-    roi = [0.0, 0.0, 1.0, 1.0]
+    direction_rois = direction_rois or {}
 
     for image_id, ground_truth in truths.items():
         width, height = image_sizes[image_id]
+        roi = direction_rois.get(image_id, [0.0, 0.0, 1.0, 1.0])
         ground_truth_by_direction: dict[str, list[list[float]]] = {}
         for truth in ground_truth:
             truth_boxes += 1
@@ -201,7 +206,28 @@ def _direction_event_metrics(
         "ambiguous_truth_boxes": ambiguous_truth_boxes,
         "center_truth_boxes": center_truth_boxes,
         "truth_events": truth_events,
+        "direction_reference_images": len(direction_rois),
     }
+
+
+def _read_image_direction_rois(annotation: dict) -> dict[int, list[float]]:
+    """Read widget references normalized to each COCO image/crop."""
+    result = {}
+    for image in annotation.get("images", []):
+        value = image.get("direction_roi")
+        if value is None:
+            continue
+        image_id = image.get("id")
+        if (not isinstance(image_id, int) or isinstance(image_id, bool) or
+                not isinstance(value, list)):
+            raise ValueError("COCO image direction_roi must be a normalized rectangle")
+        try:
+            result[image_id] = normalized_roi(value, "COCO image direction_roi")
+        except ValueError as error:
+            raise ValueError(
+                "COCO image direction_roi must be a finite normalized rectangle"
+            ) from error
+    return result
 
 
 def main() -> None:
@@ -261,11 +287,14 @@ def main() -> None:
         item["id"]: (int(item["width"]), int(item["height"]))
         for item in annotation["images"]
     }
+    direction_rois = _read_image_direction_rois(annotation)
     metrics, per_image = _fixed_metrics(
-        predictions, truths, confidence, args.iou_threshold, image_sizes
+        predictions, truths, confidence, args.iou_threshold, image_sizes,
+        direction_rois,
     )
     direction_events = _direction_event_metrics(
-        predictions, truths, confidence, args.iou_threshold, image_sizes
+        predictions, truths, confidence, args.iou_threshold, image_sizes,
+        direction_rois,
     )
 
     if args.split == "val" and args.confidence is None:

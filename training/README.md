@@ -16,7 +16,9 @@
 
 `video8` 曾在查看标签或运行预测前登记为独立 test。随后复核界面发现固定 ROI 截掉右侧头像，旧流程又把标注限制在 ROI 内，因此 119 张／215 框的旧值（precision 58.84%、recall 80.47%、F1 67.98%、方向正确率 96.86%）仅是受截断污染的历史 crop-relative 数值，不再是完整小地图的模型效果或独立留出结论。该固定 ROI 同样用于其他录像尺寸，问题不能只归因于 video8。当前 Android ROI 和权重保持不变；新裁剪分布需要重标、重训并用新的真人对局评测。详见 [`validation/VIDEO8.md`](../validation/VIDEO8.md)。
 
-敌人重标当前使用 `data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi`：与 v1 相同的 120 个时间点，帧和 overlay 均为 2376×1080，全部待标。小地图控件 `[106,0,454,344]` 外扩 27 px 后用作安全裁剪 `[79,0,481,371]`；标注仍只包括图标中心位于控件内的敌方英雄。v2 因 crop 与全屏 manifest 坐标错配而无效。v3 尚未完成标注，也未用于敌人检测器重训。
+敌人重标当前使用 `data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi`：与 v1 相同的 120 个时间点，帧和 overlay 均为 2376×1080；发现首轮坐标转换错误后已全部重新置为待标，当前正在逐帧重标。小地图控件 `[106,0,454,344]` 外扩 27 px 后用作安全裁剪 `[79,0,481,371]`；标注仍只包括图标中心位于控件内的敌方英雄。v2 因 crop 与全屏 manifest 坐标错配而无效。v3 尚未完成并导出，也未用于敌人检测器重训。
+
+安全裁剪负责检测覆盖，方向中心仍由真实控件框决定。标注清单用 `widget_roi` 保存真实控件；裁剪 COCO 数据集时，该框会映射到每张图像的局部 `direction_roi`，框级方向和方向事件指标都读取它。新 Android profile 应在 `rois.minimap_direction` 配置同一显示布局的方向参考；旧 profile 没有此项时仍使用 `rois.minimap`，以保持现有 profile 的运行结果。当前 hard-FP profile／权重仍是 legacy crop，不能直接用于扩大后的裁剪。
 
 使用 video1–5 和 video7 的 708 张 train 帧做困难误报加权实验。原冻结模型在这些人工复核帧上产生 115 个 FP，其中 video7 占 63 个。重复 98 张含 FP 的完整图片后低学习率微调，video6 开发验证从 90.50% precision / 72.65% recall / 80.60% F1 变为 90.27% / 74.89% / 81.86%。这些 video6 数值只描述 legacy fixed-ROI crop 内部开发对照；目标边界完整性未验证，不能代表完整小地图覆盖或门槛表现。checkpoint `f7176b7ea9de65fb0f1fe4262514992fdda2ed8691a7a87851a2d27a910c7cfb` 已接入本机固定 ROI Android 开发候选；事件级 `set` 与 `iou_gated` 的旧 crop 指标曾达到 video6 开发门槛，但框级 recall 仍低于 80%。APK 公共默认仍关闭检测器，候选还需修正 ROI、按新裁剪重训，并用新独立真人对局和实体机验收。详细边界见 [`validation/MODEL_PIPELINE.md`](../validation/MODEL_PIPELINE.md) 和 [`validation/HARD_NEGATIVES.md`](../validation/HARD_NEGATIVES.md)。
 

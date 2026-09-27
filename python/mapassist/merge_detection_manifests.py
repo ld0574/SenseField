@@ -52,6 +52,9 @@ def merge(manifests: list[Path], output: Path,
                 f"Detection categories differ: {category} and {current_category}"
             )
         default_roi = data.get("roi")
+        default_widget_value = data.get("widget_roi")
+        default_widget_roi = (_roi(default_widget_value, f"{manifest} widget_roi")
+                              if default_widget_value is not None else None)
         default_orientation = from_manifest(data, str(manifest))
         orientations.append(default_orientation)
         source_matches = data.get("matches")
@@ -77,10 +80,17 @@ def merge(manifests: list[Path], output: Path,
             if match_id in split_overrides:
                 used_overrides.add(match_id)
             roi = _roi(source.get("roi", default_roi), f"{match_id} roi")
+            widget_value = source.get("widget_roi", default_widget_roi)
+            widget_roi = (_roi(widget_value, f"{match_id} widget_roi")
+                          if widget_value is not None else None)
             exported = copy.deepcopy(source)
             exported["video"] = str(video)
             exported["split"] = split
             exported["roi"] = roi
+            if widget_roi is not None:
+                exported["widget_roi"] = widget_roi
+            else:
+                exported.pop("widget_roi", None)
             if (exported.get("orientation") is None and
                     default_orientation is not None):
                 exported["orientation"] = default_orientation

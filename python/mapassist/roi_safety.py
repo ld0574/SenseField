@@ -9,6 +9,25 @@ DEFAULT_ROI_EDGE_TOLERANCE_PX = 1.0
 ROI_BOUNDARY_AUDIT_SCHEMA_VERSION = 1
 
 
+def normalized_roi(value: object, label: str = "ROI") -> list[float]:
+    """Validate and normalize a finite, positive rectangle in frame coordinates."""
+    if (not isinstance(value, list) or len(value) != 4 or
+            any(not isinstance(item, (int, float)) or isinstance(item, bool)
+                for item in value)):
+        raise ValueError(f"{label} must be normalized [x, y, width, height]")
+    try:
+        result = [float(item) for item in value]
+    except (OverflowError, ValueError) as error:
+        raise ValueError(f"{label} must contain finite normalized numbers") from error
+    if any(not isfinite(item) for item in result):
+        raise ValueError(f"{label} must contain finite normalized numbers")
+    x, y, width, height = result
+    if (x < 0 or y < 0 or width <= 0 or height <= 0 or
+            x + width > 1.000001 or y + height > 1.000001):
+        raise ValueError(f"{label} is outside the normalized frame")
+    return result
+
+
 def _supported_roi_boundary_audit(document: dict) -> dict | None:
     """Return a complete audit written in the schema this exporter supports."""
     info = document.get("info", {})

@@ -139,6 +139,29 @@ def _roi(value: object, label: str) -> list[float]:
     return result
 
 
+def _direction_roi_for_crop(widget_roi: list[float], frame_width: int,
+                            frame_height: int,
+                            crop: tuple[int, int, int, int]) -> list[float]:
+    """Map a full-frame widget reference into one exported crop's coordinates."""
+    crop_x, crop_y, crop_right, crop_bottom = crop
+    crop_width = crop_right - crop_x
+    crop_height = crop_bottom - crop_y
+    widget_x = widget_roi[0] * frame_width
+    widget_y = widget_roi[1] * frame_height
+    widget_right = (widget_roi[0] + widget_roi[2]) * frame_width
+    widget_bottom = (widget_roi[1] + widget_roi[3]) * frame_height
+    if (widget_x < crop_x - 1e-6 or widget_y < crop_y - 1e-6 or
+            widget_right > crop_right + 1e-6 or
+            widget_bottom > crop_bottom + 1e-6):
+        raise ValueError("widget_roi must be fully contained in the detector crop")
+    return [
+        (widget_x - crop_x) / crop_width,
+        (widget_y - crop_y) / crop_height,
+        (widget_right - widget_x) / crop_width,
+        (widget_bottom - widget_y) / crop_height,
+    ]
+
+
 def export(manifest: Path, output: Path, crop_roi: bool = False,
            locator: Path | None = None, library: Path | None = None) -> dict:
     manifest = manifest.resolve()
@@ -155,6 +178,9 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
     default_roi_value = data.get("roi")
     default_roi = (_roi(default_roi_value, "Detection manifest roi")
                    if default_roi_value is not None else None)
+    default_widget_value = data.get("widget_roi")
+    default_widget_roi = (_roi(default_widget_value, "Detection manifest widget_roi")
+                          if default_widget_value is not None else None)
     default_orientation = from_manifest(data)
     if crop_roi and locator is None and default_roi is None and not all(
             isinstance(match, dict) and match.get("roi") is not None for match in matches
@@ -165,7 +191,7 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
     adaptive_requested = locator is not None
 
     prepared: dict[str, list[tuple[str, Path, int, list[list[float]],
-                                  list[float] | None, int]]] = {
+                                  list[float] | None, list[float] | None, int]]] = {
         split: [] for split in SPLITS
     }
     seen_ids: set[str] = set()
@@ -197,6 +223,9 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
         match_roi = None
         if crop_roi and not adaptive_requested:
             match_roi = _roi(match.get("roi", default_roi), f"{match_id} roi")
+        widget_roi_value = match.get("widget_roi", default_widget_roi)
+        match_widget_roi = (_roi(widget_roi_value, f"{match_id} widget_roi")
+                            if widget_roi_value is not None else None)
         match_orientation = resolve(
             video, from_manifest(match, f"{match_id}") or default_orientation)
         seen_times: set[int] = set()
@@ -210,7 +239,7 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
                 raise ValueError(f"Duplicate frame time in {match_id}: {at_ms}")
             seen_times.add(at_ms)
             prepared[split].append((match_id, video, at_ms, _boxes(frame), match_roi,
-                                    rotation(match_orientation)))
+                                    match_widget_roi, rotation(match_orientation)))
 
     # Validate all metadata before writing output so bad splits do not produce partial datasets.
     adaptive = _AdaptiveCropper(locator, library) if locator is not None else None
@@ -230,7 +259,8 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
             split_name = SPLIT_DIRS[split]
             split_dir = output / split_name
             split_dir.mkdir(parents=True, exist_ok=True)
-            for match_id, video, at_ms, boxes, roi, display_rotation in frames:
+            for (match_id, video, at_ms, boxes, roi, widget_roi,
+                 display_rotation) in frames:
                 filename = f"{match_id}_{at_ms:09d}.png"
                 frame_path = split_dir / filename
                 full_width, full_height = extract(
@@ -298,8 +328,14 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
                     width = crop_right - crop_x
                     height = crop_bottom - crop_y
                 image_id = len(images) + 1
-                images.append({"id": image_id, "file_name": filename,
-                               "width": width, "height": height})
+                image_record = {"id": image_id, "file_name": filename,
+                                "width": width, "height": height}
+                if widget_roi is not None:
+                    image_record["direction_roi"] = _direction_roi_for_crop(
+                        widget_roi, full_width, full_height,
+                        (crop_x, crop_y, crop_x + width, crop_y + height),
+                    )
+                images.append(image_record)
                 if not boxes:
                     negative_images += 1
                 for x, y, w, h in boxes:
@@ -319,8 +355,16 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
             coco = {"images": images, "annotations": annotations,
                     "categories": [{"id": 1, "name": category,
                                     "supercategory": "game"}]}
-            if crop_roi or adaptive is not None:
+            if default_widget_roi is not None or any(
+                    match[5] is not None for match in frames):
                 coco["info"] = {
+                    "direction_reference": (
+                        "Per-image direction_roi is normalized to the exported image "
+                        "and identifies the minimap widget boundary."
+                    ),
+                }
+            if crop_roi or adaptive is not None:
+                coco.setdefault("info", {}).update({
                     "roi_boundary_audit": {
                         "schema_version": 1,
                         "edge_tolerance_px": DEFAULT_ROI_EDGE_TOLERANCE_PX,
@@ -336,7 +380,7 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
                             "reported separately because the source cannot be expanded."
                         ),
                     },
-                }
+                })
             if adaptive is not None:
                 coco.setdefault("info", {}).update({
                     "adaptive_crop": adaptive.provenance(),

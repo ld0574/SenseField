@@ -30,6 +30,7 @@ class Profile(C.Structure):
         ("main_max_height_ratio", C.c_float),
         ("main_min_aspect", C.c_float),
         ("template_threshold", C.c_float),
+        ("minimap_direction", Rect),
     ]
 
 
@@ -157,7 +158,8 @@ def _rect(values: list[float]) -> Rect:
     if len(values) != 4 or any(not math.isfinite(value) or value < 0 or value > 1
                                for value in values):
         raise ValueError(f"Invalid normalized rectangle: {values}")
-    if values[0] + values[2] > 1.001 or values[1] + values[3] > 1.001:
+    if (values[2] <= 0 or values[3] <= 0 or
+            values[0] + values[2] > 1.001 or values[1] + values[3] > 1.001):
         raise ValueError(f"Rectangle outside frame: {values}")
     return Rect(*values)
 
@@ -190,6 +192,8 @@ def read_profile(path: Path) -> tuple[Profile, dict[str, Any]]:
         _bounded(thresholds["main_max_height_ratio"], 0, 1),
         _bounded(thresholds["main_min_aspect"], 1, 100),
         _bounded(thresholds["template_match"], 0, 1),
+        (_rect(rois["minimap_direction"])
+         if "minimap_direction" in rois else Rect()),
     )
     return profile, data
 

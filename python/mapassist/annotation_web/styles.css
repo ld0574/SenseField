@@ -127,6 +127,7 @@ kbd { padding: 1px 5px; border: 1px solid #4a5968; border-bottom-width: 2px; bor
 .tool-group button { padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel-2); cursor: pointer; color: var(--muted); font-size: 11px; }
 .box-counter { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .roi-boundary-warning { margin: 4px 0 12px; padding: 9px 12px; border: 1px solid #9a6330; border-radius: 8px; background: #2a1b0e; color: #ffd39b; font-size: 12px; line-height: 1.5; }
+.label-assistance-notice { margin: 0 0 15px; padding: 10px 12px; border: 1px solid #65542d; border-radius: 8px; background: #241f12; color: #f1d78c; font-size: 11px; line-height: 1.55; }
 
 .decision-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
 .decision { min-height: 83px; position: relative; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: 11px 10px 10px 37px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); cursor: pointer; text-align: left; }

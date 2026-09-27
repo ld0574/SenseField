@@ -146,6 +146,7 @@
     </section>
 
     <aside class="info-panel panel">
+      <p id="labelAssistanceNotice" class="label-assistance-notice hidden" role="note"></p>
       <section>
         <span class="kicker">GUIDE</span>
         <h2>标注规则</h2>
@@ -155,12 +156,13 @@
           <li><span class="guide-number">3</span><div><strong>排除地图符号</strong><p>防御塔、路径、基地、技能特效和信号圈都不标。</p></div></li>
           <li><span class="guide-number">4</span><div><strong>识别对局边界</strong><p>准备、选人、加载和结算画面选择“非对局界面”，不要当负样本。</p></div></li>
           <li><span class="guide-number">5</span><div><strong>检查小地图裁剪边缘</strong><p>目标碰到裁剪框边缘时可能已被切掉；无法确认完整目标请选“无法判断”，不能当完整框或负样本。</p></div></li>
-          <li><span class="guide-number">6</span><div><strong>按图标中心判断范围</strong><p>只标图标中心位于小地图控件内的敌方英雄；忽略安全边距里的队伍状态头像和地图外 HUD。框可以跨出控件边界，只要图标中心在地图内。</p></div></li>
+          <li><span class="guide-number">6</span><div><strong>按图标中心判断范围</strong><p>只标图标中心位于小地图控件内的敌方英雄；忽略安全边距里的队伍状态头像和地图外 HUD。青色虚线是控件边界，不会限制画框；框可以跨出控件边界，只要图标中心在地图内。</p></div></li>
+          <li><span class="guide-number">7</span><div><strong>旧标注只作建议</strong><p>历史框可能在旧 ROI 右侧被截断；请人工检查、拖右侧中点扩宽或重新画框，再按“保存修正”。建议框不会自动成为真值。</p></div></li>
         </ul>
       </section>
       <section class="how-to">
         <h3>画框操作</h3>
-        <p>在空白处拖动新增框；拖动框内部可移动；拖动右下角圆点可缩放；选中后按 Delete 删除。</p>
+        <p>在空白处拖动新增框；拖动框内部可移动；拖动右侧中点可单独扩宽，右下角圆点可同时调整宽高；选中后按 Delete 删除。</p>
       </section>
       <section>
         <div class="section-title"><h3>团队进度</h3><button id="refreshStatsButton" class="text-button" type="button">刷新</button></div>

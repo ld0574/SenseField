@@ -39,6 +39,9 @@ def finalize(review_manifest: Path, output: Path) -> dict:
     default_roi_value = data.get("roi")
     default_roi = (_roi(default_roi_value, "Review roi")
                    if default_roi_value is not None else None)
+    default_widget_roi_value = data.get("widget_roi")
+    default_widget_roi = (_roi(default_widget_roi_value, "Review widget_roi")
+                          if default_widget_roi_value is not None else None)
     default_orientation = from_manifest(data)
 
     pending = []
@@ -76,6 +79,10 @@ def finalize(review_manifest: Path, output: Path) -> dict:
             match_roi_value = match.get("roi")
             if match_roi_value is not None:
                 exported["roi"] = _roi(match_roi_value, f"{match.get('id')} roi")
+            widget_roi_value = match.get("widget_roi")
+            if widget_roi_value is not None:
+                exported["widget_roi"] = _roi(
+                    widget_roi_value, f"{match.get('id')} widget_roi")
             exported_matches.append(exported)
     if pending:
         preview = ", ".join(pending[:5])
@@ -87,6 +94,8 @@ def finalize(review_manifest: Path, output: Path) -> dict:
     result = {"schema_version": 1, "category": kind, "matches": exported_matches}
     if default_roi is not None:
         result["roi"] = default_roi
+    if default_widget_roi is not None:
+        result["widget_roi"] = default_widget_roi
     if default_orientation is not None:
         result["orientation"] = default_orientation
     output.parent.mkdir(parents=True, exist_ok=True)

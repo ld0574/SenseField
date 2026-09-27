@@ -46,6 +46,9 @@ def evaluate_current_detector(review_manifest: Path, profile: Path,
     if data.get("schema_version") != 1:
         raise ValueError("Expected review manifest schema_version 1")
     default_roi = _roi(data.get("roi"), "review roi")
+    default_widget_roi_value = data.get("widget_roi")
+    default_widget_roi = (_roi(default_widget_roi_value, "review widget_roi")
+                          if default_widget_roi_value is not None else None)
     matches = data.get("matches")
     if not isinstance(matches, list) or not matches:
         raise ValueError("Review manifest needs matches")
@@ -54,10 +57,33 @@ def evaluate_current_detector(review_manifest: Path, profile: Path,
     frame_root = review_manifest.parent
     detected_frames = 0
     with Pipeline(profile, library) as pipeline:
+        configured_direction = Rect(
+            pipeline.profile.minimap_direction.x,
+            pipeline.profile.minimap_direction.y,
+            pipeline.profile.minimap_direction.w,
+            pipeline.profile.minimap_direction.h,
+        )
         for match in replayed["matches"]:
             match_id = match.get("id")
             roi = _roi(match.get("roi", default_roi), f"{match_id} roi")
             pipeline.profile.minimap = Rect(*roi)
+            widget_value = match.get("widget_roi")
+            if widget_value is None:
+                widget_value = default_widget_roi
+            if widget_value is not None:
+                direction_roi = _roi(widget_value, f"{match_id} widget_roi")
+                pipeline.profile.minimap_direction = Rect(*direction_roi)
+            else:
+                pipeline.profile.minimap_direction = configured_direction
+                if configured_direction.w > 0 and configured_direction.h > 0:
+                    # evaluate_review derives ground-truth directions from the
+                    # manifest, so record the profile reference it just used.
+                    match["widget_roi"] = [
+                        float(configured_direction.x),
+                        float(configured_direction.y),
+                        float(configured_direction.w),
+                        float(configured_direction.h),
+                    ]
             for sample in match.get("samples", []):
                 status = sample.get("review_status", "pending")
                 if status in {"pending", "skip", "excluded"}:

@@ -71,6 +71,13 @@ struct PixelRect {
     int y1;
 };
 
+bool has_rect(ma_rect rect) {
+    return std::isfinite(rect.x) && std::isfinite(rect.y) &&
+           std::isfinite(rect.w) && std::isfinite(rect.h) &&
+           rect.x >= 0.0f && rect.y >= 0.0f && rect.w > 0.0f && rect.h > 0.0f &&
+           rect.x + rect.w <= 1.001f && rect.y + rect.h <= 1.001f;
+}
+
 struct Detection {
     float x0;
     float y0;
@@ -119,6 +126,16 @@ PixelRect to_pixels(ma_rect rect, int width, int height) {
             static_cast<int>(std::ceil((rect.x + rect.w) * width)), x0, width);
     const int y1 = std::clamp(
             static_cast<int>(std::ceil((rect.y + rect.h) * height)), y0, height);
+    return {x0, y0, x1, y1};
+}
+
+PixelRect to_direction_reference_pixels(ma_rect rect, int width, int height) {
+    const int x0 = std::clamp(static_cast<int>(std::lround(rect.x * width)), 0, width);
+    const int y0 = std::clamp(static_cast<int>(std::lround(rect.y * height)), 0, height);
+    const int x1 = std::clamp(
+            static_cast<int>(std::lround((rect.x + rect.w) * width)), x0, width);
+    const int y1 = std::clamp(
+            static_cast<int>(std::lround((rect.y + rect.h) * height)), y0, height);
     return {x0, y0, x1, y1};
 }
 
@@ -206,6 +223,9 @@ void append_yolox_observations(Session &session, const uint8_t *rgba,
                                std::vector<ma_observation> &observations) {
     if (!session.minimap_yolox || !minimap_ready) return;
     const PixelRect area = to_pixels(minimap_roi, width, height);
+    const PixelRect direction_reference = has_rect(session.profile.minimap_direction)
+            ? to_direction_reference_pixels(
+                    session.profile.minimap_direction, width, height) : area;
     const int crop_width = area.x1 - area.x0;
     const int crop_height = area.y1 - area.y0;
     if (crop_width < 2 || crop_height < 2) return;
@@ -306,7 +326,8 @@ void append_yolox_observations(Session &session, const uint8_t *rgba,
         const float y1 = area.y0 + detection.y1;
         observations.push_back({
                 MA_MINIMAP_ENEMY,
-                direction_for((x0 + x1) * 0.5f, (y0 + y1) * 0.5f, area),
+                direction_for((x0 + x1) * 0.5f, (y0 + y1) * 0.5f,
+                              direction_reference),
                 {x0 / width, y0 / height, (x1 - x0) / width, (y1 - y0) / height},
                 detection.confidence,
                 timestamp_ms,
@@ -327,7 +348,7 @@ Java_org_openrd_mapassist_NativeBridge_nativeCreate(
         jboolean minimap_locator_enabled, jfloatArray minimap_locator_floats,
         jintArray minimap_locator_ints, jbyteArray minimap_locator_descriptor) {
     if (!rois || !flags || !tuning || !event_ints ||
-        env->GetArrayLength(rois) != 12 || env->GetArrayLength(flags) != 5 ||
+        env->GetArrayLength(rois) != 16 || env->GetArrayLength(flags) != 5 ||
         env->GetArrayLength(tuning) != 5 || env->GetArrayLength(event_ints) != 5)
         return 0;
     if (minimap_yolox &&
@@ -341,9 +362,9 @@ Java_org_openrd_mapassist_NativeBridge_nativeCreate(
          env->GetArrayLength(minimap_locator_floats) != 12 ||
          env->GetArrayLength(minimap_locator_ints) != 10)) return 0;
 
-    jfloat r[12], t[5];
+    jfloat r[16], t[5];
     jint f[5], e[5];
-    env->GetFloatArrayRegion(rois, 0, 12, r);
+    env->GetFloatArrayRegion(rois, 0, 16, r);
     env->GetIntArrayRegion(flags, 0, 5, f);
     env->GetFloatArrayRegion(tuning, 0, 5, t);
     env->GetIntArrayRegion(event_ints, 0, 5, e);
@@ -353,6 +374,7 @@ Java_org_openrd_mapassist_NativeBridge_nativeCreate(
     session->profile.minimap = {r[0], r[1], r[2], r[3]};
     session->profile.ping_area = {r[4], r[5], r[6], r[7]};
     session->profile.center_mask = {r[8], r[9], r[10], r[11]};
+    session->profile.minimap_direction = {r[12], r[13], r[14], r[15]};
     session->profile.enable_main_bar = f[0];
     session->profile.enable_minimap_template = f[1];
     session->profile.enable_minimap_red_ring = f[2];
