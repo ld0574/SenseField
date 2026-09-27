@@ -21,6 +21,7 @@ from mapassist.annotation_server import (
 )
 from mapassist.apply_label_shards import apply as apply_label_shards
 from mapassist.blind_review_dataset import _sample_indices
+from mapassist.calibrate_minimap_anchor import calibrate as calibrate_minimap_anchor
 from mapassist.combine_detection_manifests import combine as combine_detection_manifests
 from mapassist.detection_dataset import export as export_detection_dataset
 from mapassist.detection_evaluate import evaluate_review as evaluate_detection_review
@@ -29,6 +30,7 @@ from mapassist.extract_frame import extract
 from mapassist.finalize_review import finalize as finalize_review
 from mapassist.measure_latency import measure
 from mapassist.merge_detection_manifests import merge as merge_detection_manifests
+from mapassist.minimap_layout_review_dataset import build as build_minimap_layout_review
 from mapassist.native import Cue, EngineConfig, Observation, Pipeline, Rect, load_library
 from mapassist.replay import run
 from mapassist.review_dataset import build as build_review_dataset
@@ -731,6 +733,151 @@ def test_detection_dataset_exports_display_oriented_rotated_video(tmp_path: Path
     with Image.open(frame) as image:
         assert image.size == (12, 8)
         assert image.getexif().get(274) is None
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
+                    reason="ffmpeg and ffprobe are needed to extract frames")
+def test_detection_dataset_exports_adaptive_locator_crops(
+    tmp_path: Path, native_library: Path,
+) -> None:
+    frame = Image.new("RGB", (320, 180), (25, 29, 33))
+    draw = ImageDraw.Draw(frame)
+    roi = [0.05, 0.1, 0.5, 0.4]
+    left, top, width, height = 16, 18, 160, 72
+    for gy in range(8):
+        for gx in range(8):
+            value = 30 + ((gx * 31 + gy * 47 + gx * gy * 7) % 190)
+            draw.rectangle(
+                (left + gx * width / 8, top + gy * height / 8,
+                 left + (gx + 1) * width / 8 - 1,
+                 top + (gy + 1) * height / 8 - 1),
+                fill=(value, value, value),
+            )
+    source_frame = tmp_path / "source.png"
+    frame.save(source_frame)
+    video = tmp_path / "source.mp4"
+    subprocess.run([
+        "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+        "-loop", "1", "-i", str(source_frame), "-t", "3", "-r", "12",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", str(video),
+    ], check=True)
+
+    review_manifest = tmp_path / "review.json"
+    review_manifest.write_text(json.dumps({
+        "schema_version": 1,
+        "roi": roi,
+        "matches": [{
+            "id": "calibration", "split": "train", "video": str(video),
+            "samples": [{
+                "at_ms": 1000, "review_status": "corrected",
+                "reviewed_boxes": [[0.1, 0.2, 0.1, 0.1]],
+                "frame": source_frame.name,
+            }],
+        }],
+    }), encoding="utf-8")
+    locator = tmp_path / "locator.json"
+    calibrate_minimap_anchor(review_manifest, locator, 8, 8)
+
+    detection_manifest = tmp_path / "detections.json"
+    detection_manifest.write_text(json.dumps({
+        "schema_version": 1,
+        "category": "minimap_enemy",
+        "matches": [{
+            "id": "adaptive", "video": video.name, "split": "train",
+            "frames": [
+                {"at_ms": 1000, "boxes": [[0.1, 0.2, 0.1, 0.1]]},
+                {"at_ms": 2000, "boxes": []},
+            ],
+        }],
+    }), encoding="utf-8")
+    output = tmp_path / "adaptive-dataset"
+
+    summary = export_detection_dataset(
+        detection_manifest, output, locator=locator, library=native_library,
+    )
+
+    assert summary["train"]["images"] == 2
+    assert summary["train"]["boxes"] == 1
+    assert summary["train"]["negative_images"] == 1
+    assert summary["train"]["locator_states"] == {
+        "searching": 0, "locked": 2, "held": 0,
+    }
+    assert summary["train"]["skipped_searching"] == 0
+    assert summary["train"]["skipped_positive_images"] == 0
+    assert summary["train"]["skipped_boxes"] == 0
+    coco = json.loads(
+        (output / "annotations/instances_train2017.json").read_text()
+    )
+    assert coco["info"]["adaptive_crop"]["locator_sha256"] == hashlib.sha256(
+        locator.read_bytes()
+    ).hexdigest()
+    assert coco["info"]["adaptive_crop"]["native_library_sha256"] == hashlib.sha256(
+        native_library.read_bytes()
+    ).hexdigest()
+    assert coco["info"]["skipped_searching_samples"] == []
+    assert coco["images"][0]["width"] >= 160
+    assert coco["images"][0]["height"] >= 72
+    box = coco["annotations"][0]["bbox"]
+    # The located union expands left of the coarse 160-pixel ROI. The label
+    # must move by the same crop offset while keeping its full-frame size.
+    assert box[0] == pytest.approx(26.0, abs=3.0)
+    assert box[1] == pytest.approx(18.0, abs=2.0)
+    assert box[2] == pytest.approx(32.0, abs=1.0)
+    assert box[3] == pytest.approx(18.0, abs=1.0)
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
+                    reason="ffmpeg and ffprobe are needed to extract frames")
+def test_minimap_layout_review_dataset_uses_full_frame_annotation_bounds(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.png"
+    Image.new("RGB", (320, 180), (20, 30, 40)).save(source)
+    video = tmp_path / "source.mp4"
+    subprocess.run([
+        "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+        "-loop", "1", "-i", str(source), "-t", "4", "-r", "12",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", str(video),
+    ], check=True)
+    manifest = tmp_path / "source-manifest.json"
+    coarse = [0.04, 0.0, 0.15, 0.34]
+    manifest.write_text(json.dumps({
+        "schema_version": 1,
+        "roi": coarse,
+        "matches": [{
+            "id": "match1", "split": "train", "video": video.name,
+            "active_intervals_ms": [[500, 3500]],
+        }],
+    }), encoding="utf-8")
+    output = tmp_path / "layout-review"
+
+    summary = build_minimap_layout_review(manifest, output, samples_per_match=2)
+
+    assert summary["train"] == {"matches": 1, "samples": 2}
+    review = json.loads((output / "review-manifest.json").read_text())
+    assert review["kind"] == "minimap_region"
+    assert review["review_mode"] == "manual"
+    assert review["roi"] == [0.0, 0.0, 1.0, 1.0]
+    assert review["matches"][0]["coarse_minimap_roi"] == coarse
+    assert len(review["matches"][0]["samples"]) == 2
+    for sample in review["matches"][0]["samples"]:
+        assert sample["suggested_boxes"] == [coarse]
+        assert (output / sample["frame"]).is_file()
+        assert (output / sample["overlay"]).is_file()
+
+    store = AnnotationStore(output, lease_seconds=60)
+    task = store.claim_next("Layout reviewer")
+    assert task is not None
+    with pytest.raises(ValueError, match="exactly one"):
+        store.save(task["id"], "Layout reviewer", task["version"], "corrected", [
+            coarse, [0.3, 0.1, 0.1, 0.1],
+        ])
+    with pytest.raises(ValueError, match="use excluded"):
+        store.save(task["id"], "Layout reviewer", task["version"], "negative")
+    saved = store.save(
+        task["id"], "Layout reviewer", task["version"], "corrected", [coarse]
+    )
+    assert saved["reviewed_boxes"] == [coarse]
 
 
 def test_merge_detection_manifests_requires_explicit_unique_recordings(

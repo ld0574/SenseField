@@ -58,7 +58,12 @@ function statusLabel(status) {
 }
 
 function selectionLabel(selection) {
-  return ({cue: "提示候选", background: "背景候选", systematic_blind: "均匀盲测"})[selection] || selection;
+  return ({
+    cue: "提示候选",
+    background: "背景候选",
+    systematic_blind: "均匀盲测",
+    minimap_layout_systematic: "小地图边界",
+  })[selection] || selection;
 }
 
 async function bootstrap() {
@@ -403,6 +408,9 @@ function setControls(enabled) {
     .forEach((id) => { $(`#${id}`).disabled = !enabled; });
   if (["blind", "manual"].includes(state.bootstrap?.review_mode)) {
     $("#acceptButton").disabled = true;
+  }
+  if (state.bootstrap?.kind === "minimap_region") {
+    $("#negativeButton").disabled = true;
   }
 }
 

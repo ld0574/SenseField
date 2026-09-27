@@ -386,6 +386,11 @@ class AnnotationStore:
         reviewed_boxes = _validate_boxes(boxes or []) if status == "corrected" else None
         if status == "corrected" and not reviewed_boxes:
             raise ValueError("corrected samples need at least one box; use negative for no target")
+        if self.kind == "minimap_region":
+            if status == "negative":
+                raise ValueError("minimap region tasks use excluded for non-gameplay screens")
+            if status == "corrected" and len(reviewed_boxes or []) != 1:
+                raise ValueError("minimap region tasks need exactly one boundary box")
         now = time.time()
         reviewed_at = datetime.now(timezone.utc).isoformat()
         with self._connect() as connection:

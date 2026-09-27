@@ -1,5 +1,32 @@
 # 小地图自动定位器验证记录
 
+## 2026-09-27 技术决策
+
+现有低分辨率亮度描述符方案不再作为最终方案。它在 video8 上能稳定锁定，但将粗略框与候选框取并集后，后级敌人 YOLOX 的输入分布发生变化；同一 ncnn 路径下 F1 从 67.83% 降到 62.71%。在 video1–video7 训练清单上将该定位器作为裁剪器还会跳过 27 张图，其中 17 张是正样本，共丢失 28 个敌人框。
+
+新方案使用两个职责分离的轻量模型：
+
+```text
+Android 原始整屏
+→ 黑边/旋转归一化
+→ 全屏低分辨率单类定位器（minimap_region，1–2 Hz）
+→ [cx, cy, w, h] 时序滤波与过期静默
+→ 按预测边界裁剪
+→ 固定容器、固定边距的 320×320 规范化输入
+→ 小地图敌人 YOLOX（12 Hz）
+→ Temporal Filter → Accessible Event
+```
+
+定位器优先复用 YOLOX Nano，只有 `minimap_region` 一类；若真机 CPU 预算不足，再对比 NanoDet-Plus 320。小地图在缩小后仍是大目标，不需要在整屏上识别极小的敌人头像。定位器只在启动、分辨率/方向变化、置信度下降和周期刷新时运行，避免将第二个模型的延迟叠加到每一帧。
+
+后级敌人检测器必须用“定位器预测框→同一规范化函数”生成的裁剪重新训练，并在训练时对边界加入小幅位移、缩放和安全区扰动。这一步直接解决本次“定位成功但敌人检测变差”的训练/推理裁剪不一致。
+
+全屏定位真值使用新的 `minimap-layout` 标注队列采集：video1–video7 每局均匀取 16 张，共 112 张。每张只标一个可见小地图外边界。当前网页已能在同一 `8765` 端口切换到该队列。
+
+定位层单独验收边界 IoU、四边像素误差、粗 ROI 覆盖率和搜索静默率；敌人层在规范化裁剪上验收 precision/recall；最后使用一场从未用于训练和阈值选择的新真人对局做端到端验收。video8 已经用于问题定位，不再声称为独立留出集。
+
+技术选型参考：[Screen Recognition](https://arxiv.org/abs/2101.04893) 证明了屏幕像素上的移动端 UI 元素检测可以在端上运行；[YOLOX Nano](https://github.com/Megvii-BaseDetection/YOLOX) 已有 0.91M 参数的轻量实现；[NanoDet-Plus](https://github.com/RangiLyu/nanodet) 提供 320 输入和 ncnn Android 示例，可作为后备对照；[ncnn](https://github.com/Tencent/ncnn) 同时支持 YOLOX 和 NanoDet。[OpenCV 特征匹配与 Homography](https://docs.opencv.org/4.x/d7/dff/tutorial_feature_homography.html) 需要足够的稳定匹配点，[ECC](https://docs.opencv.org/doc/doxygen/html/dc/d6b/group__video__track.html) 也需要已大致对齐且内容相似的图像；它们适合作为稳定 HUD 外框的低成本校验，不应继续直接匹配持续变化的地图内容。[Domain Randomization](https://arxiv.org/abs/1703.06907) 支持在训练中增加位置、尺度、黑边和压缩扰动，但真实手机/HUD 分组留出仍是验收依据。
+
 ## 目的
 
 固定归一化 ROI 只能适配分辨率变化。全面屏比例、左右安全区、黑边和 HUD 位置调整会让实际小地图偏离固定框，因此 Android 小地图链路改为：
