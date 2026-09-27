@@ -148,7 +148,7 @@ PYTHONPATH=python .venv/bin/python -m mapassist.coco_dataset_audit \
 
 safe-ROI v1 从 legacy hard-FP checkpoint 初始化，以 `lr_scale=0.1`、320 输入和 batch 16 微调；best epoch 10、confidence `0.75`，TP/FP/FN `84/9/139`，video6 val P/R/F1 `90.3226% / 37.6682% / 53.1646%`，第 30 轮早停。v2 从 v1 best checkpoint 以 `lr_scale=0.3` 延续，best epoch 10、confidence `0.79`，固定 COCO val P/R/F1 `91.5888% / 43.9462% / 59.3939%`（TP/FP/FN `98/9/125`），第 30 轮早停；precision 达到 90%，recall 仍低于 80% 门槛。两个结果都使用 video6 进行模型和置信度选择，属于开发集对照，不是独立成绩。
 
-当前主实验已从官方 COCO 权重启动 safe-ROI full fine-tune；其结果尚未产生。命令固定使用 320 输入、batch 16、`lr_scale=1`、最多 120 轮、每 5 轮验证、early-stop patience 4 且最早第 40 轮停止、`no_aug_epochs=20`，输出到 `build/training/yolox-nano-minimap-safe-roi-coco-lr1-320`：
+safe-ROI full fine-tune 已从官方 COCO 权重完成，输出位于 `build/training/yolox-nano-minimap-safe-roi-coco-lr1-320`。第 80 轮早停，best epoch 60、confidence `0.81`；固定 video6 val 的 TP/FP/FN 为 `101/11/122`，precision / recall / F1 为 `90.1786% / 45.2915% / 60.2985%`。相对 v2，precision 下降 `1.4102` 个百分点、recall 提高 `1.3453` 个百分点、F1 提高 `0.9046` 个百分点；recall 仍低于 80% 门槛。checkpoint SHA-256：`de276061fda434f5a480bbad6023a2ef4280568d3cee91e448a99c540142fe53`；metrics SHA-256：`4f29fff582d808f4de1af79efab898ba3d6893168b619e9992694cf909d9cddb`；固定 video6 val SHA-256：`5a3977338bbd893ce4d6196f7189017575a6d5e941bb2ad31f1dd134690d0bfd`。video6 是开发集，已用于模型和置信度选择，因此该结果不是独立成绩；合并数据集 test 为空。checkpoint 尚未导出 ONNX/ncnn 或集成到 Android，Android ROI／权重保持不变，检测器仍默认关闭。命令固定使用 320 输入、batch 16、`lr_scale=1`、最多 120 轮、每 5 轮验证、early-stop patience 4 且最早第 40 轮停止、`no_aug_epochs=20`：
 
 ```sh
 PYTHONPATH=build/third_party/YOLOX:python \
@@ -166,7 +166,7 @@ PYTHONPATH=build/third_party/YOLOX:python \
   --output build/training/yolox-nano-minimap-safe-roi-coco-lr1-320
 ```
 
-最多 120 轮不代表一定完成 120 轮；若早停早于第 101 轮，最后 20 轮的 no-augmentation 阶段不会执行。仅当同一 video6 开发评估在 precision ≥90% 下达到 recall ≥80% 时，才可认为达到该开发门槛；否则停止这一训练线，不部署、不把 video6 或 video8 结果称为独立成绩。后续 Android profile、ROI 和权重仍需单独验证；当前 Android 开发候选及 APK 默认关闭状态均未更新。
+本轮在第 80 轮早停，未进入最后 20 轮的 no-augmentation 阶段。video6 开发评估未达到 precision ≥90% 且 recall ≥80% 的门槛，因此该 checkpoint 不部署，也不把 video6 或 video8 结果称为独立成绩；Android profile、ROI 和权重未更新，检测器仍默认关闭。
 
 ```sh
 PYTHONPATH=python .venv/bin/python -m mapassist.finalize_review \
