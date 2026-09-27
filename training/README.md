@@ -14,9 +14,11 @@
 
 `video7` 是 2712×1220、30 FPS、约 8 Mbps 的人机局。历史盲测抽样中的 111 张有效帧含 189 框；冻结模型在固定阈值下得到 precision 65.57%、recall 63.49%、F1 64.52%，未达门禁。它比历史模型分别高 3.62、3.17、3.39 个百分点。之后 video7 标签被用于开发训练和复核，因此这组历史结果不再是独立留出成绩；高分辨率本身也没有消除跨录像域差异。
 
-`video8` 曾在查看标签或运行预测前登记为独立 test。随后复核界面发现固定 ROI 截掉右侧头像，旧流程又把标注限制在 ROI 内，因此 119 张／215 框的旧值（precision 58.84%、recall 80.47%、F1 67.98%、方向正确率 96.86%）仅是受截断污染的历史 crop-relative 数值，不再是完整小地图的模型效果或独立留出结论。该固定 ROI 同样用于其他录像尺寸，问题不能只归因于 video8。当前 Android ROI 和权重保持不变；新裁剪分布需要重标、重训并用新的真人对局评测。详见 [`validation/VIDEO8.md`](../validation/VIDEO8.md)。
+`video8` 曾登记为独立 test，后来发现旧 fixed ROI 截掉右侧头像。旧 119 帧／215 框指标仍只作受截断污染的历史记录。v3 安全 ROI 现已完成复核并导出 119 帧／211 框；其边框中心均在实测 widget 内、完整框均在安全 crop 内。旧冻结、当前 hard-FP 与 Android 等价 ncnn 回放都已在新真值上做 same-match development diagnostic：固定阈值的框级 Precision 约 47–49%、Recall 约 90–91%；confidence sweep 的 best F1 和高 precision/低 recall 取舍见 [`validation/VIDEO8.md`](../validation/VIDEO8.md)。这些值不能当独立留出或部署成绩，因为 video8 同场素材参与过定位器开发，且现有权重按旧 crop 训练。当前 Android ROI／权重不变，检测器默认关闭。
 
-敌人重标当前使用 `data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi`：与 v1 相同的 120 个时间点，帧和 overlay 均为 2376×1080；发现首轮坐标转换错误后已全部重新置为待标，当前正在逐帧重标。小地图控件 `[106,0,454,344]` 外扩 27 px 后用作安全裁剪 `[79,0,481,371]`；标注仍只包括图标中心位于控件内的敌方英雄。v2 因 crop 与全屏 manifest 坐标错配而无效。v3 尚未完成并导出，也未用于敌人检测器重训。
+敌人重标队列 `data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi` 的 120 条任务已收口：102 `corrected`／211 框、17 `negative`、1 `excluded`、0 `pending`／活动租约。源录像显示尺寸 2376×1080；小地图控件 `[106,0,454,344]` 外扩 27 px 后得到安全 crop `[79,0,481,371]`（402×371）。task59 的蓝圈误标已删除；每个真值框中心均在 widget 内，完整框均在安全 crop 内；另有一个框触及物理屏幕顶边，不触及可扩展 crop 边。COCO test 导出有 119 张／211 框，crop/provenance audit 无阻断项，但 train 和 val 为空，且所有帧来自同一对局。v2 因 crop 与全屏 manifest 坐标错配仍属无效产物。v3 尚未用于安全 ROI 权重重训。
+
+在 video8 v3 的 119 个有效帧上，队列“初始建议”是 v1 人工复核框，不是模型输出，和新真值比较为 178/37/33、P/R/F1 82.79%／84.36%／83.57%。旧冻结 checkpoint（0.29）为 190/212/21、47.26%／90.05%／61.99%；hard-FP checkpoint（0.19）为 191/201/20、48.72%／90.52%／63.35%；同一 hard-FP 权重的 Android 等价 ncnn exact-frame 回放为 191/202/20、48.60%／90.52%／63.25%。Confidence sweep 的 F1 最佳点为 0.647382（P/R/F1 63.14%／76.30%／69.10%）；在 P≥90% 的 cutoff 中最高 recall 为 19.91%（confidence 0.738952）。全属 same-match development diagnostics，不参与部署阈值选择，也不能声称独立泛化。完整方法和 hashes 见 [`validation/VIDEO8.md`](../validation/VIDEO8.md)。
 
 安全裁剪负责检测覆盖，方向中心仍由真实控件框决定。标注清单用 `widget_roi` 保存真实控件；裁剪 COCO 数据集时，该框会映射到每张图像的局部 `direction_roi`，框级方向和方向事件指标都读取它。新 Android profile 应在 `rois.minimap_direction` 配置同一显示布局的方向参考；旧 profile 没有此项时仍使用 `rois.minimap`，以保持现有 profile 的运行结果。当前 hard-FP profile／权重仍是 legacy crop，不能直接用于扩大后的裁剪。
 
@@ -63,7 +65,7 @@ source annotations SHA-256 `eeff2b1fff5ae1b2bb365fe5651f144477d2e2b977ad6140edde
 1. 优先人工复核 hard-FP 来源，检查并去除重复样本，避免继续盲目重复加权；
 2. 评估尺度鲁棒性，并补充高分辨率真人开发录像，人工复核无敌人画面以及塔、兵线、友方头像和重叠图标等困难背景；
 3. 继续按整场录像分组，使用新的开发验证对局比较模型，避免依赖已经反复用于选模的 video6；
-4. video8 旧敌人检测数据因裁剪缺陷不再是有效留出证据，也不用于敌人模型开发；v3 安全 ROI 队列仍待人工标注，之后才能考虑重训。独立成绩使用另一场从未参与开发的真人排位。布局定位器另有 v2 开发实验，使用修正后的 16 张 video8 边界训练并在同场 120 张布局帧上诊断，不能当成敌人检测成绩或独立留出。
+4. video8 旧敌人检测数据因裁剪缺陷不再是有效留出证据。v3 安全 ROI 已有 119 个有效帧／211 框并完成 provenance audit，可用于后续开发训练；当前权重仍绑定旧 crop，尚未按新裁剪重训。video8 模型评测和 confidence sweep 只作 same-match development diagnostic。独立成绩必须使用另一场从未参与定位器开发、训练或调参的真人排位。布局定位器 v2 使用修正后的 16 张 video8 边界训练并在同场 120 张布局帧诊断，不等于敌人检测成绩或独立留出。
 
 密集队列和多人标注命令见 [`docs/团队协作与本地运行.md`](../docs/团队协作与本地运行.md)。
 
