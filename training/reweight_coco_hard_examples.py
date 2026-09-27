@@ -82,6 +82,27 @@ def _match_id(image: dict[str, Any], file_name: str) -> str:
     return match.group(1) if match else stem
 
 
+def _materialize_split_images(source: Path, destination: Path) -> dict[str, int]:
+    destination.mkdir()
+    hardlinked_files = copied_files = 0
+    for source_path in sorted(path for path in source.rglob("*") if path.is_file()):
+        relative = source_path.relative_to(source)
+        destination_path = destination / relative
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.link(source_path, destination_path)
+        except OSError:
+            shutil.copy2(source_path, destination_path)
+            copied_files += 1
+        else:
+            hardlinked_files += 1
+    return {
+        "files": hardlinked_files + copied_files,
+        "hardlinked_files": hardlinked_files,
+        "copied_files": copied_files,
+    }
+
+
 def build(data_dir: Path, evaluation_path: Path, output: Path,
           max_extra_copies: int = 2, negative_bonus: int = 1,
           include_false_negatives: bool = False,
@@ -305,7 +326,24 @@ def build(data_dir: Path, evaluation_path: Path, output: Path,
         source_images = data_dir / f"{split}2017"
         if not source_images.is_dir():
             raise ValueError(f"missing source image directory: {source_images}")
-        os.symlink(source_images, output / f"{split}2017", target_is_directory=True)
+    image_materialization_by_split = {
+        split: _materialize_split_images(
+            data_dir / f"{split}2017", output / f"{split}2017"
+        )
+        for split in ("train", "val", "test")
+    }
+    image_materialization = {
+        "strategy": "hardlink_first_copy2_fallback",
+        "description": "use os.link per image file and shutil.copy2 after any hard-link OSError",
+        "files": sum(item["files"] for item in image_materialization_by_split.values()),
+        "hardlinked_files": sum(
+            item["hardlinked_files"] for item in image_materialization_by_split.values()
+        ),
+        "copied_files": sum(
+            item["copied_files"] for item in image_materialization_by_split.values()
+        ),
+        "by_split": image_materialization_by_split,
+    }
 
     summary = {
         "schema_version": 1,
@@ -352,6 +390,7 @@ def build(data_dir: Path, evaluation_path: Path, output: Path,
             },
         },
         "source": {"images": len(images), "boxes": len(annotations)},
+        "image_materialization": image_materialization,
         "hard_source_images": hard_source_images,
         "fp_hard_source_images": fp_hard_source_images,
         "fn_hard_source_images": fn_hard_source_images,

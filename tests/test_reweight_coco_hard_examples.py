@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import sys
 from pathlib import Path
 
 import pytest
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
+
+from mapassist.coco_dataset_audit import audit_coco_dataset
 from training.reweight_coco_hard_examples import build
 
 
@@ -75,9 +80,60 @@ def test_repeats_complete_reviewed_images_and_preserves_other_splits(tmp_path: P
     assert [item["hard_example_source_image_id"] for item in weighted["images"][3:]] == [1, 2, 2]
     assert len({item["id"] for item in weighted["images"]}) == 6
     assert len({item["id"] for item in weighted["annotations"]}) == 2
-    assert (output / "train2017").resolve() == (data / "train2017").resolve()
+    assert all((output / f"{split}2017").is_dir() for split in ("train", "val", "test"))
+    assert all(not (output / f"{split}2017").is_symlink()
+               for split in ("train", "val", "test"))
+    materialization = summary["image_materialization"]
+    assert materialization["strategy"] == "hardlink_first_copy2_fallback"
+    assert materialization["files"] == 3
+    assert materialization["hardlinked_files"] + materialization["copied_files"] == 3
+    assert {split: materialization["by_split"][split]["files"]
+            for split in ("train", "val", "test")} == {
+        "train": 1, "val": 1, "test": 1,
+    }
+    assert all(
+        materialization["by_split"][split]["hardlinked_files"] +
+        materialization["by_split"][split]["copied_files"] == 1
+        for split in ("train", "val", "test")
+    )
+    audit = audit_coco_dataset(output)
+    assert audit["splits"]["train"]["missing_files"] == []
+    assert all("escapes the dataset root" not in blocker for blocker in audit["training_blockers"])
+    for split in ("val", "test"):
+        assert (output / f"{split}2017" / f"{split}.png").read_bytes() == \
+            (data / f"{split}2017" / f"{split}.png").read_bytes()
     assert (output / "annotations/instances_val2017.json").read_bytes() == \
         (data / "annotations/instances_val2017.json").read_bytes()
+
+
+def test_image_materialization_uses_copy2_when_hardlink_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import training.reweight_coco_hard_examples as reweighter
+
+    data, evaluation = _fixture(tmp_path)
+
+    def fail_hardlink(*_args: object, **_kwargs: object) -> None:
+        raise OSError("hard links are unavailable")
+
+    monkeypatch.setattr(reweighter.os, "link", fail_hardlink)
+    output = tmp_path / "copy-fallback"
+    summary = build(data, evaluation, output)
+
+    assert summary["image_materialization"] == {
+        "strategy": "hardlink_first_copy2_fallback",
+        "description": "use os.link per image file and shutil.copy2 after any hard-link OSError",
+        "files": 3,
+        "hardlinked_files": 0,
+        "copied_files": 3,
+        "by_split": {
+            split: {"files": 1, "hardlinked_files": 0, "copied_files": 1}
+            for split in ("train", "val", "test")
+        },
+    }
+    assert not os.path.samefile(
+        data / "train2017/train.png", output / "train2017/train.png"
+    )
 
 
 def test_repeats_false_negative_only_positive_sources_when_enabled(tmp_path: Path) -> None:
