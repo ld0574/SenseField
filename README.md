@@ -53,7 +53,7 @@
 | --- | --- | --- |
 | Android 13/14 截屏与横屏取帧 | 已实现 | 已完成模拟器链路验证 |
 | 小地图敌方头像识别 | 已接入实验 APK | YOLOX Nano 320 / ncnn；video8 真人排位冻结评测为 58.84% precision、80.47% recall，未过整体门禁，默认关闭 |
-| 小地图自适应定位 | 实验配置可导入 | video8 布局回放可用率 99.16%，但与旧 YOLOX 联合诊断后 precision / recall 均下降，暂不设为 APK 默认配置 |
+| 小地图自适应定位 | 学习定位器开发中 | 128 张全屏边界已复核；单类 YOLOX Nano 在 video6 开发验证 IoU 中位数 0.8988，2.5% 安全扩边后真值覆盖率 100%；尚未接入 APK |
 | 简短声音提示 | 已实现 | 事件合并、冷却与优先级规则可用 |
 | 空间音频与触觉编码 | 计划中 | 尚未完成真实玩家验收 |
 | 录像回放、多人标注与离线评测 | 已实现 | 支持 COCO 数据导出 |
@@ -76,6 +76,8 @@ python -m pytest -q
 
 ```sh
 PYTHONPATH=python python3 -m mapassist.annotation_server \
+  --dataset minimap-layout=data/private/minimap-layout-review-v1/queue \
+  --dataset minimap-layout-video8=data/private/minimap-layout-video8-v1/queue \
   --dataset dense-v1-6=data/private/minimap-review-v4-dense \
   --dataset expanded-video7=data/private/minimap-review-v6-video7-expanded \
   --dataset holdout-video7=data/private/minimap-video7-holdout-v1 \
@@ -101,6 +103,7 @@ Android Studio 直接打开 `android/`。首次原生构建会下载并校验固
 
 - [赛题背景（公开脱敏版）](docs/赛题背景.md)
 - [团队协作与本地运行](docs/团队协作与本地运行.md)
+- [外部数据引入与预训练](docs/外部数据引入与预训练.md)
 - [当前验证状态](validation/STATUS.md)
 - [小地图自动定位器](validation/MINIMAP_LOCATOR.md)
 - [video7 扩展人工标注](validation/VIDEO7_EXPANDED.md)

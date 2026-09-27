@@ -21,9 +21,44 @@ Android 原始整屏
 
 后级敌人检测器必须用“定位器预测框→同一规范化函数”生成的裁剪重新训练，并在训练时对边界加入小幅位移、缩放和安全区扰动。这一步直接解决本次“定位成功但敌人检测变差”的训练/推理裁剪不一致。
 
-全屏定位真值使用新的 `minimap-layout` 标注队列采集：video1–video7 每局均匀取 16 张，共 112 张。每张只标一个可见小地图外边界。当前网页已能在同一 `8765` 端口切换到该队列。
+全屏定位真值使用新的 `minimap-layout` 标注队列采集：video1–video7 每局均匀取 16 张，共 112 张；随后另从已经降级为开发数据的 video8 取 16 张。128 张均已人工复核，每张只标一个可见小地图外边界。训练按整场录像分组：video1–5、video7、video8 共 112 张用于训练，video6 的 16 张用于开发验证。
 
 定位层单独验收边界 IoU、四边像素误差、粗 ROI 覆盖率和搜索静默率；敌人层在规范化裁剪上验收 precision/recall；最后使用一场从未用于训练和阈值选择的新真人对局做端到端验收。video8 已经用于问题定位，不再声称为独立留出集。
+
+## 单类学习定位器 v1
+
+首版全屏单类 YOLOX Nano 使用 128 张 `minimap_region` 真值训练，320×320 等比例填充输入。为避免镜像和随机平移破坏“左上角 HUD”先验，首轮关闭 Mosaic、翻转和仿射，只保留 HSV 扰动。训练在第 40 轮早停，最佳权重来自第 10 轮；video6 开发验证在置信度 `0.11` 下为 16 TP、0 FP、0 FN。该验证对局已参与模型选择，所以只能证明开发链路可行。
+
+普通目标检测指标会隐藏裁剪边界误差。专用评测器按部署策略为每帧选置信度最高的框，结果为：
+
+| 指标 | 原始预测框 | 每边扩展短边 2.5% |
+| --- | ---: | ---: |
+| 有预测／额外预测 | 16 / 0 | 16 / 0 |
+| IoU 中位数／最小值 | 0.8988 / 0.8432 | 0.8730 / 0.8456 |
+| IoU ≥ 0.75 | 100% | 100% |
+| IoU ≥ 0.90 | 43.75% | 0% |
+| 真值区域覆盖率中位数／最小值 | 89.88% / 87.87% | 100% / 100% |
+| 最大单边误差中位数／P95 | 5.84 / 7.08 px | 7.01 / 10.91 px |
+| 裁剪中属于真值的比例中位数 | 100% | 87.30% |
+
+原始框多数收缩在人工边界内部，直接裁剪会丢掉约 10% 的边缘。后级敌人识别因此采用 2.5% 短边安全扩展作为首个开发候选，并必须用同样扩展后的裁剪重训。这里的扩展值看过 video6 结果，仍需在新对局确认，不能当作最终冻结参数。
+
+复现边界评测：
+
+```sh
+PYTHONPATH=build/third_party/YOLOX:python:. .venv/bin/python \
+  training/evaluate_yolox_locator.py \
+  --yolox-root build/third_party/YOLOX \
+  --data-dir data/private/minimap-layout-combined-v1/coco-fullscreen \
+  --checkpoint build/training/yolox-nano-minimap-locator-v1-320/best_ckpt.pth \
+  --input-size 320 --split val --nms-threshold 0.5 \
+  --margin-short-edge 0.025 --device mps \
+  --output build/training/yolox-nano-minimap-locator-v1-320/eval-val-boundaries-margin025.json
+```
+
+checkpoint SHA-256 为 `aa7f08d67bffc75e20fed21893b393353fc60b680523f4b4840ef4e6076426cf`。TorchScript 转 ncnn 的 16 张验证图原始输出最大误差为 `0.0001513`，检测数量全部一致；由于全屏坐标会放大 320 输入的亚像素插值差异，最终框数值最大差为 `0.164 px`，使用 `0.25 px` 门限时通过。ncnn param/bin SHA-256 分别为 `4649269cae16fef3b64cc366f123ba58259a756b79f7f55d6be20cd3903cae14` 和 `114f810b93555a5c749134f9e2527c519b5357573f15af2dc454fc6408476513`。
+
+当前模型尚未接入 APK。下一步先在完整连续录像上验证 1–2 Hz 检测、时序平滑和失锁静默，再把定位 ncnn 与敌人 ncnn 作为两个独立模型接入 Android；旧 NCC 定位器继续保留为实验对照。
 
 技术选型参考：[Screen Recognition](https://arxiv.org/abs/2101.04893) 证明了屏幕像素上的移动端 UI 元素检测可以在端上运行；[YOLOX Nano](https://github.com/Megvii-BaseDetection/YOLOX) 已有 0.91M 参数的轻量实现；[NanoDet-Plus](https://github.com/RangiLyu/nanodet) 提供 320 输入和 ncnn Android 示例，可作为后备对照；[ncnn](https://github.com/Tencent/ncnn) 同时支持 YOLOX 和 NanoDet。[OpenCV 特征匹配与 Homography](https://docs.opencv.org/4.x/d7/dff/tutorial_feature_homography.html) 需要足够的稳定匹配点，[ECC](https://docs.opencv.org/doc/doxygen/html/dc/d6b/group__video__track.html) 也需要已大致对齐且内容相似的图像；它们适合作为稳定 HUD 外框的低成本校验，不应继续直接匹配持续变化的地图内容。[Domain Randomization](https://arxiv.org/abs/1703.06907) 支持在训练中增加位置、尺度、黑边和压缩扰动，但真实手机/HUD 分组留出仍是验收依据。
 
