@@ -58,6 +58,21 @@ roi = [0.0369044476, 0, 0.1721481970, 0.3442777601]
 - 133 个建议框均完整位于安全 ROI 内，框中心均位于 widget 内；
 - 建议框只帮助定位，不能作为高清真值或训练标签。
 
+### 复核完成与训练集导出（2026-09-28）
+
+当前 SQLite 标注库的 100 个任务已全部处理：83 张 `corrected`、12 张 `negative`、5 张 `excluded`，共 163 个已确认框。5 张排除帧没有进入检测导出；队列中的 100 张原始帧均为 `2400×1080`。
+
+来源与导出清单的 SHA-256：
+
+- 最终 `review-manifest.json`：`326d0bc9a25d51cdac2cd1cb7090bd1a235e31cf921b3cb470d3560a6cb2929c`
+- 队列 `detection-manifest.json`：`045277efbe537cceae136c5c13d950b62a5f5976313abea6abf39e24a13fc428`
+- 合并 safe-ROI detection manifest：`5981bdb8e44cc41661ce1dffa6a71377c92f59ca5cb32db895a6cf0f7733f815`
+- COCO `instances_train2017.json`：`94d20fb437ad2722c5910f7739427d937d13c1603ca4ca680669861a2f12d2f2`
+
+队列 detection manifest 和合并 safe-ROI manifest 都含 `video1-hd`，各自记录的 `video_sha256` 与当前视频 SHA-256 一致。合并 COCO 训练集纳入 95 张 `video1-hd` safe-ROI 裁剪图（每张 `414×372`）、163 个标注框和 12 张空标注负样本；时间戳与合并 manifest 的 95 帧逐一对应，5 张 `excluded` 帧未纳入。COCO 本身不保存源 MP4 哈希，因此源身份由合并 manifest 的哈希及 COCO 图像文件名／时间戳对应关系核对；COCO `audit.json` 记录的源图像清单 SHA-256 为 `30adcd0f9da1c775b24899e6797af83f9660b1bf698dcbefb7f811bae3ed0955`。
+
+对 5 张 `qa-final` 联系表（覆盖全部 100 个任务）的目视抽查未发现明显将局外 HUD 头像或非对局界面标成目标的情况。163 个框中心均在 `widget_roi` 内，且完整位于安全 ROI；44 个框的边缘越过 widget 边界，抽样可见目标是小地图边缘的敌方头像。`summary.json` 于队列创建时生成，仍记为 100 个 `pending` 和 133 个建议框，是旧快照；当前任务状态以 SQLite 标注库及上述最终 manifest 为准。
+
 标注时只框红圈敌方英雄头像。蓝圈队友、塔、兵线、野怪、信号和 widget 外 HUD 头像不框；对局中无敌人用 `negative`，准备、加载、结算或无法判读的全屏遮挡用 `excluded`。正样本必须保存为 `corrected`，逐图确认建议框、漏框和边界。
 
 统一标注网站的启动命令见[团队协作文档](../docs/团队协作与本地运行.md)。网页选择 `video1-hd` 即可协作，所有队列共用 `8765` 端口。

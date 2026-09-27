@@ -14,9 +14,9 @@
 
 `video7` 是 2712×1220、30 FPS、约 8 Mbps 的人机局。历史盲测抽样中的 111 张有效帧含 189 框；冻结模型在固定阈值下得到 precision 65.57%、recall 63.49%、F1 64.52%，未达门禁。它比历史模型分别高 3.62、3.17、3.39 个百分点。之后 video7 标签被用于开发训练和复核，因此这组历史结果不再是独立留出成绩；高分辨率本身也没有消除跨录像域差异。
 
-`video8` 曾登记为独立 test，后来发现旧 fixed ROI 截掉右侧头像。旧 119 帧／215 框指标仍只作受截断污染的历史记录。v3 安全 ROI 现已完成复核并导出 119 帧／211 框；其边框中心均在实测 widget 内、完整框均在安全 crop 内。旧冻结、当前 hard-FP 与 Android 等价 ncnn 回放都已在新真值上做 same-match development diagnostic：固定阈值的框级 Precision 约 47–49%、Recall 约 90–91%；confidence sweep 的 best F1 和高 precision/低 recall 取舍见 [`validation/VIDEO8.md`](../validation/VIDEO8.md)。这些值不能当独立留出或部署成绩，因为 video8 同场素材参与过定位器开发，且现有权重按旧 crop 训练。当前 Android ROI／权重不变，检测器默认关闭。
+`video8` 曾登记为独立 test，后来发现旧 fixed ROI 截掉右侧头像。旧 119 帧／215 框指标仍只作受截断污染的历史记录。v3 安全 ROI 已完成复核并导出 119 帧／211 框；边框中心均在实测 widget 内、完整框均在安全 crop 内。旧冻结、hard-FP 与 Android 等价 ncnn 回放在新真值上的固定阈值结果约为 P 47–49%、R 90–91%，confidence sweep 见 [`validation/VIDEO8.md`](../validation/VIDEO8.md)。这些仍是 same-match diagnostics，评测权重按旧 crop 训练，不能用于独立留出或部署结论。video8 v3 现已并入下文 safe-ROI 合并训练集的 train split；它不再是检测器留出数据。Android ROI／权重尚未更新，检测器默认关闭。
 
-敌人重标队列 `data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi` 的 120 条任务已收口：102 `corrected`／211 框、17 `negative`、1 `excluded`、0 `pending`／活动租约。源录像显示尺寸 2376×1080；小地图控件 `[106,0,454,344]` 外扩 27 px 后得到安全 crop `[79,0,481,371]`（402×371）。task59 的蓝圈误标已删除；每个真值框中心均在 widget 内，完整框均在安全 crop 内；另有一个框触及物理屏幕顶边，不触及可扩展 crop 边。COCO test 导出有 119 张／211 框，crop/provenance audit 无阻断项，但 train 和 val 为空，且所有帧来自同一对局。v2 因 crop 与全屏 manifest 坐标错配仍属无效产物。v3 尚未用于安全 ROI 权重重训。
+敌人重标队列 `data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi` 的 120 条任务已收口：102 `corrected`／211 框、17 `negative`、1 `excluded`、0 `pending`／活动租约。源录像显示尺寸 2376×1080；小地图控件 `[106,0,454,344]` 外扩 27 px 后得到安全 crop `[79,0,481,371]`（402×371）。task59 的蓝圈误标已删除；每个真值框中心均在 widget 内，完整框均在安全 crop 内；另有一个框触及物理屏幕顶边，不触及可扩展 crop 边。独立 COCO 导出 `coco-video8-v3-safe-roi` 仍保留为 119 张／211 框的 test-only 历史归档；下文合并训练导出将同一批图像改为 train。v2 因 crop 与全屏 manifest 坐标错配仍属无效产物。
 
 在 video8 v3 的 119 个有效帧上，队列“初始建议”是 v1 人工复核框，不是模型输出，和新真值比较为 178/37/33、P/R/F1 82.79%／84.36%／83.57%。旧冻结 checkpoint（0.29）为 190/212/21、47.26%／90.05%／61.99%；hard-FP checkpoint（0.19）为 191/201/20、48.72%／90.52%／63.35%；同一 hard-FP 权重的 Android 等价 ncnn exact-frame 回放为 191/202/20、48.60%／90.52%／63.25%。Confidence sweep 的 F1 最佳点为 0.647382（P/R/F1 63.14%／76.30%／69.10%）；在 P≥90% 的 cutoff 中最高 recall 为 19.91%（confidence 0.738952）。全属 same-match development diagnostics，不参与部署阈值选择，也不能声称独立泛化。完整方法和 hashes 见 [`validation/VIDEO8.md`](../validation/VIDEO8.md)。
 
@@ -65,7 +65,7 @@ source annotations SHA-256 `eeff2b1fff5ae1b2bb365fe5651f144477d2e2b977ad6140edde
 1. 优先人工复核 hard-FP 来源，检查并去除重复样本，避免继续盲目重复加权；
 2. 评估尺度鲁棒性，并补充高分辨率真人开发录像，人工复核无敌人画面以及塔、兵线、友方头像和重叠图标等困难背景；
 3. 继续按整场录像分组，使用新的开发验证对局比较模型，避免依赖已经反复用于选模的 video6；
-4. video8 旧敌人检测数据因裁剪缺陷不再是有效留出证据。v3 安全 ROI 已有 119 个有效帧／211 框并完成 provenance audit，可用于后续开发训练；当前权重仍绑定旧 crop，尚未按新裁剪重训。video8 模型评测和 confidence sweep 只作 same-match development diagnostic。独立成绩必须使用另一场从未参与定位器开发、训练或调参的真人排位。布局定位器 v2 使用修正后的 16 张 video8 边界训练并在同场 120 张布局帧诊断，不等于敌人检测成绩或独立留出。
+4. video8 旧敌人检测数据因裁剪缺陷不再是有效留出证据。v3 安全 ROI 的 119 张／211 框已用于下面的 safe-ROI 合并训练，不能再作为留出评测；历史 hard-FP 权重仍绑定 legacy crop，Android 端 ROI／权重不变，检测器默认关闭。video8 上旧权重的结果只作 same-match development diagnostic。
 
 密集队列和多人标注命令见 [`docs/团队协作与本地运行.md`](../docs/团队协作与本地运行.md)。
 
@@ -141,6 +141,32 @@ PYTHONPATH=python .venv/bin/python -m mapassist.coco_dataset_audit \
 ```
 
 这些 manifest、裁剪图片和 audit 都是私有数据，只保存在 `data/private/`，不要提交或公开。这一轮把 video8 改为 train，因此 audit 会明确报告 `No populated test split`；这条表示当前不能引用独立测试成绩，其余 `training_blockers` 必须为空。每个有数据的 split 都必须显示 `roi_crop_completeness: provenance_clear`，确认没有 crop boundary 阻断后才能训练。ROI 工具默认仅容许框中心越过 widget 边界最多 4 px，容差内例外会写入 `roi_remap_audit`；超过容差、布局帧不一致、ID／录像不匹配或已有视频 SHA-256 不一致都会拒绝输出。最终成绩必须使用另一场从未参与定位、训练、调参或失败分析的真人对局。
+
+### Safe-ROI 合并数据与实验状态
+
+当前合并 COCO 数据集 `data/private/minimap-review-v6-video7-expanded/coco-video2-7-video1-hd-video8-safe-roi` 覆盖 8 场：train 包含 `video1-hd`、video2–5、video7 和 video8，共 1,020 张／1,650 框；video6 是唯一 val，共 152 张／223 框；test 为空。video8 v3 的 119 张／211 框已经进入 train。Audit 的 train/val `roi_crop_completeness` 均为 `provenance_clear`，无裁剪来源阻断；空 test 仍意味着不能把该数据集结果报告为独立留出成绩。低清 video2–5 占 train 476/1,020 张（46.7%），video1-hd 取代旧 video1 数据；video6 val 与训练数据同属低清域。
+
+safe-ROI v1 从 legacy hard-FP checkpoint 初始化，以 `lr_scale=0.1`、320 输入和 batch 16 微调；best epoch 10、confidence `0.75`，TP/FP/FN `84/9/139`，video6 val P/R/F1 `90.3226% / 37.6682% / 53.1646%`，第 30 轮早停。v2 从 v1 best checkpoint 以 `lr_scale=0.3` 延续，best epoch 10、confidence `0.79`，固定 COCO val P/R/F1 `91.5888% / 43.9462% / 59.3939%`（TP/FP/FN `98/9/125`），第 30 轮早停；precision 达到 90%，recall 仍低于 80% 门槛。两个结果都使用 video6 进行模型和置信度选择，属于开发集对照，不是独立成绩。
+
+当前主实验已从官方 COCO 权重启动 safe-ROI full fine-tune；其结果尚未产生。命令固定使用 320 输入、batch 16、`lr_scale=1`、最多 120 轮、每 5 轮验证、early-stop patience 4 且最早第 40 轮停止、`no_aug_epochs=20`，输出到 `build/training/yolox-nano-minimap-safe-roi-coco-lr1-320`：
+
+```sh
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python training/train_yolox_minimap.py \
+  --yolox-root build/third_party/YOLOX \
+  --data-dir data/private/minimap-review-v6-video7-expanded/coco-video2-7-video1-hd-video8-safe-roi \
+  --pretrained build/models/yolox_nano.pth \
+  --epochs 120 --batch-size 16 --input-size 320 --lr-scale 1 \
+  --mosaic-prob 0.5 --mosaic-scale-min 0.7 --mosaic-scale-max 1.3 \
+  --hsv-prob 0.8 --flip-prob 0.5 --degrees 5 --translate 0.08 --shear 1 \
+  --nms-threshold 0.5 --minimum-precision 0.9 \
+  --eval-every 5 --log-every 5 --early-stop-patience 4 \
+  --early-stop-min-epoch 40 --no-aug-epochs 20 \
+  --device mps --seed 20260926 \
+  --output build/training/yolox-nano-minimap-safe-roi-coco-lr1-320
+```
+
+最多 120 轮不代表一定完成 120 轮；若早停早于第 101 轮，最后 20 轮的 no-augmentation 阶段不会执行。仅当同一 video6 开发评估在 precision ≥90% 下达到 recall ≥80% 时，才可认为达到该开发门槛；否则停止这一训练线，不部署、不把 video6 或 video8 结果称为独立成绩。后续 Android profile、ROI 和权重仍需单独验证；当前 Android 开发候选及 APK 默认关闭状态均未更新。
 
 ```sh
 PYTHONPATH=python .venv/bin/python -m mapassist.finalize_review \
