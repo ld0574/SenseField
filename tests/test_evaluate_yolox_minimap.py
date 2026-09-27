@@ -11,9 +11,12 @@ sys.path.insert(0, str(ROOT / "python"))
 sys.path.insert(0, str(ROOT / "training"))
 
 from evaluate_yolox_minimap import (
+    _confidence_curve,
+    _confidence_sweep_summary,
     _direction_event_metrics,
     _read_evaluation_annotations,
     _read_image_direction_rois,
+    _resolve_sweep_thresholds,
 )
 
 
@@ -41,6 +44,72 @@ def _metrics(predictions: dict, truths: dict,
         predictions, truths, confidence=0.5, iou_threshold=0.5,
         image_sizes=image_sizes, direction_rois=direction_rois,
     )
+
+
+def test_confidence_range_expands_decimal_steps_without_drift() -> None:
+    thresholds = _resolve_sweep_thresholds([0.87, 0.89], 0.001, None)
+
+    assert thresholds == pytest.approx([0.87, 0.871, 0.872, 0.873, 0.874,
+                                        0.875, 0.876, 0.877, 0.878, 0.879,
+                                        0.88, 0.881, 0.882, 0.883, 0.884,
+                                        0.885, 0.886, 0.887, 0.888, 0.889,
+                                        0.89])
+
+
+def test_confidence_curve_reports_box_metrics_at_each_threshold() -> None:
+    predictions = {1: [
+        (0.89, [10.0, 10.0, 10.0, 10.0]),
+        (0.88, [50.0, 50.0, 10.0, 10.0]),
+    ]}
+    truths = {1: [[10.0, 10.0, 10.0, 10.0]]}
+
+    curve = _confidence_curve(predictions, truths, [0.87, 0.88, 0.89], 0.5)
+
+    assert [item["confidence"] for item in curve] == [0.87, 0.88, 0.89]
+    assert [(item["precision"], item["recall"], item["f1"]) for item in curve] == [
+        (0.5, 1.0, 0.666667),
+        (0.5, 1.0, 0.666667),
+        (1.0, 1.0, 1.0),
+    ]
+
+
+def test_confidence_sweep_selects_recall_gate_and_global_max_f1() -> None:
+    curve = [
+        {"confidence": 0.87, "tp": 92, "fp": 10, "fn": 8,
+         "precision": 0.9, "recall": 0.92, "f1": 0.91},
+        {"confidence": 0.88, "tp": 91, "fp": 0, "fn": 9,
+         "precision": 1.0, "recall": 0.91, "f1": 0.95288},
+        {"confidence": 0.89, "tp": 99, "fp": 12, "fn": 1,
+         "precision": 0.891892, "recall": 0.99, "f1": 0.938389},
+    ]
+
+    summary = _confidence_sweep_summary(curve)
+
+    assert summary["precision_eligible_thresholds"] == 2
+    assert summary["max_recall_at_minimum_precision"]["confidence"] == 0.87
+    assert summary["max_f1"]["confidence"] == 0.88
+
+
+def test_confidence_sweep_reports_no_precision_eligible_point() -> None:
+    curve = [{"confidence": 0.87, "tp": 8, "fp": 2, "fn": 2,
+              "precision": 0.8, "recall": 0.8, "f1": 0.8}]
+
+    summary = _confidence_sweep_summary(curve)
+
+    assert summary["precision_eligible_thresholds"] == 0
+    assert summary["max_recall_at_minimum_precision"] is None
+    assert summary["max_f1"]["confidence"] == 0.87
+
+
+@pytest.mark.parametrize("arguments", [
+    ([0.8, 0.9], None, None),
+    (None, 0.01, None),
+    (None, None, [0.8, 0.8]),
+    (None, None, [float("nan")]),
+])
+def test_confidence_sweep_rejects_invalid_cli_combinations(arguments) -> None:
+    with pytest.raises(ValueError):
+        _resolve_sweep_thresholds(*arguments)
 
 
 def test_same_direction_ground_truth_boxes_fold_into_one_event() -> None:

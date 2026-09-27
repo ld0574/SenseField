@@ -1,16 +1,19 @@
 """Evaluate one frozen YOLOX checkpoint on a fixed COCO split and threshold.
 
-Unlike the training loop, this command never searches the evaluated split for a
-better confidence threshold.  By default it reads the threshold stored in the
-best checkpoint, which was selected on the development validation match.
+By default, the command evaluates only the confidence stored in the checkpoint
+(or supplied with --confidence). Optional threshold sweeps add a diagnostic
+curve to the output without changing the primary fixed-confidence metrics.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
+from decimal import Decimal
+from fractions import Fraction
 from pathlib import Path
 
 from mapassist.detection_evaluate import _direction, _direction_state, _iou, _match_boxes
@@ -120,6 +123,119 @@ def _fixed_metrics(predictions: dict[int, list[tuple[float, list[float]]]],
                                if directed_matches else None),
     })
     return metrics, per_image
+
+
+def _confidence_curve(
+    predictions: dict[int, list[tuple[float, list[float]]]],
+    truths: dict[int, list[list[float]]],
+    thresholds: list[float],
+    iou_threshold: float,
+) -> list[dict]:
+    """Return box-level metrics at each requested confidence cutoff."""
+    curve = []
+    for confidence in thresholds:
+        tp = fp = fn = 0
+        for image_id, ground_truth in truths.items():
+            boxes = [box for score, box in predictions[image_id]
+                     if score >= confidence]
+            matched = len(_match_boxes(boxes, ground_truth, iou_threshold))
+            tp += matched
+            fp += len(boxes) - matched
+            fn += len(ground_truth) - matched
+        curve.append({"confidence": confidence, **_finish(tp, fp, fn)})
+    return curve
+
+
+def _confidence_sweep_summary(curve: list[dict], minimum_precision: float = 0.90) -> dict:
+    """Select the precision-gated recall point and the global max-F1 point.
+
+    Metric comparisons use the integer counts, so a displayed precision rounded
+    to 0.900000 cannot accidentally pass the gate when the exact ratio is lower.
+    Ties retain the first point; callers provide thresholds in ascending order.
+    """
+    if not curve:
+        raise ValueError("confidence curve must not be empty")
+    minimum = Fraction(str(minimum_precision))
+
+    def ratio(item: dict, numerator: str, denominator: int) -> Fraction:
+        return Fraction(int(item[numerator]), denominator) if denominator else Fraction(0)
+
+    def precision(item: dict) -> Fraction:
+        return ratio(item, "tp", int(item["tp"]) + int(item["fp"]))
+
+    def recall(item: dict) -> Fraction:
+        return ratio(item, "tp", int(item["tp"]) + int(item["fn"]))
+
+    def f1(item: dict) -> Fraction:
+        tp, fp, fn = int(item["tp"]), int(item["fp"]), int(item["fn"])
+        denominator = 2 * tp + fp + fn
+        return Fraction(2 * tp, denominator) if denominator else Fraction(0)
+
+    eligible = [item for item in curve if precision(item) >= minimum]
+    max_recall = (max(eligible, key=lambda item: (
+        recall(item), f1(item), precision(item),
+    )) if eligible else None)
+    max_f1 = max(curve, key=lambda item: (
+        f1(item), recall(item), precision(item),
+    ))
+    return {
+        "minimum_precision": minimum_precision,
+        "precision_eligible_thresholds": len(eligible),
+        "max_recall_at_minimum_precision": max_recall,
+        "max_f1": max_f1,
+        "max_recall_tie_break": "higher f1, then precision; equal points keep the lowest confidence",
+        "max_f1_tie_break": "higher recall, then precision; equal points keep the lowest confidence",
+    }
+
+
+def _resolve_sweep_thresholds(
+    threshold_range: list[float] | None,
+    threshold_step: float | None,
+    explicit_thresholds: list[float] | None,
+) -> list[float] | None:
+    """Validate and expand optional confidence sweep CLI values."""
+    if explicit_thresholds is not None and (
+        threshold_range is not None or threshold_step is not None
+    ):
+        raise ValueError("--thresholds cannot be combined with --threshold-range/--threshold-step")
+    if threshold_range is None:
+        if threshold_step is not None:
+            raise ValueError("--threshold-step requires --threshold-range")
+        if explicit_thresholds is None:
+            return None
+        values = explicit_thresholds
+    else:
+        if threshold_step is None:
+            raise ValueError("--threshold-range requires --threshold-step")
+        if len(threshold_range) != 2:
+            raise ValueError("--threshold-range requires MIN and MAX")
+        minimum, maximum = threshold_range
+        if not all(math.isfinite(value) and 0 <= value <= 1
+                   for value in (minimum, maximum)):
+            raise ValueError("--threshold-range values must be finite and between 0 and 1")
+        if minimum > maximum:
+            raise ValueError("--threshold-range MIN must be less than or equal to MAX")
+        if not math.isfinite(threshold_step) or threshold_step <= 0:
+            raise ValueError("--threshold-step must be finite and greater than 0")
+        start, stop, step = map(lambda value: Decimal(str(value)),
+                                (minimum, maximum, threshold_step))
+        values = []
+        current = start
+        while current <= stop:
+            values.append(float(current))
+            if len(values) > 10000:
+                raise ValueError("confidence sweep cannot contain more than 10000 thresholds")
+            current += step
+    if not values:
+        raise ValueError("confidence sweep must include at least one threshold")
+    if any(not math.isfinite(value) or not 0 <= value <= 1 for value in values):
+        raise ValueError("--thresholds values must be finite and between 0 and 1")
+    normalized = sorted(set(values))
+    if len(normalized) != len(values):
+        raise ValueError("confidence sweep thresholds must be unique")
+    if len(normalized) > 10000:
+        raise ValueError("confidence sweep cannot contain more than 10000 thresholds")
+    return normalized
 
 
 def _direction_event_metrics(
@@ -242,6 +358,19 @@ def main() -> None:
         "--confidence", type=float,
         help="Frozen confidence selected without inspecting this split; defaults to checkpoint",
     )
+    sweep = parser.add_mutually_exclusive_group()
+    sweep.add_argument(
+        "--threshold-range", nargs=2, type=float, metavar=("MIN", "MAX"),
+        help="Add a diagnostic curve from MIN through MAX, including MAX when the step lands on it",
+    )
+    sweep.add_argument(
+        "--thresholds", nargs="+", type=float, metavar="CONFIDENCE",
+        help="Add a diagnostic confidence curve at explicit confidence values",
+    )
+    parser.add_argument(
+        "--threshold-step", type=float,
+        help="Positive step for --threshold-range; the MAX endpoint is included when reached",
+    )
     parser.add_argument("--iou-threshold", type=float, default=0.5)
     parser.add_argument("--nms-threshold", type=float, default=0.5)
     parser.add_argument("--device", default="auto")
@@ -252,6 +381,12 @@ def main() -> None:
         parser.error("--confidence must be between 0 and 1")
     if not 0 < args.iou_threshold <= 1 or not 0 < args.nms_threshold <= 1:
         parser.error("IoU and NMS thresholds must be between 0 and 1")
+    try:
+        sweep_thresholds = _resolve_sweep_thresholds(
+            args.threshold_range, args.threshold_step, args.thresholds,
+        )
+    except ValueError as error:
+        parser.error(str(error))
 
     root = Path(__file__).resolve().parents[1]
     yolox_root = args.yolox_root.resolve()
@@ -281,7 +416,10 @@ def main() -> None:
     model.to(device)
     predictions, truths = _split_predictions(
         model, device, data_dir, exp.test_size, args.nms_threshold, args.split,
-        pre_filter_confidence=min(confidence, 0.01),
+        pre_filter_confidence=(
+            min(confidence, 0.01, min(sweep_thresholds))
+            if sweep_thresholds is not None else min(confidence, 0.01)
+        ),
     )
     image_sizes = {
         item["id"]: (int(item["width"]), int(item["height"]))
@@ -296,6 +434,15 @@ def main() -> None:
         predictions, truths, confidence, args.iou_threshold, image_sizes,
         direction_rois,
     )
+    confidence_sweep = None
+    if sweep_thresholds is not None:
+        curve = _confidence_curve(
+            predictions, truths, sweep_thresholds, args.iou_threshold,
+        )
+        confidence_sweep = {
+            "thresholds": curve,
+            "summary": _confidence_sweep_summary(curve),
+        }
 
     if args.split == "val" and args.confidence is None:
         threshold_relation = "selected_on_evaluated_validation_split"
@@ -347,6 +494,8 @@ def main() -> None:
         "direction_events": direction_events,
         "per_image": per_image,
     }
+    if confidence_sweep is not None:
+        result["confidence_sweep"] = confidence_sweep
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n",
                       encoding="utf-8")
@@ -356,6 +505,10 @@ def main() -> None:
         "confidence": confidence,
         **metrics,
         "direction_events": direction_events,
+        **({"confidence_sweep": {
+            "threshold_count": len(confidence_sweep["thresholds"]),
+            "summary": confidence_sweep["summary"],
+        }} if confidence_sweep is not None else {}),
     }, ensure_ascii=False, indent=2))
 
 
