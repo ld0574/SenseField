@@ -421,8 +421,15 @@ Java_org_openrd_mapassist_NativeBridge_nativeProcess(
         jint width, jint height, jint row_stride,
         jlong frame_timestamp_ms, jlong processing_now_ms) {
     // kind, direction, priority, observation count, processing micros,
-    // locator state/score, then normalized minimap ROI in parts per million.
-    jint result[11] = {0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0};
+    // locator state/score, normalized minimap ROI in parts per million,
+    // marker count, then marker records of:
+    // state, movement direction, x/y/w/h ppm, age ms, transition event.
+    constexpr int marker_offset = 12;
+    constexpr int marker_stride = 8;
+    constexpr int marker_capacity = 8;
+    constexpr int result_size = marker_offset + marker_stride * marker_capacity;
+    jint result[result_size] = {};
+    result[5] = -1;
     auto *session = reinterpret_cast<Session *>(handle);
     auto *rgba = frame ? static_cast<uint8_t *>(env->GetDirectBufferAddress(frame)) : nullptr;
     const jlong capacity = frame ? env->GetDirectBufferCapacity(frame) : -1;
@@ -446,6 +453,12 @@ Java_org_openrd_mapassist_NativeBridge_nativeProcess(
             result[5] = locator_state;
             result[6] = static_cast<jint>(std::lround(locator_score * 1000.0f));
             minimap_ready = locator_state != MA_LOCATOR_SEARCHING;
+            if (!minimap_ready) {
+                // A lost/unknown minimap ROI is not evidence that tracked
+                // enemies disappeared. Drop those tracks silently until the
+                // locator confirms a usable region again.
+                ma_engine_clear_minimap_tracks(session->engine);
+            }
             if (minimap_ready) {
                 frame_profile.minimap = located_minimap;
                 result[7] = static_cast<jint>(std::lround(located_minimap.x * 1000000.0f));
@@ -491,12 +504,30 @@ Java_org_openrd_mapassist_NativeBridge_nativeProcess(
             result[1] = cue.direction;
             result[2] = cue.priority;
         }
+        ma_minimap_marker markers[marker_capacity];
+        const int marker_count = std::clamp(
+                ma_engine_read_minimap_markers(
+                        session->engine, markers, marker_capacity),
+                0, marker_capacity);
+        result[11] = marker_count;
+        for (int index = 0; index < marker_count; ++index) {
+            const ma_minimap_marker &marker = markers[index];
+            const int base = marker_offset + index * marker_stride;
+            result[base] = marker.state;
+            result[base + 1] = marker.movement_direction;
+            result[base + 2] = static_cast<jint>(std::lround(marker.bbox.x * 1000000.0f));
+            result[base + 3] = static_cast<jint>(std::lround(marker.bbox.y * 1000000.0f));
+            result[base + 4] = static_cast<jint>(std::lround(marker.bbox.w * 1000000.0f));
+            result[base + 5] = static_cast<jint>(std::lround(marker.bbox.h * 1000000.0f));
+            result[base + 6] = marker.age_ms;
+            result[base + 7] = marker.event;
+        }
         result[3] = static_cast<jint>(observations.size());
         result[4] = static_cast<jint>(std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - start).count());
     }
-    jintArray output = env->NewIntArray(11);
-    if (output) env->SetIntArrayRegion(output, 0, 11, result);
+    jintArray output = env->NewIntArray(result_size);
+    if (output) env->SetIntArrayRegion(output, 0, result_size, result);
     return output;
 }
 

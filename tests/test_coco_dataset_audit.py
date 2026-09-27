@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from mapassist.coco_dataset_audit import audit_coco_dataset
 
 
@@ -42,3 +44,83 @@ def test_audit_accepts_semantic_categories_and_separate_images(tmp_path: Path) -
     assert report["numeric_category_names_only"] is False
     assert report["cross_split_duplicate_groups"] == []
     assert report["training_blockers"] == []
+    assert len(report["source_image_manifest_sha256"]) == 64
+    assert report["source_image_manifest_sha256"] == audit_coco_dataset(tmp_path)[
+        "source_image_manifest_sha256"
+    ]
+
+
+def test_audit_detects_duplicate_image_category_and_annotation_ids(tmp_path: Path) -> None:
+    _write_split(tmp_path, "train", "train.jpg", "minimap_enemy")
+    annotation = tmp_path / "annotations/instances_train2017.json"
+    document = json.loads(annotation.read_text(encoding="utf-8"))
+    document["images"].append({
+        "id": 1, "file_name": "missing.jpg", "width": 100, "height": 50,
+    })
+    document["categories"].append({"id": 1, "name": "minimap_enemy"})
+    document["annotations"].append(dict(document["annotations"][0]))
+    annotation.write_text(json.dumps(document), encoding="utf-8")
+
+    report = audit_coco_dataset(tmp_path)
+    split = report["splits"]["train"]
+
+    assert split["duplicate_image_ids"] == [1]
+    assert split["duplicate_category_ids"] == [1]
+    assert split["duplicate_annotation_ids"] == [1]
+    assert any("duplicate image IDs" in blocker for blocker in report["training_blockers"])
+    assert any("duplicate category IDs" in blocker for blocker in report["training_blockers"])
+    assert any("duplicate annotation IDs" in blocker for blocker in report["training_blockers"])
+
+
+def test_source_image_manifest_hash_tracks_relative_names_and_content(tmp_path: Path) -> None:
+    _write_split(tmp_path, "train", "train.jpg", "minimap_enemy")
+    _write_split(tmp_path, "test", "test.jpg", "minimap_enemy")
+
+    original = audit_coco_dataset(tmp_path)["source_image_manifest_sha256"]
+    (tmp_path / "train2017/train.jpg").write_bytes(b"changed-image")
+    changed = audit_coco_dataset(tmp_path)["source_image_manifest_sha256"]
+
+    assert original != changed
+
+
+def test_audit_supports_roboflow_coco_and_ignores_unused_parent_category(
+    tmp_path: Path,
+) -> None:
+    for directory in ("train", "valid"):
+        split_dir = tmp_path / directory
+        split_dir.mkdir()
+        (split_dir / f"{directory}.jpg").write_bytes(directory.encode())
+        (split_dir / "_annotations.coco.json").write_text(json.dumps({
+            "images": [{
+                "id": 1, "file_name": f"{directory}.jpg", "width": 640, "height": 640,
+            }],
+            "annotations": [{
+                "id": 1, "image_id": 1, "category_id": 1, "bbox": [1, 2, 3, 4],
+            }],
+            "categories": [
+                {"id": 0, "name": "heroes"},
+                {"id": 1, "name": "0"},
+            ],
+        }), encoding="utf-8")
+
+    report = audit_coco_dataset(tmp_path)
+
+    assert report["splits"]["train"]["layout"] == "roboflow_coco"
+    assert report["splits"]["val"]["images"] == 1
+    assert report["numeric_category_names_only"] is True
+    assert report["unused_categories"] == [{"id": 0, "name": "heroes"}]
+    assert report["dataset_root"] is None
+    assert len(report["source_image_manifest_sha256"]) == 64
+    assert report["splits"]["train"]["annotation_file"] == "train/_annotations.coco.json"
+    assert str(tmp_path) not in json.dumps(report)
+
+
+def test_audit_rejects_image_paths_outside_split_directory(tmp_path: Path) -> None:
+    _write_split(tmp_path, "train", "train.jpg", "minimap_hero")
+    annotation = tmp_path / "annotations/instances_train2017.json"
+    document = json.loads(annotation.read_text(encoding="utf-8"))
+    document["images"][0]["file_name"] = "../secret.txt"
+    annotation.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Unsafe COCO image file_name"):
+        audit_coco_dataset(tmp_path)

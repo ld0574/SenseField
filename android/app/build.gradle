@@ -53,6 +53,22 @@ tasks.register('verifyMinimapModelAssets') {
     def weights = file("${minimapModelDir}/minimap-yolox-nano-320.bin")
     inputs.files(param, weights, minimapModelMetadata)
     doLast {
+        def presentCount = [param, weights].count { it.isFile() }
+        if (presentCount == 0) {
+            logger.lifecycle('Private YOLOX assets are absent; building with the public default profile.')
+            return
+        }
+        if (presentCount != 2) {
+            throw new GradleException(
+                    'YOLOX assets are incomplete. Place both minimap-yolox-nano-320.param '
+                            + 'and minimap-yolox-nano-320.bin in app/src/main/assets, or remove both.'
+            )
+        }
+        if (!minimapModelMetadata.isFile()) {
+            throw new GradleException(
+                    'YOLOX model metadata is missing; cannot verify local model hashes.'
+            )
+        }
         def metadata = new JsonSlurper().parse(minimapModelMetadata)
         [['param', param], ['bin', weights]].each { entry ->
             def expected = metadata.runtime["${entry[0]}_sha256"]

@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define MA_API_VERSION 4
+#define MA_API_VERSION 5
 
 enum ma_kind {
     MA_MAIN_ENEMY = 1,
@@ -68,6 +68,31 @@ typedef struct ma_cue {
     int64_t emitted_at_ms;
     int64_t expires_at_ms;
 } ma_cue;
+
+enum ma_minimap_marker_state {
+    MA_MARKER_VISIBLE = 1,
+    MA_MARKER_LOST = 2
+};
+
+enum ma_vision_event {
+    MA_VISION_EVENT_NONE = 0,
+    MA_VISION_EVENT_APPEAR = 1,
+    MA_VISION_EVENT_DISAPPEAR = 2
+};
+
+/*
+ * A confirmed minimap enemy track for optional visual presentation.  A lost
+ * marker keeps the last reliable box and movement direction for a short
+ * period after the detector stops seeing the portrait.  Coordinates stay
+ * normalized to the full frame so platform UI code can scale them safely.
+ */
+typedef struct ma_minimap_marker {
+    int state;
+    int movement_direction;
+    ma_rect bbox;
+    int age_ms;
+    int event;
+} ma_minimap_marker;
 
 typedef struct ma_engine_config {
     float min_confidence;
@@ -144,10 +169,16 @@ int ma_detect_rgba(const uint8_t *rgba, int width, int height, int row_stride,
 ma_engine *ma_engine_create(const ma_engine_config *config);
 void ma_engine_destroy(ma_engine *engine);
 void ma_engine_reset(ma_engine *engine);
+/* Calls that read or mutate one engine handle must be serialized by the caller. */
 /* Call once per sampled frame, including frames with zero observations. */
 int ma_engine_step(ma_engine *engine, const ma_observation *observations,
                    int observation_count, int64_t now_ms, ma_cue *out,
                    int capacity);
+/* Snapshot confirmed tracks after ma_engine_step; does not mutate the engine. */
+int ma_engine_read_minimap_markers(const ma_engine *engine,
+                                   ma_minimap_marker *out, int capacity);
+/* Clear minimap tracking without disturbing other event tracks or cooldowns. */
+void ma_engine_clear_minimap_tracks(ma_engine *engine);
 
 #ifdef __cplusplus
 }

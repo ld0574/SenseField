@@ -60,3 +60,18 @@ docs/*
 !docs/GITHUB发布检查清单.md
 !docs/赛题背景.md
 !docs/外部数据引入与预训练.md
+!docs/视野记忆.md
+!docs/技术方案.md
+
+# Private model weights and training checkpoints stay local.
+*.pt
+*.pth
+*.onnx
+*.param
+*.safetensors
+*.ckpt
+*.weights
+*.tflite
+*.engine
+*.gguf
+android/app/src/main/assets/minimap-yolox-nano-320.bin

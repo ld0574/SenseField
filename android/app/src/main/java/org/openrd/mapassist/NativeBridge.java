@@ -22,7 +22,9 @@ final class NativeBridge {
             int[] minimapLocatorInts, byte[] minimapLocatorDescriptor);
 
     // [kind, direction, priority, observation count, native processing microseconds,
-    //  locator state, locator score milli, locator x/y/w/h parts per million]
+    //  locator state, locator score milli, locator x/y/w/h parts per million,
+    //  marker count, then marker records: state, movement direction, x/y/w/h ppm,
+    //  age milliseconds, transition event]
     static native int[] nativeProcess(long session, ByteBuffer rgba,
                                       int width, int height, int rowStride,
                                       long frameTimestampMs, long processingNowMs);

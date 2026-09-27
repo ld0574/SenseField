@@ -8,6 +8,7 @@ import android.media.projection.MediaProjectionManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.LinearLayout;
@@ -28,8 +29,11 @@ public final class MainActivity extends Activity {
     private static final int REQUEST_PROJECTION = 1001;
     private static final int REQUEST_IMPORT = 1002;
     private static final int REQUEST_NOTIFICATIONS = 1003;
+    private static final int REQUEST_OVERLAY = 1004;
 
     private TextView status;
+    private CheckBox minimapOverlay;
+    private boolean awaitingOverlayPermission;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -47,7 +51,7 @@ public final class MainActivity extends Activity {
         content.addView(title);
 
         TextView explanation = new TextView(this);
-        explanation.setText("只读取授权的屏幕画面，提示画面中可见的事件。不操作游戏、不显示游戏内悬浮窗。授权时请选择整个屏幕，再切换到游戏练习场景。\n\n内置配置尚未标定，默认不会发出识别提示。");
+        explanation.setText("只读取授权的屏幕画面，提示画面中可见的事件。不操作游戏。可选的小地图提示层只显示本地识别结果，不接收触控；授权时请选择整个屏幕，再切换到游戏练习场景。\n\n内置配置尚未标定，默认不会发出识别提示。");
         explanation.setTextSize(16);
         content.addView(explanation);
 
@@ -56,7 +60,7 @@ public final class MainActivity extends Activity {
         content.addView(status);
 
         TextView restartHint = new TextView(this);
-        restartHint.setText("配置、实验识别、提示间隔和中央区域在下一次截屏会话生效。");
+        restartHint.setText("配置、实验识别、视野记忆开关、提示间隔和中央区域在下一次截屏会话生效。");
         content.addView(restartHint);
 
         Button importProfile = button("导入标定配置 JSON", content);
@@ -75,6 +79,25 @@ public final class MainActivity extends Activity {
             refreshStatus();
         });
         content.addView(experimental);
+
+        minimapOverlay = new CheckBox(this);
+        minimapOverlay.setText("启用视野记忆：视觉残影、事件语音与方向震动（实验）");
+        minimapOverlay.setChecked(GameProfile.settings(this)
+                .getBoolean("vision_memory", false) && Settings.canDrawOverlays(this));
+        minimapOverlay.setOnClickListener(view -> {
+            boolean checked = minimapOverlay.isChecked();
+            if (checked && !Settings.canDrawOverlays(this)) {
+                minimapOverlay.setChecked(false);
+                awaitingOverlayPermission = true;
+                Intent permission = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:" + getPackageName()));
+                startActivityForResult(permission, REQUEST_OVERLAY);
+                toast("请允许听野显示非交互式小地图提示层");
+                return;
+            }
+            GameProfile.settings(this).edit().putBoolean("vision_memory", checked).apply();
+        });
+        content.addView(minimapOverlay);
 
         TextView volumeLabel = new TextView(this);
         content.addView(volumeLabel);
@@ -165,6 +188,13 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (awaitingOverlayPermission) {
+            awaitingOverlayPermission = false;
+            boolean allowed = Settings.canDrawOverlays(this);
+            GameProfile.settings(this).edit().putBoolean("vision_memory", allowed).apply();
+            if (minimapOverlay != null) minimapOverlay.setChecked(allowed);
+            if (!allowed) toast("未开启小地图提示层权限；声音提示不受影响");
+        }
         if (status != null) refreshStatus();
     }
 
@@ -207,6 +237,9 @@ public final class MainActivity extends Activity {
             startForegroundService(service);
         } else if (requestCode == REQUEST_IMPORT && resultCode == RESULT_OK && data != null) {
             importProfile(data.getData());
+        } else if (requestCode == REQUEST_OVERLAY) {
+            // Some Android versions report RESULT_CANCELED even when the
+            // special-access toggle changed. onResume checks the real state.
         }
     }
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import ctypes
 import hashlib
 import json
@@ -31,7 +32,15 @@ from mapassist.finalize_review import finalize as finalize_review
 from mapassist.measure_latency import measure
 from mapassist.merge_detection_manifests import merge as merge_detection_manifests
 from mapassist.minimap_layout_review_dataset import build as build_minimap_layout_review
-from mapassist.native import Cue, EngineConfig, Observation, Pipeline, Rect, load_library
+from mapassist.native import (
+    Cue,
+    EngineConfig,
+    MinimapMarker,
+    Observation,
+    Pipeline,
+    Rect,
+    load_library,
+)
 from mapassist.replay import run
 from mapassist.review_dataset import build as build_review_dataset
 from mapassist.synthetic import create
@@ -1090,7 +1099,7 @@ def test_frozen_fixed_roi_android_profile_matches_development_profile() -> None:
     ).hexdigest() == "999f44ecfa9e58b3704439be45f53dd95e21f0fef64051dd730c9f7a1f752a3e"
 
 
-def test_bundled_android_profile_enables_only_experimental_yolox_minimap() -> None:
+def test_bundled_android_public_default_disables_all_recognizers() -> None:
     root = Path(__file__).resolve().parents[1]
     profile = json.loads((root / "android/app/src/main/assets/profile.json").read_text())
     assert profile["verified"] is False
@@ -1099,7 +1108,7 @@ def test_bundled_android_profile_enables_only_experimental_yolox_minimap() -> No
         "minimap_template": False,
         "minimap_red_ring": False,
         "danger_ping_template": False,
-        "minimap_yolox": True,
+        "minimap_yolox": False,
     }
     assert profile["thresholds"]["minimap_yolox_input_size"] == 320
     assert profile["thresholds"]["minimap_yolox_confidence"] == pytest.approx(0.29)
@@ -1115,15 +1124,17 @@ def test_adaptive_minimap_profile_is_importable_and_keeps_frozen_default() -> No
     bundled = json.loads(
         (root / "profiles/hok_minimap_adaptive.experimental.android.json").read_text()
     )
+    expected_default = copy.deepcopy(json.loads(
+        (root / "profiles/hok_minimap_development.android.json").read_text()
+    ))
+    expected_default["detectors"]["minimap_yolox"] = False
     frozen_default = json.loads(
         (root / "android/app/src/main/assets/profile.json").read_text()
     )
 
     assert bundled["templates_b64"] == {}
     assert bundled["layout"] == source["layout"]
-    assert frozen_default == json.loads(
-        (root / "profiles/hok_minimap_development.android.json").read_text()
-    )
+    assert frozen_default == expected_default
     locator = bundled["layout"]["minimap_locator"]
     descriptor = base64.b64decode(locator["descriptor_b64"], validate=True)
     assert len(descriptor) == locator["grid_width"] * locator["grid_height"]
@@ -1140,11 +1151,18 @@ def test_adaptive_minimap_profile_is_importable_and_keeps_frozen_default() -> No
 def test_android_ncnn_assets_match_metadata_and_patched_focus() -> None:
     root = Path(__file__).resolve().parents[1]
     assets = root / "android/app/src/main/assets"
+    param = assets / "minimap-yolox-nano-320.param"
+    weights = assets / "minimap-yolox-nano-320.bin"
+    if not param.is_file() and not weights.is_file():
+        pytest.skip(
+            "private local YOLOX model assets are absent; frozen model consistency is unverified"
+        )
+    assert param.is_file() and weights.is_file(), (
+        "private local model is incomplete; frozen model consistency is unverified"
+    )
     metadata = json.loads(
         (assets / "minimap-yolox-nano-320.metadata.json").read_text(encoding="utf-8")
     )
-    param = assets / "minimap-yolox-nano-320.param"
-    weights = assets / "minimap-yolox-nano-320.bin"
 
     assert hashlib.sha256(param.read_bytes()).hexdigest() == (
         metadata["runtime"]["param_sha256"]
@@ -1406,6 +1424,357 @@ def test_minimap_spatial_track_does_not_repeat_when_direction_changes(
         assert step(1383, 0.14, 2) == 0
         assert step(5300, 0.14, 2) == 0
         assert step(5383, 0.14, 2) == 1
+    finally:
+        library.ma_engine_destroy(engine)
+
+
+def test_minimap_track_exposes_confirmed_visible_then_lost_marker(
+    native_library: Path,
+) -> None:
+    library = load_library(native_library)
+    config = EngineConfig(0.75, 250, 1000, 5000, 2, 3)
+    engine = library.ma_engine_create(ctypes.byref(config))
+    assert engine
+    cue = (Cue * 1)()
+    markers = (MinimapMarker * 8)()
+
+    def observe(at_ms: int, x: float | None) -> None:
+        if x is None:
+            library.ma_engine_step(engine, None, 0, at_ms, cue, 1)
+            return
+        observation = (Observation * 1)(
+            Observation(2, 2, Rect(x, 0.10, 0.02, 0.04), 0.95, at_ms)
+        )
+        library.ma_engine_step(engine, observation, 1, at_ms, cue, 1)
+
+    try:
+        observe(0, 0.10)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 0
+        observe(83, 0.12)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
+        assert markers[0].state == 1
+        assert markers[0].movement_direction == 2
+        assert markers[0].age_ms == 0
+        assert markers[0].event == 1
+        assert markers[0].bbox.x == pytest.approx(0.107, abs=1e-6)
+        assert markers[0].bbox.y == pytest.approx(0.10, abs=1e-6)
+        assert markers[0].bbox.w == pytest.approx(0.02, abs=1e-6)
+        assert markers[0].bbox.h == pytest.approx(0.04, abs=1e-6)
+
+        observe(166, None)
+        observe(249, None)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
+        assert markers[0].state == 1
+        # A short dropout followed by a sighting keeps the confirmed track
+        # alive and does not produce another APPEAR event.
+        observe(260, 0.12)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
+        assert markers[0].state == 1
+        assert markers[0].event == 0
+        observe(343, None)
+        observe(426, None)
+        observe(509, None)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
+        assert markers[0].state == 2
+        assert markers[0].movement_direction == 2
+        assert markers[0].age_ms == 0
+        assert markers[0].event == 2
+
+        observe(592, None)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
+        assert markers[0].age_ms == 83
+        assert markers[0].event == 0
+        for index in range(7, 53):
+            observe(83 + index * 83, None)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
+        observe(509 + 3999, None)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
+        assert markers[0].age_ms == 3999
+        observe(509 + 4000, None)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 0
+    finally:
+        library.ma_engine_destroy(engine)
+
+
+@pytest.mark.parametrize("min_hits", [2, 3])
+def test_minimap_confirmation_threshold_accepts_two_or_three_hits_in_window(
+    native_library: Path, min_hits: int
+) -> None:
+    library = load_library(native_library)
+    config = EngineConfig(0.75, 250, 0, 0, min_hits, 3)
+    engine = library.ma_engine_create(ctypes.byref(config))
+    assert engine
+    cue = (Cue * 1)()
+    markers = (MinimapMarker * 8)()
+    observation = (Observation * 1)(
+        Observation(2, 2, Rect(0.10, 0.10, 0.02, 0.04), 0.95, 0)
+    )
+
+    def observe(at_ms: int, visible: bool) -> int:
+        if visible:
+            observation[0].timestamp_ms = at_ms
+            return library.ma_engine_step(engine, observation, 1, at_ms, cue, 1)
+        return library.ma_engine_step(engine, None, 0, at_ms, cue, 1)
+
+    try:
+        observe(0, True)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 0
+        if min_hits == 2:
+            observe(83, False)
+            assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 0
+            cue_count = observe(166, True)
+        else:
+            observe(83, True)
+            assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 0
+            cue_count = observe(166, True)
+        assert cue_count == 1
+        assert cue[0].kind == 2
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
+        assert markers[0].state == 1
+        assert markers[0].event == 1
+    finally:
+        library.ma_engine_destroy(engine)
+
+
+def test_minimap_rollback_and_long_gap_require_fresh_confirmation(
+    native_library: Path,
+) -> None:
+    library = load_library(native_library)
+    config = EngineConfig(0.75, 250, 0, 0, 2, 3)
+    engine = library.ma_engine_create(ctypes.byref(config))
+    assert engine
+    cue = (Cue * 1)()
+    markers = (MinimapMarker * 8)()
+    observation = (Observation * 1)(
+        Observation(2, 2, Rect(0.10, 0.10, 0.02, 0.04), 0.95, 0)
+    )
+
+    def observe(at_ms: int, visible: bool) -> None:
+        if visible:
+            observation[0].timestamp_ms = at_ms
+            library.ma_engine_step(engine, observation, 1, at_ms, cue, 1)
+        else:
+            library.ma_engine_step(engine, None, 0, at_ms, cue, 1)
+
+    try:
+        observe(0, True)
+        observe(83, True)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
+
+        observe(40, True)  # Clock rollback resets the old track.
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 0
+        observe(123, True)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
+        assert markers[0].event == 1
+
+        observe(1000, False)  # > 750 ms gap resets tracks silently.
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 0
+        observe(1083, True)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 0
+        observe(1166, True)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
+        assert markers[0].event == 1
+    finally:
+        library.ma_engine_destroy(engine)
+
+
+def test_minimap_high_missing_threshold_starts_four_second_retention_on_disappear(
+    native_library: Path,
+) -> None:
+    library = load_library(native_library)
+    config = EngineConfig(0.75, 1000, 0, 0, 2, 120)
+    engine = library.ma_engine_create(ctypes.byref(config))
+    assert engine
+    cue = (Cue * 1)()
+    markers = (MinimapMarker * 8)()
+    observation = (Observation * 1)(
+        Observation(2, 2, Rect(0.10, 0.10, 0.02, 0.04), 0.95, 0)
+    )
+
+    def observe(at_ms: int, visible: bool) -> int:
+        if visible:
+            observation[0].timestamp_ms = at_ms
+            return library.ma_engine_step(engine, observation, 1, at_ms, cue, 1)
+        return library.ma_engine_step(engine, None, 0, at_ms, cue, 1)
+
+    try:
+        observe(0, True)
+        observe(166, True)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
+
+        # At a 6 FPS sampling rate, four seconds elapse before 120 missed
+        # frames. Keep the confirmed track until DISAPPEAR is actually proven.
+        disappear_at_ms = 166 + 120 * 166
+        for missing_frame in range(1, 121):
+            at_ms = 166 + missing_frame * 166
+            observe(at_ms, False)
+            if missing_frame == 24:
+                assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
+                assert markers[0].state == 1
+
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
+        assert markers[0].state == 2
+        assert markers[0].event == 2
+        assert markers[0].age_ms == 0
+
+        for age_ms in range(166, 3985, 166):
+            observe(disappear_at_ms + age_ms, False)
+        observe(disappear_at_ms + 3999, False)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
+        assert markers[0].age_ms == 3999
+        observe(disappear_at_ms + 4000, False)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 0
+    finally:
+        library.ma_engine_destroy(engine)
+
+
+def test_minimap_tracking_is_bounded_to_eight_tracks_and_read_capacity(
+    native_library: Path,
+) -> None:
+    library = load_library(native_library)
+    config = EngineConfig(0.75, 250, 0, 0, 2, 3)
+    engine = library.ma_engine_create(ctypes.byref(config))
+    assert engine
+    cue = (Cue * 1)()
+    observations = (Observation * 9)()
+    for index in range(9):
+        x = 0.04 + index * 0.10
+        observations[index] = Observation(
+            2, 2, Rect(x, 0.10, 0.02, 0.04), 0.95, 0
+        )
+    markers = (MinimapMarker * 8)()
+    limited = (MinimapMarker * 2)()
+    limited[1].state = 991
+
+    try:
+        library.ma_engine_step(engine, observations, 9, 0, cue, 1)
+        for index in range(9):
+            observations[index].timestamp_ms = 83
+        library.ma_engine_step(engine, observations, 9, 83, cue, 1)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 8
+        assert library.ma_engine_read_minimap_markers(engine, limited, 1) == 1
+        assert limited[1].state == 991
+        assert all(marker.state == 1 for marker in markers)
+        assert all(marker.bbox.x >= 0 and marker.bbox.y >= 0 for marker in markers)
+        assert all(marker.bbox.x + marker.bbox.w <= 1 for marker in markers)
+        assert all(marker.bbox.y + marker.bbox.h <= 1 for marker in markers)
+    finally:
+        library.ma_engine_destroy(engine)
+
+
+def test_unconfirmed_single_frame_candidates_do_not_exhaust_track_slots(
+    native_library: Path,
+) -> None:
+    library = load_library(native_library)
+    # The confirmation window is still three frames even when other engine
+    # state uses a much larger missing-frame reset threshold.
+    config = EngineConfig(0.75, 250, 0, 0, 2, 120)
+    engine = library.ma_engine_create(ctypes.byref(config))
+    assert engine
+    cue = (Cue * 1)()
+    markers = (MinimapMarker * 8)()
+    observation = (Observation * 1)()
+    at_ms = 0
+
+    try:
+        for round_index in range(9):
+            x = 0.04 + round_index * 0.10
+            observation[0] = Observation(
+                2, 2, Rect(x, 0.10, 0.02, 0.04), 0.95, at_ms
+            )
+            assert library.ma_engine_step(engine, observation, 1, at_ms, cue, 1) == 0
+            assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 0
+            for _ in range(3):
+                at_ms += 83
+                assert library.ma_engine_step(engine, None, 0, at_ms, cue, 1) == 0
+                assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 0
+            at_ms += 83
+
+        # A real target can still claim a slot and pass normal confirmation.
+        observation[0] = Observation(
+            2, 2, Rect(0.96, 0.10, 0.02, 0.04), 0.95, at_ms
+        )
+        assert library.ma_engine_step(engine, observation, 1, at_ms, cue, 1) == 0
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 0
+        at_ms += 83
+        observation[0].timestamp_ms = at_ms
+        assert library.ma_engine_step(engine, observation, 1, at_ms, cue, 1) == 1
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
+        assert markers[0].event == 1
+    finally:
+        library.ma_engine_destroy(engine)
+
+
+def test_clearing_minimap_tracks_does_not_emit_disappear(
+    native_library: Path,
+) -> None:
+    library = load_library(native_library)
+    config = EngineConfig(0.75, 250, 1000, 5000, 2, 3)
+    engine = library.ma_engine_create(ctypes.byref(config))
+    assert engine
+    cue = (Cue * 1)()
+    markers = (MinimapMarker * 8)()
+    observation = (Observation * 1)(
+        Observation(2, 2, Rect(0.10, 0.10, 0.02, 0.04), 0.95, 0)
+    )
+
+    try:
+        library.ma_engine_step(engine, observation, 1, 0, cue, 1)
+        observation[0].timestamp_ms = 83
+        library.ma_engine_step(engine, observation, 1, 83, cue, 1)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
+        assert markers[0].event == 1
+
+        library.ma_engine_clear_minimap_tracks(engine)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 0
+        for at_ms in (166, 249, 332):
+            library.ma_engine_step(engine, None, 0, at_ms, cue, 1)
+            assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 0
+    finally:
+        library.ma_engine_destroy(engine)
+
+
+def test_reappearing_after_lost_starts_new_confirmation_and_appear_event(
+    native_library: Path,
+) -> None:
+    library = load_library(native_library)
+    config = EngineConfig(0.75, 250, 0, 0, 2, 3)
+    engine = library.ma_engine_create(ctypes.byref(config))
+    assert engine
+    cue = (Cue * 1)()
+    markers = (MinimapMarker * 8)()
+    observation = (Observation * 1)(
+        Observation(2, 2, Rect(0.10, 0.10, 0.02, 0.04), 0.95, 0)
+    )
+
+    def observe(at_ms: int, visible: bool) -> int:
+        if visible:
+            observation[0].timestamp_ms = at_ms
+            return library.ma_engine_step(engine, observation, 1, at_ms, cue, 1)
+        return library.ma_engine_step(engine, None, 0, at_ms, cue, 1)
+
+    try:
+        observe(0, True)
+        observe(83, True)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
+        assert markers[0].event == 1
+
+        observe(166, False)
+        observe(249, False)
+        observe(332, False)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
+        assert markers[0].state == 2
+        assert markers[0].event == 2
+
+        # One detection is not enough to announce a fresh target after LOST.
+        observe(415, True)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 0
+        cue_count = observe(498, True)
+        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
+        assert markers[0].state == 1
+        assert markers[0].event == 1
+        assert cue_count == 1
+        assert cue[0].kind == 2
     finally:
         library.ma_engine_destroy(engine)
 

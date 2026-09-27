@@ -91,7 +91,25 @@ final class GameProfile {
         try (InputStream stream = imported.exists()
                 ? new FileInputStream(imported)
                 : context.getAssets().open("profile.json")) {
-            return parse(readText(stream), settings(context));
+            GameProfile profile = parse(readText(stream), settings(context));
+            if (profile.minimapYolox) {
+                requireAsset(context, "minimap-yolox-nano-320.param");
+                requireAsset(context, "minimap-yolox-nano-320.bin");
+            }
+            return profile;
+        }
+    }
+
+    private static void requireAsset(Context context, String name) throws IOException {
+        try (InputStream ignored = context.getAssets().open(name)) {
+            // A local imported profile can enable the experimental recognizer
+            // only when its private model assets were included in the APK.
+        } catch (IOException missing) {
+            throw new IOException(
+                    "当前配置启用了实验小地图识别，但 APK 未包含本地模型文件 "
+                            + "minimap-yolox-nano-320.param 和 minimap-yolox-nano-320.bin。"
+                            + "请按团队本地运行文档放置模型后重新构建。",
+                    missing);
         }
     }
 

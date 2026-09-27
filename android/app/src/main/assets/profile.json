@@ -30,7 +30,7 @@
     "minimap_template": false,
     "minimap_red_ring": false,
     "danger_ping_template": false,
-    "minimap_yolox": true
+    "minimap_yolox": false
   },
   "thresholds": {
     "red_min": 90,

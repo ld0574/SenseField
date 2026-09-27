@@ -62,6 +62,16 @@ class Cue(C.Structure):
     ]
 
 
+class MinimapMarker(C.Structure):
+    _fields_ = [
+        ("state", C.c_int),
+        ("movement_direction", C.c_int),
+        ("bbox", Rect),
+        ("age_ms", C.c_int),
+        ("event", C.c_int),
+    ]
+
+
 class EngineConfig(C.Structure):
     _fields_ = [
         ("min_confidence", C.c_float),
@@ -121,6 +131,12 @@ def load_library(path: Path | None = None) -> C.CDLL:
         C.POINTER(Cue), C.c_int,
     ]
     lib.ma_engine_step.restype = C.c_int
+    lib.ma_engine_read_minimap_markers.argtypes = [
+        C.c_void_p, C.POINTER(MinimapMarker), C.c_int,
+    ]
+    lib.ma_engine_read_minimap_markers.restype = C.c_int
+    lib.ma_engine_clear_minimap_tracks.argtypes = [C.c_void_p]
+    lib.ma_engine_clear_minimap_tracks.restype = None
     lib.ma_engine_destroy.argtypes = [C.c_void_p]
     lib.ma_engine_reset.argtypes = [C.c_void_p]
     lib.ma_minimap_locator_create.argtypes = [

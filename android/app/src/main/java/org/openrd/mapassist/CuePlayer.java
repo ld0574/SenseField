@@ -7,6 +7,9 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.util.Log;
@@ -34,6 +37,9 @@ final class CuePlayer {
     private TextToSpeech tts;
     private PendingCue pendingTone;
     private volatile boolean closed;
+    private volatile boolean ttsReady;
+    private long lastVisionVoiceMs = Long.MIN_VALUE / 2;
+    private long lastVisionHapticMs = Long.MIN_VALUE / 2;
 
     private static final class PendingCue {
         final int kind;
@@ -140,6 +146,7 @@ final class CuePlayer {
                     return;
                 }
                 tts.setSpeechRate(1.25f);
+                ttsReady = true;
                 tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                     @Override public void onStart(String id) {}
                     @Override public void onDone(String id) {
@@ -219,10 +226,101 @@ final class CuePlayer {
         }
     }
 
+    /**
+     * Re-encode a new vision-memory transition. APPEAR is already represented
+     * by the ordinary spatial tone, so it only adds a short directional
+     * haptic. DISAPPEAR is spoken only when the tracker has a reliable motion
+     * vector; stationary detector loss remains visual to avoid audio overload.
+     */
+    boolean playVisionEvent(int event, int position, int movementDirection) {
+        synchronized (audioLock) {
+            if (closed || (event != 1 && event != 2)) return false;
+            long now = SystemClock.elapsedRealtime();
+            int hapticDirection = movementDirection != 0
+                    ? movementDirection : cardinalForPosition(position);
+            boolean queued = false;
+            if (now - lastVisionHapticMs >= 500) {
+                queued = vibrate(hapticDirection);
+                if (queued) lastVisionHapticMs = now;
+            }
+            if (event == 2 && movementDirection != 0 && ttsReady && tts != null
+                    && now - lastVisionVoiceMs >= 2000) {
+                String phrase = positionText(position) + "敌人消失，"
+                        + movementText(movementDirection) + "移动";
+                Bundle parameters = new Bundle();
+                parameters.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume());
+                try {
+                    int result = tts.speak(phrase, TextToSpeech.QUEUE_ADD, parameters,
+                            "vision-memory-" + now);
+                    if (result == TextToSpeech.SUCCESS) {
+                        queued = true;
+                        lastVisionVoiceMs = now;
+                    }
+                } catch (RuntimeException error) {
+                    Log.w(TAG, "Could not queue vision-memory speech", error);
+                }
+            }
+            return queued;
+        }
+    }
+
+    private boolean vibrate(int direction) {
+        try {
+            Vibrator vibrator;
+            if (android.os.Build.VERSION.SDK_INT >= 31) {
+                VibratorManager manager = context.getSystemService(VibratorManager.class);
+                vibrator = manager == null ? null : manager.getDefaultVibrator();
+            } else {
+                vibrator = context.getSystemService(Vibrator.class);
+            }
+            if (vibrator == null || !vibrator.hasVibrator()) return false;
+            long[] pattern;
+            if (direction == 1) pattern = new long[]{0, 35, 45, 80};
+            else if (direction == 2) pattern = new long[]{0, 80, 45, 35};
+            else if (direction == 3) pattern = new long[]{0, 35};
+            else if (direction == 4) pattern = new long[]{0, 35, 45, 35};
+            else pattern = new long[]{0, 45};
+            vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1));
+            return true;
+        } catch (RuntimeException error) {
+            Log.w(TAG, "Could not play vision-memory haptic", error);
+            return false;
+        }
+    }
+
+    private static int cardinalForPosition(int position) {
+        if (position == 1 || position == 5 || position == 7) return 1;
+        if (position == 2 || position == 6 || position == 8) return 2;
+        if (position == 3) return 3;
+        if (position == 4) return 4;
+        return 0;
+    }
+
+    private static String positionText(int position) {
+        if (position == 1) return "左侧";
+        if (position == 2) return "右侧";
+        if (position == 3) return "上方";
+        if (position == 4) return "下方";
+        if (position == 5) return "左上";
+        if (position == 6) return "右上";
+        if (position == 7) return "左下";
+        if (position == 8) return "右下";
+        return "附近";
+    }
+
+    private static String movementText(int direction) {
+        if (direction == 1) return "向左";
+        if (direction == 2) return "向右";
+        if (direction == 3) return "向上";
+        if (direction == 4) return "向下";
+        return "";
+    }
+
     void close() {
         synchronized (audioLock) {
             if (closed) return;
             closed = true;
+            ttsReady = false;
             if (tts != null) tts.shutdown();
             pool.release();
             pendingTone = null;

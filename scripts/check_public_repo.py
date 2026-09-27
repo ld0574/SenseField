@@ -7,7 +7,7 @@ import argparse
 import re
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 MAX_FILE_BYTES = 10 * 1024 * 1024
@@ -38,6 +38,30 @@ FORBIDDEN_SUFFIXES = {
     ".keystore",
     ".pem",
 }
+MODEL_WEIGHT_SUFFIXES = {
+    ".pth",
+    ".pt",
+    ".onnx",
+    ".param",
+    ".safetensors",
+    ".ckpt",
+    ".weights",
+    ".tflite",
+    ".engine",
+    ".gguf",
+}
+MODEL_BIN_NAME_PARTS = {
+    "model",
+    "weight",
+    "weights",
+    "checkpoint",
+    "checkpoints",
+    "yolo",
+    "yolox",
+    "detector",
+    "network",
+}
+MODEL_BIN_DIRECTORIES = {"model", "models", "weight", "weights", "checkpoints"}
 TEXT_SUFFIXES = {
     "",
     ".c",
@@ -67,6 +91,24 @@ SECRET_PATTERNS = (
     ("AWS access key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
     ("Google API key", re.compile(r"\bAIza[0-9A-Za-z_-]{30,}\b")),
 )
+
+
+def is_model_artifact(rel: str, candidates: set[str]) -> bool:
+    """Recognize model weights/graphs without treating every .bin as a model."""
+    path = PurePosixPath(rel.replace("\\", "/"))
+    suffix = path.suffix.lower()
+    if suffix in MODEL_WEIGHT_SUFFIXES:
+        return True
+    if suffix != ".bin":
+        return False
+
+    stem_parts = {part for part in re.split(r"[._-]+", path.stem.lower()) if part}
+    if stem_parts & MODEL_BIN_NAME_PARTS:
+        return True
+    if {part.lower() for part in path.parts[:-1]} & MODEL_BIN_DIRECTORIES:
+        return True
+    companion = path.with_suffix(".param").as_posix()
+    return companion in candidates
 
 
 def git_candidates(root: Path) -> list[str] | None:
@@ -132,6 +174,7 @@ def workspace_candidates(root: Path) -> list[str]:
 def scan(root: Path, candidates: list[str]) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
+    normalized_candidates = {item.replace("\\", "/") for item in candidates}
     for rel in candidates:
         path = root / rel
         if not path.is_file():
@@ -141,6 +184,8 @@ def scan(root: Path, candidates: list[str]) -> tuple[list[str], list[str]]:
             errors.append(f"private/generated path is public: {rel}")
         if path.name in FORBIDDEN_NAMES or path.suffix.lower() in FORBIDDEN_SUFFIXES:
             errors.append(f"private or binary artifact is public: {rel}")
+        if is_model_artifact(normalized, normalized_candidates):
+            errors.append(f"model weight or graph is public: {rel}")
         size = path.stat().st_size
         if size > MAX_FILE_BYTES:
             errors.append(f"file exceeds 10 MiB ({size / 1024 / 1024:.1f} MiB): {rel}")

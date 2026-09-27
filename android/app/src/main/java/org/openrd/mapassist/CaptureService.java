@@ -43,12 +43,15 @@ public final class CaptureService extends Service {
     private static final long DISPLAY_CHECK_PERIOD_MS = 500;
     private static final long BLACK_FRAME_GRACE_MS = 5000;
     private static final long BLACK_STOP_AFTER_MS = 10000;
+    private static final int MARKER_OFFSET = 12;
+    private static final int MARKER_STRIDE = 8;
 
     private final Object processingLock = new Object();
     private HandlerThread workerThread;
     private Handler worker;
     private NotificationManager notificationManager;
     private CuePlayer cuePlayer;
+    private MinimapOverlay minimapOverlay;
     private MediaProjection projection;
     private MediaProjection.Callback projectionCallback;
     private VirtualDisplay virtualDisplay;
@@ -134,6 +137,7 @@ public final class CaptureService extends Service {
                 }
                 paused = !paused;
                 NativeBridge.nativeReset(nativeSession);
+                if (paused && minimapOverlay != null) minimapOverlay.clear();
             }
             refreshNotification();
             return START_NOT_STICKY;
@@ -159,6 +163,9 @@ public final class CaptureService extends Service {
                 GameProfile profile = GameProfile.load(this);
                 profileName = profile.name + " · " + profile.version;
                 maxObservationAgeMs = profile.eventInts[0];
+                if (GameProfile.settings(this).getBoolean("vision_memory", false)) {
+                    minimapOverlay = MinimapOverlay.createIfAllowed(this);
+                }
                 GameProfile.TemplateData enemy = profile.enemyTemplate;
                 GameProfile.TemplateData ping = profile.pingTemplate;
                 nativeSession = NativeBridge.nativeCreate(
@@ -251,6 +258,7 @@ public final class CaptureService extends Service {
             virtualDisplay.setSurface(reader.getSurface());
         }
         if (nativeSession != 0) NativeBridge.nativeReset(nativeSession);
+        if (minimapOverlay != null) minimapOverlay.clear();
         blackSinceMs = 0;
         Log.i(TAG, "Capture resized to " + frameWidth + "x" + frameHeight);
     }
@@ -304,6 +312,7 @@ public final class CaptureService extends Service {
                 }
                 if (landscape != lastFrameLandscape && nativeSession != 0) {
                     NativeBridge.nativeReset(nativeSession);
+                    if (minimapOverlay != null) minimapOverlay.clear();
                     if (!landscape) latestNativeMicros = 0;
                 }
                 lastFrameLandscape = landscape;
@@ -326,6 +335,10 @@ public final class CaptureService extends Service {
                                         + " roiPpm=" + result[7] + "," + result[8]
                                         + "," + result[9] + "," + result[10]);
                             }
+                        }
+                        if (minimapOverlay != null && result.length >= 12) {
+                            minimapOverlay.update(result);
+                            playVisionMemoryTransitions(result);
                         }
                         if (result[0] > 0) {
                             String cueId = auditSessionId + ":" + nextCueId++;
@@ -398,6 +411,41 @@ public final class CaptureService extends Service {
             }
         }
         return inspected > 0 && bright == 0;
+    }
+
+    private void playVisionMemoryTransitions(int[] result) {
+        if (cuePlayer == null || result.length < MARKER_OFFSET || result[11] <= 0) return;
+        int count = Math.min(8, result[11]);
+        for (int index = 0; index < count; index++) {
+            int base = MARKER_OFFSET + index * MARKER_STRIDE;
+            if (base + MARKER_STRIDE > result.length) break;
+            int event = result[base + 7];
+            if (event == 0) continue;
+            int position = minimapPosition(
+                    result[base + 2] + result[base + 4] / 2,
+                    result[base + 3] + result[base + 5] / 2,
+                    result[7], result[8], result[9], result[10]);
+            boolean feedbackQueued = cuePlayer.playVisionEvent(
+                    event, position, result[base + 1]);
+            Log.i(TAG, "VisionMemoryEvent sessionId=" + auditSessionId
+                    + " event=" + (event == 1 ? "APPEAR" : "DISAPPEAR")
+                    + " position=" + position
+                    + " movement=" + result[base + 1]
+                    + " ageMs=" + result[base + 6]
+                    + " feedbackQueued=" + feedbackQueued);
+        }
+    }
+
+    private static int minimapPosition(int x, int y, int roiX, int roiY,
+                                       int roiWidth, int roiHeight) {
+        if (roiWidth <= 0 || roiHeight <= 0) return 0;
+        float dx = (x - (roiX + roiWidth * 0.5f)) / (roiWidth * 0.5f);
+        float dy = (y - (roiY + roiHeight * 0.5f)) / (roiHeight * 0.5f);
+        if (Math.abs(dx) < 0.18f && Math.abs(dy) < 0.18f) return 0;
+        if (Math.abs(dx) < Math.abs(dy) * 0.45f) return dy < 0 ? 3 : 4;
+        if (Math.abs(dy) < Math.abs(dx) * 0.45f) return dx < 0 ? 1 : 2;
+        if (dx < 0) return dy < 0 ? 5 : 7;
+        return dy < 0 ? 6 : 8;
     }
 
     private Notification notification(String state) {
@@ -540,6 +588,10 @@ public final class CaptureService extends Service {
 
     private void releaseCapture() {
         stopping = true;
+        if (minimapOverlay != null) {
+            minimapOverlay.close();
+            minimapOverlay = null;
+        }
         if (worker != null) worker.removeCallbacks(displayWatchdog);
         if (reader != null) {
             reader.setOnImageAvailableListener(null, null);

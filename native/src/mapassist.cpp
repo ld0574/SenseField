@@ -509,10 +509,18 @@ struct SpatialTrack {
     bool matched = false;
     float x = 0.0f;
     float y = 0.0f;
+    float w = 0.0f;
+    float h = 0.0f;
+    float velocity_x = 0.0f;
+    float velocity_y = 0.0f;
     uint8_t recent = 0;
     int missing = 0;
     bool announced = false;
+    bool confirmed = false;
     int direction = MA_DIR_NONE;
+    int event = MA_VISION_EVENT_NONE;
+    int64_t last_seen_ms = 0;
+    int64_t disappeared_at_ms = 0;
 };
 
 int track_index(int kind, int direction) {
@@ -521,6 +529,17 @@ int track_index(int kind, int direction) {
 
 int hit_count(uint8_t recent) {
     return (recent & 1) + ((recent >> 1) & 1) + ((recent >> 2) & 1);
+}
+
+int movement_direction(float velocity_x, float velocity_y) {
+    // Ignore sub-pixel detector jitter. Coordinates are normalized to the
+    // full frame; 0.0015 is roughly 3.6 px on a 2400 px-wide capture.
+    constexpr float minimum_motion = 0.0015f;
+    if (std::hypot(velocity_x, velocity_y) < minimum_motion)
+        return MA_DIR_NONE;
+    if (std::abs(velocity_x) >= std::abs(velocity_y))
+        return velocity_x < 0.0f ? MA_DIR_LEFT : MA_DIR_RIGHT;
+    return velocity_y < 0.0f ? MA_DIR_UP : MA_DIR_DOWN;
 }
 
 int priority(int kind) {
@@ -631,7 +650,10 @@ extern "C" int ma_engine_step(ma_engine *engine,
     }
     engine->last_step_ms = now_ms;
     bool seen[15] = {};
-    for (SpatialTrack &track : engine->minimap_tracks) track.matched = false;
+    for (SpatialTrack &track : engine->minimap_tracks) {
+        track.matched = false;
+        track.event = MA_VISION_EVENT_NONE;
+    }
     for (int i = 0; i < observation_count; ++i) {
         const ma_observation &obs = observations[i];
         if (obs.kind < MA_MAIN_ENEMY || obs.kind > MA_DANGER_PING ||
@@ -665,28 +687,76 @@ extern "C" int ma_engine_step(ma_engine *engine,
             }
             if (nearest < 0) continue;
             SpatialTrack &track = engine->minimap_tracks[nearest];
+            const bool reappeared_after_loss = track.active && track.confirmed &&
+                    track.missing >= engine->config.reset_after_missing_frames;
+            if (reappeared_after_loss) {
+                // A track that crossed the LOST transition starts a fresh
+                // confirmation cycle. Old motion and announcement state must
+                // not suppress or misdescribe its next APPEAR transition.
+                track.confirmed = false;
+                track.announced = false;
+                track.recent = 0;
+                track.velocity_x = 0.0f;
+                track.velocity_y = 0.0f;
+                track.x = x;
+                track.y = y;
+                track.w = obs.bbox.w;
+                track.h = obs.bbox.h;
+            }
             if (!track.active) {
                 track = SpatialTrack{};
                 track.active = true;
                 track.x = x;
                 track.y = y;
-            } else {
+                track.w = obs.bbox.w;
+                track.h = obs.bbox.h;
+            } else if (!reappeared_after_loss) {
+                const float delta_x = x - track.x;
+                const float delta_y = y - track.y;
+                track.velocity_x = track.velocity_x * 0.55f + delta_x * 0.45f;
+                track.velocity_y = track.velocity_y * 0.55f + delta_y * 0.45f;
                 track.x = track.x * 0.65f + x * 0.35f;
                 track.y = track.y * 0.65f + y * 0.35f;
+                track.w = track.w * 0.65f + obs.bbox.w * 0.35f;
+                track.h = track.h * 0.65f + obs.bbox.h * 0.35f;
             }
             track.direction = obs.direction;
             track.matched = true;
             track.missing = 0;
+            track.last_seen_ms = now_ms;
+            track.disappeared_at_ms = 0;
             track.recent = static_cast<uint8_t>(((track.recent << 1) | 1) & 7);
+            if (!track.confirmed &&
+                hit_count(track.recent) >= engine->config.min_hits_in_three_frames) {
+                track.confirmed = true;
+                track.event = MA_VISION_EVENT_APPEAR;
+            }
             continue;
         }
         seen[track_index(obs.kind, obs.direction)] = true;
     }
-    const int minimap_retention_frames = std::max(12, engine->config.reset_after_missing_frames * 4);
+    constexpr int64_t vision_memory_retention_ms = 4000;
     for (SpatialTrack &track : engine->minimap_tracks) {
         if (!track.active || track.matched) continue;
         track.recent = static_cast<uint8_t>((track.recent << 1) & 7);
-        if (++track.missing >= minimap_retention_frames) track = SpatialTrack{};
+        ++track.missing;
+        if (track.confirmed &&
+            track.missing == engine->config.reset_after_missing_frames) {
+            track.event = MA_VISION_EVENT_DISAPPEAR;
+            track.disappeared_at_ms = now_ms;
+        }
+        const bool lost = track.confirmed &&
+                track.missing >= engine->config.reset_after_missing_frames;
+        if (!track.confirmed && (track.recent == 0 ||
+            track.missing >= engine->config.reset_after_missing_frames)) {
+            // Once all three confirmation-window bits have shifted out, an
+            // unconfirmed candidate can never become visible and must release
+            // its bounded spatial slot without waiting on a larger reset gap.
+            track = SpatialTrack{};
+        } else if (lost &&
+                   now_ms - track.disappeared_at_ms >= vision_memory_retention_ms) {
+            track = SpatialTrack{};
+        }
     }
     int best = -1;
     int best_priority = -1;
@@ -743,4 +813,32 @@ extern "C" int ma_engine_step(ma_engine *engine,
                   now_ms + engine->config.max_observation_age_ms};
     }
     return 1;
+}
+
+extern "C" int ma_engine_read_minimap_markers(
+        const ma_engine *engine, ma_minimap_marker *out, int capacity) {
+    if (!engine || !out || capacity <= 0) return 0;
+    int count = 0;
+    for (const SpatialTrack &track : engine->minimap_tracks) {
+        if (!track.active || !track.confirmed || count >= capacity) continue;
+        const bool lost = !track.matched &&
+                track.missing >= engine->config.reset_after_missing_frames;
+        const int64_t age_ms = lost
+                ? engine->last_step_ms - track.disappeared_at_ms
+                : engine->last_step_ms - track.last_seen_ms;
+        out[count++] = {
+            lost ? MA_MARKER_LOST : MA_MARKER_VISIBLE,
+            movement_direction(track.velocity_x, track.velocity_y),
+            {track.x - track.w * 0.5f, track.y - track.h * 0.5f,
+             track.w, track.h},
+            static_cast<int>(std::clamp<int64_t>(age_ms, 0, 4000)),
+            track.event,
+        };
+    }
+    return count;
+}
+
+extern "C" void ma_engine_clear_minimap_tracks(ma_engine *engine) {
+    if (!engine) return;
+    for (SpatialTrack &track : engine->minimap_tracks) track = SpatialTrack{};
 }
