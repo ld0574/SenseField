@@ -75,7 +75,7 @@ python -m pip install -e '.[test]'
 python -m pytest -q
 ```
 
-启动统一标注网站（页面内切换开发队列、video7 和 video8-v3 队列）：
+启动统一标注网站（页面内切换全部队列，共用一个端口）：
 
 ```sh
 PYTHONPATH=python python3 -m mapassist.annotation_server \
@@ -85,12 +85,13 @@ PYTHONPATH=python python3 -m mapassist.annotation_server \
   --dataset expanded-video7=data/private/minimap-review-v6-video7-expanded \
   --dataset holdout-video7=data/private/minimap-video7-holdout-v1 \
   --dataset video8-v3=data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi \
+  --dataset video1-hd=data/private/minimap-review-video1-hd-v1 \
   --dataset reviewed-v1-5=data/private/minimap-review-v3 \
   --dataset reviewed-v6=data/private/holdout-video6/blind-review \
   --host 127.0.0.1 --port 8765 --open
 ```
 
-video8-v3 的 120 张帧和标注叠图均为 2376×1080，目前全部待标。敌方英雄只在图标中心位于小地图控件 `[106,0,454,344]` 内时标注；外扩安全裁剪 `[79,0,481,371]` 仅为保留周边像素，控件外 HUD 头像不标。v2 队列坐标错配，不能启动；详见[团队协作文档](docs/团队协作与本地运行.md)和[video8 记录](validation/VIDEO8.md)。
+video8-v3 已完成 120 张安全 ROI 复核；video1-hd 是新 1080P 录像的 100 张待复核队列。旧 video1 标签只能作为仿射迁移后的建议框，不能直接作为高清真值。规则、进度和坐标见[团队协作文档](docs/团队协作与本地运行.md)、[video1 高清记录](validation/VIDEO1_HD.md)和[video8 记录](validation/VIDEO8.md)。
 
 Android Studio 直接打开 `android/`。首次原生构建会下载并校验固定版本的 ncnn Android 依赖；调试 APK 的命令行构建方式记录在[团队协作文档](docs/团队协作与本地运行.md)。
 
@@ -119,6 +120,7 @@ Android Studio 直接打开 `android/`。首次原生构建会下载并校验固
 - [外部数据审计与预训练验证](validation/EXTERNAL_PRETRAINING.md)
 - [小地图自动定位器](validation/MINIMAP_LOCATOR.md)
 - [video7 扩展人工标注](validation/VIDEO7_EXPANDED.md)
+- [video1 高清重导出与标签迁移](validation/VIDEO1_HD.md)
 - [困难误报加权实验](validation/HARD_NEGATIVES.md)
 - [video8 真人排位冻结盲测](validation/VIDEO8.md)
 - [GitHub 发布检查清单](docs/GITHUB发布检查清单.md)
