@@ -138,44 +138,60 @@ final class CuePlayer {
 
     private void prepareVoices() {
         Handler main = new Handler(Looper.getMainLooper());
-        tts = new TextToSpeech(context, status -> main.post(() -> {
-            synchronized (audioLock) {
-                if (closed || status != TextToSpeech.SUCCESS || tts == null) return;
-                if (tts.setLanguage(Locale.SIMPLIFIED_CHINESE) < TextToSpeech.LANG_AVAILABLE) {
-                    Log.w(TAG, "Chinese TTS voice unavailable; short tones remain active");
-                    return;
-                }
-                tts.setSpeechRate(1.25f);
-                ttsReady = true;
-                tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                    @Override public void onStart(String id) {}
-                    @Override public void onDone(String id) {
-                        synchronized (audioLock) {
-                            if (closed) return;
-                            File file = voiceFile(id);
-                            if (!file.exists()) return;
-                            try {
-                                int sample = pool.load(file.getAbsolutePath(), 1);
-                                if (sample != 0) voices.put(id, sample);
-                            } catch (RuntimeException error) {
-                                Log.w(TAG, "Could not load synthesized cue " + id, error);
-                            }
+        try {
+            tts = new TextToSpeech(context, status -> main.post(() -> {
+                synchronized (audioLock) {
+                    if (closed || status != TextToSpeech.SUCCESS || tts == null) return;
+                    try {
+                        if (tts.setLanguage(Locale.SIMPLIFIED_CHINESE)
+                                < TextToSpeech.LANG_AVAILABLE) {
+                            Log.w(TAG, "Chinese TTS voice unavailable; short tones remain active");
+                            return;
                         }
+                        tts.setSpeechRate(1.25f);
+                        ttsReady = true;
+                        tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                            @Override public void onStart(String id) {}
+                            @Override public void onDone(String id) {
+                                synchronized (audioLock) {
+                                    if (closed) return;
+                                    File file = voiceFile(id);
+                                    if (!file.exists()) return;
+                                    try {
+                                        int sample = pool.load(file.getAbsolutePath(), 1);
+                                        if (sample != 0) voices.put(id, sample);
+                                    } catch (RuntimeException error) {
+                                        Log.w(TAG, "Could not load synthesized cue " + id, error);
+                                    }
+                                }
+                            }
+                            @Override public void onError(String id) {
+                                Log.w(TAG, "TTS failed for " + id);
+                            }
+                        });
+                        Map<String, String> phrases = new HashMap<>();
+                        phrases.put("danger", "危险信号");
+                        phrases.put("main_up", "上方有敌人");
+                        phrases.put("main_down", "下方有敌人");
+                        phrases.put("map_up", "小地图上方有敌人");
+                        phrases.put("map_down", "小地图下方有敌人");
+                        for (Map.Entry<String, String> entry : phrases.entrySet()) {
+                            tts.synthesizeToFile(entry.getValue(), new Bundle(),
+                                    voiceFile(entry.getKey()), entry.getKey());
+                        }
+                    } catch (RuntimeException error) {
+                        // TTS is optional. A broken or unavailable engine must
+                        // not crash the main thread or stop tones and haptics.
+                        ttsReady = false;
+                        Log.w(TAG, "Could not prepare optional TTS; short tones remain active", error);
                     }
-                    @Override public void onError(String id) { Log.w(TAG, "TTS failed for " + id); }
-                });
-                Map<String, String> phrases = new HashMap<>();
-                phrases.put("danger", "危险信号");
-                phrases.put("main_up", "上方有敌人");
-                phrases.put("main_down", "下方有敌人");
-                phrases.put("map_up", "小地图上方有敌人");
-                phrases.put("map_down", "小地图下方有敌人");
-                for (Map.Entry<String, String> entry : phrases.entrySet()) {
-                    tts.synthesizeToFile(entry.getValue(), new Bundle(),
-                            voiceFile(entry.getKey()), entry.getKey());
                 }
-            }
-        }));
+            }));
+        } catch (RuntimeException error) {
+            tts = null;
+            ttsReady = false;
+            Log.w(TAG, "Could not initialize optional TTS; short tones remain active", error);
+        }
     }
 
     private File voiceFile(String id) {
@@ -321,7 +337,14 @@ final class CuePlayer {
             if (closed) return;
             closed = true;
             ttsReady = false;
-            if (tts != null) tts.shutdown();
+            if (tts != null) {
+                try {
+                    tts.shutdown();
+                } catch (RuntimeException error) {
+                    Log.w(TAG, "Could not shut down TTS cleanly", error);
+                }
+                tts = null;
+            }
             pool.release();
             pendingTone = null;
             ready.clear();
