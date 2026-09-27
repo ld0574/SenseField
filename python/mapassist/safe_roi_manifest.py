@@ -24,6 +24,7 @@ from .orientation import from_manifest, probe
 
 SCHEMA_VERSION = 1
 DEFAULT_PADDING_SHORT_SIDE_FRACTION = 0.035
+DEFAULT_WIDGET_CENTER_TOLERANCE_PX = 4.0
 
 
 def _sha256(path: Path) -> str:
@@ -152,6 +153,70 @@ def _layout_widget(match: dict[str, Any], match_id: str) -> tuple[list[float], i
     return canonical, len(frames)
 
 
+def _inspect_widget_centers(
+    match: dict[str, Any], match_id: str, widget_roi: list[float],
+    display_width: int, display_height: int, tolerance_px: float,
+) -> list[dict[str, Any]]:
+    """Allow only small center-outside quantization and report every exception."""
+    frames = match.get("frames")
+    if not isinstance(frames, list) or not frames:
+        raise ValueError(f"Detection match {match_id} must contain frames")
+    widget_x, widget_y, widget_width, widget_height = widget_roi
+    widget_right = widget_x + widget_width
+    widget_bottom = widget_y + widget_height
+    exceptions = []
+    seen_timestamps: set[int] = set()
+    for frame_index, frame in enumerate(frames):
+        if not isinstance(frame, dict):
+            raise ValueError(
+                f"Detection match {match_id} frame #{frame_index + 1} must be an object"
+            )
+        at_ms = frame.get("at_ms")
+        if (not isinstance(at_ms, int) or isinstance(at_ms, bool) or at_ms < 0 or
+                at_ms in seen_timestamps):
+            raise ValueError(
+                f"Detection match {match_id} has an invalid/duplicate frame timestamp"
+            )
+        seen_timestamps.add(at_ms)
+        boxes = frame.get("boxes")
+        if not isinstance(boxes, list):
+            raise ValueError(f"Detection match {match_id}@{at_ms} boxes must be a list")
+        for box_index, value in enumerate(boxes, start=1):
+            box = _normalized_box(
+                value, f"Detection match {match_id}@{at_ms} box {box_index}"
+            )
+            x, y, width, height = box
+            center_x = x + width / 2
+            center_y = y + height / 2
+            distances = {}
+            if center_x < widget_x:
+                distances["left"] = (widget_x - center_x) * display_width
+            elif center_x > widget_right:
+                distances["right"] = (center_x - widget_right) * display_width
+            if center_y < widget_y:
+                distances["top"] = (widget_y - center_y) * display_height
+            elif center_y > widget_bottom:
+                distances["bottom"] = (center_y - widget_bottom) * display_height
+            if not distances:
+                continue
+            outside_px = max(distances.values())
+            if outside_px > tolerance_px + 1e-9:
+                sides = ", ".join(distances)
+                raise ValueError(
+                    f"{match_id}@{at_ms} box {box_index} center is "
+                    f"{outside_px:.3f} px outside widget ({sides}); "
+                    f"tolerance is {tolerance_px:g} px"
+                )
+            exceptions.append({
+                "match_id": match_id,
+                "at_ms": at_ms,
+                "box_index": box_index,
+                "outside_px": round(outside_px, 6),
+                "sides": list(distances),
+            })
+    return exceptions
+
+
 def _safe_roi(widget_roi: list[float], width: int, height: int,
               padding_fraction: float) -> list[float]:
     if width <= 0 or height <= 0:
@@ -172,6 +237,7 @@ def remap_manifest(
     layout_manifest: Path,
     *,
     padding_short_side_fraction: float = DEFAULT_PADDING_SHORT_SIDE_FRACTION,
+    widget_center_tolerance_px: float = DEFAULT_WIDGET_CENTER_TOLERANCE_PX,
     include_matches: set[str] | None = None,
     exclude_matches: set[str] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -182,6 +248,17 @@ def remap_manifest(
             padding_short_side_fraction < 0 or padding_short_side_fraction >= 0.5):
         raise ValueError("Padding fraction must be finite and in [0, 0.5)")
     padding_short_side_fraction = float(padding_short_side_fraction)
+    if (not isinstance(widget_center_tolerance_px, (int, float)) or
+            isinstance(widget_center_tolerance_px, bool)):
+        raise ValueError("Widget center tolerance must be finite and nonnegative")
+    try:
+        widget_center_tolerance_px = float(widget_center_tolerance_px)
+    except (OverflowError, ValueError) as error:
+        raise ValueError(
+            "Widget center tolerance must be finite and nonnegative"
+        ) from error
+    if not math.isfinite(widget_center_tolerance_px) or widget_center_tolerance_px < 0:
+        raise ValueError("Widget center tolerance must be finite and nonnegative")
     detection_manifest = detection_manifest.resolve()
     layout_manifest = layout_manifest.resolve()
     detection = _read_manifest(detection_manifest, "Detection")
@@ -222,6 +299,7 @@ def remap_manifest(
     remapped = copy.deepcopy(detection)
     remapped["matches"] = []
     audit_matches: dict[str, Any] = {}
+    widget_center_exceptions: list[dict[str, Any]] = []
     for match_id, (source, video_path) in detections.items():
         if match_id not in selected_ids:
             continue
@@ -238,6 +316,12 @@ def remap_manifest(
                     dimension <= 0 for dimension in display_size)):
             raise ValueError(f"Layout match {match_id} needs a valid display_size")
         _check_orientation_compatibility(source, detection, layout_orientation, match_id)
+
+        center_exceptions = _inspect_widget_centers(
+            source, match_id, widget_roi, display_size[0], display_size[1],
+            widget_center_tolerance_px,
+        )
+        widget_center_exceptions.extend(center_exceptions)
 
         actual_sha256 = _sha256(video_path)
         prior_sha256 = source.get("video_sha256")
@@ -267,6 +351,12 @@ def remap_manifest(
         "schema_version": SCHEMA_VERSION,
         "method": "layout-widget-expanded-by-short-side-fraction",
         "padding_short_side_fraction": padding_short_side_fraction,
+        "widget_center_tolerance_px": widget_center_tolerance_px,
+        "widget_center_tolerance_policy": (
+            "box centers may lie outside widget bounds only within the configured "
+            "display-pixel tolerance"
+        ),
+        "widget_center_tolerance_exceptions": widget_center_exceptions,
         "padding_definition": (
             "expand every widget edge by fraction * min(display_width, display_height), "
             "then clip to the display frame"
@@ -316,6 +406,7 @@ def remap_to_file(
     output: Path,
     *,
     padding_short_side_fraction: float = DEFAULT_PADDING_SHORT_SIDE_FRACTION,
+    widget_center_tolerance_px: float = DEFAULT_WIDGET_CENTER_TOLERANCE_PX,
     include_matches: set[str] | None = None,
     exclude_matches: set[str] | None = None,
 ) -> dict[str, Any]:
@@ -327,6 +418,7 @@ def remap_to_file(
     document, summary = remap_manifest(
         detection_manifest, layout_manifest,
         padding_short_side_fraction=padding_short_side_fraction,
+        widget_center_tolerance_px=widget_center_tolerance_px,
         include_matches=include_matches, exclude_matches=exclude_matches,
     )
     write_manifest_atomic(document, output)
@@ -345,6 +437,12 @@ def main() -> None:
         help="padding on each edge as a fraction of the display short side (default: 0.035)",
     )
     parser.add_argument(
+        "--widget-center-tolerance-px", type=float,
+        default=DEFAULT_WIDGET_CENTER_TOLERANCE_PX,
+        help=("maximum distance in display pixels for a box center just outside "
+              "the widget bounds (default: 4.0; larger distances are rejected)"),
+    )
+    parser.add_argument(
         "--include-match", action="append", default=None, metavar="ID",
         help="keep only these match IDs; may be repeated",
     )
@@ -357,6 +455,7 @@ def main() -> None:
         result = remap_to_file(
             args.detection_manifest, args.layout_manifest, args.output,
             padding_short_side_fraction=args.padding_short_side_fraction,
+            widget_center_tolerance_px=args.widget_center_tolerance_px,
             include_matches=set(args.include_match) if args.include_match is not None else None,
             exclude_matches=set(args.exclude_match),
         )

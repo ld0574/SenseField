@@ -155,6 +155,69 @@ def test_remap_rejects_hash_mismatch_and_does_not_create_output(tmp_path: Path) 
     assert not list(tmp_path.glob(".never-written.json.*.tmp"))
 
 
+def test_remap_records_box_center_within_four_pixel_widget_tolerance(
+    tmp_path: Path,
+) -> None:
+    detection_path, layout_path, _ = _write_fixture(tmp_path)
+    detection = json.loads(detection_path.read_text(encoding="utf-8"))
+    video6 = next(match for match in detection["matches"] if match["id"] == "video6")
+    widget_left = LAYOUTS["video6"][1][0]
+    center_x = widget_left - 3.1 / LAYOUTS["video6"][0][0]
+    video6["frames"][0]["boxes"] = [[center_x - 0.01, 0.1, 0.02, 0.03]]
+    detection_path.write_text(json.dumps(detection), encoding="utf-8")
+    output_path = tmp_path / "tolerated-edge.json"
+
+    remap_to_file(
+        detection_path, layout_path, output_path, include_matches={"video6"}
+    )
+    output = json.loads(output_path.read_text(encoding="utf-8"))
+    exceptions = output["roi_remap_audit"]["widget_center_tolerance_exceptions"]
+    assert exceptions == [{
+        "match_id": "video6",
+        "at_ms": 105,
+        "box_index": 1,
+        "outside_px": pytest.approx(3.1, abs=1e-6),
+        "sides": ["left"],
+    }]
+    assert output["roi_remap_audit"]["widget_center_tolerance_px"] == 4.0
+
+
+def test_remap_rejects_center_more_than_four_pixels_outside_without_output(
+    tmp_path: Path,
+) -> None:
+    detection_path, layout_path, _ = _write_fixture(tmp_path)
+    detection = json.loads(detection_path.read_text(encoding="utf-8"))
+    video7 = next(match for match in detection["matches"] if match["id"] == "video7")
+    widget = LAYOUTS["video7"][1]
+    display_height = LAYOUTS["video7"][0][1]
+    center_y = widget[1] + widget[3] + 18.4 / display_height
+    video7["frames"][0]["boxes"] = [[0.1, center_y - 0.005, 0.02, 0.01]]
+    detection_path.write_text(json.dumps(detection), encoding="utf-8")
+    output_path = tmp_path / "rejected-edge.json"
+
+    with pytest.raises(
+        ValueError,
+        match=r"video7@106 box 1 center is 18\.400 px outside widget \(bottom\); tolerance is 4 px",
+    ):
+        remap_to_file(
+            detection_path, layout_path, output_path, include_matches={"video7"}
+        )
+    assert not output_path.exists()
+    assert not list(tmp_path.glob(".rejected-edge.json.*.tmp"))
+
+
+@pytest.mark.parametrize("tolerance", [-0.01, float("nan"), float("inf")])
+def test_widget_center_tolerance_must_be_finite_and_nonnegative(
+    tmp_path: Path, tolerance: float,
+) -> None:
+    with pytest.raises(ValueError, match="Widget center tolerance must be finite and nonnegative"):
+        remap_manifest(
+            tmp_path / "unused-detection.json",
+            tmp_path / "unused-layout.json",
+            widget_center_tolerance_px=tolerance,
+        )
+
+
 def test_output_cannot_overwrite_an_input_manifest(tmp_path: Path) -> None:
     detection_path, layout_path, _ = _write_fixture(tmp_path)
     before = detection_path.read_bytes()
