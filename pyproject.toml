@@ -36,6 +36,7 @@ mapassist-calibrate-minimap-anchor = "mapassist.calibrate_minimap_anchor:main"
 mapassist-evaluate-minimap-locator = "mapassist.minimap_locator_evaluate:main"
 mapassist-audit-coco-dataset = "mapassist.coco_dataset_audit:main"
 mapassist-prepare-external-minimap = "mapassist.prepare_external_minimap:main"
+mapassist-safe-roi-manifest = "mapassist.safe_roi_manifest:main"
 
 [tool.setuptools.packages.find]
 where = ["python"]

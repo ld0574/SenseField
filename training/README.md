@@ -108,6 +108,39 @@ shasum -a 256 build/models/yolox_nano.pth
 
 ## 导出裁剪数据并训练
 
+按新测得的控件边界准备训练数据时，先用布局 v2 重建 video2–7 的安全 ROI，并排除几何已变化的旧 `video1`。等 `video1-hd` 完成人工复核后，将它和 video8-v3 合并，再导出裁剪数据：
+
+```sh
+PYTHONPATH=python .venv/bin/python -m mapassist.safe_roi_manifest \
+  data/private/minimap-review-v6-video7-expanded/detection-manifest-video1-7-expanded-video6-dev.json \
+  data/private/minimap-layout-combined-v1/detection-manifest-v2.json \
+  --output data/private/minimap-review-v6-video7-expanded/detection-manifest-video2-7-safe-roi.json \
+  --padding-short-side-fraction 0.035 --exclude-match video1
+
+# video1-hd review 完成后，导出新 detection manifest，不改 review-manifest.json。
+PYTHONPATH=python .venv/bin/python -m mapassist.finalize_review \
+  data/private/minimap-review-video1-hd-v1/review-manifest.json \
+  --output data/private/minimap-review-video1-hd-v1/detection-manifest.json
+
+PYTHONPATH=python .venv/bin/python -m mapassist.combine_detection_manifests \
+  data/private/minimap-review-v6-video7-expanded/detection-manifest-video2-7-safe-roi.json \
+  data/private/minimap-review-video1-hd-v1/detection-manifest.json \
+  data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi/detection-manifest-video8-v3.json \
+  --split video8=train \
+  --output data/private/minimap-review-v6-video7-expanded/detection-manifest-video2-7-video1-hd-video8-safe-roi.json
+
+PYTHONPATH=python .venv/bin/python -m mapassist.detection_dataset \
+  data/private/minimap-review-v6-video7-expanded/detection-manifest-video2-7-video1-hd-video8-safe-roi.json \
+  --crop-roi \
+  --output data/private/minimap-review-v6-video7-expanded/coco-video2-7-video1-hd-video8-safe-roi
+
+PYTHONPATH=python .venv/bin/python -m mapassist.coco_dataset_audit \
+  data/private/minimap-review-v6-video7-expanded/coco-video2-7-video1-hd-video8-safe-roi \
+  --output data/private/minimap-review-v6-video7-expanded/coco-video2-7-video1-hd-video8-safe-roi/audit.json
+```
+
+这些 manifest、裁剪图片和 audit 都是私有数据，只保存在 `data/private/`，不要提交或公开。这一轮把 video8 改为 train，因此 audit 会明确报告 `No populated test split`；这条表示当前不能引用独立测试成绩，其余 `training_blockers` 必须为空。每个有数据的 split 都必须显示 `roi_crop_completeness: provenance_clear`，确认没有 crop boundary 阻断后才能训练。布局帧不一致、ID／录像不匹配或已有视频 SHA-256 不一致时，ROI 工具会报错并停止输出。最终成绩必须使用另一场从未参与定位、训练、调参或失败分析的真人对局。
+
 ```sh
 PYTHONPATH=python .venv/bin/python -m mapassist.finalize_review \
   data/private/minimap-review-v4-dense/review-manifest.json \
