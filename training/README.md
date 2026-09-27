@@ -142,7 +142,7 @@ PYTHONPATH=python .venv/bin/python -m mapassist.coco_dataset_audit \
 
 这些 manifest、裁剪图片和 audit 都是私有数据，只保存在 `data/private/`，不要提交或公开。这一轮把 video8 改为 train，因此 audit 会明确报告 `No populated test split`；这条表示当前不能引用独立测试成绩，其余 `training_blockers` 必须为空。每个有数据的 split 都必须显示 `roi_crop_completeness: provenance_clear`，确认没有 crop boundary 阻断后才能训练。ROI 工具默认仅容许框中心越过 widget 边界最多 4 px，容差内例外会写入 `roi_remap_audit`；超过容差、布局帧不一致、ID／录像不匹配或已有视频 SHA-256 不一致都会拒绝输出。最终成绩必须使用另一场从未参与定位、训练、调参或失败分析的真人对局。
 
-### Safe-ROI 合并数据与实验状态
+### Safe-ROI 合并数据与训练实验
 
 当前合并 COCO 数据集 `data/private/minimap-review-v6-video7-expanded/coco-video2-7-video1-hd-video8-safe-roi` 覆盖 8 场：train 包含 `video1-hd`、video2–5、video7 和 video8，共 1,020 张／1,650 框；video6 是唯一 val，共 152 张／223 框；test 为空。video8 v3 的 119 张／211 框已经进入 train。Audit 的 train/val `roi_crop_completeness` 均为 `provenance_clear`，无裁剪来源阻断；空 test 仍意味着不能把该数据集结果报告为独立留出成绩。低清 video2–5 占 train 476/1,020 张（46.7%），video1-hd 取代旧 video1 数据；video6 val 与训练数据同属低清域。
 
@@ -239,6 +239,59 @@ PYTHONPATH=build/third_party/YOLOX:python \
 ```
 
 `metrics.json` 保存数据、实验配置和预训练权重哈希、YOLOX 提交号、逐轮损失及验证阈值。`best_ckpt.pth` 是开发验证 F1 最好的权重。只有新录、未参与调参的连续对局可以用于最终成绩。
+
+#### Hard-frame-only v1（淘汰）
+
+从 safe-ROI full fine-tune 的 best checkpoint `de276061fda434f5a480bbad6023a2ef4280568d3cee91e448a99c540142fe53` 初始化，在原合并数据上仅重复经该模型发现的困难 train 帧。困难帧扫描使用来源 train、confidence `0.81`、IoU `0.5`；重复策略最多每帧增加 1 份，纳入有漏检的正样本（纯 FN 至少 2 个）、每场最多选 12 帧，不启用 top-edge 加权。96 个候选中选出 46 帧：video1-hd 11、video2 5、video3 1、video4 4、video5 6、video7 12、video8 7；其余 50 个候选均来自超过配额的视频7。46 帧共增加 46 条 COCO train 记录和 126 个既有标注框，未增加或修改标注。来源训练集为 1,020 张／1,650 框，扩展后 COCO train 为 1,066 条记录／1,776 框；video6 val 保持 152 张／223 框，test 为空。
+
+审计中 train 和 val 的 ROI crop provenance 均为 `provenance_clear`，无缺图、ID 冲突或跨 split 重复；唯一 blocker 是预期的空 test，不能报告独立测试成绩。top-edge 增量样本为 0。train 内 47 个精确重复组中，46 组来自有意加入的重复记录，另 1 组是源数据中两个相邻 video4 帧内容相同。所有选择与评估仍使用 video6 开发集，因此不是独立留出结果。
+
+在 Apple MPS 上以 `lr_scale=0.3`、seed `20260926`、320 输入、batch 16 训练最多 30 轮；沿用 Mosaic `0.5`（scale `0.7–1.3`）、HSV `0.8`、flip `0.5`、degrees `5`、translate `0.08`、shear `1`、NMS `0.5`。每 5 轮验证，patience 4、最早第 10 轮早停、`no_aug_epochs=6`；实际完成 30 轮，没有触发早停，best epoch 为 15，confidence `0.89`。固定 video6 val 的 TP/FP/FN 为 `42/4/181`，precision / recall / F1 为 `91.3043% / 18.8341% / 31.2268%`。
+
+对冻结 checkpoint 追加 confidence `0.01–0.95`、step `0.001` 的 941 点扫描。P≥0.90 的最大 recall 点为 confidence `0.861`，TP/FP/FN `85/9/138`，P/R/F1 `90.4255% / 38.1166% / 53.6278%`；max-F1 点为 confidence `0.196`，TP/FP/FN `152/44/71`，P/R/F1 `77.5510% / 68.1614% / 72.5537%`。safe-ROI full fine-tune 同一 video6 val 上 P≥0.90 的最大 recall 基线点为 confidence `0.807`、TP/FP/FN `103/11/120`、P/R/F1 `90.3509% / 46.1883% / 61.1276%`。因此 hard-frame-only 门槛点相对基线的 P/R/F1 变化为 `+0.0746 / −8.0717 / −7.4998` 个百分点，未达到保留标准，按原规则淘汰；不导出 Android 模型，也不更新 Android profile、ROI 或权重，检测器继续默认关闭。
+
+关键产物 SHA-256：train annotations `6dd10f468e24bf40491893a8c0aa9208394ef0484f3e803025aa9a343130eeea`；val annotations `6d1d4ad35e150533de85b965d4f2096ebc2c9b80442fdcb4ef249a140ef7754e`；audit `438f3ce75d45b4a483c598acf84b2f49c6333c59119dc54288f75db43ff4c053`；hard-example provenance `8cbc0d57f08b0ed0bed497b4c130dd80652742d01559ea9cb5f332c9ab0eda1d`；best checkpoint `f1e3b0f08986ced267ba65be294876631e3cad333766d4accf1438292cb0cbdb`；metrics `db6e51c1c10cd556d41e000b4271f30951d331749a9c23606a14367550eafd65`；fixed video6 val `b15875996850f0e69a02f7f4ef04b87721de170ca6dc509b894a3d3d0ade83d7`；confidence sweep `8f92ddfa12dec4932efbe076213d65d4f5f86fe42605d6897ef4acec013f5105`。
+
+复现数据加权、训练、固定阈值评估和细扫：
+
+```sh
+PYTHONPATH=python .venv/bin/python training/reweight_coco_hard_examples.py \
+  --data-dir data/private/minimap-review-v6-video7-expanded/coco-video2-7-video1-hd-video8-safe-roi \
+  --evaluation build/training/yolox-nano-minimap-safe-roi-coco-lr1-320/fixed-train-hard-sources.json \
+  --output data/private/minimap-review-v6-video7-expanded/coco-video2-7-video1-hd-video8-safe-roi-hard-only-v1 \
+  --max-extra-copies 1 --include-false-negatives --min-false-negatives 2 \
+  --max-hard-sources-per-match 12
+
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python training/train_yolox_minimap.py \
+  --yolox-root build/third_party/YOLOX \
+  --data-dir data/private/minimap-review-v6-video7-expanded/coco-video2-7-video1-hd-video8-safe-roi-hard-only-v1 \
+  --pretrained build/training/yolox-nano-minimap-safe-roi-coco-lr1-320/best_ckpt.pth \
+  --epochs 30 --batch-size 16 --input-size 320 --lr-scale 0.3 \
+  --mosaic-prob 0.5 --mosaic-scale-min 0.7 --mosaic-scale-max 1.3 \
+  --hsv-prob 0.8 --flip-prob 0.5 --degrees 5 --translate 0.08 --shear 1 \
+  --nms-threshold 0.5 --minimum-precision 0.9 \
+  --eval-every 5 --log-every 5 --early-stop-patience 4 \
+  --early-stop-min-epoch 10 --no-aug-epochs 6 \
+  --device mps --seed 20260926 \
+  --output build/training/yolox-nano-minimap-safe-roi-hard-only-v1-320
+
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python training/evaluate_yolox_minimap.py \
+  --yolox-root build/third_party/YOLOX \
+  --data-dir data/private/minimap-review-v6-video7-expanded/coco-video2-7-video1-hd-video8-safe-roi-hard-only-v1 \
+  --checkpoint build/training/yolox-nano-minimap-safe-roi-hard-only-v1-320/best_ckpt.pth \
+  --input-size 320 --split val --confidence 0.89 \
+  --output build/training/yolox-nano-minimap-safe-roi-hard-only-v1-320/fixed-video6-hard-only-v1-val.json
+
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python training/evaluate_yolox_minimap.py \
+  --yolox-root build/third_party/YOLOX \
+  --data-dir data/private/minimap-review-v6-video7-expanded/coco-video2-7-video1-hd-video8-safe-roi-hard-only-v1 \
+  --checkpoint build/training/yolox-nano-minimap-safe-roi-hard-only-v1-320/best_ckpt.pth \
+  --input-size 320 --split val --threshold-range 0.01 0.95 --threshold-step 0.001 \
+  --output build/training/yolox-nano-minimap-safe-roi-hard-only-v1-320/video6-confidence-sweep-001.json
+```
 
 ## 用冻结 ncnn 模型回放完整录像
 
