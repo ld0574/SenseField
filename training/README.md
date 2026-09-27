@@ -1,6 +1,6 @@
 # 小地图 YOLOX-Nano 开发训练
 
-当前开发训练使用 `video1` 至 `video6`。600 张预测无关密集队列已经完成复核；与旧标注合并后共有 749 张有效帧、1,143 个敌人框，按整场对局划分为 `video1–5` 训练 597 张／920 框、`video6` 验证 152 张／223 框。`video6` 已经用于失败分析、模型选择和阈值选择，因此六场都不能再作为比赛留出成绩。
+原 dense baseline 使用 `video1` 至 `video6`。600 张预测无关密集队列已经完成复核；与旧标注合并后共有 749 张有效帧、1,143 个敌人框，按整场对局划分为 `video1–5` 训练 597 张／920 框、`video6` 验证 152 张／223 框。`video6` 已经用于失败分析、模型选择和阈值选择，因此六场都不能再作为比赛留出成绩。后续纳入 video7 扩展标签的微调结果和数据划分见下文；video1–7 均属于开发数据。
 
 小地图区域定位器使用另一套全屏单类数据：video1–8 每场 16 张，共 128 张 `minimap_region` 边界。训练按录像分组为 112 张 train 和 16 张 video6 开发验证。首版 YOLOX Nano 的边界 IoU 中位数为 0.8988；每边扩展屏幕短边 2.5% 后 16 张验证帧均完整覆盖人工真值。完整命令和限制见 [`validation/MINIMAP_LOCATOR.md`](../validation/MINIMAP_LOCATOR.md)。
 
@@ -10,13 +10,23 @@
 
 密集数据的 320 输入实验在第 20 轮达到最好结果：precision 90.50%、recall 72.65%、F1 80.60%，几何方位正确率 96.10%；连续四个验证点没有刷新后于第 40 轮早停。相较旧数据最佳点，召回提高 13.56 个百分点。两个对照均较差：低 Mosaic 为 92.02% / 67.26% / 77.72%，416 输入为 90.63% / 65.02% / 75.72%。因此当前冻结选择为 Nano、320 输入、默认 Mosaic 的第 20 轮权重，开发阈值 0.29。
 
-`video7` 是 2712×1220、30 FPS、约 8 Mbps 的人机局，先保持为预测无关高分辨率测试。111 张有效盲测帧含 189 框；冻结模型在固定阈值下得到 precision 65.57%、recall 63.49%、F1 64.52%，未达门禁。它比历史模型分别高 3.62、3.17、3.39 个百分点，说明密集标注有效，但高分辨率本身没有消除跨录像域差异。
+`video7` 是 2712×1220、30 FPS、约 8 Mbps 的人机局。历史盲测抽样中的 111 张有效帧含 189 框；冻结模型在固定阈值下得到 precision 65.57%、recall 63.49%、F1 64.52%，未达门禁。它比历史模型分别高 3.62、3.17、3.39 个百分点。之后 video7 标签被用于开发训练和复核，因此这组历史结果不再是独立留出成绩；高分辨率本身也没有消除跨录像域差异。
 
 `video8` 已由录制者确认为 5v5 真人排位局，并在查看标签或运行预测前登记为独立 test。排除 1 张结算切换帧后，119 张／215 框的冻结测试得到 precision 58.84%、recall 80.47%、F1 67.98%、方向正确率 96.86%。模型、置信度 `0.29` 和 NMS `0.5` 只运行一次；video8 结果不再用于调参或重新选择阈值。
 
 video8 冻结评测完成后，使用 video1–5 和 video7 的 708 张 train 帧做困难误报加权实验。原冻结模型在这些人工复核帧上产生 115 个 FP，其中 video7 占 63 个。重复 98 张含 FP 的完整图片后低学习率微调，video6 开发验证从 90.50% precision / 72.65% recall / 80.60% F1 提升到 90.27% / 74.89% / 81.86%。它证明完整困难画面加权有效，但 recall 仍未过 80%，暂不替换 APK 模型。过程和哈希见 [`validation/HARD_NEGATIVES.md`](../validation/HARD_NEGATIVES.md)。
 
-video7 另有 240 张与旧标签至少间隔 2.552 秒的预测无关均匀抽样帧。抽样完成后才用冻结 ONNX 模型在 `0.10` 低阈值下生成 442 个可编辑建议框；网页仍强制人工逐帧保存 `corrected`、`negative` 或 `excluded`，不能直接接受建议。该队列完成前不进入训练。过程和哈希见 [`validation/VIDEO7_EXPANDED.md`](../validation/VIDEO7_EXPANDED.md)。
+video7 另有 240 张与旧标签至少间隔 2.552 秒的预测无关均匀抽样帧。抽样完成后才用冻结 ONNX 模型在 `0.10` 低阈值下生成 442 个可编辑建议框。队列现已由三路 Luna Max 完成分段 AI 辅助初标，并经两路分层交叉审计；状态为 186 张 `corrected`／334 框、33 `negative`、16 `excluded`、5 `skip`、0 `pending`。数据库与 review manifest 一致，没有框越出 ROI。交叉审计 0 修改，review manifest SHA-256 为 `d05eade78eea2721773d06c4288e338770d8c46810175eda9d7f7b1296547e8a`。这些结果不是人工真值，建议队友抽查。详细审计范围见 [`validation/VIDEO7_EXPANDED.md`](../validation/VIDEO7_EXPANDED.md)。
+
+### video7 扩展标注后的微调结果
+
+`finalize_review` 纳入 219 张／334 框；合并为 7 场开发数据后共有 1,079 张／1,666 框。train 使用 video1–5 与 video7，共 927 张／1,443 框，其中 video7 合计 330 张／523 框；val 仅使用 video6 的 152 张／223 框。训练与评估均未读取 video8。
+
+数据哈希：combined manifest `67e4894df081660453228a2435f478b5aeaebe90c2f902cd4a288eb249092a09`；train annotations `75767b5a33d3fceff95937bb1f06bd0898ac8f55ea53f94faf3e300e33ed0303`；val annotations `954c5687978012f280c2f83b6dedf71e4e9568062cc4fd999aca96227f64b981`。
+
+以 dense baseline checkpoint `68b86a7a10c97d9b2c738f72b1f49a0b1dcc76d10751ee9f4e61380ee4fb93bc` 初始化，在 Apple MPS 上使用 seed `20260926`、输入 320、batch size 16、`lr_scale=0.1`，最多 40 轮，第 30 轮早停。最佳 epoch 10 的 checkpoint SHA-256 为 `49d8d21900603f78a595e08362895d70011201a9b26457c5fa388f915a80ae99`；confidence 为 `0.43`。video6 开发验证 TP/FP/FN 为 `158/17/65`，precision / recall / F1 为 `90.2857% / 70.8520% / 79.3970%`，几何方向正确率为 `97.3856%`。
+
+相对 dense baseline，precision / recall / F1 变化为 `−0.2171 / −1.7937 / −1.2000` 个百分点；相对困难误报加权候选，变化为 `+0.0154 / −4.0359 / −2.4657` 个百分点。因此不替换 APK 模型。这只是 video6 开发集比较，不是独立留出成绩。metrics SHA-256 为 `fd7349e74a4c4772682217bebe51633c9668dec7be31b6798129ad06155899f5`，固定评估 SHA-256 为 `b4dc2d50b77d9df1d443135d2413eab8374171485d3b2a155b735ca6eee968e9`。video7 标签来自 AI 辅助初标和交叉审计，不是人工真值，仍建议队友抽查。video8 继续只作冻结留出证据。
 
 改进顺序为：
 
