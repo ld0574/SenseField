@@ -99,10 +99,13 @@ struct Session {
     float yolox_nms = 0.5f;
     bool yolox_runtime_error_logged = false;
     ma_minimap_locator *minimap_locator = nullptr;
+    ma_player_state_matcher *player_state_matcher = nullptr;
+    ma_rect player_state_roi{};
     ncnn::Net yolox;
 
     ~Session() {
         ma_minimap_locator_destroy(minimap_locator);
+        ma_player_state_matcher_destroy(player_state_matcher);
         ma_engine_destroy(engine);
     }
 };
@@ -346,7 +349,11 @@ Java_org_openrd_mapassist_NativeBridge_nativeCreate(
         jboolean minimap_yolox, jint yolox_input_size,
         jfloat yolox_confidence, jfloat yolox_nms,
         jboolean minimap_locator_enabled, jfloatArray minimap_locator_floats,
-        jintArray minimap_locator_ints, jbyteArray minimap_locator_descriptor) {
+        jintArray minimap_locator_ints, jbyteArray minimap_locator_descriptor,
+        jboolean player_life_enabled, jfloatArray player_life_values,
+        jint player_life_max_dhash, jlongArray player_life_hashes,
+        jbyteArray player_life_states, jbyteArray player_life_luma,
+        jbyteArray player_life_chroma) {
     if (!rois || !flags || !tuning || !event_ints ||
         env->GetArrayLength(rois) != 16 || env->GetArrayLength(flags) != 5 ||
         env->GetArrayLength(tuning) != 5 || env->GetArrayLength(event_ints) != 5)
@@ -361,6 +368,10 @@ Java_org_openrd_mapassist_NativeBridge_nativeCreate(
          !minimap_locator_descriptor ||
          env->GetArrayLength(minimap_locator_floats) != 12 ||
          env->GetArrayLength(minimap_locator_ints) != 10)) return 0;
+    if (player_life_enabled &&
+        (!player_life_values || !player_life_hashes || !player_life_states ||
+         !player_life_luma || !player_life_chroma ||
+         env->GetArrayLength(player_life_values) != 7)) return 0;
 
     jfloat r[16], t[5];
     jint f[5], e[5];
@@ -430,6 +441,38 @@ Java_org_openrd_mapassist_NativeBridge_nativeCreate(
         AAssetManager *assets = AAssetManager_fromJava(env, asset_manager);
         if (!load_yolox(assets, *session)) return 0;
     }
+    if (player_life_enabled) {
+        const int count = env->GetArrayLength(player_life_hashes);
+        if (count < 6 || count > 64 || env->GetArrayLength(player_life_states) != count ||
+            env->GetArrayLength(player_life_luma) != count * 64 ||
+            env->GetArrayLength(player_life_chroma) != count * 32) return 0;
+        jfloat values[7];
+        std::vector<jlong> hashes(static_cast<size_t>(count));
+        std::vector<jbyte> states(static_cast<size_t>(count));
+        std::vector<jbyte> luma(static_cast<size_t>(count) * 64);
+        std::vector<jbyte> chroma(static_cast<size_t>(count) * 32);
+        env->GetFloatArrayRegion(player_life_values, 0, 7, values);
+        env->GetLongArrayRegion(player_life_hashes, 0, count, hashes.data());
+        env->GetByteArrayRegion(player_life_states, 0, count, states.data());
+        env->GetByteArrayRegion(player_life_luma, 0, count * 64, luma.data());
+        env->GetByteArrayRegion(player_life_chroma, 0, count * 32, chroma.data());
+        if (env->ExceptionCheck()) return 0;
+        std::vector<ma_player_state_signature> signatures(static_cast<size_t>(count));
+        for (int i = 0; i < count; ++i) {
+            signatures[i].state = states[i];
+            signatures[i].dhash = static_cast<uint64_t>(hashes[i]);
+            std::memcpy(signatures[i].luma, luma.data() + static_cast<size_t>(i) * 64, 64);
+            std::memcpy(signatures[i].chroma, chroma.data() + static_cast<size_t>(i) * 32, 32);
+        }
+        const ma_player_state_matcher_config player_config{
+            {values[0], values[1], values[2], values[3]},
+            player_life_max_dhash, values[4], values[5], values[6],
+        };
+        session->player_state_roi = player_config.roi;
+        session->player_state_matcher = ma_player_state_matcher_create(
+                &player_config, signatures.data(), count);
+        if (!session->player_state_matcher) return 0;
+    }
 
     const ma_engine_config config{min_confidence, e[0], e[1], e[2], e[3], e[4]};
     session->engine = ma_engine_create(&config);
@@ -445,9 +488,9 @@ Java_org_openrd_mapassist_NativeBridge_nativeProcess(
     // kind, direction, priority, observation count, processing micros,
     // locator state/score, normalized minimap ROI in parts per million,
     // marker count, then marker records of:
-    // state, movement direction, x/y/w/h ppm, age ms, transition event.
+    // state, movement direction, x/y/w/h ppm, age ms, transition event, track id.
     constexpr int marker_offset = 12;
-    constexpr int marker_stride = 8;
+    constexpr int marker_stride = 9;
     constexpr int marker_capacity = 8;
     constexpr int result_size = marker_offset + marker_stride * marker_capacity;
     jint result[result_size] = {};
@@ -508,6 +551,18 @@ Java_org_openrd_mapassist_NativeBridge_nativeProcess(
         append_yolox_observations(*session, rgba, width, height, row_stride,
                                   frame_timestamp_ms, frame_profile.minimap,
                                   minimap_ready, observations);
+        if (session->player_state_matcher) {
+            float confidence = 0.0f;
+            const int state = ma_player_state_match_rgba(
+                    session->player_state_matcher, rgba, width, height, row_stride,
+                    &confidence);
+            if (state == MA_PLAYER_STATE_DEAD || state == MA_PLAYER_STATE_ALIVE) {
+                observations.push_back({
+                    state == MA_PLAYER_STATE_DEAD ? MA_PLAYER_DEAD : MA_PLAYER_ALIVE,
+                    MA_DIR_NONE, session->player_state_roi, confidence, frame_timestamp_ms,
+                });
+            }
+        }
         std::sort(observations.begin(), observations.end(),
                   [](const ma_observation &a, const ma_observation &b) {
                       return a.confidence > b.confidence;
@@ -543,6 +598,7 @@ Java_org_openrd_mapassist_NativeBridge_nativeProcess(
             result[base + 5] = static_cast<jint>(std::lround(marker.bbox.h * 1000000.0f));
             result[base + 6] = marker.age_ms;
             result[base + 7] = marker.event;
+            result[base + 8] = marker.track_id;
         }
         result[3] = static_cast<jint>(observations.size());
         result[4] = static_cast<jint>(std::chrono::duration_cast<std::chrono::microseconds>(

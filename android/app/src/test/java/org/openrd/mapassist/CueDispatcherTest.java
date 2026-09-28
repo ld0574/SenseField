@@ -1,0 +1,253 @@
+package org.openrd.mapassist;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import org.junit.Test;
+
+public final class CueDispatcherTest {
+    private static final class MutableClock implements CueDispatcher.Clock {
+        long now;
+        @Override public long nowMs() { return now; }
+    }
+
+    private static final class FakeRenderer implements CueDispatcher.Renderer {
+        CueDispatcher.PlaybackCallback callback;
+        CueDispatcher.PlaybackCallback toneCallback;
+        boolean stopped;
+        boolean autoStartSpeech = true;
+        int tones;
+        int haptics;
+        final List<String> started = new ArrayList<>();
+        @Override public boolean playTone(CueRequest request,
+                                          CueDispatcher.PlaybackCallback callback) {
+            tones++;
+            toneCallback = callback;
+            callback.onStarted(request.createdAtMs);
+            return true;
+        }
+        @Override public boolean vibrate(CueRequest request) {
+            haptics++;
+            return true;
+        }
+        @Override public boolean speak(CueRequest request, boolean interrupt,
+                                       CueDispatcher.PlaybackCallback callback) {
+            this.callback = callback;
+            started.add(request.cueId);
+            if (autoStartSpeech) callback.onStarted(request.createdAtMs);
+            return true;
+        }
+        @Override public void stopSpeech() { stopped = true; }
+    }
+
+    private static final class FakePolicy implements CueDispatcher.Policy {
+        boolean category = true;
+        int channels = 15;
+        @Override public boolean categoryEnabled(CueRequest.Category ignored) { return category; }
+        @Override public int enabledChannels() { return channels; }
+        @Override public long dedupeWindowMs(CueRequest.Category ignored) { return 500; }
+    }
+
+    private static final class Events implements CueDispatcher.Listener {
+        final List<String> events = new ArrayList<>();
+        @Override public void onDispatch(CueRequest request, CueDispatcher.DispatchResult result) {
+            events.add(request.cueId + ":" + result.outcome + ":" + result.reason);
+        }
+        @Override public void onPlayback(CueRequest request, String channel,
+                                         long atMs, String result) {
+            events.add(request.cueId + ":" + channel + ":" + result);
+        }
+    }
+
+    private static CueRequest request(String id, String key, int priority, long expires) {
+        return new CueRequest("session", id, key, "TEST",
+                CueRequest.Category.PLAYER_STATE, priority, 0, expires,
+                CueRequest.CHANNEL_SPEECH, 4, 0, 0, "测试");
+    }
+
+    private static CueRequest request(String id, String key, String kind,
+                                      CueRequest.Category category, int channels,
+                                      long expires, String speech) {
+        return new CueRequest("session", id, key, kind, category, 60,
+                0, expires, channels, 2, 1, 1, speech);
+    }
+
+    @Test public void expiryCategoryAndDedupeAreAppliedBeforePlayback() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        FakePolicy policy = new FakePolicy();
+        Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, policy, events, clock);
+        clock.now = 100;
+        assertTrue(dispatcher.submit(request("one", "same", 60, 1000)).audioQueued());
+        assertEquals("DROPPED", dispatcher.submit(request("two", "same", 60, 1000)).outcome);
+        clock.now = 2000;
+        assertEquals("expired", dispatcher.submit(request("old", "old", 60, 1000)).reason);
+        policy.category = false;
+        assertEquals("category_disabled",
+                dispatcher.submit(request("off", "off", 60, 3000)).reason);
+    }
+
+    @Test public void compactPresetKeepsVisionVisualAndPlayerSpeechAndHaptics() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        int compactChannels = CueRequest.CHANNEL_SPEECH
+                | CueRequest.CHANNEL_HAPTIC | CueRequest.CHANNEL_VISUAL;
+        CueDispatcher.Policy compactPolicy = new CueDispatcher.Policy() {
+            @Override public boolean categoryEnabled(CueRequest.Category ignored) {
+                return true;
+            }
+            @Override public int enabledChannels() { return compactChannels; }
+            @Override public int enabledChannels(CueRequest.Category category) {
+                return CueSettings.channelsForCategory(compactChannels,
+                        CueSettings.PRESET_COMPACT, category);
+            }
+            @Override public long dedupeWindowMs(CueRequest.Category ignored) { return 500; }
+        };
+        CueDispatcher dispatcher = new CueDispatcher(renderer, compactPolicy,
+                new Events(), clock);
+
+        int allChannels = CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH
+                | CueRequest.CHANNEL_HAPTIC | CueRequest.CHANNEL_VISUAL;
+        CueDispatcher.DispatchResult vision = dispatcher.submit(request(
+                "vision", "vision:track:1", "VISION_DISAPPEAR",
+                CueRequest.Category.VISION_MEMORY, allChannels, 1500, "敌人消失"));
+        assertEquals(CueRequest.CHANNEL_VISUAL, vision.acceptedChannels);
+        assertEquals(0, renderer.tones);
+        assertEquals(0, renderer.haptics);
+        assertTrue(renderer.started.isEmpty());
+
+        CueDispatcher.DispatchResult player = dispatcher.submit(request(
+                "dead", "player:dead", "PLAYER_DEAD",
+                CueRequest.Category.PLAYER_STATE,
+                CueRequest.CHANNEL_SPEECH | CueRequest.CHANNEL_HAPTIC,
+                2000, "你已阵亡"));
+        assertEquals(CueRequest.CHANNEL_SPEECH | CueRequest.CHANNEL_HAPTIC,
+                player.acceptedChannels);
+        assertEquals(1, renderer.haptics);
+        assertEquals(List.of("dead"), renderer.started);
+    }
+
+    @Test public void criticalSpeechPreemptsLowerPrioritySpeech() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), new Events(), clock);
+        dispatcher.submit(request("normal", "normal", 60, 1000));
+        dispatcher.submit(request("critical", "critical", 100, 1000));
+        assertTrue(renderer.stopped);
+        assertFalse(dispatcher.pendingCueIdsForTest().contains("critical"));
+    }
+
+    @Test public void criticalHapticBypassesCooldown() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(),
+                new Events(), clock);
+        CueRequest normal = new CueRequest("session", "normal-haptic", "normal-haptic",
+                "NORMAL", CueRequest.Category.PLAYER_STATE, 60, 100, 1000,
+                CueRequest.CHANNEL_HAPTIC, 0, 0, 1, null);
+        assertEquals(CueRequest.CHANNEL_HAPTIC,
+                dispatcher.submit(normal).acceptedChannels);
+        clock.now = 200;
+        CueRequest critical = new CueRequest("session", "critical-haptic", "critical-haptic",
+                "CRITICAL", CueRequest.Category.PLAYER_STATE, 100, 200, 2000,
+                CueRequest.CHANNEL_HAPTIC, 0, 0, 1, null);
+        assertEquals(CueRequest.CHANNEL_HAPTIC,
+                dispatcher.submit(critical).acceptedChannels);
+        assertEquals(2, renderer.haptics);
+    }
+
+    @Test public void pauseStopsAndClearsSpeechUntilResume() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(),
+                new Events(), clock);
+        dispatcher.submit(request("active", "active", 60, 10000));
+        clock.now = 501;
+        dispatcher.submit(request("queued", "queued", 40, 10000));
+        dispatcher.pause();
+
+        assertTrue(renderer.stopped);
+        assertTrue(dispatcher.pendingCueIdsForTest().isEmpty());
+        assertEquals("paused",
+                dispatcher.submit(request("during", "during", 60, 10000)).reason);
+
+        dispatcher.resume();
+        clock.now = 1002;
+        assertTrue(dispatcher.submit(request("after", "after", 60, 10000)).audioQueued());
+        assertTrue(renderer.started.contains("after"));
+    }
+
+    @Test public void lateToneCallbackAfterPauseDoesNotPollutePlaybackLog() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+        CueRequest tone = new CueRequest("session", "tone", "tone", "TONE",
+                CueRequest.Category.VISION_MEMORY, 40, 0, 10000,
+                CueRequest.CHANNEL_TONE, 2, 1, 1, null);
+
+        dispatcher.submit(tone);
+        int beforePause = events.events.size();
+        dispatcher.pause();
+        renderer.toneCallback.onFinished(101, true);
+
+        assertEquals(beforePause, events.events.size());
+    }
+
+    @Test public void speechStartingAfterExpiryIsLoggedAsExpiredAndCannotComplete() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+        renderer.autoStartSpeech = false;
+        dispatcher.submit(request("late", "late", 60, 100));
+
+        renderer.callback.onStarted(101);
+        int afterExpiry = events.events.size();
+        renderer.callback.onFinished(102, true);
+
+        assertTrue(renderer.stopped);
+        assertEquals(afterExpiry, events.events.size());
+        assertTrue(events.events.get(afterExpiry - 1).endsWith(":SPEECH:EXPIRED"));
+    }
+
+    @Test public void queueIsBoundedAndHigherPriorityEvictsLowestOldest() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), new Events(), clock);
+        dispatcher.submit(request("active", "active", 60, 100000));
+        for (int index = 0; index < CueDispatcher.MAX_PENDING; index++) {
+            clock.now += 501;
+            dispatcher.submit(request("low" + index, "low" + index, 40, 100000));
+        }
+        assertEquals(CueDispatcher.MAX_PENDING, dispatcher.pendingCueIdsForTest().size());
+        clock.now += 501;
+        dispatcher.submit(request("high", "high", 80, 100000));
+        assertEquals(CueDispatcher.MAX_PENDING, dispatcher.pendingCueIdsForTest().size());
+        assertTrue(dispatcher.pendingCueIdsForTest().contains("high"));
+        assertFalse(dispatcher.pendingCueIdsForTest().contains("low0"));
+    }
+
+    @Test public void equalPrioritySpeechIsFifo() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), new Events(), clock);
+        dispatcher.submit(request("active", "active", 60, 10000));
+        clock.now = 501;
+        dispatcher.submit(request("first", "first", 40, 10000));
+        clock.now = 1002;
+        dispatcher.submit(request("second", "second", 40, 10000));
+
+        CueDispatcher.PlaybackCallback active = renderer.callback;
+        active.onFinished(1100, true);
+        CueDispatcher.PlaybackCallback first = renderer.callback;
+        first.onFinished(1200, true);
+
+        assertEquals(List.of("active", "first", "second"), renderer.started);
+    }
+}

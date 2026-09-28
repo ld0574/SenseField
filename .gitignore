@@ -62,6 +62,7 @@ docs/*
 !docs/外部数据引入与预训练.md
 !docs/视野记忆.md
 !docs/技术方案.md
+!docs/端侧事件感知与可靠性增强技术方案.md
 
 # Private model weights and training checkpoints stay local.
 *.pt

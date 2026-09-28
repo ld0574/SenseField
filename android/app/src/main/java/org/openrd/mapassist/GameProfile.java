@@ -18,6 +18,8 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.HashSet;
+import java.util.Set;
 
 final class GameProfile {
     static final String PREFS = "mapassist_settings";
@@ -32,6 +34,25 @@ final class GameProfile {
             this.rgba = rgba;
             this.width = width;
             this.height = height;
+        }
+    }
+
+    static final class PlayerLifeData {
+        final float[] roiAndThresholds;
+        final int maxDhashDistance;
+        final long[] hashes;
+        final byte[] states;
+        final byte[] luma;
+        final byte[] chroma;
+
+        PlayerLifeData(float[] roiAndThresholds, int maxDhashDistance, long[] hashes,
+                       byte[] states, byte[] luma, byte[] chroma) {
+            this.roiAndThresholds = roiAndThresholds;
+            this.maxDhashDistance = maxDhashDistance;
+            this.hashes = hashes;
+            this.states = states;
+            this.luma = luma;
+            this.chroma = chroma;
         }
     }
 
@@ -55,6 +76,7 @@ final class GameProfile {
     final byte[] minimapLocatorDescriptor;
     final TemplateData enemyTemplate;
     final TemplateData pingTemplate;
+    final PlayerLifeData playerLife;
 
     private GameProfile(String name, String version, boolean verified, float[] rois, int[] flags,
                         float[] tuning, int[] eventInts, float minConfidence,
@@ -63,7 +85,8 @@ final class GameProfile {
                         String minimapYoloxBinSha256,
                         boolean minimapLocatorEnabled, float[] minimapLocatorFloats,
                         int[] minimapLocatorInts, byte[] minimapLocatorDescriptor,
-                        TemplateData enemyTemplate, TemplateData pingTemplate) {
+                        TemplateData enemyTemplate, TemplateData pingTemplate,
+                        PlayerLifeData playerLife) {
         this.name = name;
         this.version = version;
         this.verified = verified;
@@ -83,6 +106,7 @@ final class GameProfile {
         this.minimapLocatorDescriptor = minimapLocatorDescriptor;
         this.enemyTemplate = enemyTemplate;
         this.pingTemplate = pingTemplate;
+        this.playerLife = playerLife;
     }
 
     static SharedPreferences settings(Context context) {
@@ -254,6 +278,8 @@ final class GameProfile {
         }
         boolean useMinimapLocator = enabled && locator != null &&
                 (minimapYolox || flags[1] != 0 || flags[2] != 0);
+        PlayerLifeData playerLife = parsePlayerLife(data.optJSONObject("state_recognition"),
+                enabled);
         return new GameProfile(data.optString("name", "unnamed"),
                 data.optString("profile_version", "unversioned"), verified, rois, flags,
                 tuning, eventInts, minConfidence, minimapYolox, yoloxInputSize,
@@ -262,7 +288,100 @@ final class GameProfile {
                 locator == null ? new float[0] : locator.floats,
                 locator == null ? new int[0] : locator.ints,
                 locator == null ? null : locator.descriptor,
-                enemy, ping);
+                enemy, ping, playerLife);
+    }
+
+    private static PlayerLifeData parsePlayerLife(JSONObject stateRecognition, boolean allowed)
+            throws JSONException {
+        if (stateRecognition == null) return null;
+        JSONObject data = stateRecognition.optJSONObject("player_life");
+        if (data == null) return null;
+        Object enabledValue = data.has("enabled") ? data.get("enabled") : Boolean.FALSE;
+        if (!playerLifeEnabled(enabledValue, allowed)) return null;
+        if (!"mapassist.player_life_signatures".equals(data.getString("schema")) ||
+                data.getInt("schema_version") != 1) {
+            throw new JSONException("Unsupported player-life signature schema");
+        }
+        float[] values = new float[7];
+        JSONArray roi = data.getJSONArray("roi");
+        if (roi.length() != 4) throw new JSONException("player_life.roi needs four numbers");
+        for (int i = 0; i < 4; i++) values[i] = jsonFloat(roi, i, 0f, 1f);
+        if (values[2] <= 0 || values[3] <= 0 || values[0] + values[2] > 1.001f ||
+                values[1] + values[3] > 1.001f)
+            throw new JSONException("Invalid player-life ROI");
+        JSONObject thresholds = data.getJSONObject("thresholds");
+        int maxDhash = requiredInt(thresholds, "max_dhash_distance", 0, 64);
+        values[4] = requiredFloat(thresholds, "max_luma_mae", 0f, 1f);
+        values[5] = requiredFloat(thresholds, "max_chroma_mae", 0f, 1f);
+        values[6] = requiredFloat(thresholds, "min_state_margin", 0f, 1f);
+        JSONArray dead = data.getJSONArray("dead");
+        JSONArray alive = data.getJSONArray("alive");
+        validatePlayerLifeCounts(dead.length(), alive.length());
+        int count = dead.length() + alive.length();
+        long[] hashes = new long[count];
+        byte[] states = new byte[count];
+        byte[] luma = new byte[count * 64];
+        byte[] chroma = new byte[count * 32];
+        Set<String> cropHashes = new HashSet<>();
+        int offset = 0;
+        for (int state = 1; state <= 2; state++) {
+            JSONArray entries = state == 1 ? dead : alive;
+            for (int i = 0; i < entries.length(); i++, offset++) {
+                JSONObject signature = entries.getJSONObject(i);
+                String hash = signature.getString("dhash64");
+                if (!hash.matches("[0-9a-f]{16}"))
+                    throw new JSONException("dhash64 must be 16 lowercase hexadecimal characters");
+                try {
+                    hashes[offset] = Long.parseUnsignedLong(hash, 16);
+                } catch (NumberFormatException error) {
+                    throw new JSONException("Invalid dhash64");
+                }
+                states[offset] = (byte) state;
+                byte[] lumaEntry = decodeFeature(signature, "luma8x8_b64", 64);
+                byte[] chromaEntry = decodeFeature(signature, "chroma4x4_b64", 32);
+                System.arraycopy(lumaEntry, 0, luma, offset * 64, 64);
+                System.arraycopy(chromaEntry, 0, chroma, offset * 32, 32);
+                String cropSha = signature.getString("crop_sha256");
+                validatePlayerLifeCropHash(cropHashes, cropSha);
+            }
+        }
+        return new PlayerLifeData(values, maxDhash, hashes, states, luma, chroma);
+    }
+
+    /** Keep the explicit enabled flag strict while preserving the disabled lightweight form. */
+    static boolean playerLifeEnabled(Object enabledValue, boolean allowed) throws JSONException {
+        if (!(enabledValue instanceof Boolean))
+            throw new JSONException("player_life.enabled must be true or false");
+        return (Boolean) enabledValue && allowed;
+    }
+
+    static void validatePlayerLifeCounts(int deadCount, int aliveCount) throws JSONException {
+        int total = deadCount + aliveCount;
+        if (total < 6 || total > 64)
+            throw new JSONException("player-life signatures need 6 to 64 entries");
+        if (deadCount < 3 || aliveCount < 3)
+            throw new JSONException("player-life dead and alive each need 3 signatures");
+    }
+
+    static void validatePlayerLifeCropHash(Set<String> cropHashes, String cropSha)
+            throws JSONException {
+        if (cropSha == null || !cropSha.matches("[0-9a-f]{64}"))
+            throw new JSONException("crop_sha256 must be lowercase SHA-256");
+        if (!cropHashes.add(cropSha))
+            throw new JSONException("player-life signatures must have unique crop_sha256 values");
+    }
+
+    private static byte[] decodeFeature(JSONObject data, String key, int expected)
+            throws JSONException {
+        final byte[] decoded;
+        try {
+            decoded = Base64.decode(data.getString(key), Base64.NO_WRAP);
+        } catch (IllegalArgumentException error) {
+            throw new JSONException("Invalid base64 feature " + key);
+        }
+        if (decoded.length != expected)
+            throw new JSONException(key + " must decode to " + expected + " bytes");
+        return decoded;
     }
 
     private static final class MinimapLocatorData {

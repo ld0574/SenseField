@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import ctypes as C
+import base64
 import json
 import math
+import re
 from pathlib import Path
 from typing import Any
 
@@ -70,6 +72,26 @@ class MinimapMarker(C.Structure):
         ("bbox", Rect),
         ("age_ms", C.c_int),
         ("event", C.c_int),
+        ("track_id", C.c_int),
+    ]
+
+
+class PlayerStateSignature(C.Structure):
+    _fields_ = [
+        ("state", C.c_int),
+        ("dhash", C.c_uint64),
+        ("luma", C.c_uint8 * 64),
+        ("chroma", C.c_uint8 * 32),
+    ]
+
+
+class PlayerStateMatcherConfig(C.Structure):
+    _fields_ = [
+        ("roi", Rect),
+        ("max_dhash_distance", C.c_int),
+        ("max_luma_mae", C.c_float),
+        ("max_chroma_mae", C.c_float),
+        ("min_state_margin", C.c_float),
     ]
 
 
@@ -151,12 +173,32 @@ def load_library(path: Path | None = None) -> C.CDLL:
     lib.ma_minimap_locator_update.restype = C.c_int
     lib.ma_minimap_locator_reset.argtypes = [C.c_void_p]
     lib.ma_minimap_locator_destroy.argtypes = [C.c_void_p]
+    lib.ma_player_state_matcher_create.argtypes = [
+        C.POINTER(PlayerStateMatcherConfig), C.POINTER(PlayerStateSignature), C.c_int,
+    ]
+    lib.ma_player_state_matcher_create.restype = C.c_void_p
+    lib.ma_player_state_match_rgba.argtypes = [
+        C.c_void_p, C.POINTER(C.c_uint8), C.c_int, C.c_int, C.c_int,
+        C.POINTER(C.c_float),
+    ]
+    lib.ma_player_state_match_rgba.restype = C.c_int
+    lib.ma_player_state_matcher_destroy.argtypes = [C.c_void_p]
     return lib
 
 
 def _rect(values: list[float]) -> Rect:
-    if len(values) != 4 or any(not math.isfinite(value) or value < 0 or value > 1
-                               for value in values):
+    valid = isinstance(values, list) and len(values) == 4
+    if valid:
+        for value in values:
+            try:
+                if (isinstance(value, bool) or not isinstance(value, (int, float)) or
+                        not math.isfinite(value) or value < 0 or value > 1):
+                    valid = False
+                    break
+            except (OverflowError, TypeError):
+                valid = False
+                break
+    if not valid:
         raise ValueError(f"Invalid normalized rectangle: {values}")
     if (values[2] <= 0 or values[3] <= 0 or
             values[0] + values[2] > 1.001 or values[1] + values[3] > 1.001):
@@ -165,15 +207,145 @@ def _rect(values: list[float]) -> Rect:
 
 
 def _bounded(value: Any, minimum: float, maximum: float) -> float:
-    number = float(value)
+    try:
+        number = float(value)
+    except (OverflowError, TypeError, ValueError) as error:
+        raise ValueError(f"Profile value {value} must be in [{minimum}, {maximum}]") from error
     if not math.isfinite(number) or not minimum <= number <= maximum:
         raise ValueError(f"Profile value {value} must be in [{minimum}, {maximum}]")
     return number
 
 
+def _profile_integer(value: Any, field: str, minimum: int, maximum: int) -> int:
+    """Parse an integer JSON number using the Android getDouble/rint rule."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{field} must be an integer in [{minimum}, {maximum}]")
+    try:
+        number = float(value)
+    except (OverflowError, TypeError, ValueError) as error:
+        raise ValueError(f"{field} must be an integer in [{minimum}, {maximum}]") from error
+    if not math.isfinite(number) or number != math.floor(number) or \
+            number < minimum or number > maximum:
+        raise ValueError(f"{field} must be an integer in [{minimum}, {maximum}]")
+    return int(number)
+
+
+def _profile_float(value: Any, field: str, minimum: float, maximum: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{field} must be in [{minimum}, {maximum}]")
+    try:
+        number = float(value)
+    except (OverflowError, TypeError, ValueError) as error:
+        raise ValueError(f"{field} must be in [{minimum}, {maximum}]") from error
+    if not math.isfinite(number) or not minimum <= number <= maximum:
+        raise ValueError(f"{field} must be in [{minimum}, {maximum}]")
+    return number
+
+
+def _decode_feature(value: Any, field: str, expected_length: int) -> bytes:
+    if not isinstance(value, str):
+        raise ValueError(f"player_life.{field} must be base64 text")
+    try:
+        decoded = base64.b64decode(value, validate=True)
+    except (ValueError, TypeError) as error:
+        raise ValueError(f"player_life.{field} is not valid base64") from error
+    if len(decoded) != expected_length:
+        raise ValueError(
+            f"player_life.{field} must decode to {expected_length} bytes"
+        )
+    return decoded
+
+
+def _validate_player_life(player: Any) -> None:
+    """Validate the enabled player-life schema shared with Android.
+
+    Keep the disabled form intentionally lightweight: the checked-in public
+    profiles carry only ``enabled: false`` until real signatures are available.
+    Once enabled, every field required by the native ABI is checked before a
+    matcher can be constructed, so malformed data cannot silently disable the
+    recognizer.
+    """
+    if player is None:
+        return
+    if not isinstance(player, dict):
+        raise ValueError("state_recognition.player_life must be an object")
+    enabled = player.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ValueError("player_life.enabled must be true or false")
+    if not enabled:
+        return
+    if player.get("schema") != "mapassist.player_life_signatures":
+        raise ValueError("Unsupported player-life signature schema")
+    if _profile_integer(player.get("schema_version"),
+                        "player_life.schema_version", 1, 1) != 1:
+        raise ValueError("Unsupported player-life signature schema version")
+    roi = player.get("roi")
+    if not isinstance(roi, list) or len(roi) != 4:
+        raise ValueError("player_life.roi needs four numbers")
+    for index, value in enumerate(roi):
+        _profile_float(value, f"player_life.roi[{index}]", 0.0, 1.0)
+    if roi[2] <= 0 or roi[3] <= 0 or roi[0] + roi[2] > 1.001 or \
+            roi[1] + roi[3] > 1.001:
+        raise ValueError("Invalid player-life ROI")
+
+    thresholds = player.get("thresholds")
+    if not isinstance(thresholds, dict):
+        raise ValueError("player_life.thresholds must be an object")
+    _profile_integer(thresholds.get("max_dhash_distance"),
+                     "player_life.thresholds.max_dhash_distance", 0, 64)
+    for field in ("max_luma_mae", "max_chroma_mae", "min_state_margin"):
+        _profile_float(thresholds.get(field), f"player_life.thresholds.{field}",
+                       0.0, 1.0)
+
+    entries_by_state = {}
+    total = 0
+    crop_hashes: set[str] = set()
+    for state in ("dead", "alive"):
+        entries = player.get(state)
+        if not isinstance(entries, list):
+            raise ValueError(f"player_life.{state} must be an array")
+        if len(entries) < 3:
+            raise ValueError(
+                f"player_life.{state} requires at least 3 signatures"
+            )
+        total += len(entries)
+        entries_by_state[state] = entries
+    if total < 6 or total > 64:
+        raise ValueError("player_life requires 6 to 64 total signatures")
+
+    for state, entries in entries_by_state.items():
+        for index, signature in enumerate(entries):
+            prefix = f"player_life.{state}[{index}]"
+            if not isinstance(signature, dict):
+                raise ValueError(f"{prefix} must be an object")
+            dhash = signature.get("dhash64")
+            if (not isinstance(dhash, str) or
+                    re.fullmatch(r"[0-9a-f]{16}", dhash) is None):
+                raise ValueError(f"{prefix}.dhash64 must be 16 lowercase hexadecimal characters")
+            _decode_feature(signature.get("luma8x8_b64"),
+                            f"{state}[{index}].luma8x8_b64", 64)
+            _decode_feature(signature.get("chroma4x4_b64"),
+                            f"{state}[{index}].chroma4x4_b64", 32)
+            crop_sha = signature.get("crop_sha256")
+            if (not isinstance(crop_sha, str) or
+                    re.fullmatch(r"[0-9a-f]{64}", crop_sha) is None):
+                raise ValueError(f"{prefix}.crop_sha256 must be lowercase SHA-256")
+            if crop_sha in crop_hashes:
+                raise ValueError("player_life signatures must have unique crop_sha256 values")
+            crop_hashes.add(crop_sha)
+
+
 def read_profile(path: Path) -> tuple[Profile, dict[str, Any]]:
     data = json.loads(path.read_text(encoding="utf-8"))
-    if data.get("schema_version") != 1:
+    if not isinstance(data, dict):
+        raise ValueError("GameProfile must be a JSON object")
+    try:
+        schema_version = _profile_integer(
+            data.get("schema_version"), "GameProfile.schema_version", 1, 1
+        )
+    except ValueError as error:
+        raise ValueError("Expected GameProfile schema_version 1") from error
+    if schema_version != 1:
         raise ValueError("Expected GameProfile schema_version 1")
     rois = data["rois"]
     detector = data["detectors"]
@@ -195,6 +367,12 @@ def read_profile(path: Path) -> tuple[Profile, dict[str, Any]]:
         (_rect(rois["minimap_direction"])
          if "minimap_direction" in rois else Rect()),
     )
+    state_recognition = data.get("state_recognition")
+    if state_recognition is not None and not isinstance(state_recognition, dict):
+        raise ValueError("state_recognition must be an object")
+    _validate_player_life(
+        state_recognition.get("player_life") if state_recognition else None
+    )
     return profile, data
 
 
@@ -212,8 +390,10 @@ def read_template(path: Path | None) -> tuple[Template | None, Any]:
 
 def observation_dict(value: Observation) -> dict[str, Any]:
     return {
-        "type": {1: "main_enemy", 2: "minimap_enemy", 3: "danger_ping"}[value.kind],
-        "source": {1: "main", 2: "minimap", 3: "ping"}[value.kind],
+        "type": {1: "main_enemy", 2: "minimap_enemy", 3: "danger_ping",
+                 4: "player_dead", 5: "player_alive"}[value.kind],
+        "source": {1: "main", 2: "minimap", 3: "ping",
+                   4: "player_state", 5: "player_state"}[value.kind],
         "direction": {0: None, 1: "left", 2: "right", 3: "up", 4: "down"}[value.direction],
         "bbox_norm": [round(getattr(value.bbox, name), 5) for name in ("x", "y", "w", "h")],
         "confidence": round(value.confidence, 4),
@@ -223,7 +403,8 @@ def observation_dict(value: Observation) -> dict[str, Any]:
 
 def cue_dict(value: Cue) -> dict[str, Any]:
     return {
-        "kind": {1: "main_enemy", 2: "minimap_enemy", 3: "danger_ping"}[value.kind],
+        "kind": {1: "main_enemy", 2: "minimap_enemy", 3: "danger_ping",
+                 4: "player_dead", 5: "player_alive"}[value.kind],
         "direction": {0: None, 1: "left", 2: "right", 3: "up", 4: "down"}[value.direction],
         "priority": value.priority,
         "emitted_at_ms": value.emitted_at_ms,
@@ -260,8 +441,46 @@ class Pipeline:
         self.engine = self.lib.ma_engine_create(C.byref(self.engine_config))
         if not self.engine:
             raise RuntimeError("Could not create native event engine")
+        self.player_matcher = None
+        self._player_signatures = None
+        state_recognition = self.profile_json.get("state_recognition") or {}
+        player = state_recognition.get("player_life")
+        if player and player.get("enabled"):
+            entries = [(1, value) for value in player.get("dead", [])]
+            entries += [(2, value) for value in player.get("alive", [])]
+            signatures = (PlayerStateSignature * len(entries))()
+            for index, (state, value) in enumerate(entries):
+                luma = _decode_feature(value["luma8x8_b64"],
+                                       "player_life.luma8x8_b64", 64)
+                chroma = _decode_feature(value["chroma4x4_b64"],
+                                         "player_life.chroma4x4_b64", 32)
+                signatures[index].state = state
+                signatures[index].dhash = int(value["dhash64"], 16)
+                signatures[index].luma[:] = luma
+                signatures[index].chroma[:] = chroma
+            thresholds = player["thresholds"]
+            config = PlayerStateMatcherConfig(
+                _rect(player["roi"]),
+                _profile_integer(thresholds["max_dhash_distance"],
+                                 "player_life.thresholds.max_dhash_distance", 0, 64),
+                _profile_float(thresholds["max_luma_mae"],
+                               "player_life.thresholds.max_luma_mae", 0.0, 1.0),
+                _profile_float(thresholds["max_chroma_mae"],
+                               "player_life.thresholds.max_chroma_mae", 0.0, 1.0),
+                _profile_float(thresholds["min_state_margin"],
+                               "player_life.thresholds.min_state_margin", 0.0, 1.0),
+            )
+            self.player_matcher = self.lib.ma_player_state_matcher_create(
+                C.byref(config), signatures, len(entries)
+            )
+            if not self.player_matcher:
+                raise ValueError("Native player-life matcher rejected profile")
+            self._player_signatures = signatures
 
     def close(self) -> None:
+        if self.player_matcher:
+            self.lib.ma_player_state_matcher_destroy(self.player_matcher)
+            self.player_matcher = None
         if self.engine:
             self.lib.ma_engine_destroy(self.engine)
             self.engine = None
@@ -284,6 +503,19 @@ class Pipeline:
             C.byref(self.ping_template) if self.ping_template else None,
             observations, len(observations),
         )
+        if self.player_matcher and count < len(observations):
+            confidence = C.c_float()
+            state = self.lib.ma_player_state_match_rgba(
+                self.player_matcher, frame, width, height, width * 4,
+                C.byref(confidence),
+            )
+            if state in (1, 2):
+                observations[count] = Observation(
+                    4 if state == 1 else 5, 0, _rect(
+                        self.profile_json["state_recognition"]["player_life"]["roi"]
+                    ), confidence.value, timestamp_ms,
+                )
+                count += 1
         cues = (Cue * 4)()
         cue_count = self.lib.ma_engine_step(
             self.engine, observations, count, timestamp_ms, cues, len(cues)

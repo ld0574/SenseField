@@ -546,6 +546,7 @@ struct SpatialTrack {
     int event = MA_VISION_EVENT_NONE;
     int64_t last_seen_ms = 0;
     int64_t disappeared_at_ms = 0;
+    int track_id = 0;
 };
 
 int track_index(int kind, int direction) {
@@ -568,6 +569,10 @@ int movement_direction(float velocity_x, float velocity_y) {
 }
 
 int priority(int kind) {
+    // Native priority is an ordering rank. Platform output policy maps it to
+    // the user-facing 40/60/80/100 scale without breaking the stable C ABI.
+    if (kind == MA_PLAYER_DEAD) return 5;
+    if (kind == MA_PLAYER_ALIVE) return 4;
     if (kind == MA_DANGER_PING) return 3;
     if (kind == MA_MAIN_ENEMY) return 2;
     return 1;
@@ -583,6 +588,10 @@ struct ma_engine {
     int64_t last_minimap_emitted_ms = std::numeric_limits<int64_t>::min() / 2;
     int64_t last_step_ms = std::numeric_limits<int64_t>::min() / 2;
     int last_emitted_priority = 0;
+    uint8_t player_dead_recent = 0;
+    uint8_t player_alive_recent = 0;
+    int player_state = MA_PLAYER_STATE_UNKNOWN;
+    int next_minimap_track_id = 1;
 };
 
 extern "C" int ma_detect_rgba(const uint8_t *rgba, int width, int height,
@@ -656,6 +665,12 @@ extern "C" void ma_engine_reset(ma_engine *engine) {
     engine->last_minimap_emitted_ms = std::numeric_limits<int64_t>::min() / 2;
     engine->last_step_ms = std::numeric_limits<int64_t>::min() / 2;
     engine->last_emitted_priority = 0;
+    engine->player_dead_recent = 0;
+    engine->player_alive_recent = 0;
+    engine->player_state = MA_PLAYER_STATE_UNKNOWN;
+    // Track IDs belong to the native session, so reset clears observations
+    // without rewinding the allocator.  This keeps a post-reset marker from
+    // being mistaken for the marker that was cleared.
 }
 
 extern "C" int ma_engine_step(ma_engine *engine,
@@ -673,20 +688,30 @@ extern "C" int ma_engine_step(ma_engine *engine,
         now_ms - engine->last_step_ms > std::max<int64_t>(500, engine->config.max_observation_age_ms * 3)) {
         for (Track &track : engine->tracks) track = Track{};
         for (SpatialTrack &track : engine->minimap_tracks) track = SpatialTrack{};
+        engine->player_dead_recent = 0;
+        engine->player_alive_recent = 0;
+        engine->player_state = MA_PLAYER_STATE_UNKNOWN;
     }
     engine->last_step_ms = now_ms;
     bool seen[15] = {};
+    bool player_dead_seen = false;
+    bool player_alive_seen = false;
     for (SpatialTrack &track : engine->minimap_tracks) {
         track.matched = false;
         track.event = MA_VISION_EVENT_NONE;
     }
     for (int i = 0; i < observation_count; ++i) {
         const ma_observation &obs = observations[i];
-        if (obs.kind < MA_MAIN_ENEMY || obs.kind > MA_DANGER_PING ||
+        if (obs.kind < MA_MAIN_ENEMY || obs.kind > MA_PLAYER_ALIVE ||
             obs.direction < MA_DIR_NONE || obs.direction > MA_DIR_DOWN ||
             obs.confidence < engine->config.min_confidence ||
             obs.timestamp_ms > now_ms ||
             now_ms - obs.timestamp_ms > engine->config.max_observation_age_ms) continue;
+        if (obs.kind == MA_PLAYER_DEAD || obs.kind == MA_PLAYER_ALIVE) {
+            player_dead_seen = player_dead_seen || obs.kind == MA_PLAYER_DEAD;
+            player_alive_seen = player_alive_seen || obs.kind == MA_PLAYER_ALIVE;
+            continue;
+        }
         if (obs.kind == MA_MINIMAP_ENEMY) {
             const float x = obs.bbox.x + obs.bbox.w * 0.5f;
             const float y = obs.bbox.y + obs.bbox.h * 0.5f;
@@ -728,6 +753,7 @@ extern "C" int ma_engine_step(ma_engine *engine,
                 track.y = y;
                 track.w = obs.bbox.w;
                 track.h = obs.bbox.h;
+                track.track_id = engine->next_minimap_track_id++;
             }
             if (!track.active) {
                 track = SpatialTrack{};
@@ -736,6 +762,7 @@ extern "C" int ma_engine_step(ma_engine *engine,
                 track.y = y;
                 track.w = obs.bbox.w;
                 track.h = obs.bbox.h;
+                track.track_id = engine->next_minimap_track_id++;
             } else if (!reappeared_after_loss) {
                 const float delta_x = x - track.x;
                 const float delta_y = y - track.y;
@@ -761,6 +788,24 @@ extern "C" int ma_engine_step(ma_engine *engine,
         }
         seen[track_index(obs.kind, obs.direction)] = true;
     }
+    engine->player_dead_recent = static_cast<uint8_t>(
+            ((engine->player_dead_recent << 1) | (player_dead_seen ? 1 : 0)) & 7);
+    engine->player_alive_recent = static_cast<uint8_t>(
+            ((engine->player_alive_recent << 1) | (player_alive_seen ? 1 : 0)) & 7);
+    int player_transition = 0;
+    constexpr int player_confirm_hits = 2;
+    if (player_dead_seen && hit_count(engine->player_dead_recent) >= player_confirm_hits &&
+        engine->player_state != MA_PLAYER_STATE_DEAD) {
+        engine->player_state = MA_PLAYER_STATE_DEAD;
+        engine->player_alive_recent = 0;
+        player_transition = MA_PLAYER_DEAD;
+    } else if (player_alive_seen &&
+               hit_count(engine->player_alive_recent) >= player_confirm_hits) {
+        if (engine->player_state == MA_PLAYER_STATE_DEAD)
+            player_transition = MA_PLAYER_ALIVE;
+        engine->player_state = MA_PLAYER_STATE_ALIVE;
+        engine->player_dead_recent = 0;
+    }
     constexpr int64_t vision_memory_retention_ms = 4000;
     for (SpatialTrack &track : engine->minimap_tracks) {
         if (!track.active || track.matched) continue;
@@ -783,6 +828,14 @@ extern "C" int ma_engine_step(ma_engine *engine,
                    now_ms - track.disappeared_at_ms >= vision_memory_retention_ms) {
             track = SpatialTrack{};
         }
+    }
+    if (player_transition != 0) {
+        const int ttl = player_transition == MA_PLAYER_DEAD ? 2000 : 2500;
+        engine->last_emitted_ms = now_ms;
+        engine->last_emitted_priority = priority(player_transition);
+        out[0] = {player_transition, MA_DIR_NONE, priority(player_transition), now_ms,
+                  now_ms + ttl};
+        return 1;
     }
     int best = -1;
     int best_priority = -1;
@@ -859,6 +912,7 @@ extern "C" int ma_engine_read_minimap_markers(
              track.w, track.h},
             static_cast<int>(std::clamp<int64_t>(age_ms, 0, 4000)),
             track.event,
+            track.track_id,
         };
     }
     return count;

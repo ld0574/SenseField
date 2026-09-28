@@ -21,7 +21,7 @@ import java.util.List;
 final class MinimapOverlay implements AutoCloseable {
     private static final String TAG = "MapAssistOverlay";
     private static final int MARKER_OFFSET = 12;
-    static final int MARKER_STRIDE = 8;
+    static final int MARKER_STRIDE = 9;
     private static final int MAX_MARKERS = 8;
 
     private final WindowManager windows;

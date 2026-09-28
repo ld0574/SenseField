@@ -44,13 +44,17 @@ public final class CaptureService extends Service {
     private static final long BLACK_FRAME_GRACE_MS = 5000;
     private static final long BLACK_STOP_AFTER_MS = 10000;
     private static final int MARKER_OFFSET = 12;
-    private static final int MARKER_STRIDE = 8;
+    // Keep event decoding aligned with the native marker record, which also
+    // carries a track id after the transition event.
+    private static final int MARKER_STRIDE = MinimapOverlay.MARKER_STRIDE;
 
     private final Object processingLock = new Object();
     private HandlerThread workerThread;
     private Handler worker;
     private NotificationManager notificationManager;
     private CuePlayer cuePlayer;
+    private CueDispatcher cueDispatcher;
+    private CueSettings cueSettings;
     private MinimapOverlay minimapOverlay;
     private MediaProjection projection;
     private MediaProjection.Callback projectionCallback;
@@ -77,6 +81,7 @@ public final class CaptureService extends Service {
     private int frameWidth;
     private int frameHeight;
     private boolean lastFrameLandscape;
+    private boolean visionMemoryEnabled;
     private String auditSessionId;
     private long auditSessionStartedAtMs;
     private long nextCueId;
@@ -86,23 +91,15 @@ public final class CaptureService extends Service {
     private long maxLandscapeProcessedGapMs;
     private boolean auditSessionActive;
     private int latestServiceStartId;
-    private final Runnable displayWatchdog = new Runnable() {
-        @Override public void run() {
-            synchronized (processingLock) {
-                if (stopping || projection == null || reader == null) return;
-                try {
-                    // Rotation can stop frame callbacks before the old reader
-                    // reaches its next periodic size check.
-                    resizeIfNeeded();
-                } catch (RuntimeException error) {
-                    Log.e(TAG, "Could not resize capture after display change", error);
-                    stopWithStatus("横屏切换后无法继续截屏");
-                    return;
-                }
-            }
-            worker.postDelayed(this, DISPLAY_CHECK_PERIOD_MS);
-        }
-    };
+    private final CaptureHealthMonitor captureHealth = new CaptureHealthMonitor();
+    private int readerGeneration;
+    private int starvationCount;
+    private int recoveryAttempts;
+    private int recoverySuccesses;
+    private Runnable recoveryRunnable;
+    private Runnable displayWatchdog;
+    private long captureGeneration;
+    private long nativeResetGeneration;
 
     @Override
     public void onCreate() {
@@ -115,6 +112,42 @@ public final class CaptureService extends Service {
         worker = new Handler(workerThread.getLooper());
     }
 
+    /** Schedule a watchdog tied to one capture session. Must be called under processingLock. */
+    private void scheduleDisplayWatchdogLocked(final long expectedSessionGeneration) {
+        if (worker == null) return;
+        final Runnable watchdog = new Runnable() {
+            @Override public void run() {
+                synchronized (processingLock) {
+                    if (stopping || expectedSessionGeneration != captureGeneration
+                            || projection == null || reader == null) return;
+                    try {
+                        // Rotation can stop frame callbacks before the old reader
+                        // reaches its next periodic size check.
+                        resizeIfNeeded();
+                        if (captureHealth.check(SystemClock.elapsedRealtime()) ==
+                                CaptureHealthMonitor.State.STARVED) {
+                            starvationCount++;
+                            scheduleRecoveryLocked(expectedSessionGeneration);
+                        }
+                    } catch (RuntimeException error) {
+                        Log.e(TAG, "Could not resize capture after display change", error);
+                        stopWithStatus("横屏切换后无法继续截屏");
+                        return;
+                    }
+                    // Keep the post inside the same lock as the validity check.
+                    // releaseCapture() removes this callback under that lock, so
+                    // an old watchdog cannot reattach itself to a new session.
+                    if (!stopping && expectedSessionGeneration == captureGeneration
+                            && worker != null) {
+                        worker.postDelayed(this, DISPLAY_CHECK_PERIOD_MS);
+                    }
+                }
+            }
+        };
+        displayWatchdog = watchdog;
+        worker.postDelayed(watchdog, DISPLAY_CHECK_PERIOD_MS);
+    }
+
     @Override
     @SuppressWarnings("deprecation")
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -122,8 +155,14 @@ public final class CaptureService extends Service {
         String action = intent.getAction();
         if (!ACTION_START.equals(action) && !ACTION_STOP.equals(action)
                 && !ACTION_TOGGLE_PAUSE.equals(action)) return START_NOT_STICKY;
+        long expectedSessionGeneration = 0;
         synchronized (processingLock) {
             latestServiceStartId = startId;
+            if (ACTION_START.equals(action)) {
+                // Invalidate callbacks from the previous projection before
+                // releasing the lock to prepare the replacement session.
+                expectedSessionGeneration = ++captureGeneration;
+            }
         }
         if (ACTION_STOP.equals(action)) {
             stopWithStatus("截屏已停止");
@@ -136,38 +175,53 @@ public final class CaptureService extends Service {
                     return START_NOT_STICKY;
                 }
                 paused = !paused;
-                NativeBridge.nativeReset(nativeSession);
+                resetNativeLocked();
+                captureHealth.pause(paused, SystemClock.elapsedRealtime());
                 if (paused && minimapOverlay != null) minimapOverlay.clear();
+                if (cueDispatcher != null) {
+                    if (paused) cueDispatcher.pause();
+                    else cueDispatcher.resume();
+                }
             }
             refreshNotification();
             return START_NOT_STICKY;
         }
-        beginCaptureAttempt(startId);
+        beginCaptureAttempt(startId, expectedSessionGeneration);
         int resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED);
         Intent resultData = intent.getParcelableExtra(EXTRA_RESULT_DATA);
         if (resultCode == Activity.RESULT_OK && resultData != null) {
-            startCapture(resultCode, resultData);
+            startCapture(resultCode, resultData, expectedSessionGeneration);
         }
         else stopWithStatus("截屏授权无效，请重新授权");
         return START_NOT_STICKY;
     }
 
-    private void startCapture(int resultCode, Intent resultData) {
+    private void startCapture(int resultCode, Intent resultData,
+                              long expectedSessionGeneration) {
         synchronized (processingLock) {
+            if (stopping || expectedSessionGeneration != captureGeneration) return;
             try {
                 // startForegroundService() has a short system deadline. Enter
                 // foreground state before loading the model or preparing audio.
                 startForeground(NOTIFICATION_ID, notification("正在准备截屏"),
                         ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
                 if (cuePlayer == null) cuePlayer = new CuePlayer(this);
+                cueSettings = new CueSettings(this);
+                cueDispatcher = new CueDispatcher(cuePlayer, cueSettings,
+                        new CueAuditListener(), SystemClock::elapsedRealtime);
                 GameProfile profile = GameProfile.load(this);
                 profileName = profile.name + " · " + profile.version;
                 maxObservationAgeMs = profile.eventInts[0];
-                if (GameProfile.settings(this).getBoolean("vision_memory", false)) {
+                visionMemoryEnabled = GameProfile.settings(this)
+                        .getBoolean("vision_memory", false);
+                if (visionMemoryEnabled &&
+                        cueSettings.categoryEnabled(CueRequest.Category.VISION_MEMORY) &&
+                        (cueSettings.enabledChannels() & CueRequest.CHANNEL_VISUAL) != 0) {
                     minimapOverlay = MinimapOverlay.createIfAllowed(this);
                 }
                 GameProfile.TemplateData enemy = profile.enemyTemplate;
                 GameProfile.TemplateData ping = profile.pingTemplate;
+                GameProfile.PlayerLifeData playerLife = profile.playerLife;
                 nativeSession = NativeBridge.nativeCreate(
                         getAssets(),
                         profile.rois, profile.flags, profile.tuning,
@@ -183,7 +237,14 @@ public final class CaptureService extends Service {
                         profile.minimapLocatorEnabled,
                         profile.minimapLocatorFloats,
                         profile.minimapLocatorInts,
-                        profile.minimapLocatorDescriptor);
+                        profile.minimapLocatorDescriptor,
+                        playerLife != null,
+                        playerLife == null ? null : playerLife.roiAndThresholds,
+                        playerLife == null ? 0 : playerLife.maxDhashDistance,
+                        playerLife == null ? null : playerLife.hashes,
+                        playerLife == null ? null : playerLife.states,
+                        playerLife == null ? null : playerLife.luma,
+                        playerLife == null ? null : playerLife.chroma);
                 if (nativeSession == 0) throw new IllegalStateException("Native recognizer rejected profile");
 
                 // Android 14+ requires the mediaProjection foreground type before
@@ -192,11 +253,18 @@ public final class CaptureService extends Service {
                 projection = manager.getMediaProjection(resultCode, resultData);
                 if (projection == null) throw new IllegalStateException("Screen capture was not granted");
                 MediaProjection currentProjection = projection;
+                final long sessionGeneration = expectedSessionGeneration;
                 projectionCallback = new MediaProjection.Callback() {
                     @Override public void onStop() {
                         int stopThroughStartId;
                         synchronized (processingLock) {
-                            if (stopping || projection != currentProjection) return;
+                            if (stopping || projection != currentProjection
+                                    || sessionGeneration != captureGeneration) return;
+                            captureHealth.revoke();
+                            logCaptureHealth("REVOKED", "projection_stopped");
+                            dispatchSystemCue("CAPTURE_REVOKED", "截屏授权已结束",
+                                    100, 2000, CueRequest.CHANNEL_SPEECH |
+                                            CueRequest.CHANNEL_HAPTIC);
                             stopping = true;
                             stopThroughStartId = latestServiceStartId;
                         }
@@ -216,7 +284,8 @@ public final class CaptureService extends Service {
                         getResources().getDisplayMetrics().densityDpi,
                         DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                         reader.getSurface(), null, worker);
-                worker.postDelayed(displayWatchdog, DISPLAY_CHECK_PERIOD_MS);
+                captureHealth.start(SystemClock.elapsedRealtime());
+                scheduleDisplayWatchdogLocked(sessionGeneration);
                 refreshNotification();
             } catch (IOException | JSONException | RuntimeException error) {
                 Log.e(TAG, "Could not start local capture", error);
@@ -239,13 +308,27 @@ public final class CaptureService extends Service {
     private void createReader(int width, int height) {
         frameWidth = width;
         frameHeight = height;
+        int generation = ++readerGeneration;
         reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3);
-        reader.setOnImageAvailableListener(this::onImageAvailable, worker);
+        reader.setOnImageAvailableListener(source -> onImageAvailable(source, generation), worker);
+    }
+
+    /** Reset native tracking while recording the generation used for cue dedupe. */
+    private void resetNativeLocked() {
+        if (nativeSession == 0) return;
+        NativeBridge.nativeReset(nativeSession);
+        nativeResetGeneration++;
     }
 
     private void resizeIfNeeded() {
         Point current = screenSize();
         if (current.x == frameWidth && current.y == frameHeight) return;
+        boolean recoveryPending =
+                captureHealth.state() == CaptureHealthMonitor.State.RECOVERING;
+        if (recoveryRunnable != null) {
+            if (worker != null) worker.removeCallbacks(recoveryRunnable);
+            recoveryRunnable = null;
+        }
         if (virtualDisplay != null) virtualDisplay.setSurface(null);
         if (reader != null) {
             reader.setOnImageAvailableListener(null, null);
@@ -257,13 +340,82 @@ public final class CaptureService extends Service {
                     getResources().getDisplayMetrics().densityDpi);
             virtualDisplay.setSurface(reader.getSurface());
         }
-        if (nativeSession != 0) NativeBridge.nativeReset(nativeSession);
+        resetNativeLocked();
         if (minimapOverlay != null) minimapOverlay.clear();
         blackSinceMs = 0;
+        if (recoveryPending)
+            captureHealth.recoveryRebuilt(SystemClock.elapsedRealtime());
         Log.i(TAG, "Capture resized to " + frameWidth + "x" + frameHeight);
     }
 
-    private void onImageAvailable(ImageReader source) {
+    private void scheduleRecoveryLocked(long expectedSessionGeneration) {
+        long delay = captureHealth.beginRecovery();
+        if (delay < 0) {
+            logCaptureHealth("FAILED", "attempts_exhausted");
+            dispatchSystemCue("CAPTURE_FAILED", "截屏恢复失败，请重新授权",
+                    100, 2000, CueRequest.CHANNEL_SPEECH | CueRequest.CHANNEL_HAPTIC);
+            stopWithStatus("截屏画面中断且恢复失败，请重新授权");
+            return;
+        }
+        recoveryAttempts++;
+        logCaptureHealth("RECOVERING", "frame_starvation");
+        refreshNotification();
+        final int expectedGeneration = readerGeneration;
+        final long expectedCaptureGeneration = expectedSessionGeneration;
+        recoveryRunnable = () -> {
+            synchronized (processingLock) {
+                if (stopping || projection == null || virtualDisplay == null ||
+                        expectedCaptureGeneration != captureGeneration ||
+                        captureHealth.state() != CaptureHealthMonitor.State.RECOVERING ||
+                        expectedGeneration != readerGeneration) return;
+                try {
+                    virtualDisplay.setSurface(null);
+                    if (reader != null) {
+                        reader.setOnImageAvailableListener(null, null);
+                        reader.close();
+                    }
+                    Point size = screenSize();
+                    createReader(size.x, size.y);
+                    virtualDisplay.resize(frameWidth, frameHeight,
+                            getResources().getDisplayMetrics().densityDpi);
+                    virtualDisplay.setSurface(reader.getSurface());
+                    resetNativeLocked();
+                    if (minimapOverlay != null) minimapOverlay.clear();
+                    blackSinceMs = 0;
+                    captureHealth.recoveryRebuilt(SystemClock.elapsedRealtime());
+                    logCaptureHealth(captureHealth.state().name(), "reader_rebuilt_waiting_for_frame");
+                    refreshNotification();
+                } catch (RuntimeException error) {
+                    Log.w(TAG, "Could not rebuild capture reader", error);
+                    captureHealth.recoveryFailed();
+                    logCaptureHealth(captureHealth.state().name(), "reader_rebuild_failed");
+                    if (captureHealth.state() == CaptureHealthMonitor.State.FAILED) {
+                        dispatchSystemCue("CAPTURE_FAILED", "截屏恢复失败，请重新授权",
+                                100, 2000, CueRequest.CHANNEL_SPEECH |
+                                        CueRequest.CHANNEL_HAPTIC);
+                        stopWithStatus("截屏画面中断且恢复失败，请重新授权");
+                    }
+                }
+            }
+        };
+        worker.postDelayed(recoveryRunnable, delay);
+    }
+
+    private void logCaptureHealth(String state, String reason) {
+        long now = SystemClock.elapsedRealtime();
+        long last = captureHealth.lastFrameAtMs();
+        long lastProcessed = captureHealth.lastProcessedAtMs();
+        Log.i(TAG, "CaptureHealth sessionId=" + auditSessionId
+                + " state=" + state
+                + " reason=" + reason
+                + " attempt=" + captureHealth.attempts()
+                + " readerGeneration=" + readerGeneration
+                + " elapsedSinceFrameMs=" + (last < 0 ? -1 : Math.max(0, now - last))
+                + " elapsedSinceProcessedMs=" + (lastProcessed < 0 ? -1 :
+                        Math.max(0, now - lastProcessed)));
+    }
+
+    private void onImageAvailable(ImageReader source, int generation) {
         Image image = null;
         boolean resizeAfterClose = false;
         boolean refreshAfterFrame = false;
@@ -272,7 +424,17 @@ public final class CaptureService extends Service {
             if (image == null) return;
             final long now = SystemClock.elapsedRealtime();
             synchronized (processingLock) {
-                if (stopping || source != reader) return;
+                if (stopping || source != reader || generation != readerGeneration) return;
+                CaptureHealthMonitor.State previous = captureHealth.state();
+                captureHealth.frameArrived(now);
+                if (previous == CaptureHealthMonitor.State.RECOVERING ||
+                        previous == CaptureHealthMonitor.State.STARVED) {
+                    recoverySuccesses++;
+                    logCaptureHealth("HEALTHY", "frame_resumed");
+                    dispatchSystemCue("CAPTURE_RECOVERED", "截屏已恢复",
+                            20, 3000, CueRequest.CHANNEL_SPEECH);
+                    refreshNotification();
+                }
                 if (now - lastProcessedAtMs < FRAME_PERIOD_MS) return;
                 lastProcessedAtMs = now;
             }
@@ -296,7 +458,7 @@ public final class CaptureService extends Service {
             synchronized (processingLock) {
                 // A newer ACTION_START can replace the reader while this
                 // callback is inspecting an already acquired old frame.
-                if (stopping || source != reader) return;
+                if (stopping || source != reader || generation != readerGeneration) return;
                 processedFrames++;
                 resizeAfterClose = processedFrames % 12 == 0;
                 if (!landscape || !blackFrame) {
@@ -311,13 +473,14 @@ public final class CaptureService extends Service {
                     return;
                 }
                 if (landscape != lastFrameLandscape && nativeSession != 0) {
-                    NativeBridge.nativeReset(nativeSession);
+                    resetNativeLocked();
                     if (minimapOverlay != null) minimapOverlay.clear();
                     if (!landscape) latestNativeMicros = 0;
                 }
                 lastFrameLandscape = landscape;
                 if (landscape && !paused && nativeSession != 0) {
                     long processingAtMs = SystemClock.elapsedRealtime();
+                    captureHealth.frameProcessed(processingAtMs);
                     recordLandscapeProcessedFrameLocked(processingAtMs);
                     int[] result = NativeBridge.nativeProcess(nativeSession, pixels,
                             width, height, plane.getRowStride(), observedAtMs, now);
@@ -338,33 +501,13 @@ public final class CaptureService extends Service {
                         }
                         if (minimapOverlay != null && result.length >= 12) {
                             minimapOverlay.update(result);
-                            playVisionMemoryTransitions(result);
                         }
-                        if (result[0] > 0) {
-                            String cueId = auditSessionId + ":" + nextCueId++;
-                            detectedCues++;
-                            long frameAgeMs = SystemClock.elapsedRealtime() - observedAtMs;
-                            boolean stale = frameAgeMs > maxObservationAgeMs;
-                            boolean audioQueued = false;
-                            if (stale) {
-                                staleCues++;
-                            } else {
-                                audioQueued = cuePlayer.play(
-                                        result[0], result[1],
-                                        observedAtMs + maxObservationAgeMs);
-                                if (audioQueued) queuedCues++;
-                                else audioQueueFailures++;
-                            }
-                            Log.i(TAG, "CueEvent sessionId=" + auditSessionId
-                                    + " cueId=" + cueId
-                                    + " kind=" + result[0]
-                                    + " direction=" + result[1]
-                                    + " observedAtMs=" + observedAtMs
-                                    + " frameAgeMs=" + frameAgeMs
-                                    + " nativeMicros=" + latestNativeMicros
-                                    + " stale=" + stale
-                                    + " audioQueued=" + audioQueued);
-                        }
+                        if (visionMemoryEnabled)
+                            playVisionMemoryTransitions(result, observedAtMs);
+                        // Minimap APPEAR is dispatched by the marker path, which
+                        // carries the stable track id needed for exact deduplication.
+                        if (result[0] > 0 && (result[0] != 2 || !visionMemoryEnabled))
+                            dispatchNativeCue(result[0], result[1], result[2], observedAtMs);
                     }
                 }
                 if (now - lastNotificationAtMs > 5000) {
@@ -384,7 +527,8 @@ public final class CaptureService extends Service {
             if (resizeAfterClose) {
                 try {
                     synchronized (processingLock) {
-                        if (!stopping && source == reader) resizeIfNeeded();
+                        if (!stopping && source == reader && generation == readerGeneration)
+                            resizeIfNeeded();
                     }
                 } catch (RuntimeException error) {
                     Log.e(TAG, "Could not resize capture after rotation", error);
@@ -413,8 +557,12 @@ public final class CaptureService extends Service {
         return inspected > 0 && bright == 0;
     }
 
-    private void playVisionMemoryTransitions(int[] result) {
-        if (cuePlayer == null || result.length < MARKER_OFFSET || result[11] <= 0) return;
+    private void playVisionMemoryTransitions(int[] result, long observedAtMs) {
+        if (cueDispatcher == null ||
+                !CueSettings.visionMemoryDispatchEnabled(visionMemoryEnabled,
+                        cueSettings != null && cueSettings.categoryEnabled(
+                                CueRequest.Category.VISION_MEMORY)) ||
+                result.length < MARKER_OFFSET || result[11] <= 0) return;
         int count = Math.min(8, result[11]);
         for (int index = 0; index < count; index++) {
             int base = MARKER_OFFSET + index * MARKER_STRIDE;
@@ -425,15 +573,172 @@ public final class CaptureService extends Service {
                     result[base + 2] + result[base + 4] / 2,
                     result[base + 3] + result[base + 5] / 2,
                     result[7], result[8], result[9], result[10]);
-            boolean feedbackQueued = cuePlayer.playVisionEvent(
-                    event, position, result[base + 1]);
+            int movement = result[base + 1];
+            int direction = movement != 0 ? movement : cardinalForPosition(position);
+            int trackId = result[base + 8];
+            int channels = minimapOverlay == null ? 0 : CueRequest.CHANNEL_VISUAL;
+            String speech = null;
+            int priority;
+            long ttl;
+            if (event == 1) {
+                channels |= CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_HAPTIC;
+                if (cueSettings != null && cueSettings.speakAppear()) {
+                    channels |= CueRequest.CHANNEL_SPEECH;
+                    speech = positionText(position) + "敌人出现";
+                }
+                priority = 40;
+                ttl = 800;
+            } else {
+                channels |= CueRequest.CHANNEL_HAPTIC;
+                if (movement != 0) {
+                    channels |= CueRequest.CHANNEL_SPEECH;
+                    speech = positionText(position) + "敌人消失，"
+                            + movementText(movement) + "移动";
+                }
+                priority = 60;
+                ttl = 1500;
+            }
+            String cueId = auditSessionId + ":" + nextCueId++;
+            CueRequest request = new CueRequest(auditSessionId, cueId,
+                    CueEventKeys.visionMemory(nativeResetGeneration, trackId, event),
+                    event == 1 ? "VISION_APPEAR" : "VISION_DISAPPEAR",
+                    CueRequest.Category.VISION_MEMORY, priority, observedAtMs,
+                    observedAtMs + ttl, channels, 2, direction, direction, speech);
+            CueDispatcher.DispatchResult dispatched = cueDispatcher.submit(request);
             Log.i(TAG, "VisionMemoryEvent sessionId=" + auditSessionId
                     + " event=" + (event == 1 ? "APPEAR" : "DISAPPEAR")
                     + " position=" + position
-                    + " movement=" + result[base + 1]
+                    + " trackId=" + trackId
+                    + " movement=" + movement
                     + " ageMs=" + result[base + 6]
-                    + " feedbackQueued=" + feedbackQueued);
+                    + " feedbackQueued=" + dispatched.audioQueued());
         }
+    }
+
+    private void dispatchNativeCue(int kind, int direction, int nativePriority,
+                                   long observedAtMs) {
+        if (cueDispatcher == null) return;
+        CueRequest.Category category = kind == 3
+                ? CueRequest.Category.DANGER
+                : kind >= 4 ? CueRequest.Category.PLAYER_STATE
+                : CueRequest.Category.VISION_MEMORY;
+        int priority = kind == 4 ? 100 : kind == 5 ? 60
+                : kind == 3 ? 80 : Math.max(40, nativePriority);
+        long ttl = kind == 4 ? 2000 : kind == 5 ? 2500
+                : kind == 3 ? 1200 : maxObservationAgeMs;
+        int channels;
+        String speech = null;
+        if (kind == 4) {
+            channels = CueRequest.CHANNEL_SPEECH | CueRequest.CHANNEL_HAPTIC;
+            speech = "你已阵亡";
+        } else if (kind == 5) {
+            channels = CueRequest.CHANNEL_SPEECH | CueRequest.CHANNEL_HAPTIC;
+            speech = "你已复活";
+        } else {
+            channels = CueRequest.CHANNEL_TONE;
+            if (kind == 3) {
+                channels |= CueRequest.CHANNEL_SPEECH;
+                speech = "危险信号";
+            } else if (direction == 3 || direction == 4) {
+                channels |= CueRequest.CHANNEL_SPEECH;
+                speech = (direction == 3 ? "上方" : "下方") + "有敌人";
+            }
+        }
+        String cueId = auditSessionId + ":" + nextCueId++;
+        CueRequest request = new CueRequest(auditSessionId, cueId,
+                CueEventKeys.nativeCue(nativeResetGeneration, kind, direction),
+                kindName(kind), category, priority, observedAtMs, observedAtMs + ttl,
+                channels, kind, direction, direction, speech);
+        long frameAgeMs = Math.max(0, SystemClock.elapsedRealtime() - observedAtMs);
+        boolean stale = SystemClock.elapsedRealtime() > request.expiresAtMs;
+        CueDispatcher.DispatchResult dispatched = cueDispatcher.submit(request);
+        detectedCues++;
+        if (stale) staleCues++;
+        else if (dispatched.audioQueued()) queuedCues++;
+        else audioQueueFailures++;
+        Log.i(TAG, "CueEvent sessionId=" + auditSessionId
+                + " cueId=" + cueId
+                + " kind=" + kind
+                + " direction=" + direction
+                + " observedAtMs=" + observedAtMs
+                + " frameAgeMs=" + frameAgeMs
+                + " nativeMicros=" + latestNativeMicros
+                + " stale=" + stale
+                + " audioQueued=" + dispatched.audioQueued());
+    }
+
+    private void dispatchSystemCue(String kind, String speech, int priority,
+                                   long ttl, int channels) {
+        if (cueDispatcher == null || auditSessionId == null) return;
+        long now = SystemClock.elapsedRealtime();
+        String cueId = auditSessionId + ":" + nextCueId++;
+        cueDispatcher.submit(new CueRequest(auditSessionId, cueId,
+                "system:" + kind, kind, CueRequest.Category.SYSTEM, priority,
+                now, now + ttl, channels, 0, 0, 0, speech));
+    }
+
+    private final class CueAuditListener implements CueDispatcher.Listener {
+        @Override public void onDispatch(CueRequest request,
+                                         CueDispatcher.DispatchResult result) {
+            Log.i(TAG, "CueDispatch sessionId=" + request.sessionId
+                    + " cueId=" + request.cueId
+                    + " eventKey=" + request.eventKey
+                    + " kind=" + request.kind
+                    + " category=" + request.category
+                    + " priority=" + request.priority
+                    + " createdAtMs=" + request.createdAtMs
+                    + " expiresAtMs=" + request.expiresAtMs
+                    + " requestedMask=" + request.requestedChannels
+                    + " acceptedMask=" + result.acceptedChannels
+                    + " outcome=" + result.outcome
+                    + " dropReason=" + result.reason);
+        }
+
+        @Override public void onPlayback(CueRequest request, String channel,
+                                         long atMs, String result) {
+            Log.i(TAG, "CuePlayback sessionId=" + request.sessionId
+                    + " cueId=" + request.cueId
+                    + " channel=" + channel
+                    + " atMs=" + atMs
+                    + " result=" + result);
+        }
+    }
+
+    private static String kindName(int kind) {
+        if (kind == 1) return "MAIN_ENEMY";
+        if (kind == 2) return "MINIMAP_ENEMY";
+        if (kind == 3) return "DANGER_PING";
+        if (kind == 4) return "PLAYER_DEAD";
+        if (kind == 5) return "PLAYER_ALIVE";
+        return "UNKNOWN";
+    }
+
+    private static int cardinalForPosition(int position) {
+        if (position == 1 || position == 5 || position == 7) return 1;
+        if (position == 2 || position == 6 || position == 8) return 2;
+        if (position == 3) return 3;
+        if (position == 4) return 4;
+        return 0;
+    }
+
+    private static String positionText(int position) {
+        if (position == 1) return "左侧";
+        if (position == 2) return "右侧";
+        if (position == 3) return "上方";
+        if (position == 4) return "下方";
+        if (position == 5) return "左上";
+        if (position == 6) return "右上";
+        if (position == 7) return "左下";
+        if (position == 8) return "右下";
+        return "附近";
+    }
+
+    private static String movementText(int direction) {
+        if (direction == 1) return "向左";
+        if (direction == 2) return "向右";
+        if (direction == 3) return "向上";
+        if (direction == 4) return "向下";
+        return "";
     }
 
     private static int minimapPosition(int x, int y, int roiX, int roiY,
@@ -480,16 +785,25 @@ public final class CaptureService extends Service {
     }
 
     private void refreshNotification() {
+        String healthState = captureHealth.state() == CaptureHealthMonitor.State.RECOVERING
+                ? "恢复截屏 " + captureHealth.attempts() + "/3"
+                : captureHealth.state() == CaptureHealthMonitor.State.STARVED
+                ? "等待画面恢复" : null;
         notificationManager.notify(NOTIFICATION_ID,
-                notification(paused ? "提示已暂停" :
+                notification(healthState != null ? healthState : paused ? "提示已暂停" :
                         frameWidth <= frameHeight ? "等待横屏" : "正在处理画面"));
     }
 
-    private void beginCaptureAttempt(int startId) {
+    private void beginCaptureAttempt(int startId, long expectedSessionGeneration) {
         synchronized (processingLock) {
+            if (expectedSessionGeneration != captureGeneration) return;
             finishAuditSessionLocked("restarted");
             releaseCapture();
             if (cuePlayer != null) {
+                if (cueDispatcher != null) {
+                    cueDispatcher.close();
+                    cueDispatcher = null;
+                }
                 cuePlayer.close();
                 cuePlayer = null;
             }
@@ -504,11 +818,17 @@ public final class CaptureService extends Service {
             queuedCues = 0;
             staleCues = 0;
             audioQueueFailures = 0;
+            starvationCount = 0;
+            recoveryAttempts = 0;
+            recoverySuccesses = 0;
+            readerGeneration = 0;
+            nativeResetGeneration = 0;
             latestNativeMicros = 0;
             latestLocatorState = -1;
             latestLocatorScoreMilli = 0;
             lastLoggedLocatorState = Integer.MIN_VALUE;
             lastFrameLandscape = false;
+            visionMemoryEnabled = false;
             profileName = "";
             auditSessionId = UUID.randomUUID().toString();
             auditSessionStartedAtMs = startedAtMs;
@@ -550,6 +870,9 @@ public final class CaptureService extends Service {
                 + " queued=" + queuedCues
                 + " stale=" + staleCues
                 + " audioFailures=" + audioQueueFailures
+                + " starvationCount=" + starvationCount
+                + " recoveryAttempts=" + recoveryAttempts
+                + " recoverySuccesses=" + recoverySuccesses
                 + " locatorState=" + locatorStateName(latestLocatorState)
                 + " locatorScoreMilli=" + latestLocatorScoreMilli
                 + " reason=" + reason);
@@ -588,11 +911,22 @@ public final class CaptureService extends Service {
 
     private void releaseCapture() {
         stopping = true;
+        if (cueDispatcher != null) {
+            cueDispatcher.close();
+            cueDispatcher = null;
+        }
         if (minimapOverlay != null) {
             minimapOverlay.close();
             minimapOverlay = null;
         }
-        if (worker != null) worker.removeCallbacks(displayWatchdog);
+        if (worker != null && displayWatchdog != null) {
+            worker.removeCallbacks(displayWatchdog);
+            displayWatchdog = null;
+        }
+        if (worker != null && recoveryRunnable != null) {
+            worker.removeCallbacks(recoveryRunnable);
+            recoveryRunnable = null;
+        }
         if (reader != null) {
             reader.setOnImageAvailableListener(null, null);
         }

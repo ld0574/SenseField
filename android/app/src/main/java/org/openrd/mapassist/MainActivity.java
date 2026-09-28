@@ -33,6 +33,7 @@ public final class MainActivity extends Activity {
 
     private TextView status;
     private CheckBox minimapOverlay;
+    private TextView cuePresetStatus;
     private boolean awaitingOverlayPermission;
 
     @Override
@@ -83,21 +84,30 @@ public final class MainActivity extends Activity {
         minimapOverlay = new CheckBox(this);
         minimapOverlay.setText("启用视野记忆：视觉残影、事件语音与方向震动（实验）");
         minimapOverlay.setChecked(GameProfile.settings(this)
-                .getBoolean("vision_memory", false) && Settings.canDrawOverlays(this));
+                .getBoolean("vision_memory", false));
         minimapOverlay.setOnClickListener(view -> {
             boolean checked = minimapOverlay.isChecked();
             if (checked && !Settings.canDrawOverlays(this)) {
-                minimapOverlay.setChecked(false);
+                // Keep the user's opt-in independent from the optional visual
+                // overlay permission. Audio and haptic cues remain useful
+                // when the special-access permission is declined.
+                GameProfile.settings(this).edit().putBoolean("vision_memory", true).apply();
                 awaitingOverlayPermission = true;
                 Intent permission = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                         Uri.parse("package:" + getPackageName()));
                 startActivityForResult(permission, REQUEST_OVERLAY);
-                toast("请允许听野显示非交互式小地图提示层");
+                toast("可选的小地图提示层需要额外权限；语音和触觉提示仍可用");
                 return;
             }
             GameProfile.settings(this).edit().putBoolean("vision_memory", checked).apply();
         });
         content.addView(minimapOverlay);
+
+        cuePresetStatus = new TextView(this);
+        content.addView(cuePresetStatus);
+        Button cueSettings = button("提示预设与高级设置", content);
+        cueSettings.setOnClickListener(view ->
+                startActivity(new Intent(this, AlertSettingsActivity.class)));
 
         TextView volumeLabel = new TextView(this);
         content.addView(volumeLabel);
@@ -171,14 +181,19 @@ public final class MainActivity extends Activity {
     }
 
     private void refreshStatus() {
+        if (cuePresetStatus != null) {
+            new CueSettings(this);
+            cuePresetStatus.setText("提示方案：" + CueSettings.presetLabel(
+                    GameProfile.settings(this)));
+        }
         try {
             GameProfile profile = GameProfile.load(this);
             int enabled = profile.flags[0] + profile.flags[1] + profile.flags[2] + profile.flags[3]
-                    + (profile.minimapYolox ? 1 : 0);
+                    + (profile.minimapYolox ? 1 : 0) + (profile.playerLife != null ? 1 : 0);
             String lastCapture = GameProfile.settings(this).getString("last_capture_status", "");
             status.setText("配置：" + profile.name + " · " + profile.version
                     + (profile.verified ? "（已标定）" : "（未标定）")
-                    + "\n当前启用识别器：" + enabled + "/5"
+                    + "\n当前启用识别器：" + enabled + "/6"
                     + (lastCapture.isEmpty() ? "" : "\n上次截屏：" + lastCapture));
         } catch (IOException | JSONException error) {
             status.setText("配置读取失败：" + error.getMessage());
@@ -191,9 +206,10 @@ public final class MainActivity extends Activity {
         if (awaitingOverlayPermission) {
             awaitingOverlayPermission = false;
             boolean allowed = Settings.canDrawOverlays(this);
-            GameProfile.settings(this).edit().putBoolean("vision_memory", allowed).apply();
-            if (minimapOverlay != null) minimapOverlay.setChecked(allowed);
-            if (!allowed) toast("未开启小地图提示层权限；声音提示不受影响");
+            boolean optedIn = GameProfile.settings(this)
+                    .getBoolean("vision_memory", false);
+            if (minimapOverlay != null) minimapOverlay.setChecked(optedIn);
+            if (!allowed) toast("未开启小地图提示层权限；语音和触觉提示仍可用");
         }
         if (status != null) refreshStatus();
     }

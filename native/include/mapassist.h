@@ -7,12 +7,14 @@
 extern "C" {
 #endif
 
-#define MA_API_VERSION 6
+#define MA_API_VERSION 7
 
 enum ma_kind {
     MA_MAIN_ENEMY = 1,
     MA_MINIMAP_ENEMY = 2,
-    MA_DANGER_PING = 3
+    MA_DANGER_PING = 3,
+    MA_PLAYER_DEAD = 4,
+    MA_PLAYER_ALIVE = 5
 };
 
 enum ma_direction {
@@ -94,7 +96,40 @@ typedef struct ma_minimap_marker {
     ma_rect bbox;
     int age_ms;
     int event;
+    int track_id;
 } ma_minimap_marker;
+
+enum ma_player_state {
+    MA_PLAYER_STATE_UNKNOWN = 0,
+    MA_PLAYER_STATE_DEAD = 1,
+    MA_PLAYER_STATE_ALIVE = 2
+};
+
+typedef struct ma_player_state_signature {
+    int state;
+    uint64_t dhash;
+    uint8_t luma[64];
+    uint8_t chroma[32];
+} ma_player_state_signature;
+
+typedef struct ma_player_state_matcher_config {
+    ma_rect roi;
+    int max_dhash_distance;
+    float max_luma_mae;
+    float max_chroma_mae;
+    float min_state_margin;
+} ma_player_state_matcher_config;
+
+typedef struct ma_player_state_matcher ma_player_state_matcher;
+
+ma_player_state_matcher *ma_player_state_matcher_create(
+        const ma_player_state_matcher_config *config,
+        const ma_player_state_signature *signatures, int signature_count);
+void ma_player_state_matcher_destroy(ma_player_state_matcher *matcher);
+int ma_player_state_match_rgba(
+        const ma_player_state_matcher *matcher,
+        const uint8_t *rgba, int width, int height, int row_stride,
+        float *out_confidence);
 
 typedef struct ma_engine_config {
     float min_confidence;

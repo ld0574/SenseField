@@ -47,9 +47,59 @@ def _cue(
 
 
 def _write_log(tmp_path: Path, content: str) -> Path:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     path = tmp_path / "logcat.txt"
     path.write_text(content, encoding="utf-8")
     return path
+
+
+def _dispatch(
+    *,
+    cue_id: str = "session-42:1",
+    requested: int = 1,
+    accepted: int = 1,
+    outcome: str = "ACCEPTED",
+    created: int = 1050,
+    expires: int = 1850,
+    category: str = "VISION_MEMORY",
+) -> str:
+    return (
+        "I/MapAssistCapture: CueDispatch "
+        f"sessionId={SESSION_ID} cueId={cue_id} eventKey=event:1 "
+        "kind=VISION_APPEAR "
+        f"category={category} priority=40 createdAtMs={created} "
+        f"expiresAtMs={expires} requestedMask={requested} "
+        f"acceptedMask={accepted} outcome={outcome} dropReason=none"
+    )
+
+
+def _playback(
+    channel: str = "TONE", at_ms: int = 1060, result: str = "STARTED",
+    cue_id: str = "session-42:1",
+) -> str:
+    return (
+        "I/MapAssistCapture: CuePlayback "
+        f"sessionId={SESSION_ID} cueId={cue_id} channel={channel} "
+        f"atMs={at_ms} result={result}"
+    )
+
+
+def _schema2_log(
+    dispatch: str,
+    *playbacks: str,
+    summary_overrides: str = "",
+) -> str:
+    content = _session_log(
+        _cue("session-42:1"),
+        _cue("session-42:2"),
+        _cue("session-42:3", kind=3, stale=True, audio_queued=False),
+        summary_overrides=summary_overrides,
+    )
+    records = "\n".join((dispatch, *playbacks))
+    return content.replace(
+        "I/MapAssistCapture: SessionSummary",
+        records + "\nI/MapAssistCapture: SessionSummary",
+    )
 
 
 def test_parse_complete_session_counts_cues_and_landscape_metrics(
@@ -169,4 +219,151 @@ def test_ignores_records_from_other_logcat_tags(tmp_path: Path) -> None:
     path = _write_log(tmp_path, content)
 
     with pytest.raises(ValueError, match="found 0"):
+        parse_session_log(path, SESSION_ID)
+
+
+def test_parses_enhanced_dispatch_playback_and_capture_health(tmp_path: Path) -> None:
+    content = _session_log(
+        _cue("session-42:2", kind=4),
+        _cue("session-42:3", kind=5),
+        _cue("session-42:4", kind=3, stale=True, audio_queued=False),
+    ).replace(
+        "I/MapAssistCapture: SessionSummary",
+        "I/MapAssistCapture: CueDispatch sessionId=session-42 cueId=session-42:1 "
+        "eventKey=vision:7:1 kind=VISION_APPEAR category=VISION_MEMORY priority=40 "
+        "createdAtMs=1050 expiresAtMs=1850 requestedMask=13 acceptedMask=13 "
+        "outcome=ACCEPTED dropReason=none\n"
+        "I/MapAssistCapture: CuePlayback sessionId=session-42 cueId=session-42:1 "
+        "channel=TONE atMs=1060 result=STARTED\n"
+        "I/MapAssistCapture: CaptureHealth sessionId=session-42 state=RECOVERING "
+        "reason=frame_starvation attempt=1 readerGeneration=2 elapsedSinceFrameMs=1100 "
+        "elapsedSinceProcessedMs=1180\n"
+        "I/MapAssistCapture: SessionSummary",
+    ).replace("reason=stopped ",
+              "reason=stopped starvationCount=1 recoveryAttempts=1 recoverySuccesses=0 ")
+    path = _write_log(tmp_path, content)
+
+    parsed = parse_session_log(path, SESSION_ID)
+
+    assert parsed["schema_version"] == 2
+    assert parsed["non_stale_cue_ids"] == ["session-42:1"]
+    assert parsed["dispatches"][0]["category"] == "VISION_MEMORY"
+    assert parsed["capture_health"][0]["state"] == "RECOVERING"
+    assert parsed["capture_health"][0]["elapsed_since_processed_ms"] == 1180
+
+
+@pytest.mark.parametrize(
+    ("dispatch", "message"),
+    [
+        (_dispatch(requested=1, accepted=2), "invalid channel masks"),
+        (_dispatch(accepted=1, outcome="DROPPED"), "outcome does not match"),
+        (_dispatch(category="UNKNOWN"), "invalid category"),
+        (_dispatch(created=1901), "falls outside the session"),
+        (_dispatch(created=1200, expires=1199), "precedes createdAtMs"),
+    ],
+)
+def test_rejects_invalid_dispatch_schema2_records(
+    tmp_path: Path, dispatch: str, message: str
+) -> None:
+    path = _write_log(tmp_path, _schema2_log(dispatch))
+
+    with pytest.raises(ValueError, match=message):
+        parse_session_log(path, SESSION_ID)
+
+
+def test_allows_synchronous_renderer_failures_without_accepted_channel(
+    tmp_path: Path,
+) -> None:
+    path = _write_log(
+        tmp_path,
+        _schema2_log(
+            _dispatch(
+                cue_id="system:1", requested=1, accepted=0, outcome="DROPPED"
+            ),
+            _playback(result="FAILED", cue_id="system:1"),
+        ),
+    )
+
+    parsed = parse_session_log(path, SESSION_ID)
+
+    assert parsed["playbacks"][0]["result"] == "FAILED"
+    assert parsed["non_stale_cue_ids"] == []
+
+
+def test_rejects_playback_for_channel_that_was_not_requested(
+    tmp_path: Path,
+) -> None:
+    path = _write_log(
+        tmp_path,
+        _schema2_log(
+            _dispatch(requested=1, accepted=0, outcome="DROPPED"),
+            _playback(channel="SPEECH", result="UNAVAILABLE"),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="was not requested"):
+        parse_session_log(path, SESSION_ID)
+
+
+def test_requires_started_channel_to_be_accepted_and_before_expiry(
+    tmp_path: Path,
+) -> None:
+    missing_channel = _write_log(
+        tmp_path / "missing-channel",
+        _schema2_log(_dispatch(), _playback(channel="SPEECH")),
+    )
+    with pytest.raises(ValueError, match="is not accepted"):
+        parse_session_log(missing_channel, SESSION_ID)
+
+    late_start = _write_log(
+        tmp_path / "late-start",
+        _schema2_log(
+            _dispatch(expires=1060),
+            _playback(at_ms=1061),
+        ),
+    )
+    with pytest.raises(ValueError, match="STARTED after"):
+        parse_session_log(late_start, SESSION_ID)
+
+
+def test_allows_terminal_callback_after_expiry_but_rejects_bad_lifecycle(
+    tmp_path: Path,
+) -> None:
+    valid = _write_log(
+        tmp_path / "valid",
+        _schema2_log(
+            _dispatch(expires=1100),
+            _playback(at_ms=1060),
+            _playback(at_ms=2000, result="COMPLETED"),
+        ),
+    )
+    assert parse_session_log(valid, SESSION_ID)["playbacks"][-1]["at_ms"] == 2000
+
+    no_start = _write_log(
+        tmp_path / "no-start",
+        _schema2_log(_dispatch(), _playback(result="COMPLETED")),
+    )
+    with pytest.raises(ValueError, match="without STARTED"):
+        parse_session_log(no_start, SESSION_ID)
+
+    duplicate = _write_log(
+        tmp_path / "duplicate",
+        _schema2_log(_dispatch(), _playback(), _playback()),
+    )
+    with pytest.raises(ValueError, match="duplicate STARTED"):
+        parse_session_log(duplicate, SESSION_ID)
+
+
+def test_rejects_invalid_capture_health_recovery_counters(tmp_path: Path) -> None:
+    path = _write_log(
+        tmp_path,
+        _schema2_log(
+            _dispatch(),
+            summary_overrides=(
+                "starvationCount=1 recoveryAttempts=1 recoverySuccesses=2"
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="recoverySuccesses"):
         parse_session_log(path, SESSION_ID)
