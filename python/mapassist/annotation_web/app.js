@@ -215,7 +215,7 @@ function renderQueue() {
     const right = leasedByOther ? `${task.lease_owner} 标注中` : statusLabel(task.review_status);
     button.innerHTML = `
       <span class="stripe ${task.selection}"></span>
-      <span><strong>${escapeHtml(task.match_id)} · ${seconds(task.at_ms)}</strong><small>${selectionLabel(task.selection)} · ${task.split}</small></span>
+      <span><strong>${escapeHtml(task.match_id)} · ${seconds(task.at_ms)}</strong><small>${selectionLabel(task.selection)} · ${task.split} · ${window.MapassistSuggestionHint.formatSuggestionHint(task.suggested_boxes)}</small></span>
       <span class="state">${escapeHtml(right)}</span>`;
     button.addEventListener("click", () => claimTask(task.id));
     list.appendChild(button);
