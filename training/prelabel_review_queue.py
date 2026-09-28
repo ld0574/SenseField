@@ -7,6 +7,11 @@ import json
 import math
 from pathlib import Path
 
+from mapassist.roi_safety import (
+    DEFAULT_ROI_EDGE_TOLERANCE_PX,
+    inspect_box_roi,
+)
+
 
 def _decode(raw, input_size: int):
     import numpy as np
@@ -57,13 +62,83 @@ def _nms(boxes, scores, threshold: float):
 
 
 def _roi(value: object) -> list[float]:
-    if not isinstance(value, list) or len(value) != 4:
-        raise ValueError("roi must contain four values")
-    result = [float(item) for item in value]
+    if (not isinstance(value, list) or len(value) != 4 or
+            any(not isinstance(item, (int, float)) or isinstance(item, bool)
+                for item in value)):
+        raise ValueError("roi must contain four numeric values")
+    try:
+        result = [float(item) for item in value]
+    except (OverflowError, TypeError, ValueError) as error:
+        raise ValueError("roi must contain four finite numbers") from error
+    if not all(math.isfinite(item) for item in result):
+        raise ValueError("roi must contain four finite numbers")
     x, y, width, height = result
     if x < 0 or y < 0 or width <= 0 or height <= 0 or x + width > 1 or y + height > 1:
         raise ValueError(f"invalid roi: {value}")
     return result
+
+
+def _label_roi(data: dict, match: dict) -> tuple[list[float] | None, str | None]:
+    """Resolve the effective review label ROI using the manifest fallback."""
+    if match.get("label_roi") is not None:
+        return _roi(match["label_roi"]), "match.label_roi"
+    if data.get("label_roi") is not None:
+        return _roi(data["label_roi"]), "manifest.label_roi"
+    return None, None
+
+
+def _validate_match_id(match_id: object) -> str:
+    if not isinstance(match_id, str) or not match_id:
+        raise ValueError("review match needs a non-empty id")
+    normalized_id = match_id.casefold().replace("_", "-")
+    if normalized_id.startswith(("video9", "video12")):
+        raise ValueError(f"sealed match {match_id!r} is not allowed for prelabeling")
+    return match_id
+
+
+def _center_inside_roi(box: list[float], roi: list[float]) -> bool:
+    center_x = box[0] + box[2] * 0.5
+    center_y = box[1] + box[3] * 0.5
+    return (roi[0] <= center_x <= roi[0] + roi[2] and
+            roi[1] <= center_y <= roi[1] + roi[3])
+
+
+def _filter_suggestions(
+    suggestions: list[dict], safe_roi: list[float], frame_width: int,
+    frame_height: int, label_roi: list[float] | None = None,
+    filter_label_roi: bool = False,
+    remove_safe_roi_edge_contacts: bool = False,
+) -> tuple[list[dict], dict[str, int]]:
+    """Apply opt-in center and expandable safe-crop-edge filters."""
+    if filter_label_roi and label_roi is None:
+        raise ValueError("--filter-label-roi requires label_roi in the review manifest")
+
+    kept = []
+    removed_by_label_roi = 0
+    removed_by_safe_roi_edge = 0
+    for suggestion in suggestions:
+        box = suggestion["bbox"]
+        if filter_label_roi and not _center_inside_roi(box, label_roi):
+            removed_by_label_roi += 1
+            continue
+        if remove_safe_roi_edge_contacts:
+            audit = inspect_box_roi(
+                box, safe_roi, frame_width, frame_height,
+                tolerance_px=DEFAULT_ROI_EDGE_TOLERANCE_PX,
+            )
+            # Physical-frame edges cannot be expanded. Remove only contacts on
+            # crop edges that have source pixels available beyond the crop.
+            if audit["crop_touches"]:
+                removed_by_safe_roi_edge += 1
+                continue
+        kept.append(suggestion)
+
+    return kept, {
+        "candidate_count": len(suggestions),
+        "removed_by_label_roi": removed_by_label_roi,
+        "removed_by_safe_roi_edge": removed_by_safe_roi_edge,
+        "kept": len(kept),
+    }
 
 
 def _normalized_box(roi: list[float], crop_x: int, crop_y: int,
@@ -100,7 +175,9 @@ def _page(images: list, captions: list[str], output: Path, columns: int = 4) -> 
 
 
 def build(manifest: Path, model: Path, output: Path, input_size: int = 320,
-          confidence: float = 0.03, nms_threshold: float = 0.5) -> dict:
+          confidence: float = 0.03, nms_threshold: float = 0.5,
+          filter_label_roi: bool = False,
+          remove_safe_roi_edge_contacts: bool = False) -> dict:
     import cv2
     import numpy as np
     import onnxruntime as ort
@@ -108,6 +185,16 @@ def build(manifest: Path, model: Path, output: Path, input_size: int = 320,
 
     data = json.loads(manifest.read_text(encoding="utf-8"))
     default_roi = _roi(data["roi"])
+    effective_label_rois = {}
+    for match in data["matches"]:
+        match_id = _validate_match_id(match.get("id"))
+        label_roi, label_roi_source = _label_roi(data, match)
+        if filter_label_roi and label_roi is None:
+            raise ValueError(
+                "--filter-label-roi requires label_roi in the review manifest "
+                f"(missing for {match_id})"
+            )
+        effective_label_rois[match_id] = (label_roi, label_roi_source)
     session = ort.InferenceSession(str(model.resolve()), providers=["CPUExecutionProvider"])
     input_name = session.get_inputs()[0].name
     result = {
@@ -117,12 +204,44 @@ def build(manifest: Path, model: Path, output: Path, input_size: int = 320,
         "confidence": confidence,
         "nms_threshold": nms_threshold,
         "warning": "Low-threshold suggestions are not ground truth; inspect every image.",
+        "filtering_provenance": {
+            "filters": {
+                "label_roi_center": {
+                    "enabled": filter_label_roi,
+                    "rule": "keep boxes whose normalized center is inside label_roi, inclusive",
+                    "roi_source": "match.label_roi, falling back to manifest.label_roi",
+                },
+                "expandable_safe_roi_edge_contacts": {
+                    "enabled": remove_safe_roi_edge_contacts,
+                    "tolerance_px": DEFAULT_ROI_EDGE_TOLERANCE_PX,
+                    "rule": "remove boxes with inspect_box_roi.crop_touches",
+                    "physical_frame_edge_contacts_kept": True,
+                },
+            },
+            "counts": {
+                "candidate_count": 0,
+                "removed_by_label_roi": 0,
+                "removed_by_safe_roi_edge": 0,
+                "kept": 0,
+            },
+            "per_match": [],
+        },
         "matches": [],
     }
     total = 0
+    aggregate_counts = result["filtering_provenance"]["counts"]
     for match in data["matches"]:
-        roi = _roi(match.get("roi", default_roi))
+        match_id = match["id"]
+        match_roi = match.get("roi")
+        roi = default_roi if match_roi is None else _roi(match_roi)
+        label_roi, label_roi_source = effective_label_rois[match_id]
         predictions = []
+        match_counts = {
+            "candidate_count": 0,
+            "removed_by_label_roi": 0,
+            "removed_by_safe_roi_edge": 0,
+            "kept": 0,
+        }
         page_images = []
         page_captions = []
         page_number = 1
@@ -158,6 +277,7 @@ def build(manifest: Path, model: Path, output: Path, input_size: int = 320,
             boxes[:, 3] = decoded[:, 1] + decoded[:, 3] / 2
             keep = _nms(boxes, scores, nms_threshold)
             found = []
+            overlay_boxes = {}
             overlay = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
             draw = ImageDraw.Draw(overlay)
             for index in keep:
@@ -178,10 +298,22 @@ def build(manifest: Path, model: Path, output: Path, input_size: int = 320,
                 if normalized is None:
                     continue
                 score = float(scores[index])
-                found.append({"bbox": [round(value, 8) for value in normalized],
-                              "confidence": round(score, 6)})
+                suggestion = {"bbox": [round(value, 8) for value in normalized],
+                              "confidence": round(score, 6)}
+                found.append(suggestion)
+                overlay_boxes[id(suggestion)] = (x0, y0, x1, y1, score)
+            found, counts = _filter_suggestions(
+                found, roi, full_width, full_height, label_roi,
+                filter_label_roi=filter_label_roi,
+                remove_safe_roi_edge_contacts=remove_safe_roi_edge_contacts,
+            )
+            for suggestion in found:
+                x0, y0, x1, y1, score = overlay_boxes[id(suggestion)]
                 draw.rectangle((x0, y0, x1, y1), outline="#39ff70", width=1)
                 draw.text((x0, max(0, y0 - 9)), f"{score:.2f}", fill="#39ff70")
+            for key in match_counts:
+                match_counts[key] += counts[key]
+                aggregate_counts[key] += counts[key]
             predictions.append({"at_ms": sample["at_ms"], "frame": sample["frame"],
                                 "suggestions": found})
             total += len(found)
@@ -199,7 +331,14 @@ def build(manifest: Path, model: Path, output: Path, input_size: int = 320,
         if page_images:
             _page(page_images, page_captions,
                   output / "contact-sheets" / f"{match['id']}-page-{page_number:02d}.jpg")
-        result["matches"].append({"id": match["id"], "roi": roi,
+        result["filtering_provenance"]["per_match"].append({
+            "id": match_id,
+            "safe_roi": roi,
+            "label_roi": label_roi,
+            "label_roi_source": label_roi_source,
+            **match_counts,
+        })
+        result["matches"].append({"id": match_id, "roi": roi,
                                   "samples": predictions})
     output.mkdir(parents=True, exist_ok=True)
     (output / "prelabels.json").write_text(
@@ -207,7 +346,8 @@ def build(manifest: Path, model: Path, output: Path, input_size: int = 320,
     )
     return {"matches": len(result["matches"]),
             "images": sum(len(match["samples"]) for match in result["matches"]),
-            "suggestions": total, "output": str(output / "prelabels.json")}
+            "suggestions": total, "output": str(output / "prelabels.json"),
+            "filtering_counts": dict(aggregate_counts)}
 
 
 def main() -> None:
@@ -218,9 +358,15 @@ def main() -> None:
     parser.add_argument("--input-size", type=int, default=320)
     parser.add_argument("--confidence", type=float, default=0.03)
     parser.add_argument("--nms-threshold", type=float, default=0.5)
+    parser.add_argument("--filter-label-roi", action="store_true",
+                        help="Keep suggestions whose centers fall inside review label_roi")
+    parser.add_argument("--remove-safe-roi-edge-contacts", action="store_true",
+                        help="Remove suggestions touching expandable safe-crop edges")
     args = parser.parse_args()
     summary = build(args.manifest, args.model, args.output, args.input_size,
-                    args.confidence, args.nms_threshold)
+                    args.confidence, args.nms_threshold,
+                    filter_label_roi=args.filter_label_roi,
+                    remove_safe_roi_edge_contacts=args.remove_safe_roi_edge_contacts)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
 

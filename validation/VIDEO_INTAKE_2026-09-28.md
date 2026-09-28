@@ -7,8 +7,8 @@
 
 | 对应场次 | 旧录像 | 高清录像 | 关系与处理 |
 | --- | --- | --- | --- |
-| video1 | 旧低清文件已被替换 | `video/video1.mp4`，2400×1080 | 当前路径已是高清重导出；队列 ID 仍为 `video1-hd`，不存在 `video1hd.mp4`。100 张标注已全部人工复核。 |
-| video2 | 720×324，1086.033 s，约 1.04 Mbps | 2400×1080，1086.031 s，约 17.56 Mbps | 同一场、同一时间轴。旧低清迁移建议已归档；当前使用 100 张纯 HD、0 建议框队列从零标注。 |
+| video1 | 旧低清文件已被替换 | `video/video1.mp4`，2400×1080 | 当前路径为高清重导出，队列 ID 为 `video1-hd`；100 个任务已复核，95 帧／163 框可训练并纳入 train。不存在 `video1hd.mp4`。 |
+| video2 | 720×324，1086.033 s，约 1.04 Mbps | 2400×1080，1086.031 s，约 17.56 Mbps | 同一场、同一时间轴。当前 HD 队列 100 帧已人工复核：79 `corrected`、21 `negative`，共 197 框，进入 bootstrap val；旧低清迁移建议已归档。 |
 | video3 | 960×432，831.917 s，约 0.72 Mbps | 2400×1080，1452.633 s，约 17.60 Mbps | 不是同一场；阵容、流程和时长均不一致。不得迁移旧标签，必须使用新 match id 重新标注。 |
 | video4 | 720×324，974.533 s，约 1.04 Mbps | 2400×1080，974.509 s，约 17.66 Mbps | 同一场、同一时间轴；旧迁移建议已归档，当前用纯 HD 队列从零标注。 |
 | video5 | 720×324，927.900 s，约 1.04 Mbps | 2400×1080，927.882 s，约 17.69 Mbps | 同一场、同一时间轴；旧迁移建议已归档，当前用纯 HD 队列从零标注。 |
@@ -69,13 +69,13 @@ Hero 只用于 UX／事件故事，不运行检测模型，也不进入训练、
 
 | 复核队列 | 当前状态 | 小地图坐标 |
 | --- | --- | --- |
-| `data/private/minimap-review-video1-hd-v1` | 100 已完成，163 框 | safe/label/widget 约 `[55,0,510,420)` / `[80,0,466,380)` / `[126,0,464,334)` |
-| `data/private/minimap-review-video2-hd-v1` | 100 pending，0 建议框 | safe/label/widget `[55,0,510,420)` / `[80,0,466,380)` / `[120,0,465,347)` |
-| `data/private/minimap-review-video4-hd-v1` | 100 pending，0 建议框 | 同 video2hd |
-| `data/private/minimap-review-video5-hd-v1` | 100 pending，0 建议框 | 同 video2hd |
-| `data/private/minimap-video3hd-new-match-20260928-a/blind-review-v1` | 120 pending，0 建议框；有效区间 `[138000,1439000)` ms | safe/label/widget `[55,0,510,420)` / `[80,0,466,380)` / `[94,0,466,352)` |
+| `data/private/minimap-review-video1-hd-v1` | 100 已复核，95 可训练／163 框（83 `corrected`、12 `negative`、5 `excluded`） | safe/label/widget 约 `[55,0,510,420)` / `[80,0,466,380)` / `[126,0,464,334)` |
+| `data/private/minimap-review-video2-hd-v1` | 100 已复核，79 `corrected`、21 `negative`，197 框 | safe/label/widget `[55,0,510,420)` / `[80,0,466,380)` / `[120,0,465,347)` |
+| `data/private/minimap-review-video4-hd-v1` | 人工复核中；因存在活动租约，未热替换最新建议框 | 同 video2hd |
+| `data/private/minimap-review-video5-hd-v1` | 100 张待复核；已挂载最新 HD 模型的 169 个可编辑建议框 | 同 video2hd |
+| `data/private/minimap-video3hd-new-match-20260928-a/blind-review-v1` | 120/120 已复核：102 `corrected`、18 `negative`、268 人工框；0 `accepted`／`pending`／活动租约。SQLite 与 manifest 一致，三层 ROI、尺寸与框审计通过，0 crop-edge contact；可用于 train。有效区间 `[138000,1439000)` ms | safe/label/widget `[55,0,510,420)` / `[80,0,466,380)` / `[94,0,466,352)` |
 | `data/private/minimap-review-video7-edge-recheck-v1` | 240 pending，333 个起始框仅来自 HD 人工结果 | safe/label/widget `[55,0,600,470)` / `[90,0,550,420)` / `[143,0,524,378)` |
-| `data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi` | 120 已完成，211 框 | safe/label/widget `[65,0,500,400)` / `[90,0,470,365)` / `[106,0,454,344)` |
-| `data/private/minimap-video10-11-hd-development-v1/queue` | video10/11 各 130 pending，合计 260，0 建议框 | safe/label/widget `[44,0,408,334)` / `[64,0,373,303)` / `[96,0,372,277)` |
+| `data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi` | 120 已复核，119 可训练／211 框（102 `corrected`、17 `negative`、1 `excluded`） | safe/label/widget `[65,0,500,400)` / `[90,0,470,365)` / `[106,0,454,344)` |
+| `data/private/minimap-video10-11-hd-development-v1/queue` | 共 260 张待复核；已挂载最新 HD 模型的 330 个可编辑建议框 | safe/label/widget `[44,0,408,334)` / `[64,0,373,303)` / `[96,0,372,277)` |
 
-video11 排除开局商店 `[0,15000)` ms 和 719–724 s、725–728 s 遮挡，最早有效任务为 18.753 s。`safe` 限制完整框，`label` 限制目标中心，`widget` 只用于地图主体与方向。video2/4/5 的低清迁移建议已归档到 `data/private/history/20260928T120311Z/legacy-migrated-suggestions`；当前队列全部从零人工标注。video7 须重点查找旧 x≈493 右裁剪线外的漏标。待标队列全部完成前，不得导出当前 HD COCO 或训练。video9/12 绝不用于预标注或查看预测。详细启动方式见[团队协作与本地运行](../docs/团队协作与本地运行.md)。
+video11 排除开局商店 `[0,15000)` ms 和 719–724 s、725–728 s 遮挡，最早有效任务为 18.753 s。`safe` 限制完整框，`label` 限制目标中心，`widget` 只用于地图主体与方向。video5 与 video10/11 的新建议框由当前 HD bootstrap ONNX 在 confidence `0.33` 生成，并经过 label ROI 与安全边缘过滤；所有未审核机器建议都只是待复核提示，不能作为真值。当前按完整录像分组的 HD bootstrap split 为 video1+8+3 train（334 图／642 框）和 video2-HD val（100 图／197 框），test 为空，不能报告最终成绩。其余待标队列完成复核及 ROI/provenance 检查后才能加入；video9/12 绝不用于预标注或查看预测。详细启动方式见[团队协作与本地运行](../docs/团队协作与本地运行.md)。

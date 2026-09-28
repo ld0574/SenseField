@@ -1,8 +1,8 @@
 # 模型接入记录
 
-## hard-FP 固定 ROI Android 开发候选（2026-09-27）
+## hard-FP 固定 ROI Android 开发候选（2026-09-27，已退役）
 
-当前本机开发 APK 使用 checkpoint `f7176b7ea9de65fb0f1fe4262514992fdda2ed8691a7a87851a2d27a910c7cfb`，输入 320、confidence `0.19`、NMS `0.5`。它只使用 video1–7 开发数据，尚未通过新的独立真人对局或实体手机门禁；APK 默认 profile 仍设置 `detectors.minimap_yolox=false`。
+历史开发 APK 曾使用 checkpoint `f7176b7ea9de65fb0f1fe4262514992fdda2ed8691a7a87851a2d27a910c7cfb`，输入 320、confidence `0.19`、NMS `0.5`。该低清候选、对应 checkpoint 和指标均已退役；APK 默认 profile 的 `detectors.minimap_yolox` 仍为 `false`。
 
 本页 video6 检测指标是 legacy fixed-ROI crop-relative 内部开发对照。video8 的边界复核发现该 ROI 会截掉右侧目标；video6 同一固定 ROI 的指标不能代表完整小地图覆盖或召回。
 

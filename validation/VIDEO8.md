@@ -1,6 +1,6 @@
 # video8 真人排位小地图逐帧记录（2026-09-28 更新）
 
-> **状态：video8 v3 安全 ROI 人工重标和导出已完成。** 旧冻结成绩仍是受截断污染的历史值；新数据上的所有对照均是 same-match development diagnostic，因为 video8 同场帧参与过定位器开发。现有权重仍按旧 ROI 训练，识别器继续默认关闭。
+> **状态：video8 v3 安全 ROI 人工重标和导出已完成。** 当前 bootstrap split 纳入 video8 的 119 帧／211 框，并与 video1、video3-HD 合计 334 图／642 框作为 train；video2-HD 的 100 图／197 框为 val，test 为空。旧冻结成绩和同场对照只作历史诊断；video9/12 仍封存，识别器默认关闭。
 
 ## 素材与留出用途
 
@@ -24,7 +24,7 @@
 - `minimap-layout-video8` 队列的 16 个人工边界框此前把左缘画到 x=214（真实约 106），已全部重校为上述测量值（`reviewed_by=pixel-recalibrated-20260927`，版本号加一）；旧值 `[0.0900673, 0.0, 0.0968013, 0.3185185]` 以本节为追溯记录。定位器 v1 在 video8 上的覆盖率／IoU 参考过这份错误真值，已作废；基于修正边界的 v2 开发诊断见下节。
 - 敌人重标队列 v2 `blind-review-v2-roi-recalibrated` 的帧为 348×344 crop，但 manifest ROI 仍使用全屏坐标，坐标系错配；该队列保留为无效产物证据，不能启动。v1 标注与冻结历史原样保留。
 - 新 v3 安全 ROI 队列位于 `data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi`：沿用 v1 的 120 个时间点，帧和 overlay 均为 `2376×1080`。小地图控件为 `[106,0,454,344]`；检测裁剪向外扩 27 px 后为 `[79,0,481,371]`（`402×371`），全屏归一化 ROI 为 `[0.03324915824915825,0,0.1691919191919192,0.3435185185185185]`。标注只纳入图标中心位于控件内的敌方英雄；安全边距内、控件外的 HUD 头像不标。120 条任务现已全部完成：102 `corrected`／211 框、17 `negative`、1 `excluded`，0 `pending`、0 `accepted`、0 `skip`，0 活动租约。task59 的蓝圈误标已删除。
-- 方向参考必须继续使用控件框 `[106,0,454,344]`（`widget_roi`），不能使用安全检测裁剪中心：两者 x 中心都是 280 px，但 y 中心分别是 172 px 和 185.5 px。review evaluator 与 COCO 裁剪导出会保留／映射 `widget_roi`；生成新 Android profile 时用 `rois.minimap_direction` 声明全屏方向参考。旧 profile 缺少该字段时保留历史行为，按检测 ROI 定方向。当前 hard-FP profile／权重仍绑定 legacy fixed ROI，因此此处不生成可部署 profile；新安全 ROI 模型完成重训后需为对应显示布局设置方向参考并重跑方向评估。
+- 方向参考必须继续使用控件框 `[106,0,454,344]`（`widget_roi`），不能使用安全检测裁剪中心：两者 x 中心都是 280 px，但 y 中心分别是 172 px 和 185.5 px。review evaluator 与 COCO 裁剪导出会保留／映射 `widget_roi`；生成新 Android profile 时用 `rois.minimap_direction` 声明全屏方向参考。旧 profile 缺少该字段时保留历史行为，按检测 ROI 定方向。已退役 hard-FP profile／权重仍绑定 legacy fixed ROI，因此此处不生成可部署 profile；新安全 ROI 模型完成重训后需为对应显示布局设置方向参考并重跑方向评估。
 - `AnnotationStore` 会拦截 `display_size` 不匹配的帧。最终 review manifest 由标注服务 `/api/export` 刷新；`finalize_review` 生成的 detection manifest 带源录像 SHA-256，COCO 导出器会在抽帧前核验该哈希。v3 还未用于安全 ROI 权重重训；现有模型结果仅为下面的 same-match 诊断。启动方式见[团队协作与本地运行](../docs/团队协作与本地运行.md)。本节布局定位器评测是单独的全屏边界任务。
 
 ## 修正边界后的布局定位器 v2 评测
@@ -134,17 +134,17 @@ COCO test annotations SHA-256：507669bfce9c6d209a12233da28c9e6bc7dfe60a921a65ec
 | 预测来源 | 阈值 / NMS | TP / FP / FN | Precision / Recall / F1 | 匹配 IoU 均值 | 方向正确率 |
 | --- | --- | ---: | ---: | ---: | ---: |
 | v3 队列初始可编辑建议（v1 人工复核框，不是模型输出；215 框） | — | 178 / 37 / 33 | 82.79% / 84.36% / 83.57% | 77.32% | 97.20%（139/143） |
-| 当前 hard-FP 权重，Android 等价 ncnn 原生逐帧回放（393 框） | confidence `0.19` / NMS `0.5` | 191 / 202 / 20 | 48.60% / 90.52% / 63.25% | 72.80% | 96.82%（152/157） |
+| 已退役 hard-FP 权重，Android 等价 ncnn 原生逐帧回放（393 框） | confidence `0.19` / NMS `0.5` | 191 / 202 / 20 | 48.60% / 90.52% / 63.25% | 72.80% | 96.82%（152/157） |
 | 旧冻结权重，PyTorch COCO 定点评测（402 框） | confidence `0.29` / NMS `0.5` | 190 / 212 / 21 | 47.26% / 90.05% / 61.99% | 未输出 | 97.44%（152/156） |
-| 当前 hard-FP 权重，PyTorch COCO 定点评测（392 框） | confidence `0.19` / NMS `0.5` | 191 / 201 / 20 | 48.72% / 90.52% / 63.35% | 未输出 | 96.82%（152/157） |
+| 已退役 hard-FP 权重，PyTorch COCO 定点评测（392 框） | confidence `0.19` / NMS `0.5` | 191 / 201 / 20 | 48.72% / 90.52% / 63.35% | 未输出 | 96.82%（152/157） |
 
 v3 队列里的“初始建议”是从 v1 已人工复核的框复制来的可编辑标签，不是冻结模型或其他检测器的预测；这行只能衡量跨版本人工框的一致程度。YOLOX 定点评测使用新安全 ROI 的 COCO 图片，但两个 checkpoint 都在旧 ROI 分布上训练，因此也存在裁剪分布变化。
 
-另对当前 hard-FP checkpoint 做了一次 PyTorch confidence sweep：先对 119 帧各推理一次，再复用输出评估全部 1,259 个不同检测置信度 cutoff，NMS 固定 `0.5`。video8 上最高 F1 出现在 confidence `0.647382`：TP/FP/FN `161/94/50`，Precision `63.14%`、Recall `76.30%`、F1 `69.10%`。在 Precision ≥90% 的 cutoff 中，最高 Recall 出现在 confidence `0.738952`：TP/FP/FN `42/4/169`，Precision `91.30%`、Recall `19.91%`、F1 `32.68%`。这是在同一组 video8 标签上搜出的 operating point，明确只作诊断，不能替换开发阈值 `0.19` 或用于部署。
+另对已退役 hard-FP checkpoint 做了一次 PyTorch confidence sweep：先对 119 帧各推理一次，再复用输出评估全部 1,259 个不同检测置信度 cutoff，NMS 固定 `0.5`。video8 上最高 F1 出现在 confidence `0.647382`：TP/FP/FN `161/94/50`，Precision `63.14%`、Recall `76.30%`、F1 `69.10%`。在 Precision ≥90% 的 cutoff 中，最高 Recall 出现在 confidence `0.738952`：TP/FP/FN `42/4/169`，Precision `91.30%`、Recall `19.91%`、F1 `32.68%`。这是在同一组 video8 标签上搜出的 operating point，明确只作诊断，不能据此选择阈值或用于部署。
 
-当前 hard-FP 的方向集合诊断为 `set` TP/FP/FN `142/73/6`、P/R/F1 `66.05% / 95.95% / 78.24%`；`iou_gated` 为 `136/79/12`、`63.26% / 91.89% / 74.93%`。它们仍是 119 张稀疏图片上的 same-match development diagnostic，不是连续提示准确率或实际事件召回。
+已退役 hard-FP 的方向集合诊断为 `set` TP/FP/FN `142/73/6`、P/R/F1 `66.05% / 95.95% / 78.24%`；`iou_gated` 为 `136/79/12`、`63.26% / 91.89% / 74.93%`。它们仍是 119 张稀疏图片上的 same-match development diagnostic，不是连续提示准确率或实际事件召回。
 
-**限制：** 旧冻结和 hard-FP 权重的 confidence 均由 video6 开发集确定；新的 safe ROI 只用于本次离线比较，权重尚未按新裁剪重训。COCO 的 119 个 test 帧都来自 video8 一场对局，布局定位器也已用过同场画面。此结果不证明独立泛化、完整视频事件表现、Android 端识别或真机时延；当前 Android ROI／权重不变，默认识别器仍关闭。最终独立结果必须来自从未用于定位器、训练、选模、阈值选择或失败分析的全新真人对局。
+**限制：** 旧冻结和 hard-FP 权重的 confidence 均由 video6 开发集确定；新的 safe ROI 只用于本次离线比较，权重尚未按新裁剪重训。COCO 的 119 个 test 帧都来自 video8 一场对局，布局定位器也已用过同场画面。此结果不证明独立泛化、完整视频事件表现、Android 端识别或真机时延；旧 Android ROI／权重未按安全裁剪重训，识别器默认关闭。最终独立结果必须来自从未用于定位器、训练、选模、阈值选择或失败分析的全新真人对局。
 
 私有产物 SHA-256：review manifest `312d02c74080b813aad92c3a47450e560cc49d90d3c2dc806f461e7e492d4906`；detection manifest `822cfbf4fb12402b44ab2768486fc73640a7abcd454e6833cbe958a56c9f83b4`；COCO test annotations `6148fc78755f6a63b19f54d288383132adcf7b5ae1bdd1ae50941bdb362904a7`；COCO/provenance audit `5f7318e3a43f672adf58e496afaac39fd5e267d2e8d06f0c648c7d8573ba0a14`。原始录像、标注帧、COCO 图片和逐帧预测保持私有。
 

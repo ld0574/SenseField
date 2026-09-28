@@ -72,7 +72,7 @@
 
 微调使用 Apple MPS、seed `20260926`、输入 320、batch size 16、`lr_scale=0.1`，最多 40 轮，第 30 轮早停；最佳 checkpoint 为 epoch 10，评估 confidence 为 `0.43`。在 video6 开发验证集上 TP/FP/FN 为 `158/17/65`，precision / recall / F1 为 `90.2857% / 70.8520% / 79.3970%`，几何方向正确率为 `97.3856%`。
 
-相对 dense baseline，precision / recall / F1 分别变化 `−0.2171 / −1.7937 / −1.2000` 个百分点；相对 hard-FP 候选，分别变化 `+0.0154 / −4.0359 / −2.4657` 个百分点。这个 video7 扩展标签微调 checkpoint 是独立对照，没有接入本机开发资产；当前本机候选是另一个 hard-FP checkpoint `f7176b7ea9de65fb0f1fe4262514992fdda2ed8691a7a87851a2d27a910c7cfb`，APK 默认检测仍关闭。该结果只是 video6 开发集比较，不是独立留出成绩；video7 的 AI 辅助标签仍建议队友抽查。
+相对 dense baseline，precision / recall / F1 分别变化 `−0.2171 / −1.7937 / −1.2000` 个百分点；相对 hard-FP 候选，分别变化 `+0.0154 / −4.0359 / −2.4657` 个百分点。这个 video7 扩展标签微调 checkpoint 是独立对照，没有接入本机开发资产；另一 hard-FP checkpoint `f7176b7ea9de65fb0f1fe4262514992fdda2ed8691a7a87851a2d27a910c7cfb` 及旧候选现均已退役，APK 默认检测仍关闭。该结果只是 video6 开发集比较，不是独立留出成绩；video7 的 AI 辅助标签仍建议队友抽查。
 
 ## 既有 hard-FP 候选的方向事件补充
 
@@ -83,13 +83,13 @@
 | `set` | `148/10/26` | `93.6709% / 85.0575% / 89.1566%` |
 | `iou_gated` | `144/14/30` | `91.1392% / 82.7586% / 86.7470%` |
 
-候选 checkpoint SHA-256：`f7176b7ea9de65fb0f1fe4262514992fdda2ed8691a7a87851a2d27a910c7cfb`（epoch 10）；方向事件评估 JSON SHA-256：`117561be1bb634cb2caf327bbb106bd27820716ccbde74adde5114504506c95e`。`set` 与 `iou_gated` 的 precision 均不低于 90%、recall 均不低于 80%，通过 video6 开发门槛；video6 已用于 checkpoint 与阈值选择，所以不是独立留出成绩或最终验收。该 checkpoint 现已接入本机 Android 固定 ROI 开发资产；APK 公共默认 profile 仍关闭检测器，候选仍待新独立真人对局和实体机验收。ncnn 严格 raw-output parity 的失败值和 Android 等价检测一致性见[模型接入记录](MODEL_PIPELINE.md)。
+候选 checkpoint SHA-256：`f7176b7ea9de65fb0f1fe4262514992fdda2ed8691a7a87851a2d27a910c7cfb`（epoch 10）；方向事件评估 JSON SHA-256：`117561be1bb634cb2caf327bbb106bd27820716ccbde74adde5114504506c95e`。`set` 与 `iou_gated` 的 precision 均不低于 90%、recall 均不低于 80%，当时通过 video6 开发门槛；video6 已用于 checkpoint 与阈值选择，所以不是独立留出成绩或最终验收。该 checkpoint 和相关指标现已退役，仅作审计记录。APK 公共默认 profile 仍关闭检测器。ncnn 严格 raw-output parity 的失败值和 Android 等价检测一致性见[模型接入记录](MODEL_PIPELINE.md)。
 
 ## 扩大 hard-FP 后续实验：负结果
 
 本轮继续基于同一开发划分：train 为 video1–5 与 video7 的 927 张／1,443 框，val 仅为 video6 的 152 张／223 框。固定 confidence `0.29` 的来源训练集基线报告为 TP/FP/FN `1304/173/139`，precision / recall / F1 `88.2871% / 90.3673% / 89.3151%`。从误报来源中选取 150 个 hard sources（其中 20 个为纯负样本）；把既有已标注样本重复加入训练集 188 条记录、对应 283 个已有框，train 变为 1,115 条记录／1,726 个框，val 不变。没有新增标注。
 
-从 dense checkpoint 开始，并沿用前述微调参数。训练在第 25 轮早停，最佳权重为 epoch 5；video6 开发验证使用 confidence `0.47`，TP/FP/FN 为 `155/17/68`，precision / recall / F1 为 `90.1163% / 69.5067% / 78.4810%`，几何方向正确率 `96.6667%`。F1 低于 dense 基线 `80.60%`、hard-FP 候选 `81.86%` 和 video7 扩展标签微调 `79.40%`；本轮失败 checkpoint 未接入本机开发 profile，当前接入的是 f717 hard-FP 候选，APK 默认仍关闭。
+从 dense checkpoint 开始，并沿用前述微调参数。训练在第 25 轮早停，最佳权重为 epoch 5；video6 开发验证使用 confidence `0.47`，TP/FP/FN 为 `155/17/68`，precision / recall / F1 为 `90.1163% / 69.5067% / 78.4810%`，几何方向正确率 `96.6667%`。F1 低于 dense 基线 `80.60%`、hard-FP 候选 `81.86%` 和 video7 扩展标签微调 `79.40%`；本轮失败 checkpoint 未接入本机开发 profile，f717 hard-FP 候选及相关旧指标现已退役，APK 默认仍关闭。
 
 这是 video6 开发集指标；video7 新增标签为 AI 辅助标注，不是人工真值。本实验未读取 video8，也不提交权重或数据。
 
@@ -109,7 +109,7 @@
 
 本轮使用旧 v5 train/val 数据（train 708 张／1,109 框，不含 219 张 AI 辅助标签；video6 val 152 张／223 框）。`--include-false-negatives` 将正样本重复数扩展为 `min(max_extra_copies, max(fp, fn))`，纯负样本仍按 FP 与 negative bonus 规则处理。142 个唯一 union hard sources 中，98 张含 FP、95 张含 FN（两类有重叠），其中 7 张为纯负样本；从这些既有样本重复加入 167 条训练记录、对应 320 个已有框后，train 为 875 条记录／1,429 个框。没有新增标注。
 
-从 dense baseline 按旧 hard-FP 相同参数训练，第 25 轮早停，最佳 epoch 5、confidence `0.29`。video6 开发验证 TP/FP/FN `158/15/65`，precision / recall / F1 `91.3295% / 70.8520% / 79.7980%`，几何方向正确率 `96.7105%`。虽然 precision 达到 90%，F1 低于替换门槛 `81.8627%`，本轮失败 checkpoint 未接入本机开发 profile；当前接入的是 f717 hard-FP 候选，APK 默认仍关闭。这是 video6 开发指标；本轮未读取 video8，也不提交权重或数据。最终全量 pytest 已完成（144 passed、1 skipped），APK 集成后 `assembleDebug lintDebug` 清洁构建通过；真机验收尚未完成。
+从 dense baseline 按旧 hard-FP 相同参数训练，第 25 轮早停，最佳 epoch 5、confidence `0.29`。video6 开发验证 TP/FP/FN `158/15/65`，precision / recall / F1 `91.3295% / 70.8520% / 79.7980%`，几何方向正确率 `96.7105%`。虽然 precision 达到 90%，F1 低于替换门槛 `81.8627%`，本轮失败 checkpoint 未接入本机开发 profile；f717 hard-FP 候选及相关旧指标现已退役，APK 默认仍关闭。这是 video6 开发指标；本轮未读取 video8，也不提交权重或数据。最终全量 pytest 已完成（144 passed、1 skipped），APK 集成后 `assembleDebug lintDebug` 清洁构建通过；真机验收尚未完成。
 
 | 产物 | SHA-256 |
 | --- | --- |
