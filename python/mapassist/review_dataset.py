@@ -179,6 +179,9 @@ def build(manifest: Path, output: Path, positives_per_match: int = 20,
     widget_roi = data.get("widget_roi")
     if widget_roi is not None:
         widget_roi = normalized_roi(widget_roi, "widget_roi")
+    label_roi = data.get("label_roi")
+    if label_roi is not None:
+        label_roi = normalized_roi(label_roi, "label_roi")
     matches = data.get("matches")
     if not isinstance(matches, list) or not matches:
         raise ValueError("Review manifest needs matches")
@@ -212,11 +215,16 @@ def build(manifest: Path, output: Path, positives_per_match: int = 20,
         if match_widget_roi is not None:
             match_widget_roi = normalized_roi(
                 match_widget_roi, f"widget_roi for {match_id}")
+        match_label_roi = match.get("label_roi", label_roi)
+        if match_label_roi is not None:
+            match_label_roi = normalized_roi(
+                match_label_roi, f"label_roi for {match_id}")
         intervals = _active_intervals(match.get("active_intervals_ms"), match_id)
         match_orientation = resolve(
             video, from_manifest(match, f"{match_id}") or top_orientation)
         prepared.append((match_id, split, video, predictions, intervals, match_roi,
-                         "roi" in match, match_orientation, match_widget_roi))
+                         "roi" in match, match_orientation, match_widget_roi,
+                         match_label_roi, "label_roi" in match))
 
     output.mkdir(parents=True, exist_ok=True)
     exported = {"schema_version": 1, "kind": kind, "roi": roi,
@@ -224,12 +232,15 @@ def build(manifest: Path, output: Path, positives_per_match: int = 20,
                 "matches": []}
     if widget_roi is not None:
         exported["widget_roi"] = widget_roi
+    if label_roi is not None:
+        exported["label_roi"] = label_roi
     if top_orientation is not None:
         exported["orientation"] = top_orientation
     summary = {split: {"matches": 0, "cue_samples": 0, "background_samples": 0}
                for split in SPLITS}
     for (match_id, split, video, predictions, intervals, match_roi,
-         has_roi_override, match_orientation, match_widget_roi) in prepared:
+         has_roi_override, match_orientation, match_widget_roi,
+         match_label_roi, has_label_override) in prepared:
         positive, negative = _prediction_frames(predictions, kind, intervals)
         selected = [("cue", item) for item in _evenly(positive, positives_per_match)]
         selected += [("background", item) for item in _evenly(negative, negatives_per_match)]
@@ -267,6 +278,8 @@ def build(manifest: Path, output: Path, positives_per_match: int = 20,
             exported_match["roi"] = match_roi
         if match_widget_roi is not None:
             exported_match["widget_roi"] = match_widget_roi
+        if has_label_override and match_label_roi is not None:
+            exported_match["label_roi"] = match_label_roi
         if intervals is not None:
             exported_match["active_intervals_ms"] = [list(item) for item in intervals]
         exported["matches"].append(exported_match)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -21,6 +22,8 @@ def _roi(value: object, label: str) -> list[float]:
                 for item in value)):
         raise ValueError(f"{label} must be normalized [x, y, width, height]")
     result = [float(item) for item in value]
+    if not all(math.isfinite(item) for item in result):
+        raise ValueError(f"{label} must contain finite normalized numbers")
     x, y, width, height = result
     if x < 0 or y < 0 or width <= 0 or height <= 0 or x + width > 1 or y + height > 1:
         raise ValueError(f"{label} is outside the normalized frame")
@@ -52,6 +55,9 @@ def combine(manifests: list[Path], output: Path,
         default_widget_value = data.get("widget_roi")
         default_widget_roi = (_roi(default_widget_value, f"{manifest} widget_roi")
                               if default_widget_value is not None else None)
+        default_label_value = data.get("label_roi")
+        default_label_roi = (_roi(default_label_value, f"{manifest} label_roi")
+                             if default_label_value is not None else None)
         default_orientation = from_manifest(data, str(manifest))
         orientations.append(default_orientation)
         for source in data["matches"]:
@@ -80,6 +86,14 @@ def combine(manifests: list[Path], output: Path,
             widget_value = source.get("widget_roi", default_widget_roi)
             widget_roi = (_roi(widget_value, f"{match_id} widget_roi")
                           if widget_value is not None else None)
+            label_value = source.get("label_roi")
+            if label_value is None:
+                label_value = default_label_roi
+            if label_value is None:
+                # Legacy manifests used the widget boundary for annotation centers.
+                label_value = widget_roi
+            label_roi = (_roi(label_value, f"{match_id} label_roi")
+                         if label_value is not None else None)
             match_orientation = from_manifest(source, f"{match_id}") or default_orientation
             split = split_overrides.get(match_id, source.get("split"))
             if split not in SPLITS:
@@ -88,12 +102,13 @@ def combine(manifests: list[Path], output: Path,
                 used_overrides.add(match_id)
             record = grouped.setdefault(video, {
                 "id": match_id, "video": str(video), "split": split,
-                "roi": roi, "widget_roi": widget_roi,
+                "roi": roi, "widget_roi": widget_roi, "label_roi": label_roi,
                 "orientation": match_orientation, "video_sha256": video_sha256,
                 "frames": {},
             })
             if (record["id"] != match_id or record["roi"] != roi or
                     record["widget_roi"] != widget_roi or
+                    record["label_roi"] != label_roi or
                     record["split"] != split or
                     record["orientation"] != match_orientation or
                     record["video_sha256"] != video_sha256):
@@ -121,6 +136,8 @@ def combine(manifests: list[Path], output: Path,
         }
         if record["widget_roi"] is not None:
             exported["widget_roi"] = record["widget_roi"]
+        if record["label_roi"] is not None:
+            exported["label_roi"] = record["label_roi"]
         if record["video_sha256"] is not None:
             exported["video_sha256"] = record["video_sha256"]
         matches.append(exported)

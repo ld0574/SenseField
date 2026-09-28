@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import mimetypes
 import os
 import re
@@ -47,7 +48,12 @@ def _validate_boxes(boxes: object) -> list[list[float]]:
                 any(not isinstance(value, (int, float)) or isinstance(value, bool)
                     for value in box)):
             raise ValueError("each box must be [x, y, width, height]")
-        x, y, width, height = (float(value) for value in box)
+        try:
+            x, y, width, height = (float(value) for value in box)
+        except (OverflowError, ValueError) as error:
+            raise ValueError("box values must be finite numbers") from error
+        if not all(math.isfinite(value) for value in (x, y, width, height)):
+            raise ValueError("box values must be finite numbers")
         if (x < 0 or y < 0 or width <= 0 or height <= 0 or
                 x + width > 1.000001 or y + height > 1.000001):
             raise ValueError("box is outside the normalized frame")
@@ -127,9 +133,15 @@ class AnnotationStore:
         top_widget_roi = data.get("widget_roi")
         self.widget_roi = (_validate_roi(top_widget_roi, "Review manifest widget_roi")
                            if top_widget_roi is not None else None)
+        top_label_roi = data.get("label_roi")
+        self.label_roi = (
+            _validate_roi(top_label_roi, "Review manifest label_roi")
+            if top_label_roi is not None else self.widget_roi
+        )
         top_orientation = data.get("orientation")
         self.match_rois: dict[str, list[float]] = {}
         self.match_widget_rois: dict[str, list[float] | None] = {}
+        self.match_label_rois: dict[str, list[float] | None] = {}
         self.database.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
             connection.execute("PRAGMA journal_mode = WAL")
@@ -170,6 +182,16 @@ class AnnotationStore:
                         _validate_roi(match_widget_roi, f"{match_id} widget_roi")
                         if match_widget_roi is not None else None
                     )
+                    match_label_roi = match.get("label_roi")
+                    if match_label_roi is not None:
+                        self.match_label_rois[match_id] = _validate_roi(
+                            match_label_roi, f"{match_id} label_roi"
+                        )
+                    elif top_label_roi is not None:
+                        self.match_label_rois[match_id] = self.label_roi
+                    else:
+                        # Older manifests used widget_roi as the annotation center gate.
+                        self.match_label_rois[match_id] = self.match_widget_rois[match_id]
                     orientation_value = match.get("orientation", top_orientation)
                     expected_frame_size = _display_frame_size(
                         orientation_value, f"{match_id} orientation"
@@ -243,6 +265,7 @@ class AnnotationStore:
             "frame": row["frame"], "overlay": row["overlay"],
             "roi": self.match_rois[row["match_id"]],
             "widget_roi": self.match_widget_rois[row["match_id"]],
+            "label_roi": self.match_label_rois[row["match_id"]],
             "suggested_boxes": json.loads(row["suggested_boxes"]),
             "directions": json.loads(row["directions"]),
             "review_status": row["review_status"],
@@ -265,10 +288,14 @@ class AnnotationStore:
                     SELECT 1 FROM tasks WHERE suggested_boxes != '[]' LIMIT 1
                 )
             """).fetchone()[0] == 1
+        for match in matches:
+            match["label_roi"] = self.match_label_rois[match["id"]]
+            match["widget_roi"] = self.match_widget_rois[match["id"]]
         return {"kind": self.kind, "review_mode": self.review_mode,
                 "label_assistance": self.label_assistance,
                 "suggestions_available": suggestions_available,
                 "roi": self.roi, "widget_roi": self.widget_roi,
+                "label_roi": self.label_roi,
                 "matches": matches,
                 "context_offsets_ms": (list(CONTEXT_OFFSETS_MS)
                                        if self._ffmpeg and self._videos else []),
@@ -456,6 +483,25 @@ class AnnotationStore:
                             raise ValueError(
                                 "corrected boxes must stay inside the minimap roi"
                             )
+                if (status in {"corrected", "accepted"} and
+                        self.kind == "minimap_enemy"):
+                    boxes_for_center_check = (
+                        reviewed_boxes if status == "corrected" else
+                        json.loads(row["suggested_boxes"])
+                    )
+                    label_roi = self.match_label_rois[row["match_id"]]
+                    if label_roi is not None and boxes_for_center_check:
+                        label_x, label_y, label_width, label_height = label_roi
+                        for x, y, width, height in boxes_for_center_check:
+                            center_x = x + width / 2
+                            center_y = y + height / 2
+                            if (center_x < label_x - 0.000001 or
+                                    center_y < label_y - 0.000001 or
+                                center_x > label_x + label_width + 0.000001 or
+                                    center_y > label_y + label_height + 0.000001):
+                                raise ValueError(
+                                    "target box centers must stay inside label_roi"
+                                )
                 if self.kind != "minimap_region":
                     boxes_for_roi_check = reviewed_boxes
                     if status == "accepted":
@@ -475,7 +521,7 @@ class AnnotationStore:
                         if status == "corrected" and any(
                                 item["outside"] for item in contacts):
                             raise ValueError(
-                                "corrected boxes must stay inside the minimap roi"
+                                "corrected boxes must stay inside the safe roi"
                             )
                         suspects = [
                             item for item in contacts
@@ -483,8 +529,8 @@ class AnnotationStore:
                         ]
                         if suspects:
                             raise ValueError(
-                                "target boxes touch an expandable minimap crop boundary "
-                                "or cross the minimap roi; "
+                                "target boxes touch an expandable safe roi boundary "
+                                "or cross the safe roi; "
                                 "use skip for uncertain gameplay frames, or correct the "
                                 "dataset ROI and re-annotate before export"
                             )

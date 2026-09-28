@@ -153,17 +153,21 @@ def _layout_widget(match: dict[str, Any], match_id: str) -> tuple[list[float], i
     return canonical, len(frames)
 
 
-def _inspect_widget_centers(
-    match: dict[str, Any], match_id: str, widget_roi: list[float],
+def _inspect_centers(
+    match: dict[str, Any], match_id: str, center_roi: list[float],
     display_width: int, display_height: int, tolerance_px: float,
+    boundary_label: str, safe_roi: list[float],
 ) -> list[dict[str, Any]]:
     """Allow only small center-outside quantization and report every exception."""
     frames = match.get("frames")
     if not isinstance(frames, list) or not frames:
         raise ValueError(f"Detection match {match_id} must contain frames")
-    widget_x, widget_y, widget_width, widget_height = widget_roi
-    widget_right = widget_x + widget_width
-    widget_bottom = widget_y + widget_height
+    roi_x, roi_y, roi_width, roi_height = center_roi
+    roi_right = roi_x + roi_width
+    roi_bottom = roi_y + roi_height
+    safe_x, safe_y, safe_width, safe_height = safe_roi
+    safe_right = safe_x + safe_width
+    safe_bottom = safe_y + safe_height
     exceptions = []
     seen_timestamps: set[int] = set()
     for frame_index, frame in enumerate(frames):
@@ -186,17 +190,24 @@ def _inspect_widget_centers(
                 value, f"Detection match {match_id}@{at_ms} box {box_index}"
             )
             x, y, width, height = box
+            if (x < safe_x - 1e-9 or y < safe_y - 1e-9 or
+                    x + width > safe_right + 1e-9 or
+                    y + height > safe_bottom + 1e-9):
+                raise ValueError(
+                    f"{match_id}@{at_ms} box {box_index} is not fully inside "
+                    "the generated safe roi"
+                )
             center_x = x + width / 2
             center_y = y + height / 2
             distances = {}
-            if center_x < widget_x:
-                distances["left"] = (widget_x - center_x) * display_width
-            elif center_x > widget_right:
-                distances["right"] = (center_x - widget_right) * display_width
-            if center_y < widget_y:
-                distances["top"] = (widget_y - center_y) * display_height
-            elif center_y > widget_bottom:
-                distances["bottom"] = (center_y - widget_bottom) * display_height
+            if center_x < roi_x:
+                distances["left"] = (roi_x - center_x) * display_width
+            elif center_x > roi_right:
+                distances["right"] = (center_x - roi_right) * display_width
+            if center_y < roi_y:
+                distances["top"] = (roi_y - center_y) * display_height
+            elif center_y > roi_bottom:
+                distances["bottom"] = (center_y - roi_bottom) * display_height
             if not distances:
                 continue
             outside_px = max(distances.values())
@@ -204,7 +215,7 @@ def _inspect_widget_centers(
                 sides = ", ".join(distances)
                 raise ValueError(
                     f"{match_id}@{at_ms} box {box_index} center is "
-                    f"{outside_px:.3f} px outside widget ({sides}); "
+                    f"{outside_px:.3f} px outside {boundary_label} ({sides}); "
                     f"tolerance is {tolerance_px:g} px"
                 )
             exceptions.append({
@@ -218,18 +229,27 @@ def _inspect_widget_centers(
 
 
 def _safe_roi(widget_roi: list[float], width: int, height: int,
-              padding_fraction: float) -> list[float]:
+              padding_fraction: float,
+              label_roi: list[float] | None = None) -> list[float]:
     if width <= 0 or height <= 0:
         raise ValueError("Display dimensions must be positive")
     padding_pixels = min(width, height) * padding_fraction
     padding_x = padding_pixels / width
     padding_y = padding_pixels / height
     x, y, box_width, box_height = widget_roi
+    right = x + box_width
+    bottom = y + box_height
+    if label_roi is not None:
+        label_x, label_y, label_width, label_height = label_roi
+        x = min(x, label_x)
+        y = min(y, label_y)
+        right = max(right, label_x + label_width)
+        bottom = max(bottom, label_y + label_height)
     left = max(0.0, x - padding_x)
     top = max(0.0, y - padding_y)
-    right = min(1.0, x + box_width + padding_x)
-    bottom = min(1.0, y + box_height + padding_y)
-    return [left, top, right - left, bottom - top]
+    padded_right = min(1.0, right + padding_x)
+    padded_bottom = min(1.0, bottom + padding_y)
+    return [left, top, padded_right - left, padded_bottom - top]
 
 
 def remap_manifest(
@@ -263,6 +283,11 @@ def remap_manifest(
     layout_manifest = layout_manifest.resolve()
     detection = _read_manifest(detection_manifest, "Detection")
     layout = _read_manifest(layout_manifest, "Layout")
+    default_label_value = detection.get("label_roi")
+    default_label_roi = (
+        _normalized_box(default_label_value, "Detection label_roi")
+        if default_label_value is not None else None
+    )
     detections = _match_index(detection, detection_manifest, "Detection")
     layouts = _match_index(layout, layout_manifest, "Layout")
 
@@ -299,12 +324,27 @@ def remap_manifest(
     remapped = copy.deepcopy(detection)
     remapped["matches"] = []
     audit_matches: dict[str, Any] = {}
-    widget_center_exceptions: list[dict[str, Any]] = []
+    center_tolerance_exceptions: list[dict[str, Any]] = []
+    center_roi_by_match: dict[str, list[float]] = {}
     for match_id, (source, video_path) in detections.items():
         if match_id not in selected_ids:
             continue
         layout_match, _ = layouts[match_id]
         widget_roi, frame_count = _layout_widget(layout_match, match_id)
+        source_label_value = source.get("label_roi")
+        if source_label_value is not None:
+            center_roi = _normalized_box(
+                source_label_value, f"{match_id} label_roi"
+            )
+            center_label = "label_roi"
+        elif default_label_roi is not None:
+            center_roi = default_label_roi
+            center_label = "label_roi"
+        else:
+            # The layout widget boundary is the legacy center gate.
+            center_roi = widget_roi
+            center_label = "widget_roi"
+        center_roi_by_match[match_id] = center_roi
         layout_orientation = _effective_orientation(
             layout_match, layout, f"layout match {match_id}"
         )
@@ -316,12 +356,17 @@ def remap_manifest(
                     dimension <= 0 for dimension in display_size)):
             raise ValueError(f"Layout match {match_id} needs a valid display_size")
         _check_orientation_compatibility(source, detection, layout_orientation, match_id)
-
-        center_exceptions = _inspect_widget_centers(
-            source, match_id, widget_roi, display_size[0], display_size[1],
-            widget_center_tolerance_px,
+        safe_roi = _safe_roi(
+            widget_roi, display_size[0], display_size[1],
+            padding_short_side_fraction,
+            center_roi if center_label == "label_roi" else None,
         )
-        widget_center_exceptions.extend(center_exceptions)
+
+        center_exceptions = _inspect_centers(
+            source, match_id, center_roi, display_size[0], display_size[1],
+            widget_center_tolerance_px, center_label, safe_roi,
+        )
+        center_tolerance_exceptions.extend(center_exceptions)
 
         actual_sha256 = _sha256(video_path)
         prior_sha256 = source.get("video_sha256")
@@ -332,8 +377,6 @@ def remap_manifest(
             if prior_sha256.lower() != actual_sha256:
                 raise ValueError(f"{match_id} video_sha256 does not match its video file")
 
-        safe_roi = _safe_roi(widget_roi, display_size[0], display_size[1],
-                             padding_short_side_fraction)
         exported = copy.deepcopy(source)
         exported["roi"] = safe_roi
         exported["widget_roi"] = widget_roi
@@ -342,6 +385,9 @@ def remap_manifest(
         audit_matches[match_id] = {
             "layout_frame_count": frame_count,
             "widget_roi": widget_roi,
+            "label_roi": center_roi if center_label == "label_roi" else None,
+            "center_roi": center_roi,
+            "center_reference": center_label,
             "roi": safe_roi,
             "display_size": display_size,
             "video_sha256": actual_sha256,
@@ -349,17 +395,20 @@ def remap_manifest(
 
     remapped["roi_remap_audit"] = {
         "schema_version": SCHEMA_VERSION,
-        "method": "layout-widget-expanded-by-short-side-fraction",
+        "method": "layout-widget-label-union-expanded-by-short-side-fraction",
         "padding_short_side_fraction": padding_short_side_fraction,
         "widget_center_tolerance_px": widget_center_tolerance_px,
         "widget_center_tolerance_policy": (
-            "box centers may lie outside widget bounds only within the configured "
-            "display-pixel tolerance"
+            "box centers use label_roi when declared, otherwise widget_roi; "
+            "outside centers are allowed only within the configured display-pixel tolerance"
         ),
-        "widget_center_tolerance_exceptions": widget_center_exceptions,
+        "center_roi_by_match": center_roi_by_match,
+        "center_tolerance_exceptions": center_tolerance_exceptions,
+        # Retained as an alias for consumers of the original audit key.
+        "widget_center_tolerance_exceptions": center_tolerance_exceptions,
         "padding_definition": (
-            "expand every widget edge by fraction * min(display_width, display_height), "
-            "then clip to the display frame"
+            "expand the union of widget_roi and label_roi (when present) by "
+            "fraction * min(display_width, display_height), then clip to the display frame"
         ),
         "layout_manifest": str(layout_manifest),
         "layout_manifest_sha256": _sha256(layout_manifest),

@@ -1,30 +1,36 @@
 # 小地图 YOLOX-Nano 开发训练
 
-原 dense baseline 使用 `video1` 至 `video6`。600 张预测无关密集队列已经完成复核；与旧标注合并后共有 749 张有效帧、1,143 个敌人框，按整场对局划分为 `video1–5` 训练 597 张／920 框、`video6` 验证 152 张／223 框。`video6` 已经用于失败分析、模型选择和阈值选择，因此六场都不能再作为比赛留出成绩。后续纳入 video7 扩展标签的微调结果和数据划分见下文；video1–7 均属于开发数据。
+> **当前 HD-only 规则（2026-09-28）**：后续训练、验证、阈值和模型评估只使用 HD。train/dev 来源为已替换成高清内容的 `video/video1.mp4`、`video2hd`、`video3hd`、`video4hd`、`video5hd`、`video7`、`video8`、`video10`；`video11` 是 HD dev-val。`video12` 为 primary sealed holdout，`video9` 为 cross-source sealed holdout；不得对这两场运行模型或查看预测。Hero 仅用于 UX／事件故事。低清 video2–6 及其队列、模型和指标全部退役为历史；不存在 `video1hd.mp4` 或 `video6hd.mp4`。
+>
+> video2hd/4hd/5hd 各 100 张、video3hd 120 张、video10/11 各 130 张都是纯 HD、0 建议框的待标队列。video7 另有 240 张边缘复审队列，333 个起始框只来自既有 HD 人工结果。video1 和 video8 的人工标注已完成并通过三层 ROI 审计。所有待标队列完成前，禁止生成当前 detection manifest、导出 HD COCO 或训练。
 
-下文所有基于旧固定 ROI 的 video6 检测指标都是 crop-relative 内部开发对照。video8 的边界复核和 video7 的 ROI 量化显示旧裁剪存在边缘覆盖缺口；这些分数不证明完整小地图的目标覆盖或召回。旧 ROI 与旧权重暂不改动，纠正裁剪后须重做标注、训练和评估。
+### 低清数据与模型的历史记录（只读）
+
+原 dense baseline 使用 `video1` 至 `video6`。600 张预测无关密集队列已经完成复核；与旧标注合并后共有 749 张有效帧、1,143 个敌人框，按整场对局划分为 `video1–5` 训练 597 张／920 框、`video6` 验证 152 张／223 框。`video6` 已经用于失败分析、模型选择和阈值选择，因此六场都不能再作为比赛留出成绩。下文保留的相关实验仅为历史归档，不属于当前数据流程。
+
+下文所有基于旧固定 ROI 的 video6 检测指标都是 crop-relative 内部开发对照。video8 的边界复核和 video7 的 ROI 量化显示旧裁剪存在边缘覆盖缺口；这些分数不证明完整小地图的目标覆盖或召回。旧 ROI 与旧权重及其结果仅作历史，不能进入当前 HD 流程。
 
 小地图区域定位器使用另一套全屏单类数据：video1–8 每场 16 张，共 128 张 `minimap_region` 边界。video8 的 16 个初始左边界后来发现有误，v1 的相关 video8 覆盖率／IoU 已作废；修正标签已用于 v2 重训。v2 按录像分组为 112 张 train（含 video8 的 16 张）和 16 张 video6 开发验证。v2 video6 val 的 IoU 中位数为 0.8369，2.5% 扩边后 16/16 帧覆盖真值；另 120 张 video8 布局评测帧未参与训练，但同场的 16 张 video8 帧参与训练，因此仅为 same-match development diagnostic，不能称独立留出。描述符定位器在 video8 的对照另行报告为与 reviewed crop 的一致性，不是独立 HUD 边界精度。定位器实验不表示敌人检测已修好或发布门禁通过；完整证据和哈希见 [`validation/MINIMAP_LOCATOR.md`](../validation/MINIMAP_LOCATOR.md)。
 
-## 先解决数据分辨率和覆盖
+## 低清数据分辨率和覆盖记录（历史只读）
 
 现有 `720×324` 录像的小地图裁剪只有约 `104×108`，敌人头像中位数约 `18×18`，最小目标宽度约 6 像素。把裁剪放大到 320 或 640 输入不会恢复录屏已经丢掉的细节。新增录像应使用设备原生 1080p/1440p 和高码率，训练与安卓端都应先从原始整帧裁出小地图，再缩放到模型输入；不要先缩小整屏。
 
-密集数据的 320 输入实验在第 20 轮达到最好结果：precision 90.50%、recall 72.65%、F1 80.60%，几何方位正确率 96.10%；连续四个验证点没有刷新后于第 40 轮早停。相较旧数据最佳点，召回提高 13.56 个百分点。两个对照均较差：低 Mosaic 为 92.02% / 67.26% / 77.72%，416 输入为 90.63% / 65.02% / 75.72%。当时冻结选择为 Nano、320 输入、默认 Mosaic 的第 20 轮权重，开发阈值 0.29；当前本机 Android 开发候选已更新为下述 hard-FP checkpoint 和 confidence `0.19`。
+密集数据的 320 输入实验在第 20 轮达到最好结果：precision 90.50%、recall 72.65%、F1 80.60%，几何方位正确率 96.10%；连续四个验证点没有刷新后于第 40 轮早停。相较旧数据最佳点，召回提高 13.56 个百分点。两个对照均较差：低 Mosaic 为 92.02% / 67.26% / 77.72%，416 输入为 90.63% / 65.02% / 75.72%。当时冻结选择为 Nano、320 输入、默认 Mosaic 的第 20 轮权重，开发阈值 0.29；当时的本机 Android 开发候选曾更新为下述 hard-FP checkpoint 和 confidence `0.19`，现已退役。
 
 `video7` 是 2712×1220、30 FPS、约 8 Mbps 的人机局。历史盲测抽样中的 111 张有效帧含 189 框；冻结模型在固定阈值下得到 precision 65.57%、recall 63.49%、F1 64.52%，未达门禁。它比历史模型分别高 3.62、3.17、3.39 个百分点。之后 video7 标签被用于开发训练和复核，因此这组历史结果不再是独立留出成绩；高分辨率本身也没有消除跨录像域差异。
 
 `video8` 曾登记为独立 test，后来发现旧 fixed ROI 截掉右侧头像。旧 119 帧／215 框指标仍只作受截断污染的历史记录。v3 安全 ROI 已完成复核并导出 119 帧／211 框；边框中心均在实测 widget 内、完整框均在安全 crop 内。旧冻结、hard-FP 与 Android 等价 ncnn 回放在新真值上的固定阈值结果约为 P 47–49%、R 90–91%，confidence sweep 见 [`validation/VIDEO8.md`](../validation/VIDEO8.md)。这些仍是 same-match diagnostics，评测权重按旧 crop 训练，不能用于独立留出或部署结论。video8 v3 现已并入下文 safe-ROI 合并训练集的 train split；它不再是检测器留出数据。Android ROI／权重尚未更新，检测器默认关闭。
 
-敌人重标队列 `data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi` 的 120 条任务已收口：102 `corrected`／211 框、17 `negative`、1 `excluded`、0 `pending`／活动租约。源录像显示尺寸 2376×1080；小地图控件 `[106,0,454,344]` 外扩 27 px 后得到安全 crop `[79,0,481,371]`（402×371）。task59 的蓝圈误标已删除；每个真值框中心均在 widget 内，完整框均在安全 crop 内；另有一个框触及物理屏幕顶边，不触及可扩展 crop 边。独立 COCO 导出 `coco-video8-v3-safe-roi` 仍保留为 119 张／211 框的 test-only 历史归档；下文合并训练导出将同一批图像改为 train。v2 因 crop 与全屏 manifest 坐标错配仍属无效产物。
+敌人重标队列 `data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi` 的 120 条任务已收口：102 `corrected`／211 框、17 `negative`、1 `excluded`、0 `pending`／活动租约。源录像显示尺寸 2376×1080；widget 为 `[106,0,454,344)`，label 为 `[90,0,470,365)`，safe crop 为 `[65,0,500,400)`。task59 的蓝圈误标已删除；每个真值框中心均在 label 内，完整框均在 safe 内；另有一个框触及物理屏幕顶边，不触及可扩展 crop 边。独立 COCO 导出 `coco-video8-v3-safe-roi` 仍保留为 119 张／211 框的 test-only 历史归档；下文合并训练导出也只是低清混合历史。v2 因 crop 与全屏 manifest 坐标错配仍属无效产物。
 
 在 video8 v3 的 119 个有效帧上，队列“初始建议”是 v1 人工复核框，不是模型输出，和新真值比较为 178/37/33、P/R/F1 82.79%／84.36%／83.57%。旧冻结 checkpoint（0.29）为 190/212/21、47.26%／90.05%／61.99%；hard-FP checkpoint（0.19）为 191/201/20、48.72%／90.52%／63.35%；同一 hard-FP 权重的 Android 等价 ncnn exact-frame 回放为 191/202/20、48.60%／90.52%／63.25%。Confidence sweep 的 F1 最佳点为 0.647382（P/R/F1 63.14%／76.30%／69.10%）；在 P≥90% 的 cutoff 中最高 recall 为 19.91%（confidence 0.738952）。全属 same-match development diagnostics，不参与部署阈值选择，也不能声称独立泛化。完整方法和 hashes 见 [`validation/VIDEO8.md`](../validation/VIDEO8.md)。
 
-安全裁剪负责检测覆盖，方向中心仍由真实控件框决定。标注清单用 `widget_roi` 保存真实控件；裁剪 COCO 数据集时，该框会映射到每张图像的局部 `direction_roi`，框级方向和方向事件指标都读取它。新 Android profile 应在 `rois.minimap_direction` 配置同一显示布局的方向参考；旧 profile 没有此项时仍使用 `rois.minimap`，以保持现有 profile 的运行结果。当前 hard-FP profile／权重仍是 legacy crop，不能直接用于扩大后的裁剪。
+三层 ROI 各司其职：`roi` 是必须容纳完整目标框的 safe crop，`label_roi` 是目标中心门禁，`widget_roi` 只是小地图主体与方向参考。裁剪 COCO 数据集时，widget 会映射到每张图像的局部 `direction_roi`，框级方向和方向事件指标都读取它。新 Android profile 应在 `rois.minimap_direction` 配置同一显示布局的方向参考；旧 profile 没有此项时仍使用 `rois.minimap`。当时的 hard-FP profile／权重使用 legacy crop，现已退役。
 
-使用 video1–5 和 video7 的 708 张 train 帧做困难误报加权实验。原冻结模型在这些人工复核帧上产生 115 个 FP，其中 video7 占 63 个。重复 98 张含 FP 的完整图片后低学习率微调，video6 开发验证从 90.50% precision / 72.65% recall / 80.60% F1 变为 90.27% / 74.89% / 81.86%。这些 video6 数值只描述 legacy fixed-ROI crop 内部开发对照；目标边界完整性未验证，不能代表完整小地图覆盖或门槛表现。checkpoint `f7176b7ea9de65fb0f1fe4262514992fdda2ed8691a7a87851a2d27a910c7cfb` 已接入本机固定 ROI Android 开发候选；事件级 `set` 与 `iou_gated` 的旧 crop 指标曾达到 video6 开发门槛，但框级 recall 仍低于 80%。APK 公共默认仍关闭检测器，候选还需修正 ROI、按新裁剪重训，并用新独立真人对局和实体机验收。详细边界见 [`validation/MODEL_PIPELINE.md`](../validation/MODEL_PIPELINE.md) 和 [`validation/HARD_NEGATIVES.md`](../validation/HARD_NEGATIVES.md)。
+使用 video1–5 和 video7 的 708 张 train 帧做困难误报加权实验。原冻结模型在这些人工复核帧上产生 115 个 FP，其中 video7 占 63 个。重复 98 张含 FP 的完整图片后低学习率微调，video6 开发验证从 90.50% precision / 72.65% recall / 80.60% F1 变为 90.27% / 74.89% / 81.86%。这些 video6 数值只描述 legacy fixed-ROI crop 内部开发对照；目标边界完整性未验证，不能代表完整小地图覆盖或门槛表现。checkpoint `f7176b7ea9de65fb0f1fe4262514992fdda2ed8691a7a87851a2d27a910c7cfb` 当时曾接入本机固定 ROI Android 开发候选，现已退役；事件级 `set` 与 `iou_gated` 的旧 crop 指标曾达到 video6 开发门槛，但框级 recall 仍低于 80%。APK 公共默认仍关闭检测器，候选还需修正 ROI、按新裁剪重训，并用新独立真人对局和实体机验收。详细边界见 [`validation/MODEL_PIPELINE.md`](../validation/MODEL_PIPELINE.md) 和 [`validation/HARD_NEGATIVES.md`](../validation/HARD_NEGATIVES.md)。
 
-video7 另有 240 张与旧标签至少间隔 2.552 秒的预测无关均匀抽样帧。抽样完成后才用冻结 ONNX 模型在 `0.10` 低阈值下生成 442 个可编辑建议框。队列现已由三路 Luna Max 完成分段 AI 辅助初标，并经两路分层交叉审计；状态为 186 张 `corrected`／334 框、33 `negative`、16 `excluded`、5 `skip`、0 `pending`。数据库与 review manifest 一致，框坐标在 ROI 内；这项检查没有证明目标未碰裁剪边界或头像完整。交叉审计 0 修改，review manifest SHA-256 为 `d05eade78eea2721773d06c4288e338770d8c46810175eda9d7f7b1296547e8a`。这些结果不是人工真值，建议队友抽查。详细审计范围见 [`validation/VIDEO7_EXPANDED.md`](../validation/VIDEO7_EXPANDED.md)。
+video7 另有 240 张与旧标签至少间隔 2.552 秒的预测无关均匀抽样帧。历史队列的实际状态为 185 张 `corrected`／333 框、34 `negative`、16 `excluded`、5 `skip`、0 `pending`。审计确认旧 safe 右边界 x≈493 小于地图主体右边约 x=524，所以新建 `data/private/minimap-review-video7-edge-recheck-v1`：240 张全部为 `pending/manual`，333 个起始框只来自既有 HD `reviewed_boxes`，不使用旧模型框。新 safe/label/widget 分别是 `[55,0,600,470)`、`[90,0,550,420)`、`[143,0,524,378)`。完成边缘复审前，video7 不能进入当前 HD 导出。
 
 ## 小地图裁剪完整性门禁
 
@@ -42,7 +48,7 @@ video7 另有 240 张与旧标签至少间隔 2.552 秒的预测无关均匀抽�
 
 以 dense baseline checkpoint `68b86a7a10c97d9b2c738f72b1f49a0b1dcc76d10751ee9f4e61380ee4fb93bc` 初始化，在 Apple MPS 上使用 seed `20260926`、输入 320、batch size 16、`lr_scale=0.1`，最多 40 轮，第 30 轮早停。最佳 epoch 10 的 checkpoint SHA-256 为 `49d8d21900603f78a595e08362895d70011201a9b26457c5fa388f915a80ae99`；confidence 为 `0.43`。video6 legacy fixed-ROI crop 开发对照 TP/FP/FN 为 `158/17/65`，precision / recall / F1 为 `90.2857% / 70.8520% / 79.3970%`，几何方向正确率为 `97.3856%`；数值不表示完整小地图覆盖。
 
-相对 dense baseline，precision / recall / F1 变化为 `−0.2171 / −1.7937 / −1.2000` 个百分点；相对 hard-FP 候选，变化为 `+0.0154 / −4.0359 / −2.4657` 个百分点。此处 checkpoint `49d8d21900603f78a595e08362895d70011201a9b26457c5fa388f915a80ae99` 是另一项 video7 标签微调对照，不是当前接入本机开发资产的 f717 hard-FP 候选。该结果只是 video6 开发集比较，不是独立留出成绩。metrics SHA-256 为 `fd7349e74a4c4772682217bebe51633c9668dec7be31b6798129ad06155899f5`，固定评估 SHA-256 为 `b4dc2d50b77d9df1d443135d2413eab8374171485d3b2a155b735ca6eee968e9`。video7 标签来自 AI 辅助初标和交叉审计，不是人工真值，仍建议队友抽查。
+相对 dense baseline，precision / recall / F1 变化为 `−0.2171 / −1.7937 / −1.2000` 个百分点；相对 hard-FP 候选，变化为 `+0.0154 / −4.0359 / −2.4657` 个百分点。此处 checkpoint `49d8d21900603f78a595e08362895d70011201a9b26457c5fa388f915a80ae99` 是另一项 video7 标签微调对照，不是当时曾接入本机开发资产、现已退役的 f717 hard-FP 候选。该结果只是 video6 开发集比较，不是独立留出成绩。metrics SHA-256 为 `fd7349e74a4c4772682217bebe51633c9668dec7be31b6798129ad06155899f5`，固定评估 SHA-256 为 `b4dc2d50b77d9df1d443135d2413eab8374171485d3b2a155b735ca6eee968e9`。video7 标签来自 AI 辅助初标和交叉审计，不是人工真值，仍建议队友抽查。
 
 此前困难误报加权候选在 video6 开发集以 confidence `0.19`、NMS `0.5` 评估，方向事件 `set` TP/FP/FN 为 `148/10/26`、P/R/F1 为 `93.6709% / 85.0575% / 89.1566%`；`iou_gated` 为 `144/14/30`、`91.1392% / 82.7586% / 86.7470%`。这些是 legacy fixed-ROI crop-relative 内部开发数值，不代表完整地图覆盖；两种事件算法的旧 crop 指标曾达到 video6 开发门槛 P≥90%、R≥80%。候选 checkpoint SHA-256 为 `f7176b7ea9de65fb0f1fe4262514992fdda2ed8691a7a87851a2d27a910c7cfb`，评估 JSON SHA-256 为 `117561be1bb634cb2caf327bbb106bd27820716ccbde74adde5114504506c95e`。video6 已用于选模和选阈值，该结果不是独立留出成绩或最终验收结果；该候选现已接入本机 Android 开发资产，APK 公共默认 profile 仍关闭检测器。ncnn parity 和冒烟边界见 [`validation/MODEL_PIPELINE.md`](../validation/MODEL_PIPELINE.md)；完整事件计数见 [`validation/VIDEO7_EXPANDED.md`](../validation/VIDEO7_EXPANDED.md)。
 
@@ -50,13 +56,13 @@ video7 另有 240 张与旧标签至少间隔 2.552 秒的预测无关均匀抽�
 
 沿用相同的 train/val 划分：来源 train 为 927 张／1,443 框，video6 val 为 152 张／223 框。confidence 固定为 `0.29` 的来源训练集基线报告 TP/FP/FN 为 `1304/173/139`，precision / recall / F1 为 `88.2871% / 90.3673% / 89.3151%`。抽取 150 个 hard sources（含 20 个纯负样本），将既有已标注样本重复加入训练集 188 条记录、对应 283 个已有框；扩展后 train 为 1,115 条记录／1,726 个框，val 未变。没有新增标注。
 
-从 dense checkpoint 初始化，沿用前述训练参数；第 25 轮早停，最佳 epoch 5，confidence `0.47`。video6 legacy fixed-ROI crop 开发验证 TP/FP/FN 为 `155/17/68`，precision / recall / F1 为 `90.1163% / 69.5067% / 78.4810%`，几何方向正确率 `96.6667%`；这些数值不表示完整小地图覆盖。F1 低于 dense `80.60%`、此前 hard-FP 候选 `81.86%` 和 video7 扩展标签微调 `79.40%`。本轮失败 checkpoint 未接入本机开发 profile；当前接入的是 f717 hard-FP 候选，APK 公共默认仍关闭检测器。这是 video6 crop-relative 开发指标；video7 扩展标签为 AI 辅助而非人工真值，权重和数据不提交。
+从 dense checkpoint 初始化，沿用前述训练参数；第 25 轮早停，最佳 epoch 5，confidence `0.47`。video6 legacy fixed-ROI crop 开发验证 TP/FP/FN 为 `155/17/68`，precision / recall / F1 为 `90.1163% / 69.5067% / 78.4810%`，几何方向正确率 `96.6667%`；这些数值不表示完整小地图覆盖。F1 低于 dense `80.60%`、此前 hard-FP 候选 `81.86%` 和 video7 扩展标签微调 `79.40%`。本轮失败 checkpoint 未接入本机开发 profile；当时接入的是现已退役的 f717 hard-FP 候选，APK 公共默认仍关闭检测器。这是 video6 crop-relative 开发指标；video7 扩展标签为 AI 辅助而非人工真值，权重和数据不提交。
 
 关键产物 SHA-256：best checkpoint `fb2721f64eccf9226834d7c85537b7d76b8d1c45050975adb74cc024b1f7aa55`；fixed evaluation JSON `d55849c6ed43ffdac32524c812c40717193ee1d698256e10671432786a51c664`；来源 train annotations `75767b5a33d3fceff95937bb1f06bd0898ac8f55ea53f94faf3e300e33ed0303`；重复训练集 annotations `5151ef2ee6a3e72e362889fc0b84c6703898d83b94aaa2dc87ddd4cfac643e75`；metrics `f591b39d893757e690c866ae7c6a9da5ec5c6bfc29b1bcddcb44292b505c5116`；baseline report `278bb41deb2f3c9bb356a9b8d60c3aee392353f6fbf814eb9548d809fc836d31`；provenance `a0a221a573d244f5036e5b2ee10675747ae2b20a6f973340706d97690ead486c`。完整过程见 [`validation/VIDEO7_EXPANDED.md`](../validation/VIDEO7_EXPANDED.md)。
 
 ### FP+FN hard-errors 对照：失败
 
-使用旧 v5 train（708 张／1,109 框，不含 219 张 AI 辅助标签）和 video6 val（152 张／223 框）。`--include-false-negatives` 纳入 142 个唯一 union hard sources，其中 98 张含 FP、95 张含 FN（类别有重叠），7 张为纯负样本；从这些既有样本重复加入 167 条训练记录、对应 320 个已有框后，train 为 875 条记录／1,429 个框。没有新增标注。从 dense baseline 按旧 hard-FP 参数训练，第 25 轮早停；best epoch 5、confidence `0.29`。video6 legacy fixed-ROI crop 开发验证 TP/FP/FN `158/15/65`，precision / recall / F1 `91.3295% / 70.8520% / 79.7980%`，几何方向正确率 `96.7105%`；这些数值只用于旧裁剪内的开发比较，不代表完整地图覆盖。precision 达到 90%，但 F1 未超过替换门槛 `81.8627%`。本轮失败 checkpoint 未接入本机开发 profile；当前接入的是 f717 hard-FP 候选，APK 公共默认仍关闭检测器。数据和权重不提交。
+使用旧 v5 train（708 张／1,109 框，不含 219 张 AI 辅助标签）和 video6 val（152 张／223 框）。`--include-false-negatives` 纳入 142 个唯一 union hard sources，其中 98 张含 FP、95 张含 FN（类别有重叠），7 张为纯负样本；从这些既有样本重复加入 167 条训练记录、对应 320 个已有框后，train 为 875 条记录／1,429 个框。没有新增标注。从 dense baseline 按旧 hard-FP 参数训练，第 25 轮早停；best epoch 5、confidence `0.29`。video6 legacy fixed-ROI crop 开发验证 TP/FP/FN `158/15/65`，precision / recall / F1 `91.3295% / 70.8520% / 79.7980%`，几何方向正确率 `96.7105%`；这些数值只用于旧裁剪内的开发比较，不代表完整地图覆盖。precision 达到 90%，但 F1 未超过替换门槛 `81.8627%`。本轮失败 checkpoint 未接入本机开发 profile；当时接入的是现已退役的 f717 hard-FP 候选，APK 公共默认仍关闭检测器。数据和权重不提交。
 
 source annotations SHA-256 `eeff2b1fff5ae1b2bb365fe5651f144477d2e2b977ad6140eddef992d046220c`，baseline evaluation `47b483e2af8036dfe1ff76d0fc2fb3be2b9a9c8dac2a25ccc30d09847685c71f`，重复训练集 annotations `efa54d5b4d40a26af2242f5f3b4a7ab7999ca0a894af7ac8e1a7018e006648bb`，provenance `caf2acc439b2ec1aa05b6df5caeaee2e561a9216bc31e22cbaa252feed542978`，best checkpoint `71570279b32983671dde8e5189e8fdc744dfbe0a69e272e105c2e44030d812e2`，metrics `d31d381468732f9db2c3e57b6069f8faad9642bbc91ca97b18bb4c46d933f947`，fixed evaluation JSON `12dbed95cf2001641abdeab5fa36ca83fcf00f64d10c69e72fc7b992c97dc3bc`。最终真机验收结果待完成；详情见 [`validation/VIDEO7_EXPANDED.md`](../validation/VIDEO7_EXPANDED.md)。
 
@@ -106,9 +112,15 @@ shasum -a 256 build/models/yolox_nano.pth
 
 期望 SHA-256：`cd28f55fbbc1829f99d9ac9b38a16d259a22889739c8728ea877610201feff7b`。
 
-## 导出裁剪数据并训练
+## 当前数据状态：只接受人工复核后的 HD
 
-按新测得的控件边界准备训练数据时，先用布局 v2 重建 video2–7 的安全 ROI，并排除几何已变化的旧 `video1`。等 `video1-hd` 完成人工复核后，将它和 video8-v3 合并，再导出裁剪数据：
+当前没有可导出的 HD COCO 数据集。video2hd/4hd/5hd、video3hd、video7-edge 和 video10/11 人工复核完成前，不得运行 `finalize_review`、导出 COCO、训练、验证或调阈值。video1 高清替换文件和 video8 已完成标注及三层 ROI 审计，但要等其余待标队列一起重建当前清单。video11 保持 dev-val，video9/12 保持 sealed，Hero 仅用于 UX／事件故事。低清 video2–6 和依赖它们的模型、指标不参与当前流程。
+
+## 历史低清导出、训练与验证命令（只读，不要运行）
+
+以下旧命令和实验使用过低清 video2–6，现已退役。保留作复现说明，不可作为当前流程，也不得用旧 checkpoint 评估新 HD 队列或封存留出录像：
+
+按旧控件边界准备训练数据时，曾用布局 v2 重建 video2–7 的安全 ROI，并排除几何已变化的旧 `video1`。这套流程已退役：
 
 ```sh
 PYTHONPATH=python .venv/bin/python -m mapassist.safe_roi_manifest \
@@ -142,7 +154,7 @@ PYTHONPATH=python .venv/bin/python -m mapassist.coco_dataset_audit \
 
 这些 manifest、裁剪图片和 audit 都是私有数据，只保存在 `data/private/`，不要提交或公开。这一轮把 video8 改为 train，因此 audit 会明确报告 `No populated test split`；这条表示当前不能引用独立测试成绩，其余 `training_blockers` 必须为空。每个有数据的 split 都必须显示 `roi_crop_completeness: provenance_clear`，确认没有 crop boundary 阻断后才能训练。ROI 工具默认仅容许框中心越过 widget 边界最多 4 px，容差内例外会写入 `roi_remap_audit`；超过容差、布局帧不一致、ID／录像不匹配或已有视频 SHA-256 不一致都会拒绝输出。最终成绩必须使用另一场从未参与定位、训练、调参或失败分析的真人对局。
 
-### Safe-ROI 合并数据与训练实验
+### Safe-ROI 合并数据与训练实验（低清历史，已退役）
 
 当前合并 COCO 数据集 `data/private/minimap-review-v6-video7-expanded/coco-video2-7-video1-hd-video8-safe-roi` 覆盖 8 场：train 包含 `video1-hd`、video2–5、video7 和 video8，共 1,020 张／1,650 框；video6 是唯一 val，共 152 张／223 框；test 为空。video8 v3 的 119 张／211 框已经进入 train。Audit 的 train/val `roi_crop_completeness` 均为 `provenance_clear`，无裁剪来源阻断；空 test 仍意味着不能把该数据集结果报告为独立留出成绩。低清 video2–5 占 train 476/1,020 张（46.7%），video1-hd 取代旧 video1 数据；video6 val 与训练数据同属低清域。
 
@@ -318,7 +330,7 @@ PYTHONPATH=build/third_party/YOLOX:python \
   --output build/training/yolox-nano-minimap-safe-roi-hard-only-v1-320/video6-confidence-sweep-001.json
 ```
 
-## 用冻结 ncnn 模型回放完整录像
+## 历史冻结 ncnn 回放流程（仅旧实验）
 
 桌面端的完整录像回放使用冻结的 CFR 媒体时间轴：按 `ffmpeg fps` 采样，时间戳为 `round(frame_index * 1000 / fps)`，并以零排队延迟把该时间戳传给 C++ `ma_engine`。若 profile 含 `layout.minimap_locator`，回放会先运行与 Android 相同的原生定位器；搜索帧不运行 YOLOX，锁定或短时保持帧使用动态 ROI。它用于可复现的媒体时间事件评测；实际处理耗时只记录为桌面性能信息，不代表 Android 端到端时延。输出 JSONL 同时包含逐帧 `layout`、`observations`、YOLOX `detections` 和事件层 `cues`，可交给 `mapassist.evaluate` 或 validation gate：
 
@@ -334,7 +346,9 @@ PYTHONPATH=python .venv/bin/python training/replay_yolox_ncnn.py path/to/match.m
 
 `*.meta.json` 会记录录像、profile、ncnn param/bin、native library 的路径、大小和 SHA-256，以及 sampling、timeline、event_now_policy、帧数、事件数、回放吞吐量和桌面逐帧处理耗时。回放要求 `detectors.minimap_yolox=true` 且输入尺寸为 320。输入 profile 的 confidence、NMS 和事件参数保持冻结；不要用回放录像结果反向调整 profile 后再把同一录像当作独立验证。集成测试在缺少构建产物时会 skip；正式留出前必须实际构建并运行该测试，skip 不能视为通过。
 
-## 导出与一致性检查
+## 历史模型导出与一致性检查（仅旧实验）
+
+以下模型和验证图片均为旧低清实验产物，不能用于当前 HD 队列或 video9/video12。
 
 ```sh
 PYTHONPATH=build/third_party/YOLOX:python \

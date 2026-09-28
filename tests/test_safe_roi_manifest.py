@@ -182,6 +182,48 @@ def test_remap_records_box_center_within_four_pixel_widget_tolerance(
     assert output["roi_remap_audit"]["widget_center_tolerance_px"] == 4.0
 
 
+def test_remap_center_audit_prefers_label_roi_to_widget_roi(
+    tmp_path: Path,
+) -> None:
+    detection_path, layout_path, _ = _write_fixture(tmp_path)
+    detection = json.loads(detection_path.read_text(encoding="utf-8"))
+    video2 = next(match for match in detection["matches"] if match["id"] == "video2")
+    video2["label_roi"] = [0.03, 0.0, 0.18, 0.32]
+    video2["frames"][0]["boxes"] = [[0.187, 0.1, 0.006, 0.03]]
+    detection_path.write_text(json.dumps(detection), encoding="utf-8")
+
+    remapped, _ = remap_manifest(
+        detection_path, layout_path, include_matches={"video2"}
+    )
+
+    audit = remapped["roi_remap_audit"]
+    assert audit["center_roi_by_match"]["video2"] == video2["label_roi"]
+    assert audit["matches"]["video2"]["center_reference"] == "label_roi"
+    assert remapped["matches"][0]["label_roi"] == video2["label_roi"]
+    assert audit["center_tolerance_exceptions"] == []
+    safe_roi = remapped["matches"][0]["roi"]
+    safe_right = safe_roi[0] + safe_roi[2]
+    safe_bottom = safe_roi[1] + safe_roi[3]
+    label_right = video2["label_roi"][0] + video2["label_roi"][2]
+    label_bottom = video2["label_roi"][1] + video2["label_roi"][3]
+    padding_x = 324 * 0.035 / 720
+    padding_y = 324 * 0.035 / 324
+    assert safe_roi[0] <= video2["label_roi"][0]
+    assert safe_roi[1] <= video2["label_roi"][1]
+    assert safe_right == pytest.approx(label_right + padding_x)
+    assert safe_bottom >= label_bottom + padding_y
+
+
+def test_remap_rejects_invalid_label_roi(tmp_path: Path) -> None:
+    detection_path, layout_path, _ = _write_fixture(tmp_path)
+    detection = json.loads(detection_path.read_text(encoding="utf-8"))
+    detection["label_roi"] = [0.9, 0.0, 0.2, 0.2]
+    detection_path.write_text(json.dumps(detection), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="label_roi is outside"):
+        remap_manifest(detection_path, layout_path, include_matches={"video2"})
+
+
 def test_remap_rejects_center_more_than_four_pixels_outside_without_output(
     tmp_path: Path,
 ) -> None:
@@ -197,7 +239,7 @@ def test_remap_rejects_center_more_than_four_pixels_outside_without_output(
 
     with pytest.raises(
         ValueError,
-        match=r"video7@106 box 1 center is 18\.400 px outside widget \(bottom\); tolerance is 4 px",
+        match=r"video7@106 box 1 center is 18\.400 px outside widget_roi \(bottom\); tolerance is 4 px",
     ):
         remap_to_file(
             detection_path, layout_path, output_path, include_matches={"video7"}

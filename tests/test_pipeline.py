@@ -21,6 +21,8 @@ from mapassist.annotation_server import (
     ConflictError,
     _dataset_specs,
 )
+from mapassist import blind_review_dataset as blind_review_module
+from mapassist import uniform_review_dataset as uniform_review_module
 from mapassist.apply_label_shards import apply as apply_label_shards
 from mapassist.blind_review_dataset import _sample_indices
 from mapassist.calibrate_minimap_anchor import calibrate as calibrate_minimap_anchor
@@ -168,7 +170,7 @@ def test_annotation_store_validates_edits_and_media(annotation_dataset: Path) ->
     assert task is not None
     with pytest.raises(ValueError, match="at least one box"):
         store.save(task["id"], "Reviewer", task["version"], "corrected", [])
-    with pytest.raises(ValueError, match="inside the minimap roi"):
+    with pytest.raises(ValueError, match="inside the safe roi"):
         store.save(task["id"], "Reviewer", task["version"], "corrected",
                    [[0.8, 0.1, 0.1, 0.1]])
     with pytest.raises(ValueError, match="positive integer"):
@@ -195,7 +197,7 @@ def test_annotation_store_uses_match_specific_roi(annotation_dataset: Path) -> N
     task = store.claim_next("Layout reviewer")
     assert task is not None
     assert task["roi"] == [0.2, 0.0, 0.3, 0.5]
-    with pytest.raises(ValueError, match="inside the minimap roi"):
+    with pytest.raises(ValueError, match="inside the safe roi"):
         store.save(task["id"], "Layout reviewer", task["version"], "corrected",
                    [[0.06, 0.12, 0.05, 0.07]])
     saved = store.save(task["id"], "Layout reviewer", task["version"], "corrected",
@@ -214,10 +216,10 @@ def test_annotation_store_blocks_ground_truth_touching_expandable_crop_edge(
     task = store.claim_next("Reviewer")
     assert task is not None
 
-    with pytest.raises(ValueError, match="expandable minimap crop boundary"):
+    with pytest.raises(ValueError, match="expandable safe roi boundary"):
         store.save(task["id"], "Reviewer", task["version"], "corrected",
                    [[0.20, 0.1, 0.05, 0.1]])
-    with pytest.raises(ValueError, match="expandable minimap crop boundary"):
+    with pytest.raises(ValueError, match="expandable safe roi boundary"):
         store.save(task["id"], "Reviewer", task["version"], "accepted")
 
     # Negative review rejects a suggestion; it does not turn that suggestion
@@ -232,6 +234,7 @@ def test_minimap_region_annotations_may_touch_full_screen_edge(
     manifest = annotation_dataset / "review-manifest.json"
     data = json.loads(manifest.read_text())
     data["kind"] = "minimap_region"
+    data["label_roi"] = [0.5, 0.5, 0.2, 0.2]
     manifest.write_text(json.dumps(data), encoding="utf-8")
     store = AnnotationStore(annotation_dataset, lease_seconds=60)
     task = store.claim_next("Layout reviewer")
@@ -272,6 +275,119 @@ def test_annotation_store_uses_rounded_crop_bounds_at_physical_frame_edge(
                        [[0.0, 0.1, 0.04, 0.06]])
 
     assert saved["reviewed_boxes"] == [[0.0, 0.1, 0.04, 0.06]]
+
+
+def test_corrected_centers_use_label_roi_even_outside_widget(
+    annotation_dataset: Path,
+) -> None:
+    manifest = annotation_dataset / "review-manifest.json"
+    data = json.loads(manifest.read_text())
+    data["widget_roi"] = [0.05, 0.05, 0.1, 0.2]
+    data["label_roi"] = [0.08, 0.05, 0.08, 0.25]
+    data["matches"][0]["label_roi"] = [0.02, 0.02, 0.2, 0.3]
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+
+    store = AnnotationStore(annotation_dataset, lease_seconds=60)
+    bootstrap = store.bootstrap()
+    task = store.claim_next("Reviewer")
+    assert task is not None
+    assert bootstrap["label_roi"] == data["label_roi"]
+    assert bootstrap["matches"][0]["label_roi"] == data["matches"][0]["label_roi"]
+    assert task["label_roi"] == data["matches"][0]["label_roi"]
+    assert task["widget_roi"] == data["widget_roi"]
+
+    box = [0.18, 0.1, 0.04, 0.06]
+    assert box[0] + box[2] / 2 > (
+        data["widget_roi"][0] + data["widget_roi"][2]
+    )
+    saved = store.save(task["id"], "Reviewer", task["version"], "corrected", [box])
+    assert saved["reviewed_boxes"] == [box]
+
+
+def test_corrected_center_outside_label_roi_is_rejected(
+    annotation_dataset: Path,
+) -> None:
+    manifest = annotation_dataset / "review-manifest.json"
+    data = json.loads(manifest.read_text())
+    data["widget_roi"] = [0.05, 0.05, 0.1, 0.2]
+    data["label_roi"] = [0.05, 0.05, 0.1, 0.2]
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    store = AnnotationStore(annotation_dataset, lease_seconds=60)
+    task = store.claim_next("Reviewer")
+    assert task is not None
+
+    with pytest.raises(ValueError, match="centers must stay inside label_roi"):
+        store.save(task["id"], "Reviewer", task["version"], "corrected",
+                   [[0.18, 0.1, 0.04, 0.06]])
+
+
+def test_corrected_box_crossing_safe_roi_is_rejected(
+    annotation_dataset: Path,
+) -> None:
+    manifest = annotation_dataset / "review-manifest.json"
+    data = json.loads(manifest.read_text())
+    data["label_roi"] = [0.0, 0.0, 0.4, 0.4]
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    store = AnnotationStore(annotation_dataset, lease_seconds=60)
+    task = store.claim_next("Reviewer")
+    assert task is not None
+
+    with pytest.raises(ValueError, match="inside the safe roi"):
+        store.save(task["id"], "Reviewer", task["version"], "corrected",
+                   [[0.24, 0.1, 0.03, 0.06]])
+
+
+def test_legacy_widget_roi_remains_the_center_boundary(
+    annotation_dataset: Path,
+) -> None:
+    manifest = annotation_dataset / "review-manifest.json"
+    data = json.loads(manifest.read_text())
+    widget_roi = [0.05, 0.05, 0.1, 0.2]
+    data["widget_roi"] = widget_roi
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    store = AnnotationStore(annotation_dataset, lease_seconds=60)
+    assert store.bootstrap()["label_roi"] == widget_roi
+    task = store.claim_next("Reviewer")
+    assert task is not None
+
+    with pytest.raises(ValueError, match="centers must stay inside label_roi"):
+        store.save(task["id"], "Reviewer", task["version"], "corrected",
+                   [[0.18, 0.1, 0.04, 0.06]])
+
+
+def test_accept_rejects_suggested_box_center_outside_label_roi(
+    annotation_dataset: Path,
+) -> None:
+    manifest = annotation_dataset / "review-manifest.json"
+    data = json.loads(manifest.read_text())
+    data["label_roi"] = [0.1, 0.05, 0.1, 0.2]
+    data["matches"][0]["samples"][0]["suggested_boxes"] = [
+        [0.05, 0.1, 0.04, 0.06],
+    ]
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    store = AnnotationStore(annotation_dataset, lease_seconds=60)
+    task = store.claim_next("Reviewer")
+    assert task is not None
+
+    with pytest.raises(ValueError, match="target box centers must stay inside label_roi"):
+        store.save(task["id"], "Reviewer", task["version"], "accepted")
+
+
+@pytest.mark.parametrize("bad_value", [float("nan"), float("inf"), float("-inf")])
+def test_minimap_region_rejects_nonfinite_box_coordinates(
+    annotation_dataset: Path, bad_value: float,
+) -> None:
+    manifest = annotation_dataset / "review-manifest.json"
+    data = json.loads(manifest.read_text())
+    data["kind"] = "minimap_region"
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    store = AnnotationStore(annotation_dataset, lease_seconds=60)
+    task = store.claim_next("Reviewer")
+    assert task is not None
+
+    with pytest.raises(ValueError, match="box values must be finite"):
+        store.save(task["id"], "Reviewer", task["version"], "corrected",
+                   [[bad_value, 0.1, 0.05, 0.1]])
 
 
 def test_roi_safety_distinguishes_physical_edge_from_expandable_crop_edge() -> None:
@@ -753,8 +869,10 @@ def test_finalize_review_omits_non_gameplay_frames(tmp_path: Path) -> None:
         "schema_version": 1,
         "kind": "minimap_enemy",
         "widget_roi": [0.1, 0.15, 0.35, 0.3],
+        "label_roi": [0.11, 0.15, 0.34, 0.3],
         "matches": [{
             "id": "match-01", "video": "match.mp4", "split": "train",
+            "label_roi": [0.12, 0.15, 0.32, 0.3],
             "samples": [
                 {"at_ms": 0, "review_status": "excluded", "suggested_boxes": []},
                 {"at_ms": 1000, "review_status": "negative", "suggested_boxes": []},
@@ -768,6 +886,8 @@ def test_finalize_review_omits_non_gameplay_frames(tmp_path: Path) -> None:
     exported = json.loads(output.read_text())
     assert exported["matches"][0]["frames"] == [{"at_ms": 1000, "boxes": []}]
     assert exported["widget_roi"] == [0.1, 0.15, 0.35, 0.3]
+    assert exported["label_roi"] == [0.11, 0.15, 0.34, 0.3]
+    assert exported["matches"][0]["label_roi"] == [0.12, 0.15, 0.32, 0.3]
 
 
 @pytest.fixture(scope="session")
@@ -875,6 +995,7 @@ def test_detection_dataset_exports_boxes_and_negative_frames(tmp_path: Path) -> 
     manifest.write_text(json.dumps({"schema_version": 1,
                                     "roi": [0.05, 0.1, 0.5, 0.4],
                                     "widget_roi": [0.1, 0.15, 0.35, 0.3],
+                                    "label_roi": [0.15, 0.2, 0.1, 0.1],
                                     "matches": [
         {"id": "match-01", "video": fixture["video"].name, "split": "train",
          "frames": [
@@ -1203,6 +1324,9 @@ def test_merge_detection_manifests_requires_explicit_unique_recordings(
     assert [match.get("widget_roi") for match in merged["matches"]] == [
         [0.02, 0.01, 0.2, 0.3], [0.02, 0.01, 0.2, 0.3], None,
     ]
+    assert [match.get("label_roi") for match in merged["matches"]] == [
+        [0.02, 0.01, 0.2, 0.3], [0.02, 0.01, 0.2, 0.3], None,
+    ]
     assert all(Path(match["video"]).is_absolute() for match in merged["matches"])
 
     with pytest.raises(ValueError, match="did not match"):
@@ -1239,9 +1363,17 @@ def test_combine_detection_manifests_adds_frames_for_same_recording(
     match = json.loads(output.read_text())["matches"][0]
     assert [frame["at_ms"] for frame in match["frames"]] == [100, 200]
     assert match["widget_roi"] == [0.02, 0.01, 0.2, 0.3]
+    assert match["label_roi"] == [0.02, 0.01, 0.2, 0.3]
     assert match["video_sha256"] == video_sha256
 
     changed = json.loads(paths[1].read_text())
+    changed["label_roi"] = [0.03, 0.01, 0.2, 0.3]
+    paths[1].write_text(json.dumps(changed), encoding="utf-8")
+    with pytest.raises(ValueError, match="Metadata differs"):
+        combine_detection_manifests(paths, tmp_path / "mismatched-label-rois.json")
+
+    changed = json.loads(paths[1].read_text())
+    changed.pop("label_roi")
     changed["matches"][0]["video_sha256"] = "0" * 64
     paths[1].write_text(json.dumps(changed), encoding="utf-8")
     with pytest.raises(ValueError, match="Metadata differs"):
@@ -1286,9 +1418,11 @@ def test_review_dataset_keeps_suggestions_pending(
         "schema_version": 1,
         "kind": "minimap_enemy",
         "roi": [0.0, 0.0, 0.25, 0.34],
+        "label_roi": [0.02, 0.0, 0.2, 0.34],
         "orientation": {"display_rotation_degrees": 0},
         "matches": [{
             "id": "match-01", "split": "train",
+            "label_roi": [0.025, 0.01, 0.19, 0.32],
             "video": str(fixture["video"].relative_to(tmp_path)),
             "predictions": predictions.name,
             "active_intervals_ms": [[2000, 6000]],
@@ -1300,6 +1434,8 @@ def test_review_dataset_keeps_suggestions_pending(
     assert result["train"] == {"matches": 1, "cue_samples": 1,
                                "background_samples": 1}
     exported = json.loads((output / "review-manifest.json").read_text())
+    assert exported["label_roi"] == [0.02, 0.0, 0.2, 0.34]
+    assert exported["matches"][0]["label_roi"] == [0.025, 0.01, 0.19, 0.32]
     assert exported["orientation"]["display_rotation_degrees"] == 0
     assert exported["matches"][0]["orientation"]["display_rotation_degrees"] == 0
     expected_video_sha256 = hashlib.sha256(fixture["video"].read_bytes()).hexdigest()
@@ -1326,6 +1462,8 @@ def test_review_dataset_keeps_suggestions_pending(
     assert finalized["frames"] == 2
     detections = json.loads((output / "detections.json").read_text())
     assert detections["roi"] == [0.0, 0.0, 0.25, 0.34]
+    assert detections["label_roi"] == [0.02, 0.0, 0.2, 0.34]
+    assert detections["matches"][0]["label_roi"] == [0.025, 0.01, 0.19, 0.32]
     assert detections["orientation"]["display_rotation_degrees"] == 0
     assert detections["matches"][0]["orientation"]["display_rotation_degrees"] == 0
     assert detections["matches"][0]["video_sha256"] == expected_video_sha256

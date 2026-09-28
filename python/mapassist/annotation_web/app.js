@@ -62,6 +62,7 @@ function selectionLabel(selection) {
     cue: "提示候选",
     background: "背景候选",
     systematic_blind: "均匀盲测",
+    systematic_development: "均匀开发抽样",
     minimap_layout_systematic: "小地图边界",
   })[selection] || selection;
 }
@@ -91,6 +92,13 @@ async function bootstrap() {
     state.bootstrap.label_assistance.notice.trim() : "";
   assistanceNotice.textContent = noticeText;
   assistanceNotice.classList.toggle("hidden", !noticeText);
+  const hasLabelRoi = state.bootstrap.label_roi ||
+    state.bootstrap.matches.some((match) => match.label_roi);
+  const hasWidgetRoi = state.bootstrap.widget_roi ||
+    state.bootstrap.matches.some((match) => match.widget_roi);
+  $("#labelRoiLegend").classList.toggle("hidden", !hasLabelRoi);
+  $("#widgetRoiLegend").classList.toggle("hidden", !hasWidgetRoi);
+  $("#roiLegend").classList.toggle("hidden", !hasLabelRoi && !hasWidgetRoi);
   const accept = $("#acceptButton");
   accept.querySelector("strong").textContent = "建议框正确";
   accept.querySelector("small").textContent = "直接接受当前建议";
@@ -264,6 +272,10 @@ function cloneBoxes(boxes) {
 
 function taskRoi(task = state.task) {
   return task?.roi || state.bootstrap?.roi || [0, 0, 1, 1];
+}
+
+function taskLabelRoi(task = state.task) {
+  return task ? task.label_roi : (state.bootstrap?.label_roi || null);
 }
 
 function initialBoxes(task) {
@@ -465,20 +477,23 @@ function draw() {
   context.clearRect(0, 0, canvas.width, canvas.height);
   context.imageSmoothingEnabled = state.view !== "minimap";
   context.drawImage(state.image, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-  drawWidgetBoundary();
+  const labelRoi = state.bootstrap?.kind === "minimap_enemy" ? taskLabelRoi() : null;
+  drawRoiBoundary(labelRoi, "#ff65d4", false);
+  const widgetRoi = state.task ? state.task.widget_roi : state.bootstrap?.widget_roi;
+  drawRoiBoundary(widgetRoi || null,
+    "#4de1e8", true);
   state.boxes.forEach((box, index) => drawBox(box, index === state.selected));
 }
 
-function drawWidgetBoundary() {
-  const widget = state.task?.widget_roi || state.bootstrap?.widget_roi;
-  if (!widget) return;
+function drawRoiBoundary(roi, color, dashed) {
+  if (!roi) return;
   const view = viewRect();
-  const [x, y, width, height] = widget;
+  const [x, y, width, height] = roi;
   const scale = canvas.width / Math.max(1, canvas.clientWidth);
   context.save();
-  context.strokeStyle = "#4de1e8";
+  context.strokeStyle = color;
   context.lineWidth = 2 * scale;
-  context.setLineDash([6 * scale, 4 * scale]);
+  context.setLineDash(dashed ? [6 * scale, 4 * scale] : []);
   context.strokeRect(
     (x - view.x) / view.w * canvas.width,
     (y - view.y) / view.h * canvas.height,
@@ -527,8 +542,10 @@ function pointFromEvent(event) {
 function clamp(value, low, high) { return Math.max(low, Math.min(high, value)); }
 
 function roiBoundaryContacts(boxes) {
+  const labelCenters = state.task && state.bootstrap?.kind === "minimap_enemy" ?
+    window.MapassistLabelRoiValidation.centersOutsideRoi(boxes, taskLabelRoi()) : [];
   if (!state.task || !state.image || state.bootstrap?.kind === "minimap_region") {
-    return {crop: [], physical: []};
+    return {crop: [], physical: [], labelCenters};
   }
   const [x, y, width, height] = taskRoi();
   const frameWidth = state.image.naturalWidth || state.image.width;
@@ -560,7 +577,7 @@ function roiBoundaryContacts(boxes) {
     if (sides.crop.length) crop.push({index: index + 1, sides: sides.crop});
     if (sides.physical.length) physical.push({index: index + 1, sides: sides.physical});
   });
-  return {crop, physical};
+  return {crop, physical, labelCenters};
 }
 
 function hitBox(point) {
@@ -656,6 +673,9 @@ function renderBoxCount() {
   if (contacts.physical.length) {
     messages.push(`${contacts.physical.length} 个框碰到原始画面边缘；无法确认完整目标时选“无法判断”。`);
   }
+  if (contacts.labelCenters.length) {
+    messages.push(`${contacts.labelCenters.length} 个框的中心超出标注范围（紫红实线）；请调整框后再保存。`);
+  }
   warning.classList.toggle("hidden", messages.length === 0);
   warning.textContent = messages.join(" ");
 }
@@ -685,9 +705,17 @@ async function save(status) {
     toast("没有框时请使用“没有敌人”", true);
     return;
   }
+  const boxesToCheck = status === "accepted" ?
+    state.task.suggested_boxes : state.boxes;
+  const contacts = roiBoundaryContacts(boxesToCheck);
+  if (["corrected", "accepted"].includes(status) &&
+      state.bootstrap?.kind === "minimap_enemy" && contacts.labelCenters.length) {
+    toast("目标框中心需位于标注范围（紫红实线）内；请调整框后再保存", true);
+    return;
+  }
   if (["corrected", "accepted"].includes(status) &&
       state.bootstrap?.kind !== "minimap_region" &&
-      roiBoundaryContacts(state.boxes).crop.length) {
+      contacts.crop.length) {
     toast("目标框碰到可扩展的小地图裁剪边缘，可能不完整；请选“无法判断”或扩大数据 ROI 后重标", true);
     return;
   }

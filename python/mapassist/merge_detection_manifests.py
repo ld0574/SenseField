@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -20,6 +21,8 @@ def _roi(value: object, label: str) -> list[float]:
                 for item in value)):
         raise ValueError(f"{label} must be normalized [x, y, width, height]")
     result = [float(item) for item in value]
+    if not all(math.isfinite(item) for item in result):
+        raise ValueError(f"{label} must contain finite normalized numbers")
     x, y, width, height = result
     if (x < 0 or y < 0 or width <= 0 or height <= 0 or
             x + width > 1.000001 or y + height > 1.000001):
@@ -55,6 +58,9 @@ def merge(manifests: list[Path], output: Path,
         default_widget_value = data.get("widget_roi")
         default_widget_roi = (_roi(default_widget_value, f"{manifest} widget_roi")
                               if default_widget_value is not None else None)
+        default_label_value = data.get("label_roi")
+        default_label_roi = (_roi(default_label_value, f"{manifest} label_roi")
+                             if default_label_value is not None else None)
         default_orientation = from_manifest(data, str(manifest))
         orientations.append(default_orientation)
         source_matches = data.get("matches")
@@ -83,6 +89,14 @@ def merge(manifests: list[Path], output: Path,
             widget_value = source.get("widget_roi", default_widget_roi)
             widget_roi = (_roi(widget_value, f"{match_id} widget_roi")
                           if widget_value is not None else None)
+            label_value = source.get("label_roi")
+            if label_value is None:
+                label_value = default_label_roi
+            if label_value is None:
+                # Legacy detection manifests used widget_roi as their center boundary.
+                label_value = widget_roi
+            label_roi = (_roi(label_value, f"{match_id} label_roi")
+                         if label_value is not None else None)
             exported = copy.deepcopy(source)
             exported["video"] = str(video)
             exported["split"] = split
@@ -91,6 +105,10 @@ def merge(manifests: list[Path], output: Path,
                 exported["widget_roi"] = widget_roi
             else:
                 exported.pop("widget_roi", None)
+            if label_roi is not None:
+                exported["label_roi"] = label_roi
+            else:
+                exported.pop("label_roi", None)
             if (exported.get("orientation") is None and
                     default_orientation is not None):
                 exported["orientation"] = default_orientation

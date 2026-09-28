@@ -115,6 +115,11 @@ kbd { padding: 1px 5px; border: 1px solid #4a5968; border-bottom-width: 2px; bor
 .canvas-shell { position: relative; min-height: 420px; display: grid; place-items: center; overflow: hidden; background: #05080b; border: 1px solid #2a3745; border-radius: 12px; }
 .canvas-shell canvas { display: block; max-width: 100%; touch-action: none; cursor: crosshair; }
 .canvas-shell.empty canvas { display: none; }
+.roi-legend { display: flex; gap: 16px; align-items: center; padding: 8px 2px 0; color: var(--muted); font-size: 10px; }
+.roi-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.roi-key { width: 17px; height: 0; display: inline-block; border-top: 2px solid; }
+.roi-key.label-roi { border-color: #ff65d4; }
+.roi-key.widget-roi { border-color: #4de1e8; border-top-style: dashed; }
 .empty-state { max-width: 340px; display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--muted); text-align: center; line-height: 1.55; }
 .empty-state strong { color: var(--text); }
 .empty-icon { width: 58px; height: 58px; display: grid; place-items: center; border: 1px dashed #405164; border-radius: 50%; color: var(--accent); font-size: 26px; }

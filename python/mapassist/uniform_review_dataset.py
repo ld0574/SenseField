@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -35,6 +36,8 @@ def _roi(value: object, label: str) -> list[float]:
                 for item in value)):
         raise ValueError(f"{label} must be four normalized numbers")
     result = [float(item) for item in value]
+    if not all(math.isfinite(item) for item in result):
+        raise ValueError(f"{label} must contain finite normalized numbers")
     x, y, width, height = result
     if (x < 0 or y < 0 or width <= 0 or height <= 0 or
             x + width > 1.000001 or y + height > 1.000001):
@@ -146,6 +149,9 @@ def build(manifest: Path, output: Path, samples_per_match: int = 100,
     top_widget_value = data.get("widget_roi")
     top_widget_roi = (_roi(top_widget_value, "widget_roi")
                       if top_widget_value is not None else None)
+    top_label_value = data.get("label_roi")
+    top_label_roi = (_roi(top_label_value, "label_roi")
+                     if top_label_value is not None else None)
     top_orientation = from_manifest(data)
     excluded_by_match, exclusion_sha256 = _exclusions(exclude_manifest)
     matches = data.get("matches")
@@ -175,6 +181,8 @@ def build(manifest: Path, output: Path, samples_per_match: int = 100,
     }
     if top_widget_roi is not None:
         exported["widget_roi"] = top_widget_roi
+    if top_label_roi is not None:
+        exported["label_roi"] = top_label_roi
     if top_orientation is not None:
         exported["orientation"] = top_orientation
     summary = {split: {"matches": 0, "samples": 0} for split in SPLITS}
@@ -206,6 +214,9 @@ def build(manifest: Path, output: Path, samples_per_match: int = 100,
         widget_value = match.get("widget_roi", top_widget_roi)
         match_widget_roi = (_roi(widget_value, f"widget_roi for {match_id}")
                             if widget_value is not None else None)
+        label_value = match.get("label_roi", top_label_roi)
+        match_label_roi = (_roi(label_value, f"label_roi for {match_id}")
+                           if label_value is not None else None)
         match_orientation = resolve(
             video, from_manifest(match, f"{match_id}") or top_orientation)
 
@@ -249,6 +260,8 @@ def build(manifest: Path, output: Path, samples_per_match: int = 100,
             exported_match["roi"] = match_roi
         if "widget_roi" in match and match_widget_roi is not None:
             exported_match["widget_roi"] = match_widget_roi
+        if "label_roi" in match and match_label_roi is not None:
+            exported_match["label_roi"] = match_label_roi
         exported["matches"].append(exported_match)
         summary[split]["matches"] += 1
         summary[split]["samples"] += len(samples)

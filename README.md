@@ -54,13 +54,13 @@
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
 | Android 13/14 截屏与横屏取帧 | 已实现 | 已完成模拟器链路验证 |
-| 小地图敌方头像识别 | 本机开发候选已接入 | checkpoint `f7176b7ea9de65fb0f1fe4262514992fdda2ed8691a7a87851a2d27a910c7cfb`，YOLOX Nano 320 / ncnn，confidence `0.19`、NMS `0.5`；video6 方向事件子指标只是在 legacy fixed-ROI crop 内的开发结果，不代表完整地图覆盖；ncnn raw parity 超过严格门槛；video8 旧分数受右缘截断污染，不能作为模型效果结论；APK 公共默认 profile 仍关闭检测器 |
-| 小地图自适应定位 | 学习定位器 v2 已完成开发评测，尚未接入 Android | 128 张全屏边界中 video8 的 16 张已重校；video6 val 16/16 覆盖真值，另 120 张 video8 布局帧是同场开发诊断（同场 16 帧参与训练），不是独立留出。布局成绩不代表敌人检测已修好，也不代表独立发布门禁通过；见[定位器记录](validation/MINIMAP_LOCATOR.md) |
+| 小地图敌方头像识别 | HD-only 人工标注中 | 低清模型与指标已退役；当前开发集只使用已替换为高清的 `video1.mp4`、video2hd、video3hd、video4hd、video5hd、video7、video8、video10，video11 为 HD dev-val。video12 主留出、video9 跨来源留出继续封存；APK 默认关闭检测器 |
+| 小地图自适应定位 | 旧版定位器实验留档，尚未接入 Android | v2 使用旧低清 video6 val；其定位指标仅作历史，不属于当前 HD-only 验证，也不代表独立发布门禁通过。video8 布局帧为同场诊断；见[定位器记录](validation/MINIMAP_LOCATOR.md) |
 | 简短声音提示 | 已实现 | 事件合并、冷却与优先级规则可用 |
 | 视野记忆 | 已实现实验版 | APPEAR / TRACK / DISAPPEAR / LAST_DIRECTION；连续命中后才显示，消失需多帧确认，DISAPPEAR 后最后位置与移动方向保留 4 秒 |
 | 空间音频与触觉编码 | 已接入实验版 | 左右声道增益和方向震动已实现；尚未完成真实玩家验收 |
 | 录像回放、多人标注与离线评测 | 已实现 | 支持 COCO 数据导出 |
-| 独立留出对局与实体机验收 | 未通过／待测 | video8 固定 ROI 截断目标，旧逐帧分数不能作为完整小地图模型结论；需要新留出对局，Android 13/14 实体机也仍待验收 |
+| 独立留出对局与实体机验收 | 待测 | video12 与 video9 已封存，当前不得运行模型或查看预测；Android 13/14 实体机仍待验收 |
 
 完整指标、证据边界与待验证项见 [当前验证状态](validation/STATUS.md)。
 
@@ -75,23 +75,22 @@ python -m pip install -e '.[test]'
 python -m pytest -q
 ```
 
-启动统一标注网站（页面内切换全部队列，共用一个端口）：
+启动当前 HD 人工复核队列（共用 `8765` 端口）：
 
 ```sh
 PYTHONPATH=python python3 -m mapassist.annotation_server \
-  --dataset minimap-layout=data/private/minimap-layout-review-v1/queue \
-  --dataset minimap-layout-video8=data/private/minimap-layout-video8-v1/queue \
-  --dataset dense-v1-6=data/private/minimap-review-v4-dense \
-  --dataset expanded-video7=data/private/minimap-review-v6-video7-expanded \
-  --dataset holdout-video7=data/private/minimap-video7-holdout-v1 \
-  --dataset video8-v3=data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi \
   --dataset video1-hd=data/private/minimap-review-video1-hd-v1 \
-  --dataset reviewed-v1-5=data/private/minimap-review-v3 \
-  --dataset reviewed-v6=data/private/holdout-video6/blind-review \
+  --dataset video2-hd=data/private/minimap-review-video2-hd-v1 \
+  --dataset video3-hd=data/private/minimap-video3hd-new-match-20260928-a/blind-review-v1 \
+  --dataset video4-hd=data/private/minimap-review-video4-hd-v1 \
+  --dataset video5-hd=data/private/minimap-review-video5-hd-v1 \
+  --dataset video7-edge=data/private/minimap-review-video7-edge-recheck-v1 \
+  --dataset video8-hd=data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi \
+  --dataset video10-11-hd=data/private/minimap-video10-11-hd-development-v1/queue \
   --host 127.0.0.1 --port 8765 --open
 ```
 
-video8-v3 已完成 120 张安全 ROI 复核；video1-hd 已完成 100 个任务复核（83 `corrected`／163 框、12 `negative`、5 `excluded`），并纳入合并 safe-ROI 训练集。旧 video1 标签只能作为仿射迁移后的建议框，不能直接作为高清真值。规则、进度和坐标见[团队协作文档](docs/团队协作与本地运行.md)、[video1 高清记录](validation/VIDEO1_HD.md)和[video8 记录](validation/VIDEO8.md)。
+`video1-hd` 和 `video8-hd` 已完成，放在网站中供查阅；其余队列须人工标完后才能导出当前 HD COCO 或训练。三层 ROI、video9/12 封存规则和队列状态见[验证状态](validation/STATUS.md)与[录像接收记录](validation/VIDEO_INTAKE_2026-09-28.md)。旧低清队列仅供历史查阅，不由默认命令加载。
 
 Android Studio 直接打开 `android/`。首次原生构建会下载并校验固定版本的 ncnn Android 依赖；调试 APK 的命令行构建方式记录在[团队协作文档](docs/团队协作与本地运行.md)。
 

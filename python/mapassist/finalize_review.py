@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -19,6 +20,8 @@ def _roi(value: object, label: str) -> list[float]:
                 for item in value)):
         raise ValueError(f"{label} must be normalized [x, y, width, height]")
     result = [float(item) for item in value]
+    if not all(math.isfinite(item) for item in result):
+        raise ValueError(f"{label} must contain finite normalized numbers")
     x, y, width, height = result
     if (x < 0 or y < 0 or width <= 0 or height <= 0 or
             x + width > 1.000001 or y + height > 1.000001):
@@ -42,6 +45,9 @@ def finalize(review_manifest: Path, output: Path) -> dict:
     default_widget_roi_value = data.get("widget_roi")
     default_widget_roi = (_roi(default_widget_roi_value, "Review widget_roi")
                           if default_widget_roi_value is not None else None)
+    default_label_roi_value = data.get("label_roi")
+    default_label_roi = (_roi(default_label_roi_value, "Review label_roi")
+                         if default_label_roi_value is not None else None)
     default_orientation = from_manifest(data)
 
     pending = []
@@ -92,6 +98,10 @@ def finalize(review_manifest: Path, output: Path) -> dict:
             if widget_roi_value is not None:
                 exported["widget_roi"] = _roi(
                     widget_roi_value, f"{match.get('id')} widget_roi")
+            label_roi_value = match.get("label_roi")
+            if label_roi_value is not None:
+                exported["label_roi"] = _roi(
+                    label_roi_value, f"{match.get('id')} label_roi")
             exported_matches.append(exported)
     if pending:
         preview = ", ".join(pending[:5])
@@ -105,6 +115,8 @@ def finalize(review_manifest: Path, output: Path) -> dict:
         result["roi"] = default_roi
     if default_widget_roi is not None:
         result["widget_roi"] = default_widget_roi
+    if default_label_roi is not None:
+        result["label_roi"] = default_label_roi
     if default_orientation is not None:
         result["orientation"] = default_orientation
     output.parent.mkdir(parents=True, exist_ok=True)

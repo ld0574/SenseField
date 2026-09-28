@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -22,9 +23,13 @@ def _sha256(path: Path) -> str:
 
 
 def _normalized_roi(value: list[float]) -> list[float]:
-    if len(value) != 4 or any(not isinstance(item, (int, float)) for item in value):
+    if (not isinstance(value, list) or len(value) != 4 or
+            any(not isinstance(item, (int, float)) or isinstance(item, bool)
+                for item in value)):
         raise ValueError("roi must be four normalized numbers")
     roi = [float(item) for item in value]
+    if not all(math.isfinite(item) for item in roi):
+        raise ValueError("roi must contain finite normalized numbers")
     x, y, width, height = roi
     if (x < 0 or y < 0 or width <= 0 or height <= 0 or
             x + width > 1.000001 or y + height > 1.000001):
@@ -79,7 +84,8 @@ def _prediction_commitment(metadata: Path, video: Path) -> tuple[int, int, dict]
 
 def build(video: Path, prediction_metadata: Path, output: Path, match_id: str,
           roi: list[float], sample_count: int = 60,
-          widget_roi: list[float] | None = None) -> dict:
+          widget_roi: list[float] | None = None,
+          label_roi: list[float] | None = None) -> dict:
     video = video.resolve()
     prediction_metadata = prediction_metadata.resolve()
     if not video.is_file():
@@ -91,6 +97,8 @@ def build(video: Path, prediction_metadata: Path, output: Path, match_id: str,
     roi = _normalized_roi(roi)
     if widget_roi is not None:
         widget_roi = _normalized_roi(widget_roi)
+    if label_roi is not None:
+        label_roi = _normalized_roi(label_roi)
     orientation = resolve(video)
     fps, frame_count, commitment = _prediction_commitment(
         prediction_metadata, video)
@@ -155,6 +163,8 @@ def build(video: Path, prediction_metadata: Path, output: Path, match_id: str,
     }
     if widget_roi is not None:
         manifest["widget_roi"] = widget_roi
+    if label_roi is not None:
+        manifest["label_roi"] = label_roi
     (output / "review-manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -187,11 +197,14 @@ def main() -> None:
     parser.add_argument("--widget-roi", type=float, nargs=4,
                         metavar=("X", "Y", "WIDTH", "HEIGHT"),
                         help="Optional normalized minimap widget/direction reference")
+    parser.add_argument("--label-roi", type=float, nargs=4,
+                        metavar=("X", "Y", "WIDTH", "HEIGHT"),
+                        help="Optional normalized annotation-center boundary")
     args = parser.parse_args()
     try:
         result = build(args.video, args.prediction_metadata, args.output,
                        args.match_id, args.roi, args.sample_count,
-                       args.widget_roi)
+                       args.widget_roi, args.label_roi)
         print(json.dumps(result, ensure_ascii=False, indent=2))
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
         print(f"error: {error}", file=sys.stderr)
