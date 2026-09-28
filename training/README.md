@@ -170,6 +170,29 @@ PYTHONPATH=build/third_party/YOLOX:python \
 
 冻结 checkpoint 在相同 video6 val 上以 NMS `0.4/0.5/0.6/0.7/0.8` 各扫描 confidence `0.01–0.95`（step `0.001`，每档 941 点）。P≥0.90 的最大 recall 点五档完全相同：confidence `0.807`、TP/FP/FN `103/11/120`、P/R/F1 `90.3509% / 46.1883% / 61.1276%`；该 precision 门槛下 NMS 没有收益。低 precision 的 max-F1 点在 NMS `0.4` 和 `0.5` 下都为 confidence `0.419`：P/R/F1 分别是 `79.5699% / 66.3677% / 72.3716%` 与 `79.1444% / 66.3677% / 72.1951%`。严格同 confidence 对比的 TP/FP/FN 分别为 `148/38/75` 与 `148/39/75`；NMS `0.4` 只少 1 个 FP。两者的 17 个 3+ 目标密集帧均为 TP/FP/FN `30/3/24`、recall `55.5556%`；非歧义右侧框均命中 `28/53`（recall `52.8302%`），其中方向也预测为右侧的均为 `26/53`（`49.0566%`）。作为归因对照，固定 NMS `0.5`、仅把 confidence 从 `0.807` 降到 `0.419`，密集帧 recall 从 `27.7778%` 升至 `55.5556%`、右侧 recall 从 `32.0755%` 升至 `52.8302%`；这些召回提升来自降低 confidence，不能归因于 NMS。完整曲线与逐帧明细见本机 build 产物 `video6-safe-roi-nms-confidence-sweep-001.json`，SHA-256 `8ca4df76050062fb4c831d36fe5189a37fcdd075bd6a83aa3a2edf9ee55face2`。此扫描仍使用已参与模型／阈值选择的 development video6，不是独立留出成绩；不更改 Android。
 
+#### YOLOX + red-ring 固定规则原型（仅离线开发）
+
+新增 `training/evaluate_yolox_red_ring_hybrid.py`，对显式传入的冻结 checkpoint 在 COCO safe-ROI crop 上重新推理，并在同一 crop 坐标中读取预测框像素。`.807` 及以上直接通过；`.45` 至 `.807` 以下的候选要求严格红色 `R≥90` 且 `R≥1.25×G,B`。边带宽为 `max(2, round(direction_roi 短边×0.032))`，单边至少 3 个红像素，要求至少三边支持和一组对边；ring score 为 `红像素总数 + 2×min(左,右) + 2×min(上,下) + 3×支持边数`，下限为 `188`。基线与 hybrid 均以同一 NMS `0.5` 预测和 IoU `0.5` 一对一匹配。命令只运行一个固定规则，没有置信度或 ring-score 搜索；输入 checkpoint、split、全部阈值和输出文件都显式记录。
+
+在 video6 safe-ROI val（152 帧／223 框）复现时，baseline 为 TP/FP/FN `103/11/120`、P/R/F1 `90.3509% / 46.1883% / 61.1276%`；hybrid 为 `111/12/112`、`90.2439% / 49.7758% / 64.1618%`。其中按真值框数≥3 分组的密集帧，baseline `15/3/39`、P/R/F1 `83.3333% / 27.7778% / 41.6667%`，hybrid `19/3/35`、`86.3636% / 35.1852% / 50.0000%`；按 `direction_roi` 筛选的右侧框，baseline `16/9/43`、`64.0000% / 27.1186% / 38.0952%`，hybrid `17/10/42`、`62.9630% / 28.8136% / 39.5349%`。
+
+复现使用 checkpoint SHA-256 `de276061fda434f5a480bbad6023a2ef4280568d3cee91e448a99c540142fe53`、`instances_val2017.json` SHA-256 `6d1d4ad35e150533de85b965d4f2096ebc2c9b80442fdcb4ef249a140ef7754e`、评测脚本 SHA-256 `418b29ec69589982631455849cd83e045e6cfa57315ec63526d6f9f107e56122`。输出 JSON SHA-256 `aaa2acc7cf8dd70930a3057e782d6c9aa58fa4962b87aff10063f7900fd8387c`，位于 ignored build 目录 `build/training/video6-safe-roi-yolox-red-ring-hybrid-fixed.json`；报告中也保存这些哈希及推理器、基础评测器、实验配置和红像素原生实现的哈希。
+
+```sh
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python training/evaluate_yolox_red_ring_hybrid.py \
+  --yolox-root build/third_party/YOLOX \
+  --data-dir data/private/minimap-review-v6-video7-expanded/coco-video2-7-video1-hd-video8-safe-roi \
+  --checkpoint build/training/yolox-nano-minimap-safe-roi-coco-lr1-320/best_ckpt.pth \
+  --input-size 320 --split val --nms-threshold 0.5 --iou-threshold 0.5 \
+  --high-confidence 0.807 --low-confidence 0.45 --ring-score-min 188 \
+  --red-min 90 --red-dominance 1.25 --band-ratio 0.032 \
+  --min-band 2 --min-sides 3 --pixels-per-side 3 \
+  --output build/training/video6-safe-roi-yolox-red-ring-hybrid-fixed.json
+```
+
+这些参数来自此前对同一 video6 development val 的原型探索，本次工具只重放冻结参数，没有在评估时自动选阈值。因此它只能作为可复现的开发对照，不是独立留出成绩；整体 recall `49.7758%` 仍明显低于 `80%` 门槛。该规则只是离线原型，未导出模型或改动 Android 资产，未通过 Android 集成／真机门禁，也没有 video9 的全新真人对局评估；距离发布门禁仍很远。video6 已参与训练和规则选择，不能用于证明泛化。
+
 #### 均衡困难样本 v1（淘汰）
 
 从上述 safe-ROI full fine-tune checkpoint 继续微调，使用均衡困难样本集 `data/private/minimap-review-v6-video7-expanded/coco-video2-7-video1-hd-video8-safe-roi-lr1-balanced-hard-v1`。train 为 1,166 张／1,989 框，video6 val 保持 152 张／223 框；有数据 split 的 ROI provenance audit 为 `provenance_clear`，test 为空。最多训练 30 轮，第 25 轮早停；best epoch 5，confidence `0.85`、NMS `0.5`。固定 video6 val 的 TP/FP/FN 为 `72/8/151`，P/R/F1 为 `90.0000% / 32.2870% / 47.5248%`。
