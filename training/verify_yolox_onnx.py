@@ -29,6 +29,79 @@ def _decode(raw, input_size: int):
     return decoded
 
 
+def _raw_difference_detail(torch_raw, candidate_raw, input_size: int,
+                           confidence: float, np, candidate_name: str = "onnx"):
+    """Describe the single worst raw cell without hiding a failed raw gate."""
+    torch_values = np.asarray(torch_raw, dtype=np.float32).reshape(-1, 6)
+    candidate_values = np.asarray(candidate_raw, dtype=np.float32).reshape(-1, 6)
+    if torch_values.shape != candidate_values.shape or not len(torch_values):
+        return None
+
+    delta = np.abs(torch_values - candidate_values)
+    row, channel = np.unravel_index(int(np.argmax(delta)), delta.shape)
+    row = int(row)
+    channel = int(channel)
+    offset = 0
+    stride = None
+    grid_x = None
+    grid_y = None
+    for candidate_stride in (8, 16, 32):
+        grid_size = input_size // candidate_stride
+        end = offset + grid_size * grid_size
+        if row < end:
+            local_row = row - offset
+            stride = candidate_stride
+            grid_x = local_row % grid_size
+            grid_y = local_row // grid_size
+            break
+        offset = end
+
+    torch_value = float(torch_values[row, channel])
+    candidate_value = float(candidate_values[row, channel])
+    item = {
+        "row": row,
+        "channel": channel,
+        "channel_name": (
+            "center_x_offset", "center_y_offset", "log_width", "log_height",
+            "objectness_probability", "class_probability",
+        )[channel],
+        "torch_value": torch_value,
+        f"{candidate_name}_value": candidate_value,
+        "absolute_error": float(delta[row, channel]),
+        "torch_confidence": float(torch_values[row, 4] * torch_values[row, 5]),
+        f"{candidate_name}_confidence": float(
+            candidate_values[row, 4] * candidate_values[row, 5]
+        ),
+        "confidence_threshold": confidence,
+    }
+    if stride is not None:
+        item["stride"] = stride
+        item["grid_x"] = int(grid_x)
+        item["grid_y"] = int(grid_y)
+        if channel == 0 or channel == 1:
+            item["decoded_coordinate_error_pixels"] = float(delta[row, channel] * stride)
+        elif channel == 2 or channel == 3:
+            with np.errstate(over="ignore", invalid="ignore"):
+                decoded_delta = stride * abs(
+                    np.exp(torch_value) - np.exp(candidate_value)
+                )
+            item["decoded_size_error_pixels"] = (
+                float(decoded_delta) if np.isfinite(decoded_delta) else None
+            )
+    item["torch_above_confidence_threshold"] = item["torch_confidence"] >= confidence
+    item[f"{candidate_name}_above_confidence_threshold"] = (
+        item[f"{candidate_name}_confidence"] >= confidence
+    )
+    item["raw_max_error_by_channel"] = {
+        name: float(delta[:, index].max())
+        for index, name in enumerate((
+            "center_x_offset", "center_y_offset", "log_width", "log_height",
+            "objectness_probability", "class_probability",
+        ))
+    }
+    return item
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--yolox-root", type=Path, required=True)
@@ -100,6 +173,9 @@ def main() -> None:
             "image": image_info["file_name"],
             "raw_max_abs_error": float(raw_error.max()),
             "raw_mean_abs_error": float(raw_error.mean()),
+            "raw_max_detail": _raw_difference_detail(
+                torch_raw, onnx_raw, args.input_size, args.confidence, np
+            ),
             "torch_detections": int(len(torch_array)),
             "onnx_detections": int(len(onnx_array)),
             "detections_match": bool(same_detections),
@@ -109,7 +185,7 @@ def main() -> None:
         for item in results
     )
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "images": len(results),
         "input_size": args.input_size,
         "confidence": args.confidence,

@@ -1515,45 +1515,76 @@ def test_profile_bundle_contains_android_templates(tmp_path: Path) -> None:
         tmp_path / "enemy.png").read_bytes()
 
 
-def test_frozen_fixed_roi_android_profile_matches_development_profile() -> None:
+def test_hd_bootstrap_android_profile_matches_candidate_metadata() -> None:
     root = Path(__file__).resolve().parents[1]
-    desktop = json.loads((root / "profiles/hok_minimap_development.json").read_text())
+    desktop = json.loads((root / "profiles/hok_minimap_hd_bootstrap.json").read_text())
     bundled = json.loads(
-        (root / "profiles/hok_minimap_development.android.json").read_text()
+        (root / "profiles/hok_minimap_hd_bootstrap.android.json").read_text()
     )
     for key in ("schema_version", "name", "profile_version", "game", "verified", "rois",
                 "detectors", "models", "thresholds", "events"):
         assert bundled[key] == desktop[key]
-    android_profile = root / "profiles/hok_minimap_development.android.json"
+    assert bundled["verified"] is False
+    assert bundled["detectors"]["minimap_yolox"] is True
+    assert bundled["rois"]["minimap"] == pytest.approx(
+        [55 / 2400, 0, (510 - 55) / 2400, 420 / 1080]
+    )
+    assert bundled["rois"]["minimap_direction"] == pytest.approx(
+        [120 / 2400, 0, (465 - 120) / 2400, 347 / 1080]
+    )
+    assert bundled["profile_version"] == "0.7.0-yolox-nano-hd-bootstrap-video4-video5-v1"
+    assert bundled["thresholds"]["minimap_yolox_confidence"] == pytest.approx(0.51)
+    assert bundled["models"]["minimap_yolox_bin_sha256"] == (
+        "bb4ac4583dd668388180ddaa3265827f8c6d71aa1980a5cfba8e1f784bd7992d"
+    )
+    android_profile = root / "profiles/hok_minimap_hd_bootstrap.android.json"
     profile_sha256 = hashlib.sha256(android_profile.read_bytes()).hexdigest()
-    assert profile_sha256 == "b21d347da24bc627aea8585ba1d20d0a8915390ec42539aba890c5aec41559b3"
     metadata_path = root / "android/app/src/main/assets/minimap-yolox-nano-320.metadata.json"
     metadata = json.loads(
         metadata_path.read_text(encoding="utf-8")
     )
     assert metadata["candidate"]["development_profile_android_sha256"] == profile_sha256
-    assert metadata["provenance"] == {
-        "direction_fixed_evaluation": {
-            "path": "build/training/yolox-nano-minimap-video1-7-hardfp-320/fixed-val-evaluation-with-direction-events.json",
-            "sha256": "117561be1bb634cb2caf327bbb106bd27820716ccbde74adde5114504506c95e",
-        },
-        "validation_annotations": {
-            "path": "data/private/minimap-review-v6-video7-expanded/coco-minimap-video1-7-expanded-video6-dev/annotations/instances_val2017.json",
-            "sha256": "954c5687978012f280c2f83b6dedf71e4e9568062cc4fd999aca96227f64b981",
-        },
-        "ncnn_conversion": {
-            "path": "build/models/minimap-yolox-nano-hardfp-320-candidate/ncnn-conversion.json",
-            "sha256": "6c36e0f0110cd96fdfc2b89be73c8578932cc7a895311894511272f178ca788b",
-        },
-        "onnx_parity_report": {
-            "path": "build/models/minimap-yolox-nano-hardfp-320-candidate/onnx-parity-video6-dev-full.json",
-            "sha256": "2afee938651f1c8df9fe55f104e39cf4641e349077c873bb0fee8c993614ee33",
-        },
-        "ncnn_parity_report": {
-            "path": "build/models/minimap-yolox-nano-hardfp-320-candidate/ncnn-parity-video6-dev-full.json",
-            "sha256": "0341ac24e364994b554c9997aaf3a744dc41e07872935425d7a4d067ef5dc119",
-        },
+    assert metadata["candidate"]["id"] == (
+        "yolox-nano-hd-bootstrap-video4-video5-dev-candidate"
+    )
+    assert metadata["candidate"]["profile_version"] == bundled["profile_version"]
+    assert metadata["source"]["checkpoint_sha256"] == (
+        "6112fa5ca4829eed583eb2f07c84b679b468294bc78c6410e11c7f071987f1fa"
+    )
+    assert metadata["runtime"]["bin_sha256"] == bundled["models"][
+        "minimap_yolox_bin_sha256"
+    ]
+    assert metadata["verified"] is False
+    assert metadata["development_validation"]["split"].startswith("video2-HD dev-val")
+    assert metadata["development_validation"]["images"] == 100
+    assert metadata["development_validation"]["ncnn_runtime_box_detection_metrics"] == {
+        "tp": 175,
+        "fp": 14,
+        "fn": 22,
+        "precision": 0.925926,
+        "recall": 0.888325,
+        "f1": 0.906736,
     }
+    assert metadata["parity"]["pytorch_vs_onnx"]["passed"] is False
+    assert metadata["parity"]["pytorch_vs_onnx"]["maximum_raw_error"] == pytest.approx(
+        0.0022966861724853516
+    )
+    assert metadata["parity"]["pytorch_vs_onnx"]["raw_failed_images"] == 40
+    assert metadata["parity"]["pytorch_vs_onnx"]["final_detection_array_check"] == {
+        "passed_images": 100,
+        "comparison": "numpy.allclose",
+        "rtol": 1e-4,
+        "atol": 1e-4,
+        "scope": "postprocessed final detection arrays; does not satisfy the independent raw-output gate",
+    }
+    assert metadata["parity"]["torchscript_vs_ncnn_and_android_preprocess"]["overall_passed"] is False
+    ncnn_parity = metadata["parity"]["torchscript_vs_ncnn_and_android_preprocess"]
+    assert ncnn_parity["raw_max_error"] == pytest.approx(0.000997304916381836)
+    assert ncnn_parity["images_with_matching_final_detection_counts"] == 98
+    assert ncnn_parity["reference_detections"] == 187
+    assert ncnn_parity["runtime_detections"] == 189
+    assert ncnn_parity["all_final_detection_counts_match"] is False
+    assert ncnn_parity["max_detection_value_error"] == pytest.approx(0.724517822265625)
 
 
 def test_android_metadata_records_video7_development_replay_smokes() -> None:
@@ -1562,7 +1593,7 @@ def test_android_metadata_records_video7_development_replay_smokes() -> None:
         (root / "android/app/src/main/assets/minimap-yolox-nano-320.metadata.json")
         .read_text(encoding="utf-8")
     )
-    smokes = metadata["development_replay_smokes"]
+    smokes = metadata["historical_candidate"]["historical_replay_smokes"]
     assert "video7 development data chain" in smokes["scope"]
     assert "not independent quality evaluations" in smokes["scope"]
     assert smokes["runtime_artifacts"] == {

@@ -54,7 +54,7 @@
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
 | Android 13/14 截屏与横屏取帧 | 已实现 | 已完成模拟器链路验证 |
-| 小地图敌方头像识别 | HD-only bootstrap 可作标注辅助 | 当前人工复核 train 为 video1+8+3 共 334 图／642 框，val 为 video2-HD 100 图／197 框；test 为空。video2-HD 用于选模和阈值，因此指标只是同场开发诊断；video9/12 继续封存，APK 默认关闭检测器 |
+| 小地图敌方头像识别 | HD-only bootstrap 本机开发候选，默认关闭 | 当前人工复核 train 为 video1+8+3+4+5 共 534 图／981 框，val 为 video2-HD 100 图／197 框；test 为空。video2-HD 用于选模和阈值，因此指标只是同场开发诊断；video9/12 继续封存，候选 `verified=false`，APK 默认关闭检测器 |
 | 小地图自适应定位 | 旧版定位器实验留档，尚未接入 Android | v2 使用旧低清 video6 val；其定位指标仅作历史，不属于当前 HD-only 验证，也不代表独立发布门禁通过。video8 布局帧为同场诊断；见[定位器记录](validation/MINIMAP_LOCATOR.md) |
 | 简短声音提示 | 已实现 | 事件合并、冷却与优先级规则可用 |
 | 视野记忆 | 已实现实验版 | APPEAR / TRACK / DISAPPEAR / LAST_DIRECTION；连续命中后才显示，消失需多帧确认，DISAPPEAR 后最后位置与移动方向保留 4 秒 |
@@ -90,7 +90,7 @@ PYTHONPATH=python python3 -m mapassist.annotation_server \
   --host 127.0.0.1 --port 8765 --open
 ```
 
-当前 bootstrap 使用 video1+8+3 train（334 图／642 框）和 video2-HD val（100 图／197 框）；test 为空，不能报告最终成绩。官方 COCO YOLOX-Nano 初始化训练计划 12 轮，在第 8 轮早停（best epoch 4，121.87 秒）。自动阈值诊断点 c=0.21 为 90.10%／87.82%／88.95%（P/R/F1）；video2-HD 用于选模和阈值，因此属于同场开发诊断，不是独立成绩。标注辅助点为 c=0.33 并加 label_roi 后处理，P/R/F1 为 94.97%／86.29%／90.43%。ONNX 最终检测 100/100 一致，但未通过严格数值 parity；该模型只供人工标注辅助，不接入 Android。video9/12 继续封存；队列状态见[验证状态](validation/STATUS.md)与[录像接收记录](validation/VIDEO_INTAKE_2026-09-28.md)。
+当前 bootstrap 使用 video1+8+3+4+5 train（534 图／981 框）和 video2-HD val（100 图／197 框）；test 为空，不能报告最终成绩。video2-HD 用于选模和阈值，因此当前候选指标只是同场开发诊断，不是独立成绩。固定 `c=0.51` 下，PyTorch TP/FP/FN 为 `174/13/23`（P/R/F1 `93.0481% / 88.3249% / 90.6250%`），Android 等价 ncnn 为 `175/14/22`（`92.5926% / 88.8325% / 90.6736%`）。ONNX/ncnn 严格 raw parity 和 Android 等价检测门禁均失败；候选 `verified=false`，仅供本机调试，公共默认 detector 仍关闭。video9/12 没有读取或运行模型，继续封存；队列状态见[验证状态](validation/STATUS.md)与[录像接收记录](validation/VIDEO_INTAKE_2026-09-28.md)。
 
 Android Studio 直接打开 `android/`。首次原生构建会下载并校验固定版本的 ncnn Android 依赖；调试 APK 的命令行构建方式记录在[团队协作文档](docs/团队协作与本地运行.md)。
 

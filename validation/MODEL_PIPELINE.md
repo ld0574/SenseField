@@ -1,5 +1,34 @@
 # 模型接入记录
 
+## HD bootstrap video4+video5 TorchScript / ncnn 开发候选（2026-09-29）
+
+当前候选以 video1+8+3+4+5 的人工复核帧训练，COCO train 为 534 图／981 框；video2-HD val 为 100 图／197 框，test 为空。video2-HD 已用于历轮选模和本轮 confidence 选择，以下是 same-match 开发诊断，不是独立成绩。video9/12 没有读取或运行模型。本机候选仍为 `verified=false`，public defaults 继续关闭；严格转换和 Android 等价检测门禁失败，开发集检测质量通过不能覆盖这些失败。
+
+训练使用 video3-HD checkpoint 初始化，在 MPS 上以 seed `20260929`、input `320`、batch `16`、`lr_scale=0.25` 最多训练 12 轮；第 10 轮早停，best epoch 6，墙钟 196.834 秒，启动器硬上限 1,200 秒。checkpoint SHA-256 为 `6112fa5ca4829eed583eb2f07c84b679b468294bc78c6410e11c7f071987f1fa`。固定 `c=0.51`、NMS `0.5`、IoU `0.5` 的 PyTorch 评估为 TP/FP/FN `174/13/23`、P/R/F1 `93.0481% / 88.3249% / 90.6250%`。报告见 `build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/torchscript-development-evaluation-video2-100-c051-iou050.json`。
+
+| 门禁 | video2-HD 100 张结果 | 状态 |
+| --- | --- | --- |
+| PyTorch→ONNX raw（门限 `0.0005`） | 最大误差 `0.002296686`，40/100 帧超限；最终 detection arrays 在 100/100 帧通过 verifier 的 `np.allclose(rtol=1e-4, atol=1e-4)` 检查 | 失败 |
+| TorchScript→ncnn raw（门限 `0.0005`） | 最大误差 `0.000997305`，97/100 张通过；3 张超限 | 失败 |
+| Android 等价 resize/pad 输入 | 最大像素差 `1`（门限 `1.0`） | 通过 |
+| Android 等价检测数量 | 98/100 张一致，总数 `187/189`；video2-hd_000445090 为 `3/4`，video2-hd_000483410 为 `2/3` | 失败 |
+| Android 等价 detection values（门限 `0.01`） | 最大误差 `0.724518`；配对 IoU min/median `0.95910/0.99876`，置信度最大差 `0.008447` | 失败 |
+| ncnn runtime detections 对 COCO val（`c=0.51`、IoU `0.5`） | TP/FP/FN `175/14/22`，P/R/F1 `92.5926% / 88.8325% / 90.6736%`；P≥90%、R≥80% | 质量门槛通过；不改变 parity 结论 |
+
+ONNX 最大 raw 差在 `video2-hd_000770810.png` 的 stride 8 cell `(x=31,y=36)`、row 1471 `center_y_offset`：PyTorch `1.02278662`，ONNX `1.02048993`，绝对误差 `0.002296686`，解码差约 `0.01837` 输入像素；该低置信度候选没有达到 `0.51`。ncnn 最大 raw 差在 `video2-hd_000876190.png` 的 stride 16 cell `(x=9,y=17)`、row 1949 `center_x_offset`，绝对误差 `0.000997305`，解码差约 `0.01596` 输入像素；置信度约 `1.01e-8`。它们均仍计入严格 raw 门禁失败；低置信度说明没有触发对应检测候选，不会豁免数值门禁。
+
+Android 等价输入的像素差符合 `≤1` 门限，但该预处理会让部分检测坐标偏差明显超过 `0.01`。最终配对总共 182 个候选；逐框 IoU 和 score 只作为描述，不会取代 raw 或检测值门禁。runtime detections 在 `c=0.51`、NMS `0.5` 下对 COCO 人工真值重评为 `175/14/22`；对应脚本 `training/evaluate_yolox_ncnn_report.py` 会先核对完整 val 文件列表和 100 张图的哈希，再按最大一对一 IoU≥0.5 匹配，生成逐帧 JSON。该质量分数仍是同场开发集诊断。
+
+本机 Android assets 与 profiles 已绑定同一 ncnn bin；当前 metadata 中记录 ONNX、TorchScript、ncnn、两份 profile、数据、转换和 parity 报告哈希。ncnn param/bin SHA-256 为 `4649269cae16fef3b64cc366f123ba58259a756b79f7f55d6be20cd3903cae14` / `bb4ac4583dd668388180ddaa3265827f8c6d71aa1980a5cfba8e1f784bd7992d`。Android profile SHA-256 为 `2536d6db4f8d107762acc24e7f40967e4dc44dd5c8d59268bf506497300be3d3`，`verified:false`。没有实体 Android 设备验收记录。
+
+数据与报告哈希：COCO audit `cee324488fac7fc50ae9d4d1cb6b334b044a7b85710a24024d551e5e43af4a33`；train／val annotation `7060428da188cb371df93842ad29ce6b74acca76c69c18b893e7d36712f1f537` / `9220e751343ca8c2050cab79aa543f1689ca563a4abbee4dad3a469201f425e6`；ONNX／TorchScript `b5868060b2794c4eea7885b26bbc55e9d5b22462936e7952dd8fb19097dd1926` / `996ea09e8136c265d4c7d44538f4241d74be719d5c55291e80809c7caf274257`；ONNX／ncnn parity JSON `ce2bc9b7b407f9b0495d11530097acb9801ad2ec2d7b1783e350b6029b821162` / `8e02b500ed21811d7ad0815edd9811f6efb755b7c490d38b9d37d07b15f97a30`；ncnn COCO metrics JSON `eb72b17fd65abc1a2bdce0c78fbc5f8e5e360abac1e653a4f98981162a2329d2`，评估脚本 `9268c703719bb1ef4e65be725ca75a9c37db9e44950fc546d9bd0403b3d46c33`。
+
+可复现导出与评测命令见[video4+video5 HD bootstrap 导出流程](../training/README.md#video4-hd--video5-hd-扩充训练与-android-开发候选2026-09-29)。模型和逐帧报告在 ignored `build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/`；训练结果和 COCO 审计在 ignored `build/training/yolox-nano-hd-bootstrap-video4-video5-v1-320/` 与 `data/private/hd-bootstrap-assistance-video4-video5-v1/coco/`。
+
+### 首轮 video1+8+3 bootstrap 候选（2026-09-29，历史）
+
+video4/5 纳入前的 v3 checkpoint、阈值 `0.21` 以及 parity 指标保留在其原始 artifacts 中；它们不再是当前本机 assets。该轮也使用 video2-HD 选模和置信度，因此同样不是独立成绩。其历史报告与 hash 仍可从 `build/models/yolox-nano-hd-bootstrap-video3-v1-320/` 检查。
+
 ## hard-FP 固定 ROI Android 开发候选（2026-09-27，已退役）
 
 历史开发 APK 曾使用 checkpoint `f7176b7ea9de65fb0f1fe4262514992fdda2ed8691a7a87851a2d27a910c7cfb`，输入 320、confidence `0.19`、NMS `0.5`。该低清候选、对应 checkpoint 和指标均已退役；APK 默认 profile 的 `detectors.minimap_yolox` 仍为 `false`。

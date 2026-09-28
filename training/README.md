@@ -2,7 +2,7 @@
 
 > **当前 HD-only 规则（2026-09-28）**：后续训练、验证、阈值和模型评估只使用 HD。train/dev 来源为已替换成高清内容的 `video/video1.mp4`、`video2hd`、`video3hd`、`video4hd`、`video5hd`、`video7`、`video8`、`video10`；`video11` 是 HD dev-val。`video12` 为 primary sealed holdout，`video9` 为 cross-source sealed holdout；不得对这两场运行模型或查看预测。Hero 仅用于 UX／事件故事。低清 video2–6 及其队列、模型和指标全部退役为历史；不存在 `video1hd.mp4` 或 `video6hd.mp4`。
 >
-> 当前 bootstrap split 使用 video1+8+3 train（334 图／642 框）与 video2-HD val（100 图／197 框）；test 为空，不能产生最终成绩。video3-HD 已完成 120/120 帧人工复核（102 `corrected`、18 `negative`、268 框），通过 ROI、尺寸、框合法性与裁剪边界审计，现已纳入 train。video4hd/5hd、video7-edge、video10/11 仍待复核；未审核机器框不能当真值，也不得提前加入训练、验证或 COCO。video9/12 继续封存。
+> 当前 bootstrap split 使用 video1+8+3+4+5 train（534 图／981 框）与 video2-HD val（100 图／197 框）；test 为空，不能产生最终成绩。video4-HD 已完成 100/100 帧复核（72 `corrected`、28 `negative`、150 框），video5-HD 已完成 100/100 帧复核（86 `corrected`、14 `negative`、189 框）；两队列的 SQLite／manifest、source hash、显示尺寸、三层 ROI 和 crop-edge 审计均通过，已纳入 train。video7-edge、video10/11 仍待复核；未审核机器框不能当真值，也不得提前加入训练、验证或 COCO。video9/12 继续封存。
 
 ### 低清数据与模型的历史记录（只读）
 
@@ -114,7 +114,7 @@ shasum -a 256 build/models/yolox_nano.pth
 
 ## 当前数据状态：只接受人工复核后的 HD
 
-当前 HD bootstrap train 为人工复核后的 video1+8+3（334 图／642 框），val 为 video2-HD（100 图／197 框）；test 为空，不能作为最终成绩。video3-HD 的 120/120 帧已复核完成（102 `corrected`、18 `negative`、268 框），三层 ROI、显示尺寸、框合法性和 crop-edge audit 均通过，已纳入 train。video4hd/5hd、video7-edge 和 video10/11 仍待复核，未复核前不得运行 `finalize_review` 或将其加入当前 COCO、训练或验证。任何未审核机器框都不能作为真值。video11 保持 dev-val；video9/12 保持 sealed，Hero 仅用于 UX／事件故事。低清 video2–6 及其旧 checkpoint、指标均已退役。
+当前 HD bootstrap train 为人工复核后的 video1+8+3+4+5（534 图／981 框），val 为 video2-HD（100 图／197 框）；test 为空，不能作为最终成绩。video3-HD 120/120 帧、video4-HD 100/100 帧、video5-HD 100/100 帧均已复核完成并通过三层 ROI、尺寸、框合法性和 crop-edge audit。video7-edge 和 video10/11 仍待复核，未复核前不得运行 `finalize_review` 或将其加入当前 COCO、训练或验证。任何未审核机器框都不能作为真值。video11 保持 dev-val；video9/12 保持 sealed，Hero 仅用于 UX／事件故事。低清 video2–6 及其旧 checkpoint、指标均已退役。
 
 ### HD bootstrap 训练与标注辅助（2026-09-28）
 
@@ -122,7 +122,136 @@ shasum -a 256 build/models/yolox_nano.pth
 
 标注辅助点为 `c=0.33`，加目标中心位于 `label_roi` 内的后处理后，TP/FP/FN 为 `170/9/27`，P/R/F1 为 `94.97% / 86.29% / 90.43%`。8 px 启发式工作量估算为 exact `71`、no-edit `67`、add `27`、delete `9`、reframe `21`，共 `57` 次操作；这些是估算编辑量，不是模型指标。作为简短历史对照，video3-HD 加入前的首轮 HD checkpoint 共 `128` 次操作，旧退役模型在 `c=0.40` 时为 `173` 次。
 
-ONNX 的最终检测结果在 100/100 张图上一致，但 raw 最大误差 `0.000631094` 高于严格门槛 `0.0005`，严格 parity 未通过。该模型仅用于人工复核时的标注辅助，不接入 Android；机器框经人工审核前不得当作真值。
+首轮 video1+8+3 checkpoint 的 ONNX 在 100/100 张图上通过 verifier 的 `np.allclose(rtol=1e-4, atol=1e-4)` 最终检测数组检查，但 raw 最大误差 `0.000631094` 高于严格门槛 `0.0005`，所以严格 parity 未通过。该候选已被 video4+5 扩充候选替代；新 checkpoint 的 parity 和 Android 绑定状态见下节及[模型接入记录](../validation/MODEL_PIPELINE.md)。机器框经人工审核前不得当作真值。
+
+### video4-HD + video5-HD 扩充训练与 Android 开发候选（2026-09-29）
+
+video4-HD（72 `corrected`／150 框、28 `negative`）和 video5-HD（86 `corrected`／189 框）均为从零人工复核的开发训练来源。两队列各 100/100 帧完成，SQLite 与导出 manifest 一致、没有 pending 或活动 lease；2400×1080 显示尺寸和源视频 SHA-256 匹配，所有框中心在 label ROI、完整框在 safe ROI，且无可扩展 crop 边缘接触。它们加入原 video1+8+3 后，train 为 534 图／981 框；video2-HD val 仍为 100 图／197 框，test 为空。COCO audit 的 train／val 均为 `provenance_clear`，唯一 blocker 是预期的空 test。
+
+在 video3-HD checkpoint 上以 seed `20260929`、MPS、320 输入、batch 16、`lr_scale=0.25` 做最多 12 轮受限续训；第 10 轮早停，best epoch 6，实际墙钟 196.834 秒（硬上限 1200 秒）。checkpoint SHA-256 为 `6112fa5ca4829eed583eb2f07c84b679b468294bc78c6410e11c7f071987f1fa`。video2-HD 已用于此前和本轮选模、置信度选择，因此这里只能报告 same-match 开发诊断：在固定 `c=0.51`、NMS `0.5`、IoU `0.5` 下，PyTorch 为 TP/FP/FN `174/13/23`、P/R/F1 `93.0481% / 88.3249% / 90.6250%`。相对首轮 video3 checkpoint 的 `173/19/24`（当时 confidence `0.21`），提升 `+2.9439 / +0.5076 / +1.6790` 个百分点；该比较跨 confidence，且仍来自同一个开发集。
+
+本轮候选已导出 ONNX、TorchScript 和 ncnn，并将 ncnn param/bin 及 hash metadata 更新到本机 Android assets；两个 `hok_minimap_hd_bootstrap` profiles 均绑定 `c=0.51` 和新 bin。严格门禁如实失败，profile 保持 `verified=false`，公共 APK 默认 detector 仍关闭：PyTorch→ONNX raw 最大误差 `0.002296686`，40/100 帧超过 `0.0005`；100/100 帧只通过 verifier 的 `np.allclose(rtol=1e-4, atol=1e-4)` 检查，不能称为严格数值相等。TorchScript→ncnn raw 最大误差 `0.000997305`，3/100 帧超过 `0.0005`。Android 等价 resize/pad 的最大输入像素差为 1，输入门限通过；最终 detection count 有 2/100 帧不同（reference/runtime 共 `187/189`），最大检测值误差 `0.724518`，超过 `0.01` 严格门限。配对 IoU min/median 为 `0.95910 / 0.99876`，只作描述，不能放宽严格门禁。
+
+另将 verifier 记录的 Android 等价 ncnn detections 对同一 COCO val 真值按 `c=0.51`、NMS `0.5`、IoU `0.5` 重新计分：TP/FP/FN `175/14/22`、P/R/F1 `92.5926% / 88.8325% / 90.6736%`，开发集 P≥90%、R≥80% 质量门槛通过。与 PyTorch 的 `174/13/23` 差异说明移动运行路径的结果并非完全一致；此质量诊断不能抵消 raw 与 detection parity 失败，也不是独立验证或实体手机验收。
+
+关键 SHA-256：COCO audit `cee324488fac7fc50ae9d4d1cb6b334b044a7b85710a24024d551e5e43af4a33`；train／val annotations `7060428da188cb371df93842ad29ce6b74acca76c69c18b893e7d36712f1f537`／`9220e751343ca8c2050cab79aa543f1689ca563a4abbee4dad3a469201f425e6`；ONNX／TorchScript `b5868060b2794c4eea7885b26bbc55e9d5b22462936e7952dd8fb19097dd1926`／`996ea09e8136c265d4c7d44538f4241d74be719d5c55291e80809c7caf274257`；ncnn param／bin `4649269cae16fef3b64cc366f123ba58259a756b79f7f55d6be20cd3903cae14`／`bb4ac4583dd668388180ddaa3265827f8c6d71aa1980a5cfba8e1f784bd7992d`；ONNX／ncnn parity reports `ce2bc9b7b407f9b0495d11530097acb9801ad2ec2d7b1783e350b6029b821162`／`8e02b500ed21811d7ad0815edd9811f6efb755b7c490d38b9d37d07b15f97a30`；ncnn COCO metrics JSON `eb72b17fd65abc1a2bdce0c78fbc5f8e5e360abac1e653a4f98981162a2329d2`。
+
+训练底层命令如下；本次外层监督器另施加了 1200 秒硬上限（未触发，实际 196.834 秒），外层启动器位于本机 ignored `build/`，不作为仓库复现依赖：
+
+```sh
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python training/train_yolox_minimap.py \
+  --yolox-root build/third_party/YOLOX \
+  --data-dir data/private/hd-bootstrap-assistance-video4-video5-v1/coco \
+  --pretrained build/training/yolox-nano-hd-bootstrap-video3-v1-320/best_ckpt.pth \
+  --output build/training/yolox-nano-hd-bootstrap-video4-video5-v1-320 \
+  --epochs 12 --batch-size 16 --input-size 320 --lr-scale 0.25 \
+  --mosaic-prob 0.5 --mosaic-scale-min 0.7 --mosaic-scale-max 1.3 \
+  --hsv-prob 0.8 --flip-prob 0.5 --degrees 5 --translate 0.08 --shear 1 \
+  --nms-threshold 0.5 --minimum-precision 0.9 --no-aug-epochs 2 \
+  --eval-every 2 --log-every 5 --early-stop-patience 2 \
+  --early-stop-min-epoch 8 --device mps --seed 20260929
+```
+
+导出和验证命令固定使用该目录的 checkpoint 与 COCO val，不访问任何 sealed 数据：
+
+```sh
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python build/third_party/YOLOX/tools/export_onnx.py \
+  -f training/yolox_nano_minimap.py \
+  -c build/training/yolox-nano-hd-bootstrap-video4-video5-v1-320/best_ckpt.pth \
+  --output-name build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/model.onnx \
+  --no-onnxsim test_size '(320,320)' input_size '(320,320)'
+
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python training/verify_yolox_onnx.py \
+  --yolox-root build/third_party/YOLOX \
+  --data-dir data/private/hd-bootstrap-assistance-video4-video5-v1/coco \
+  --checkpoint build/training/yolox-nano-hd-bootstrap-video4-video5-v1-320/best_ckpt.pth \
+  --onnx build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/model.onnx \
+  --input-size 320 --confidence 0.51 --images 100 --max-raw-error 0.0005 \
+  --output build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/onnx-parity-video2-100-c051-detailed.json
+
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python build/third_party/YOLOX/tools/export_torchscript.py \
+  -f training/yolox_nano_minimap.py \
+  -c build/training/yolox-nano-hd-bootstrap-video4-video5-v1-320/best_ckpt.pth \
+  --output-name build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/model.torchscript.pt \
+  test_size '(320,320)' input_size '(320,320)'
+
+.venv/bin/python training/convert_yolox_ncnn.py \
+  --torchscript build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/model.torchscript.pt \
+  --output-param build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/model.ncnn.param \
+  --output-bin build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/model.ncnn.bin \
+  --metadata build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/ncnn-conversion.json \
+  --input-size 320
+
+.venv/bin/python training/verify_yolox_ncnn.py \
+  --torchscript build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/model.torchscript.pt \
+  --param build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/model.ncnn.param \
+  --bin build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/model.ncnn.bin \
+  --data-dir data/private/hd-bootstrap-assistance-video4-video5-v1/coco --split val \
+  --image-count 100 --input-size 320 --threads 1 --max-raw-error 0.0005 \
+  --confidence 0.51 --nms-threshold 0.5 --max-runtime-input-error 1.0 \
+  --max-detection-error 0.01 \
+  --output build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/ncnn-parity-video2-100-c051-detailed.json
+
+PYTHONPATH=python .venv/bin/python training/evaluate_yolox_ncnn_report.py \
+  --data-dir data/private/hd-bootstrap-assistance-video4-video5-v1/coco \
+  --parity-report build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/ncnn-parity-video2-100-c051-detailed.json \
+  --iou-threshold 0.5 \
+  --output build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/ncnn-development-evaluation-video2-100-c051-iou050.json
+```
+
+### 首轮 video1+8+3 checkpoint TorchScript/ONNX/ncnn parity（2026-09-29，历史）
+
+以下命令复现 video4/5 纳入前的首轮 video1+8+3 候选；当前实验以 video4/5 扩充版为准。video2-HD 已参与选模和阈值选择，所有结果都是开发诊断。两个 verifier 即使发现严格门禁失败，也会先写完整 JSON 再以退出码 1 结束。
+
+```sh
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python build/third_party/YOLOX/tools/export_onnx.py \
+  -f training/yolox_nano_minimap.py \
+  -c build/training/yolox-nano-hd-bootstrap-video3-v1-320/best_ckpt.pth \
+  --output-name build/models/yolox-nano-hd-bootstrap-video3-v1-320/model.onnx \
+  --no-onnxsim \
+  test_size '(320,320)' input_size '(320,320)'
+
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python training/verify_yolox_onnx.py \
+  --yolox-root build/third_party/YOLOX \
+  --data-dir data/private/hd-bootstrap-assistance-video3-v1/coco \
+  --checkpoint build/training/yolox-nano-hd-bootstrap-video3-v1-320/best_ckpt.pth \
+  --onnx build/models/yolox-nano-hd-bootstrap-video3-v1-320/model.onnx \
+  --input-size 320 --confidence 0.21 --images 100 \
+  --max-raw-error 0.0005 \
+  --output build/models/yolox-nano-hd-bootstrap-video3-v1-320/onnx-parity-video2-100-c021-detailed.json
+
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python build/third_party/YOLOX/tools/export_torchscript.py \
+  -f training/yolox_nano_minimap.py \
+  -c build/training/yolox-nano-hd-bootstrap-video3-v1-320/best_ckpt.pth \
+  --output-name build/models/yolox-nano-hd-bootstrap-video3-v1-320/model.torchscript.pt \
+  test_size '(320,320)' input_size '(320,320)'
+
+.venv/bin/python training/convert_yolox_ncnn.py \
+  --torchscript build/models/yolox-nano-hd-bootstrap-video3-v1-320/model.torchscript.pt \
+  --output-param build/models/yolox-nano-hd-bootstrap-video3-v1-320/model.ncnn.param \
+  --output-bin build/models/yolox-nano-hd-bootstrap-video3-v1-320/model.ncnn.bin \
+  --metadata build/models/yolox-nano-hd-bootstrap-video3-v1-320/ncnn-conversion.json \
+  --input-size 320
+
+.venv/bin/python training/verify_yolox_ncnn.py \
+  --torchscript build/models/yolox-nano-hd-bootstrap-video3-v1-320/model.torchscript.pt \
+  --param build/models/yolox-nano-hd-bootstrap-video3-v1-320/model.ncnn.param \
+  --bin build/models/yolox-nano-hd-bootstrap-video3-v1-320/model.ncnn.bin \
+  --data-dir data/private/hd-bootstrap-assistance-video3-v1/coco --split val \
+  --image-count 100 --input-size 320 --threads 1 \
+  --max-raw-error 0.0005 --confidence 0.21 --nms-threshold 0.5 \
+  --max-runtime-input-error 1.0 --max-detection-error 0.01 \
+  --output build/models/yolox-nano-hd-bootstrap-video3-v1-320/ncnn-parity-video2-100-c021-detailed.json
+```
+
+The ncnn report records raw max-error location, per-frame detection pairs, paired IoU, score error, and detection-count agreement. Those semantic summaries are descriptive; they do not replace or relax the raw `0.0005` or coordinate `0.01 px` gates. The development profile [hok_minimap_hd_bootstrap.android.json](../profiles/hok_minimap_hd_bootstrap.android.json) binds the candidate weights and 2400×1080 safe ROIs while remaining `verified=false`.
 
 ## 历史低清导出、训练与验证命令（只读，不要运行）
 

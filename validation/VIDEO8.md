@@ -1,6 +1,6 @@
 # video8 真人排位小地图逐帧记录（2026-09-28 更新）
 
-> **状态：video8 v3 安全 ROI 人工重标和导出已完成。** 当前 bootstrap split 纳入 video8 的 119 帧／211 框，并与 video1、video3-HD 合计 334 图／642 框作为 train；video2-HD 的 100 图／197 框为 val，test 为空。旧冻结成绩和同场对照只作历史诊断；video9/12 仍封存，识别器默认关闭。
+> **状态：video8 v3 安全 ROI 人工重标和导出已完成。** 当前 bootstrap split 纳入 video8 的 119 帧／211 框，并与 video1、video3-HD、video4-HD、video5-HD 合计 534 图／981 框作为 train；video2-HD 的 100 图／197 框为 val，test 为空。video4-HD、video5-HD 已完成复核并纳入 train；video7-edge、video10/11 仍待复核。旧冻结成绩和同场对照只作历史诊断；video9/12 仍封存，识别器默认关闭。
 
 ## 素材与留出用途
 

@@ -237,6 +237,27 @@ def _pair_detections(reference: Any, candidate: Any, np: Any) -> list[tuple[int,
     return pairs
 
 
+def _paired_detection_metrics(reference: Any, candidate: Any,
+                              pairs: list[tuple[int, int]]) -> list[dict[str, float | int]]:
+    """Keep set-level detection evidence alongside the strict coordinate gate."""
+    metrics = []
+    for reference_index, candidate_index in pairs:
+        left = reference[reference_index]
+        right = candidate[candidate_index]
+        metrics.append({
+            "reference_index": reference_index,
+            "runtime_index": candidate_index,
+            "iou": float(_intersection_over_union(left, right)),
+            "reference_score": float(left[4]),
+            "runtime_score": float(right[4]),
+            "score_abs_error": abs(float(left[4]) - float(right[4])),
+            "max_box_coordinate_abs_error": max(
+                abs(float(left[index]) - float(right[index])) for index in range(4)
+            ),
+        })
+    return metrics
+
+
 def _build_ncnn_net(param: Path, model_bin: Path, threads: int, ncnn: Any, np: Any):
     live_layers: list[Any] = []
 
@@ -383,6 +404,10 @@ def main() -> None:
         parser.error("--output must not overwrite the COCO annotation input")
     model = torch.jit.load(str(torchscript), map_location="cpu").eval()
     net, live_layers = _build_ncnn_net(param, model_bin, args.threads, ncnn, np)
+    try:
+        from .verify_yolox_onnx import _raw_difference_detail
+    except ImportError:
+        from verify_yolox_onnx import _raw_difference_detail  # type: ignore
 
     results = []
     try:
@@ -463,6 +488,9 @@ def main() -> None:
                         pairs = _pair_detections(
                             reference_detections, runtime_detections, np
                         )
+                        pair_metrics = _paired_detection_metrics(
+                            reference_detections, runtime_detections, pairs
+                        )
                         detection_error = (
                             max(
                                 float(np.abs(
@@ -475,12 +503,14 @@ def main() -> None:
                         )
                     else:
                         pairs = []
+                        pair_metrics = []
                         detection_error = None
                 else:
                     reference_detections = np.empty((0, 5), dtype=np.float32)
                     runtime_detections = np.empty((0, 5), dtype=np.float32)
                     count_match = False
                     pairs = []
+                    pair_metrics = []
                     detection_error = None
                 detections_match = bool(
                     count_match
@@ -512,6 +542,7 @@ def main() -> None:
                     "runtime_detection_count": len(runtime_detections),
                     "detection_counts_match": count_match,
                     "detection_pairs": [list(pair) for pair in pairs],
+                    "paired_detection_metrics": pair_metrics,
                     "max_detection_value_error": detection_error,
                     "detections_match": detections_match,
                     "reference_detections_xyxy_confidence": reference_detections.tolist(),
@@ -532,6 +563,13 @@ def main() -> None:
                         "ncnn_output_finite": ncnn_finite,
                         "max_abs_error": maximum,
                         "mean_abs_error": mean,
+                        "max_error_detail": (
+                            _raw_difference_detail(
+                                torch_raw, ncnn_raw, args.input_size,
+                                args.confidence, np, candidate_name="ncnn",
+                            )
+                            if shapes_match and torch_finite and ncnn_finite else None
+                        ),
                         "passed": raw_passed,
                     },
                     "runtime_preprocess": runtime_result,
@@ -557,6 +595,10 @@ def main() -> None:
                             if item["max_input_pixel_error"] is not None]
     detection_maxima = [item["max_detection_value_error"] for item in runtime_items
                         if item["max_detection_value_error"] is not None]
+    all_pair_metrics = [pair for item in runtime_items
+                        for pair in item["paired_detection_metrics"]]
+    paired_ious = [item["iou"] for item in all_pair_metrics]
+    paired_score_errors = [item["score_abs_error"] for item in all_pair_metrics]
     passed = raw_passed and (runtime_passed is not False)
     report = {
         "schema_version": 1,
@@ -587,6 +629,24 @@ def main() -> None:
                     all(item["detection_counts_match"] for item in runtime_items)
                     if runtime_items else None
                 ),
+                "semantic_detection_metrics": {
+                    "paired_detection_count": len(all_pair_metrics),
+                    "minimum_paired_iou": min(paired_ious) if paired_ious else None,
+                    "median_paired_iou": (
+                        float(np.median(paired_ious)) if paired_ious else None
+                    ),
+                    "maximum_score_abs_error": (
+                        max(paired_score_errors) if paired_score_errors else None
+                    ),
+                    "all_detection_counts_match": (
+                        all(item["detection_counts_match"] for item in runtime_items)
+                        if runtime_items else None
+                    ),
+                    "interpretation": (
+                        "descriptive only; strict coordinate and raw-output gates "
+                        "remain independently enforced"
+                    ),
+                },
                 "confidence": args.confidence,
                 "nms_threshold": args.nms_threshold,
                 "strides": [8, 16, 32],
