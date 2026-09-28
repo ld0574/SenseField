@@ -168,6 +168,8 @@ PYTHONPATH=build/third_party/YOLOX:python \
 
 本轮在第 80 轮早停，未进入最后 20 轮的 no-augmentation 阶段。video6 开发评估未达到 precision ≥90% 且 recall ≥80% 的门槛，因此该 checkpoint 不部署，也不把 video6 或 video8 结果称为独立成绩；Android profile、ROI 和权重未更新，检测器仍默认关闭。
 
+冻结 checkpoint 在相同 video6 val 上以 NMS `0.4/0.5/0.6/0.7/0.8` 各扫描 confidence `0.01–0.95`（step `0.001`，每档 941 点）。P≥0.90 的最大 recall 点五档完全相同：confidence `0.807`、TP/FP/FN `103/11/120`、P/R/F1 `90.3509% / 46.1883% / 61.1276%`；该 precision 门槛下 NMS 没有收益。低 precision 的 max-F1 点在 NMS `0.4` 和 `0.5` 下都为 confidence `0.419`：P/R/F1 分别是 `79.5699% / 66.3677% / 72.3716%` 与 `79.1444% / 66.3677% / 72.1951%`。严格同 confidence 对比的 TP/FP/FN 分别为 `148/38/75` 与 `148/39/75`；NMS `0.4` 只少 1 个 FP。两者的 17 个 3+ 目标密集帧均为 TP/FP/FN `30/3/24`、recall `55.5556%`；非歧义右侧框均命中 `28/53`（recall `52.8302%`），其中方向也预测为右侧的均为 `26/53`（`49.0566%`）。作为归因对照，固定 NMS `0.5`、仅把 confidence 从 `0.807` 降到 `0.419`，密集帧 recall 从 `27.7778%` 升至 `55.5556%`、右侧 recall 从 `32.0755%` 升至 `52.8302%`；这些召回提升来自降低 confidence，不能归因于 NMS。完整曲线与逐帧明细见本机 build 产物 `video6-safe-roi-nms-confidence-sweep-001.json`，SHA-256 `8ca4df76050062fb4c831d36fe5189a37fcdd075bd6a83aa3a2edf9ee55face2`。此扫描仍使用已参与模型／阈值选择的 development video6，不是独立留出成绩；不更改 Android。
+
 #### 均衡困难样本 v1（淘汰）
 
 从上述 safe-ROI full fine-tune checkpoint 继续微调，使用均衡困难样本集 `data/private/minimap-review-v6-video7-expanded/coco-video2-7-video1-hd-video8-safe-roi-lr1-balanced-hard-v1`。train 为 1,166 张／1,989 框，video6 val 保持 152 张／223 框；有数据 split 的 ROI provenance audit 为 `provenance_clear`，test 为空。最多训练 30 轮，第 25 轮早停；best epoch 5，confidence `0.85`、NMS `0.5`。固定 video6 val 的 TP/FP/FN 为 `72/8/151`，P/R/F1 为 `90.0000% / 32.2870% / 47.5248%`。
