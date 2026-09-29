@@ -2,7 +2,7 @@
 
 > **当前 HD-only 规则（2026-09-28）**：后续训练、验证、阈值和模型评估只使用 HD。train/dev 来源为已替换成高清内容的 `video/video1.mp4`、`video2hd`、`video3hd`、`video4hd`、`video5hd`、`video7`、`video8`、`video10`；`video11` 是 HD dev-val。`video12` 为 primary sealed holdout，`video9` 为 cross-source sealed holdout；不得对这两场运行模型或查看预测。Hero 仅用于 UX／事件故事。低清 video2–6 及其队列、模型和指标全部退役为历史；不存在 `video1hd.mp4` 或 `video6hd.mp4`。
 >
-> 当前 bootstrap split 使用 video1+8+3+4+5 train（534 图／981 框）与 video2-HD val（100 图／197 框）；test 为空，不能产生最终成绩。video4-HD 已完成 100/100 帧复核（72 `corrected`、28 `negative`、150 框），video5-HD 已完成 100/100 帧复核（86 `corrected`、14 `negative`、189 框）；两队列的 SQLite／manifest、source hash、显示尺寸、三层 ROI 和 crop-edge 审计均通过，已纳入 train。video7-edge、video10/11 仍待复核；未审核机器框不能当真值，也不得提前加入训练、验证或 COCO。video9/12 继续封存。
+> 当前 bootstrap v2 split 使用 video1+8+3+4+5+10 train（664 图／1211 框）与 video2-HD+11 val（230 图／400 框）；test 为空，不能产生最终成绩。video4-HD、video5-HD、video10/11 已完成人工复核，队列的 SQLite／manifest、source hash、显示尺寸、三层 ROI 和 crop-edge 审计均通过；video10 已纳入 train，video11 作为 HD dev-val。video7-edge 仍待复核；未审核机器框不能当真值，也不得提前加入训练、验证或 COCO。video9/12 继续封存。
 
 ### 低清数据与模型的历史记录（只读）
 
@@ -114,7 +114,7 @@ shasum -a 256 build/models/yolox_nano.pth
 
 ## 当前数据状态：只接受人工复核后的 HD
 
-当前 HD bootstrap train 为人工复核后的 video1+8+3+4+5（534 图／981 框），val 为 video2-HD（100 图／197 框）；test 为空，不能作为最终成绩。video3-HD 120/120 帧、video4-HD 100/100 帧、video5-HD 100/100 帧均已复核完成并通过三层 ROI、尺寸、框合法性和 crop-edge audit。video7-edge 和 video10/11 仍待复核，未复核前不得运行 `finalize_review` 或将其加入当前 COCO、训练或验证。任何未审核机器框都不能作为真值。video11 保持 dev-val；video9/12 保持 sealed，Hero 仅用于 UX／事件故事。低清 video2–6 及其旧 checkpoint、指标均已退役。
+当前 HD bootstrap v2 train 为人工复核后的 video1+8+3+4+5+10（664 图／1211 框），val 为 video2-HD+11（230 图／400 框）；test 为空，不能作为最终成绩。video3-HD 120/120 帧、video4-HD 100/100 帧、video5-HD 100/100 帧、video10/11 各 130/130 帧均已复核完成并通过三层 ROI、尺寸、框合法性和 crop-edge audit。video10 已进入 train，video11 保持 HD dev-val；video7-edge 仍待复核，未复核前不得将其加入当前 COCO、训练或验证。任何未审核机器框都不能作为真值。video9/12 保持 sealed，Hero 仅用于 UX／事件故事。低清 video2–6 及其旧 checkpoint、指标均已退役。
 
 ### HD bootstrap 训练与标注辅助（2026-09-28）
 
@@ -124,9 +124,9 @@ shasum -a 256 build/models/yolox_nano.pth
 
 首轮 video1+8+3 checkpoint 的 ONNX 在 100/100 张图上通过 verifier 的 `np.allclose(rtol=1e-4, atol=1e-4)` 最终检测数组检查，但 raw 最大误差 `0.000631094` 高于严格门槛 `0.0005`，所以严格 parity 未通过。该候选已被 video4+5 扩充候选替代；新 checkpoint 的 parity 和 Android 绑定状态见下节及[模型接入记录](../validation/MODEL_PIPELINE.md)。机器框经人工审核前不得当作真值。
 
-### video4-HD + video5-HD 扩充训练与 Android 开发候选（2026-09-29）
+### video4-HD + video5-HD 扩充训练与 Android 开发候选（2026-09-29，上一候选）
 
-video4-HD（72 `corrected`／150 框、28 `negative`）和 video5-HD（86 `corrected`／189 框）均为从零人工复核的开发训练来源。两队列各 100/100 帧完成，SQLite 与导出 manifest 一致、没有 pending 或活动 lease；2400×1080 显示尺寸和源视频 SHA-256 匹配，所有框中心在 label ROI、完整框在 safe ROI，且无可扩展 crop 边缘接触。它们加入原 video1+8+3 后，train 为 534 图／981 框；video2-HD val 仍为 100 图／197 框，test 为空。COCO audit 的 train／val 均为 `provenance_clear`，唯一 blocker 是预期的空 test。
+video4-HD（72 `corrected`／150 框、28 `negative`）和 video5-HD（86 `corrected`／189 框）均为从零人工复核的开发训练来源。两队列各 100/100 帧完成，SQLite 与导出 manifest 一致、没有 pending 或活动 lease；2400×1080 显示尺寸和源视频 SHA-256 匹配，所有框中心在 label ROI、完整框在 safe ROI，且无可扩展 crop 边缘接触。它们加入原 video1+8+3 后，train 为 534 图／981 框；video2-HD val 仍为 100 图／197 框，test 为空。COCO audit 的 train／val 均为 `provenance_clear`，唯一 blocker 是预期的空 test。video10/11 v2 训练已取代本节作为当前开发候选；本节保留用于 Android parity 审计。
 
 在 video3-HD checkpoint 上以 seed `20260929`、MPS、320 输入、batch 16、`lr_scale=0.25` 做最多 12 轮受限续训；第 10 轮早停，best epoch 6，实际墙钟 196.834 秒（硬上限 1200 秒）。checkpoint SHA-256 为 `6112fa5ca4829eed583eb2f07c84b679b468294bc78c6410e11c7f071987f1fa`。video2-HD 已用于此前和本轮选模、置信度选择，因此这里只能报告 same-match 开发诊断：在固定 `c=0.51`、NMS `0.5`、IoU `0.5` 下，PyTorch 为 TP/FP/FN `174/13/23`、P/R/F1 `93.0481% / 88.3249% / 90.6250%`。相对首轮 video3 checkpoint 的 `173/19/24`（当时 confidence `0.21`），提升 `+2.9439 / +0.5076 / +1.6790` 个百分点；该比较跨 confidence，且仍来自同一个开发集。
 
@@ -202,6 +202,14 @@ PYTHONPATH=python .venv/bin/python training/evaluate_yolox_ncnn_report.py \
   --iou-threshold 0.5 \
   --output build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/ncnn-development-evaluation-video2-100-c051-iou050.json
 ```
+
+### video10/11 人工复核后的 v2 开发候选（2026-09-29）
+
+video10 和 video11 已完成全部人工复核并通过队列、ROI、尺寸、框合法性和来源审计。video10 的 130/130 帧（110 `corrected`、20 `negative`、230 框）进入 train；video11 的 130/130 帧（107 `corrected`、23 `negative`、203 框）进入 HD dev-val。合并后的 v2 COCO split 为 train 664 图／1211 框、val 230 图／400 框，test 为空；完整审计和来源哈希见 [video10/11 记录](../validation/VIDEO10_11.md)。
+
+从 video4/5 扩充候选初始化，在 Apple MPS 上以 seed `20260930`、输入 320、batch 16、`lr_scale=0.25` 训练最多 12 轮；best epoch 为 8，实际用时约 337 秒。开发 val 选择 confidence `0.49` 时，TP/FP/FN 为 `366/35/34`，precision / recall / F1 为 `91.2718% / 91.5000% / 91.3858%`。video2-HD 和 video11 都参与了选模或阈值选择，因此这只是开发诊断，不能作为独立留出成绩；video10 已在 train 中，也不能把其回放结果称为独立评估。
+
+该 checkpoint 目前只作为桌面开发候选，尚未完成 ONNX/TorchScript/ncnn 的严格 parity，也没有替换 Android 公共默认模型。候选保持 `verified=false`，Android detector 继续默认关闭；video9 和 video12 仍是封存留出，不得运行模型或查看预测。
 
 ### 首轮 video1+8+3 checkpoint TorchScript/ONNX/ncnn parity（2026-09-29，历史）
 

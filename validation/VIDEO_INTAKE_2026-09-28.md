@@ -34,7 +34,7 @@ HD 文件使用 Display Matrix 旋转 90°，编码尺寸为 1080×2400，显示
 | 文件 | 媒体信息 | 有效对局区间（约） | 画面边界 | 当前建议 |
 | --- | --- | --- | --- | --- |
 | `video9.mp4` | AV1，1920×864，29.68 FPS，849.16 s，1.45 Mbps | 5–823 s | 开头加载、结尾胜利／结算；约 120 s 商店短时遮地图，约 540 s 信号覆盖局部。右上 B 站水印不遮地图。加载和结算提供排位局证据。 | cross-source sealed holdout；不得运行模型或查看预测。 |
-| `video10.mp4` | H.264，1920×860，30 FPS，1001.04 s，3.34 Mbps | 0–990 s | 小地图完整；短时商店／快捷交流帧需排除。 | train/dev 开发来源。 |
+| `video10.mp4` | H.264，1920×860，30 FPS，1001.04 s，3.34 Mbps | 0–990 s | 小地图完整；短时商店／快捷交流帧需排除。 | train 开发来源；已完成复核。 |
 | `video11.mp4` | AV1，1920×860，22.47 FPS，1010.08 s，1.86 Mbps | 18.753–999 s | 排除开局商店 `[0,15000)` ms，以及 719–724 s、725–728 s 战绩面板遮挡；帧率低。 | HD dev-val。 |
 | `video12.mp4` | H.264，1920×860，30 FPS，1008.40 s，3.53 Mbps | 0–1001 s | 开头约 5 s 中央隐私提示，不遮小地图；之后未见长期遮挡。 | primary sealed holdout；不得运行模型或查看预测。 |
 
@@ -76,6 +76,6 @@ Hero 只用于 UX／事件故事，不运行检测模型，也不进入训练、
 | `data/private/minimap-video3hd-new-match-20260928-a/blind-review-v1` | 120/120 已复核：102 `corrected`、18 `negative`、268 人工框；0 `accepted`／`pending`／活动租约。SQLite 与 manifest 一致，三层 ROI、尺寸与框审计通过，0 crop-edge contact；可用于 train。有效区间 `[138000,1439000)` ms | safe/label/widget `[55,0,510,420)` / `[80,0,466,380)` / `[94,0,466,352)` |
 | `data/private/minimap-review-video7-edge-recheck-v1` | 240 pending，333 个起始框仅来自 HD 人工结果 | safe/label/widget `[55,0,600,470)` / `[90,0,550,420)` / `[143,0,524,378)` |
 | `data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi` | 120 已复核，119 可训练／211 框（102 `corrected`、17 `negative`、1 `excluded`） | safe/label/widget `[65,0,500,400)` / `[90,0,470,365)` / `[106,0,454,344)` |
-| `data/private/minimap-video10-11-hd-development-v1/queue` | 共 260 张待复核；已挂载最新 HD 模型的 330 个可编辑建议框 | safe/label/widget `[44,0,408,334)` / `[64,0,373,303)` / `[96,0,372,277)` |
+| `data/private/minimap-video10-11-hd-development-v1/queue` | 260/260 张已完成复核：video10 为 130 帧／230 框（110 `corrected`、20 `negative`），video11 为 130 帧／203 框（107 `corrected`、23 `negative`）；0 pending／活动 lease，ROI/provenance 审计通过 | safe/label/widget `[44,0,408,334)` / `[64,0,373,303)` / `[96,0,372,277)` |
 
-video11 排除开局商店 `[0,15000)` ms 和 719–724 s、725–728 s 遮挡，最早有效任务为 18.753 s。`safe` 限制完整框，`label` 限制目标中心，`widget` 只用于地图主体与方向。video10/11 的新建议框由当前 HD bootstrap ONNX 在 confidence `0.33` 生成，并经过 label ROI 与安全边缘过滤；所有未审核机器建议都只是待复核提示，不能作为真值。当前按完整录像分组的 HD bootstrap split 为 video1+8+3+4+5 train（534 图／981 框）和 video2-HD val（100 图／197 框），test 为空，不能报告最终成绩。video4-HD、video5-HD 已完成复核并纳入 train；其余待标队列完成复核及 ROI/provenance 检查后才能加入；video9/12 绝不用于预标注或查看预测。详细启动方式见[团队协作与本地运行](../docs/团队协作与本地运行.md)。
+video11 排除开局商店 `[0,15000)` ms 和 719–724 s、725–728 s 遮挡，最早有效任务为 18.753 s。`safe` 限制完整框，`label` 限制目标中心，`widget` 只用于地图主体与方向。video10/11 的建议框已逐帧人工确认，不能再把机器建议当作真值。当前按完整录像分组的 HD bootstrap v2 split 为 video1+8+3+4+5+10 train（664 图／1211 框）和 video2-HD+11 val（230 图／400 框），test 为空，不能报告最终成绩。video10/11 已通过 ROI/provenance 审计并纳入对应 split；video7-edge 仍待复核；video9/12 绝不用于预标注或查看预测。新开发候选在该 val 上以 `c=0.49` 得到 TP/FP/FN `366/35/34`（P/R/F1 `91.2718% / 91.5000% / 91.3858%`），这是开发诊断，不是独立留出成绩。详细审计见[video10/11 记录](VIDEO10_11.md)，启动方式见[团队协作与本地运行](../docs/团队协作与本地运行.md)。

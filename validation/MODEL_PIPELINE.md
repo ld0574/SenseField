@@ -1,6 +1,16 @@
 # 模型接入记录
 
-## HD bootstrap video4+video5 TorchScript / ncnn 开发候选（2026-09-29）
+## HD bootstrap v2 PyTorch 开发候选（2026-09-29）
+
+当前 HD bootstrap v2 使用人工复核后的 video1+8+3+4+5+10 作为 train（664 图／1211 框），video2-HD+11 作为开发 val（230 图／400 框），test 为空。video10/11 的队列、ROI、尺寸和来源 provenance 均已审计通过；video10 已进入 train，video11 是 dev-val。video9/12 未读取、未预标注、未查看预测，继续封存。
+
+从 video4/5 扩充候选初始化，在 Apple MPS、YOLOX-Nano、输入 320、batch 16、seed `20260930`、`lr_scale=0.25` 下最多训练 12 轮，best epoch 8，约 337 秒。checkpoint SHA-256 为 `a11b560c6507f51f3e239b358445fb2acc95694edf80bc86c5cc207cc2a12f72`。开发 val 以 confidence `0.49`、NMS `0.5`、IoU `0.5` 评估，TP/FP/FN 为 `366/35/34`，precision / recall / F1 为 `91.2718% / 91.5000% / 91.3858%`。
+
+这些指标是开发诊断：video2-HD 和 video11 已参与选模或阈值选择，video10 已参与训练，不能称独立留出成绩。逐场复测见[video10/11 记录](VIDEO10_11.md)：video10 `213/3/17`（P/R/F1 `98.6111% / 92.6087% / 95.5157%`），video11 `190/12/13`（`94.0594% / 93.5961% / 93.8272%`）。新候选尚未完成 ONNX/TorchScript/ncnn 严格 parity，保持 `verified=false`，没有替换 Android 公共默认模型；实体 Android 仍未验收。
+
+训练与评测 JSON 保存在被 Git 忽略的 `build/training/yolox-nano-hd-bootstrap-video10-video11-v2-320/`，不会把录像、私有标注或 checkpoint 提交到仓库。
+
+## HD bootstrap video4+video5 TorchScript / ncnn 开发候选（2026-09-29，历史）
 
 当前候选以 video1+8+3+4+5 的人工复核帧训练，COCO train 为 534 图／981 框；video2-HD val 为 100 图／197 框，test 为空。video2-HD 已用于历轮选模和本轮 confidence 选择，以下是 same-match 开发诊断，不是独立成绩。video9/12 没有读取或运行模型。本机候选仍为 `verified=false`，public defaults 继续关闭；严格转换和 Android 等价检测门禁失败，开发集检测质量通过不能覆盖这些失败。
 

@@ -54,7 +54,7 @@
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
 | Android 13/14 截屏与横屏取帧 | 已实现 | 已完成模拟器链路验证 |
-| 小地图敌方头像识别 | HD-only bootstrap 本机开发候选，默认关闭 | 当前人工复核 train 为 video1+8+3+4+5 共 534 图／981 框，val 为 video2-HD 100 图／197 框；test 为空。video2-HD 用于选模和阈值，因此指标只是同场开发诊断；video9/12 继续封存，候选 `verified=false`，APK 默认关闭检测器 |
+| 小地图敌方头像识别 | HD-only bootstrap v2 本机开发候选，默认关闭 | video10 已纳入 train，video11 已纳入 HD dev-val；当前人工复核 train 为 664 图／1211 框，val 为 230 图／400 框，test 为空。v2 在该开发 val 上选得 `c=0.49`，TP/FP/FN `366/35/34`，P/R/F1 `91.2718% / 91.5000% / 91.3858%`；这不是独立留出成绩，候选仍 `verified=false`，APK 默认关闭检测器 |
 | 小地图自适应定位 | 旧版定位器实验留档，尚未接入 Android | v2 使用旧低清 video6 val；其定位指标仅作历史，不属于当前 HD-only 验证，也不代表独立发布门禁通过。video8 布局帧为同场诊断；见[定位器记录](validation/MINIMAP_LOCATOR.md) |
 | 简短声音提示 | 已实现 | 事件合并、冷却与优先级规则可用 |
 | 视野记忆 | 已实现实验版 | APPEAR / TRACK / DISAPPEAR / LAST_DIRECTION；连续命中后才显示，消失需多帧确认，DISAPPEAR 后最后位置与移动方向保留 4 秒 |
@@ -90,7 +90,7 @@ PYTHONPATH=python python3 -m mapassist.annotation_server \
   --host 127.0.0.1 --port 8765 --open
 ```
 
-当前 bootstrap 使用 video1+8+3+4+5 train（534 图／981 框）和 video2-HD val（100 图／197 框）；test 为空，不能报告最终成绩。video2-HD 用于选模和阈值，因此当前候选指标只是同场开发诊断，不是独立成绩。固定 `c=0.51` 下，PyTorch TP/FP/FN 为 `174/13/23`（P/R/F1 `93.0481% / 88.3249% / 90.6250%`），Android 等价 ncnn 为 `175/14/22`（`92.5926% / 88.8325% / 90.6736%`）。ONNX/ncnn 严格 raw parity 和 Android 等价检测门禁均失败；候选 `verified=false`，仅供本机调试，公共默认 detector 仍关闭。video9/12 没有读取或运行模型，继续封存；队列状态见[验证状态](validation/STATUS.md)与[录像接收记录](validation/VIDEO_INTAKE_2026-09-28.md)。
+当前 HD bootstrap v2 使用 video1+8+3+4+5+10 train（664 图／1211 框）和 video2-HD+11 val（230 图／400 框）；test 为空，不能报告最终成绩。video10/11 已完成逐帧人工复核和 ROI/provenance 审计；v2 在同一开发 val 上以 `c=0.49` 得到 TP/FP/FN `366/35/34`（P/R/F1 `91.2718% / 91.5000% / 91.3858%`），这些指标用于开发比较，不是独立留出成绩。新候选尚未完成 ONNX/TorchScript/ncnn parity，仍 `verified=false`；公共默认 detector 继续关闭。video9/12 没有读取或运行模型，继续封存；队列状态见[验证状态](validation/STATUS.md)、[video10/11 审计](validation/VIDEO10_11.md)与[录像接收记录](validation/VIDEO_INTAKE_2026-09-28.md)。
 
 Android Studio 直接打开 `android/`。首次原生构建会下载并校验固定版本的 ncnn Android 依赖；调试 APK 的命令行构建方式记录在[团队协作文档](docs/团队协作与本地运行.md)。
 
@@ -122,6 +122,7 @@ Android Studio 直接打开 `android/`。首次原生构建会下载并校验固
 - [video1 高清重导出与标签迁移](validation/VIDEO1_HD.md)
 - [困难误报加权实验](validation/HARD_NEGATIVES.md)
 - [video8 真人排位冻结盲测](validation/VIDEO8.md)
+- [video10/11 HD 人工复核与开发训练](validation/VIDEO10_11.md)
 - [GitHub 发布检查清单](docs/GITHUB发布检查清单.md)
 - [参与开发](CONTRIBUTING.md)
 
