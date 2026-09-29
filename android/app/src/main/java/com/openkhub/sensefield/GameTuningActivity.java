@@ -63,18 +63,21 @@ public final class GameTuningActivity extends Activity {
         UiKit.add(recognition, UiKit.heading(this, "识别功能"), 8);
         CheckBox experimental = checkBox("启用小地图识别（实验）");
         experimental.setChecked(GameProfile.settings(this)
-                .getBoolean("allow_experimental", false));
+                .getBoolean(GameProfile.PREF_ALLOW_EXPERIMENTAL,
+                        GameProfile.DEFAULT_ALLOW_EXPERIMENTAL));
         experimental.setOnCheckedChangeListener((button, checked) ->
                 GameProfile.settings(this).edit()
-                        .putBoolean("allow_experimental", checked).apply());
+                        .putBoolean(GameProfile.PREF_ALLOW_EXPERIMENTAL, checked).apply());
         UiKit.add(recognition, experimental, 4);
 
         minimapOverlay = checkBox("提醒新出现的敌方头像");
         minimapOverlay.setChecked(GameProfile.settings(this)
-                .getBoolean("vision_memory", false));
+                .getBoolean(GameProfile.PREF_VISION_MEMORY,
+                        GameProfile.DEFAULT_VISION_MEMORY));
         minimapOverlay.setOnClickListener(view -> {
             boolean checked = minimapOverlay.isChecked();
-            GameProfile.settings(this).edit().putBoolean("vision_memory", checked).apply();
+            GameProfile.settings(this).edit()
+                    .putBoolean(GameProfile.PREF_VISION_MEMORY, checked).apply();
             if (checked && !Settings.canDrawOverlays(this)) {
                 awaitingOverlayPermission = true;
                 Intent permission = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -219,7 +222,8 @@ public final class GameTuningActivity extends Activity {
         super.onResume();
         if (awaitingOverlayPermission) {
             awaitingOverlayPermission = false;
-            boolean optedIn = GameProfile.settings(this).getBoolean("vision_memory", false);
+            boolean optedIn = GameProfile.settings(this).getBoolean(
+                    GameProfile.PREF_VISION_MEMORY, GameProfile.DEFAULT_VISION_MEMORY);
             if (minimapOverlay != null) minimapOverlay.setChecked(optedIn);
             if (!Settings.canDrawOverlays(this))
                 toast("未开启悬浮层权限，语音和触觉仍可使用");

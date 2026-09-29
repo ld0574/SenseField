@@ -10,10 +10,10 @@
 | --- | --- |
 | 桌面共享 C++ 引擎与录像回放 | 2026-09-30 全量 `.venv/bin/python -m pytest -q`：298 项通过、1 项条件跳过；标注网页 Node 测试 5 项通过。覆盖完整 GameProfile 定位读取、小地图自动定位、显示方向抽帧、三层 ROI 传递与门禁、标注站、数据导出、红环几何过滤、空间跟踪、冷却与抢占、冻结模型与 Android 资产哈希、会话日志、最终门禁及 ncnn 回放约束。跳过项需要专用合成 YOLOX profile。 |
 | 小地图检测数据准备 | 当前 HD bootstrap v2 split 为人工复核 train 664 图／1211 框（video1+8+3+4+5+10）和 val 230 图／400 框（video2-HD+11）；bootstrap test 仍为空，不能报告 bootstrap 最终成绩。video13 已完成 130/130 个任务人工复核和 Codex temporal audit，121 图／211 框保留为跨来源开发诊断。首轮真机反馈后查看多档阈值，c=`0.67` 为 TP/FP/FN `192/16/19`、P/R/F1 `92.3077% / 90.9953% / 91.6468%`；因此 video13 已被开发使用，不能进入独立门禁。video9/12 继续封存且未读取。 |
-| HD bootstrap v2 训练候选（仅开发） | 从 video4/5 扩充候选初始化，在 MPS、320 输入、batch 16、seed `20260930`、`lr_scale=0.25` 下最多训练 12 轮；best epoch 8，约 337 秒。首轮真机反馈后改用 confidence `0.67`；Android 同款 ncnn 开发 val 的 TP/FP/FN 为 `353/15/47`，P/R/F1 为 `95.9239% / 88.2500% / 91.9271%`。video2-HD、video11 和 video13 均已参与开发判断，不是独立成绩。ONNX/TorchScript/ncnn 已导出；230/230 张图的检测数量一致，但严格 raw／坐标 parity 仍失败。实验 Android assets/profiles 已绑定 c067，候选保持 `verified=false`、`release_ready=false`，公共默认 detector 关闭。 |
+| HD bootstrap v2 训练候选（仅开发） | 从 video4/5 扩充候选初始化，在 MPS、320 输入、batch 16、seed `20260930`、`lr_scale=0.25` 下最多训练 12 轮；best epoch 8，约 337 秒。首轮真机反馈后改用 confidence `0.67`；Android 同款 ncnn 开发 val 的 TP/FP/FN 为 `353/15/47`，P/R/F1 为 `95.9239% / 88.2500% / 91.9271%`。video2-HD、video11 和 video13 均已参与开发判断，不是独立成绩。ONNX/TorchScript/ncnn 已导出；230/230 张图的检测数量一致，但严格 raw／坐标 parity 仍失败。实验 Android assets/profiles 已绑定 c067，候选保持 `verified=false`、`release_ready=false`；内置 HD profile 在首装默认启用识别与新头像提醒，用户可关闭。 |
 | 端到端延迟统计工具 | 已能从外部记录的证据／实际发声配对时间计算逐类及总体 P95，并单列漏提示；首轮真机冒烟有帧处理和播放日志，但尚无外部屏幕／实际声音配对的延迟样本 |
-| Android debug 构建 | 当前版本 `0.2.2`（versionCode 6）；执行 `./gradlew testDebugUnitTest assembleDebug lintDebug`：成功，lint 通过；仅 arm64、minSdk 29、targetSdk 35、debug 签名。APK 为 12,099,638 bytes，SHA-256 `2b296d8b75619315e84275689bb2c7b184f4b4a31692cf52d8e814cde5667e07`。构建按 tracked metadata 校验本机 ignored param／bin 哈希；CMake 同时校验 ncnn 下载包和缓存包哈希。 |
-| APK 结构 | Android 29 起、目标 35；只包含 arm64 ABI。APK 已打包 ncnn 静态运行时、3.4 MiB YOLOX 权重、Focus 修复后的 param、哈希元数据、完整第三方许可文本和未验证开发配置；实验开关默认关闭 |
+| Android debug 构建 | 当前版本 `0.2.2`（versionCode 6）；本轮执行 `./gradlew :app:assembleDebug` 成功；本轮未运行单元测试或 lint。仅 arm64、minSdk 29、targetSdk 35、debug 签名。APK 为 12,099,814 bytes，SHA-256 `19a25343b2a6e71c9e416c8f6f5035d186ef15f9e02d311d9bfbc842d629083c`。构建按 tracked metadata 校验本机 ignored param／bin 哈希；CMake 同时校验 ncnn 下载包和缓存包哈希。 |
+| APK 结构 | Android 29 起、目标 35；只包含 arm64 ABI。APK 已打包 ncnn 静态运行时、3.4 MiB YOLOX 权重、Focus 修复后的 param、哈希元数据、完整第三方许可文本和未验证开发配置；Android 首装时实验识别和新头像提醒默认开启，内置 HD profile 已启用匹配的开发候选 |
 | APK 签名 | debug APK 的 v2 签名通过 `apksigner verify` |
 | Android 会话健壮性 | Android 14 首轮实体机（应用 0.2.1 debug）已跑通 MediaProjection、2712×1220 横屏、ncnn 与真实播放。观测到 8 次 35–1084 ms 的短暂断流且均自动恢复；恢复语音造成额外干扰，现已改为仅日志与通知。该日志缺少最终 `SessionSummary`，不能作为正式会话验收。当前开发构建为 0.2.2（versionCode 6）。 |
 | 小地图新目标提示 | 首轮实体机暴露 `vision_memory=false` 时 kind 2 仍走旧直通路径的错误：44 条提示在约 234.6 秒内播放，P50 间隔 5.058 秒，用户确认过密且至少一次方向误报。测试后 shared preferences 显示 `vision_memory=false`、`cue_preset=standard`、`allow_experimental=true`，与日志中的旧直通路径一致。修复版禁止 kind 2 绕过轨迹层；关闭时完全静默，开启后仅对稳定 `APPEAR` 事件使用中性短提示，会话级最短间隔为 15 秒，不再播报地图中心方位或 `DISAPPEAR`。修复版待真机复测。详见 [首轮真机冒烟](ANDROID_LIVE_SMOKE_2026-09-29.md)。 |
@@ -49,9 +49,9 @@
 
 APK：`android/app/build/outputs/apk/debug/app-debug.apk`
 当前版本：`0.2.2`（versionCode 6）
-SHA-256：`2b296d8b75619315e84275689bb2c7b184f4b4a31692cf52d8e814cde5667e07`
+SHA-256：`19a25343b2a6e71c9e416c8f6f5035d186ef15f9e02d311d9bfbc842d629083c`
 
-公开仓库检查通过；当前公开版本不再跟踪模型文件，默认 profile 已关闭 `minimap_yolox`。旧 Git 历史仍含模型文件；历史清理的 force-push 尚未执行，仍待明确授权。
+公开仓库检查通过；模型文件仍不纳入 Git，内置 profile 默认启用 `minimap_yolox`，运行识别需要本地 APK 包含匹配权重。旧 Git 历史仍含模型文件；历史清理的 force-push 尚未执行，仍待明确授权。
 
 合成录像的 3 个事件均被评测脚本匹配，**仅证明数据管线和规则工作，不能代表真实游戏准确率或真机延迟**。模拟器验证也不能替代实体手机测试。
 

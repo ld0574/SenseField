@@ -63,7 +63,8 @@ tasks.register('verifyMinimapModelAssets') {
     doLast {
         def presentCount = [param, weights].count { it.isFile() }
         if (presentCount == 0) {
-            logger.lifecycle('Private YOLOX assets are absent; building with the public default profile.')
+            logger.lifecycle('Private YOLOX assets are absent; the APK will not be able to run '
+                    + 'its default experimental minimap profile until matching model files are added.')
             return
         }
         if (presentCount != 2) {

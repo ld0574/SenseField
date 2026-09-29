@@ -4,7 +4,7 @@
   "profile_version": "0.8.1-yolox-nano-hd-bootstrap-video10-video11-v2-c067",
   "game": "王者荣耀",
   "verified": false,
-  "notes": "Local experimental-only HD bootstrap v2 candidate with the post-smoke conservative threshold. Train: video1+8+3+4+5+10 (664 images/1211 boxes); development val: video2-HD+11 (230 images/400 boxes), used for model and confidence selection. Threshold confidence=0.67, NMS=0.5: development val P/R/F1=95.92/88.25/91.93%; reviewed cross-source video13 diagnostic P/R/F1=92.31/91.00/91.65%. These are not independent release results. The first Android device smoke exposed a legacy five-second direct-cue loop and one perceived false direction; direct minimap cues are now blocked in favor of tracked transitions and require a fresh device retest. Strict PyTorch-to-ONNX and TorchScript-to-ncnn parity gates remain failed. Keep verified=false and public defaults off.",
+  "notes": "Local experimental-only HD bootstrap v2 candidate, bundled as the Android first-install default. Train: video1+8+3+4+5+10 (664 images/1211 boxes); development val: video2-HD+11 (230 images/400 boxes), used for model and confidence selection. Threshold confidence=0.67, NMS=0.5: development val P/R/F1=95.92/88.25/91.93%; reviewed cross-source video13 diagnostic P/R/F1=92.31/91.00/91.65%. These are not independent release results. The installed candidate remains verified=false. The first Android device smoke exposed excessive cue repetition and a perceived false direction; tracked transitions and cooldown fixes require a fresh device retest. Strict PyTorch-to-ONNX and TorchScript-to-ncnn parity gates remain failed. Users can turn recognition and new-enemy alerts off in settings.",
   "rois": {
     "minimap": [
       0.022916666666666665,

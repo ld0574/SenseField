@@ -25,7 +25,7 @@ adb push build/synthetic_android/android-ring-profile.json /sdcard/Download/mapa
 adb push build/synthetic_android/fixture-android-loop.mp4 /sdcard/Movies/mapassist-synthetic-loop.mp4
 ```
 
-在应用中导入 JSON，勾选“允许未通过真人录像评测的实验识别器”，接受通知和整屏截屏授权，然后切到横屏播放合成录像。所用 AOSP Gallery 可通过以下命令打开：
+在应用中导入 JSON。Android 首装时小地图实验识别和新头像提醒默认开启；若此前手动关闭过，进入“配置与调参”重新打开“启用小地图识别（实验）”。接受通知和整屏截屏授权，然后切到横屏播放合成录像。所用 AOSP Gallery 可通过以下命令打开：
 
 ```sh
 adb shell am start -n com.android.gallery3d/.app.MovieActivity -a android.intent.action.VIEW -d file:///sdcard/Movies/mapassist-synthetic-loop.mp4 -t video/mp4

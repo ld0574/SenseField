@@ -1,16 +1,16 @@
 {
   "schema_version": 1,
-  "name": "hok_minimap_development",
-  "profile_version": "0.5.1-yolox-nano-hardfp-320-candidate-dev",
+  "name": "hok_minimap_hd_bootstrap_dev",
+  "profile_version": "0.8.1-yolox-nano-hd-bootstrap-video10-video11-v2-c067",
   "game": "王者荣耀",
   "verified": false,
-  "notes": "Development-only local candidate exported from the video1-7 hard-FP checkpoint. Uses the legacy fixed minimap ROI with confidence 0.19 and NMS 0.5. Its video6 scores are crop-relative internal development comparisons only; they do not establish full-minimap coverage. The fixed ROI was measured to cut about 21 px from the right edge of the minimap in video8. Keep the runtime ROI and weights unchanged until the ROI is corrected and the detector is retrained. The video6 split was already used in model and threshold selection, so it is not release evidence. ONNX parity passed on all 152 images. The strict TorchScript/ncnn raw-output gate narrowly failed on video6_000810600.png (0.000515342 > 0.0005); final detection counts matched on all 152 images (185/185 detections), with maximum detection-value error 0.005043 < 0.01. No physical Android device test has been run.",
+  "notes": "Local experimental-only HD bootstrap v2 candidate, bundled as the Android first-install default. Train: video1+8+3+4+5+10 (664 images/1211 boxes); development val: video2-HD+11 (230 images/400 boxes), used for model and confidence selection. Threshold confidence=0.67, NMS=0.5: development val P/R/F1=95.92/88.25/91.93%; reviewed cross-source video13 diagnostic P/R/F1=92.31/91.00/91.65%. These are not independent release results. The installed candidate remains verified=false. The first Android device smoke exposed excessive cue repetition and a perceived false direction; tracked transitions and cooldown fixes require a fresh device retest. Strict PyTorch-to-ONNX and TorchScript-to-ncnn parity gates remain failed. Users can turn recognition and new-enemy alerts off in settings.",
   "rois": {
     "minimap": [
-      0.0375,
+      0.022916666666666665,
       0.0,
-      0.1444444444,
-      0.3333333333
+      0.18958333333333333,
+      0.3883720930232558
     ],
     "ping_area": [
       0.4027777778,
@@ -23,6 +23,12 @@
       0.35,
       0.3,
       0.3
+    ],
+    "minimap_direction": [
+      0.05,
+      0.0,
+      0.14375,
+      0.32209302325581396
     ]
   },
   "detectors": {
@@ -30,10 +36,10 @@
     "minimap_template": false,
     "minimap_red_ring": false,
     "danger_ping_template": false,
-    "minimap_yolox": false
+    "minimap_yolox": true
   },
   "models": {
-    "minimap_yolox_bin_sha256": "34b2cc80e47bd197e52a40ff69e39d60aea363de2071c8a89510c6398bbfbc56"
+    "minimap_yolox_bin_sha256": "d5b4b5dcee290122ae823750d247dd7336f656ab2430f86f68ba87f6ad1e4bd3"
   },
   "templates": {
     "minimap_enemy": null,
@@ -47,16 +53,23 @@
     "main_min_aspect": 3.5,
     "template_match": 0.94,
     "minimap_yolox_input_size": 320,
-    "minimap_yolox_confidence": 0.19,
+    "minimap_yolox_confidence": 0.67,
     "minimap_yolox_nms": 0.5
   },
   "events": {
-    "min_confidence": 0.19,
+    "min_confidence": 0.67,
     "max_observation_age_ms": 250,
     "min_global_gap_ms": 1000,
-    "minimap_min_gap_ms": 5000,
+    "minimap_min_gap_ms": 15000,
     "min_hits_in_three_frames": 2,
     "reset_after_missing_frames": 3
+  },
+  "state_recognition": {
+    "player_life": {
+      "schema": "mapassist.player_life_signatures",
+      "schema_version": 1,
+      "enabled": false
+    }
   },
   "templates_b64": {}
 }

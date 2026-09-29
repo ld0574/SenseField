@@ -54,7 +54,7 @@ recall:    91.5000%
 F1:        91.3858%
 ```
 
-这些历史结果来自 video2-HD+video11 开发 val，且 video11 参与了选模或阈值选择，因此只是开发诊断，不能称为独立留出成绩。首轮真机反馈后当前部署阈值改为 `0.67`；Android 同款 ncnn 开发 val 为 TP/FP/FN `353/15/47`，P/R/F1 `95.9239% / 88.2500% / 91.9271%`。新候选已导出 ONNX/TorchScript/ncnn 并绑定本机 Android 实验 assets，但严格 ONNX/ncnn raw 与 Android 检测 parity 未通过，仍为 `verified=false`、`release_ready=false`；公共默认 profile 继续关闭 detector。Android 14 首轮真机冒烟使用 0.2.1 debug，当前开发构建为 0.2.2（versionCode 6），修复版仍待真机复测。
+这些历史结果来自 video2-HD+video11 开发 val，且 video11 参与了选模或阈值选择，因此只是开发诊断，不能称为独立留出成绩。首轮真机反馈后当前部署阈值改为 `0.67`；Android 同款 ncnn 开发 val 为 TP/FP/FN `353/15/47`，P/R/F1 `95.9239% / 88.2500% / 91.9271%`。新候选已导出 ONNX/TorchScript/ncnn 并绑定本机 Android 实验 assets，但严格 ONNX/ncnn raw 与 Android 检测 parity 未通过，仍为 `verified=false`、`release_ready=false`；当前 HD profile 在首装时默认启用 detector 和新头像提醒。Android 14 首轮真机冒烟使用 0.2.1 debug，当前 0.2.2 修复版仍待真机复测。
 
 ## 证据边界
 

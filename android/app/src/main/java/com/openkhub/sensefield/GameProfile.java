@@ -24,6 +24,10 @@ import java.util.Set;
 final class GameProfile {
     static final String PREFS = "mapassist_settings";
     static final String IMPORTED_FILE = "game_profile.json";
+    static final String PREF_ALLOW_EXPERIMENTAL = "allow_experimental";
+    static final boolean DEFAULT_ALLOW_EXPERIMENTAL = true;
+    static final String PREF_VISION_MEMORY = "vision_memory";
+    static final boolean DEFAULT_VISION_MEMORY = true;
 
     static final class TemplateData {
         final byte[] rgba;
@@ -228,7 +232,8 @@ final class GameProfile {
         }
 
         boolean verified = data.optBoolean("verified", false);
-        boolean enabled = verified || preferences.getBoolean("allow_experimental", false);
+        boolean enabled = verified || preferences.getBoolean(
+                PREF_ALLOW_EXPERIMENTAL, DEFAULT_ALLOW_EXPERIMENTAL);
         JSONObject detectors = data.getJSONObject("detectors");
         JSONObject models = data.optJSONObject("models");
         String minimapYoloxBinSha256 = models == null ? null

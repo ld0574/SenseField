@@ -51,12 +51,10 @@ done
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 android_dir="$repo_root/android"
-profile_file="$repo_root/profiles/hok_minimap_hd_bootstrap.android.json"
 model_param="$android_dir/app/src/main/assets/minimap-yolox-nano-320.param"
 model_bin="$android_dir/app/src/main/assets/minimap-yolox-nano-320.bin"
 
 [[ -x "$android_dir/gradlew" ]] || fail "找不到可执行的 android/gradlew；请确认仓库文件完整。"
-[[ -f "$profile_file" ]] || fail "找不到开发 profile：$profile_file"
 [[ -f "$model_param" && -f "$model_bin" ]] || fail \
   "缺少本机开发模型文件。请先把匹配当前 metadata 的 minimap-yolox-nano-320.param 和 .bin 放到 android/app/src/main/assets/；模型文件不应提交到 Git。"
 
@@ -209,19 +207,14 @@ info "安装 Debug APK。"
 "$adb_bin" -s "$selected_device" install --no-streaming -r "$apk_file" || fail \
   "APK 安装失败。请检查手机是否解锁、USB 调试授权是否有效，以及设备存储空间。"
 
-remote_profile="/sdcard/Download/hok_minimap_hd_bootstrap.android.json"
-info "复制开发 profile 到手机 Download 目录。"
-"$adb_bin" -s "$selected_device" push "$profile_file" "$remote_profile" || fail \
-  "复制开发 profile 失败；请确认设备已解锁且 Download 目录可写。"
-
 info "启动听野。"
 "$adb_bin" -s "$selected_device" shell am start -n com.openkhub.sensefield/.GameSelectionActivity || fail \
   "应用已安装，但启动失败。请在手机上检查应用安装状态。"
 
 cat <<EOF
 
-完成：Debug APK 已安装，开发 profile 已复制到 Download，应用已启动。
-下一步选择“王者荣耀”，进入“配置与调参”，导入 Download 内的
-hok_minimap_hd_bootstrap.android.json，再手动开启实验识别器。
+完成：包含 HD 实验 profile 和本机模型的 Debug APK 已安装，应用已启动。
+首次安装默认启用小地图识别和新敌方头像提醒；如需关闭或此前保存过关闭设置，
+请在“王者荣耀”→“配置与调参”中调整。
 本脚本不会更改应用开关，也不会发起 MediaProjection 授权。
 EOF

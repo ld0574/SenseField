@@ -223,7 +223,8 @@ public final class CaptureService extends Service {
                 minimapAppearMinGapMs = CueRouting.effectiveMinimapAppearanceGap(
                         profile.eventInts[2]);
                 visionMemoryEnabled = GameProfile.settings(this)
-                        .getBoolean("vision_memory", false);
+                        .getBoolean(GameProfile.PREF_VISION_MEMORY,
+                                GameProfile.DEFAULT_VISION_MEMORY);
                 if (visionMemoryEnabled &&
                         cueSettings.categoryEnabled(CueRequest.Category.VISION_MEMORY) &&
                         (cueSettings.enabledChannels() & CueRequest.CHANNEL_VISUAL) != 0) {

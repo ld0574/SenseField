@@ -26,7 +26,7 @@ ONNX 最大 raw 差在 `video11-hd-development_000837584.png`，stride 8 cell `(
 
 Android 等价检测共配对 401 个框，IoU 最小值／中位数为 `0.981624 / 0.998719`，confidence 绝对差中位数／最大值为 `0.000321 / 0.011870`。例如 `video2-hd_000675010.png` 的一对框，参考坐标为 `[219.9304,167.1348,265.4030,211.3868]`，运行时为 `[220.3639,166.9271,265.5376,211.3258]`；数量相同但最大坐标差超过 `0.01`。IoU 和分数统计只作描述，不取代严格门禁。ncnn 真值评估通过 P≥90%、R≥80% 开发质量条件，也不改变这一点。
 
-当前候选仍保持 `verified=false`、`release_ready=false`。本机 Android param/bin、tracked metadata 与 `hok_minimap_hd_bootstrap` 开发 profiles 已绑定 v2、confidence `0.67`；公共默认 profile 的 detector 继续关闭，只有显式允许实验识别器后才可运行。模型哈希校验、Android 单测、`assembleDebug` 和 `lintDebug` 已通过。Android 14 首轮实体机冒烟使用 0.2.1 debug，已记录提示过密和 kind 2 旧直通路径问题；当前开发构建为 0.2.2（versionCode 6），修复版待真机复测。导出命令见 [training/README.md 的 v2 parity 流程](../training/README.md#v2-候选导出与-parity-复现)。
+当前候选仍保持 `verified=false`、`release_ready=false`。本机 Android param/bin、tracked metadata 与 `hok_minimap_hd_bootstrap` profile 已绑定 v2、confidence `0.67`；内置 profile 在新安装时启用检测器，识别开关和新头像提醒默认开启，用户可关闭。模型权重不纳入 Git，运行识别的 APK 必须包含匹配 assets。本轮 `:app:assembleDebug` 成功并通过资产哈希校验；本轮未运行单测或 lint。Android 14 首轮实体机冒烟使用 0.2.1 debug，已记录提示过密和 kind 2 旧直通路径问题；当前 0.2.2 修复版仍待真机复测。导出命令见 [training/README.md 的 v2 parity 流程](../training/README.md#v2-候选导出与-parity-复现)。
 
 artifact SHA-256：checkpoint `a11b560c6507f51f3e239b358445fb2acc95694edf80bc86c5cc207cc2a12f72`；ONNX `517f296a99c79fe57b44746f9bdc33fb1cb564cffe0456e8f4fcaee8b0c58dea`；TorchScript `e20e37fca81f660e79d7badfa39de6da336d002573ebec065b6cb66645070b27`；ncnn param/bin `4649269cae16fef3b64cc366f123ba58259a756b79f7f55d6be20cd3903cae14` / `d5b4b5dcee290122ae823750d247dd7336f656ab2430f86f68ba87f6ad1e4bd3`；conversion metadata `5553b5183d01f8abbc3bc90fc35e84449f8fda04d7a3700f30107de23eed51c6`；ONNX parity JSON `1392a8a9778b1ac368a04bcc5f99bc7ed7613c571122a77e97e098dd82ad3fca`；ncnn parity JSON `ce69bbfe922d7b45a3d6cfbef8b60b1b9c9a74d920f4d425f380c2ca4b5d5769`；ncnn val metrics JSON `2fd3a97cd8388c21bb10ace8a7efe6c8205a681ac742b404b3353fc9fb61e09b`；val annotations `2212db52693e9f218bb81e4c255044956ae0fbf84a8d6fa09cdc8c53383611f5`。转换使用 pnnx `20260526`、ncnn `1.0.20260526`、PyTorch `2.14.0`、ONNX Runtime `1.30.0`。
 
@@ -95,7 +95,7 @@ video4/5 纳入前的 v3 checkpoint、阈值 `0.21` 以及 parity 指标保留�
 
 随后在 video8 修正标签上做的 post-hoc 配对诊断记录了固定 ROI 与自适应候选在同一 ncnn 路径下分别为 58.14% / 81.40% 和 52.16% / 78.60%（precision / recall）。这些仅是受右缘截断污染的旧 crop-relative 历史值；标签和裁剪完整性没有边界触碰审计，不能据此比较模型或判断完整地图效果。动态并集裁剪也会改变旧 YOLOX 输入分布；当前 Android ROI 与权重不变，不能直接扩大 ROI 并沿用旧权重。详细边界见[定位器记录](MINIMAP_LOCATOR.md)。
 
-模型配置为 `verified: false`。当前 APK 默认 profile 还显式设置 `minimap_yolox:false`；开发测试者必须先导入与权重匹配的固定 ROI 开发 profile，再勾选“允许未通过真人录像评测的实验识别器”，下一次截屏会话才加载模型。`video7` 人机历史盲测只有 65.57% precision／63.49% recall，因此不能作为发布默认能力。
+模型配置为 `verified: false`。本段记录的旧 APK profile 曾显式设置 `minimap_yolox:false`，开发测试者当时需要导入与权重匹配的固定 ROI profile；该旧候选已退役。当前 APK 的 HD 实验 profile 在新安装时启用模型，实验识别和新头像提醒默认开启，用户选择关闭会保留。`video7` 人机历史盲测只有 65.57% precision／63.49% recall，因此不能作为发布验收证据。
 
 当前证据能证明模型转换、APK 打包和代码链路成立。实体 Android 13/14 上的模型加载、持续推理耗时、实际发声、游戏帧率和发热仍需真机记录；完整验收还需要未参与开发的真实匹配留出对局。
 
