@@ -24,6 +24,19 @@ from mapassist.roi_safety import (
     assert_coco_roi_safe,
 )
 
+try:  # Supports both package imports and ``python training/...``.
+    from .yolox_decode import (
+        normalize_classes,
+        resolve_classes,
+        yolox_tensor_contract,
+    )
+except ImportError:  # pragma: no cover - command-line execution path.
+    from yolox_decode import (  # type: ignore
+        normalize_classes,
+        resolve_classes,
+        yolox_tensor_contract,
+    )
+
 
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -166,6 +179,23 @@ def _assert_roi_boundaries_clear(data_dir: Path) -> None:
         assert_coco_boxes_within_images(document, split)
 
 
+def _validate_canonical_split_classes(
+    data_dir: Path,
+    classes: list[str] | tuple[str, ...],
+    splits: tuple[str, ...] = ("train", "val", "test"),
+) -> None:
+    """Reject split category orders that cannot share one model output mapping."""
+    for split in splits:
+        path = data_dir / "annotations" / f"instances_{split}2017.json"
+        if not path.is_file():
+            continue
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+            resolve_classes(classes=classes, coco=document)
+        except (OSError, json.JSONDecodeError, ValueError) as error:
+            raise ValueError(f"{split} COCO classes do not match canonical order: {error}") from error
+
+
 def _device(torch: Any, value: str) -> Any:
     if value != "auto":
         return torch.device(value)
@@ -176,11 +206,43 @@ def _device(torch: Any, value: str) -> Any:
     return torch.device("cpu")
 
 
+def _match_class_aware(predictions: list[tuple[float, list[float], int]],
+                       truths: list[tuple[int, list[float]]],
+                       threshold: float = 0.5) -> int:
+    """Match only predictions and truths with the same canonical class."""
+    return len(_match_class_aware_pairs(predictions, truths, threshold))
+
+
+def _match_class_aware_pairs(
+    predictions: list[tuple[float, list[float], int]],
+    truths: list[tuple[int, list[float]]],
+    threshold: float = 0.5,
+) -> list[tuple[int, int, float]]:
+    """Return global prediction/truth indices for same-class matches."""
+    pairs: list[tuple[int, int, float]] = []
+    for class_id in sorted({item[2] for item in predictions} |
+                           {item[0] for item in truths}):
+        prediction_indices = [index for index, item in enumerate(predictions)
+                              if item[2] == class_id]
+        truth_indices = [index for index, item in enumerate(truths)
+                         if item[0] == class_id]
+        local = _match_boxes(
+            [predictions[index][1] for index in prediction_indices],
+            [truths[index][1] for index in truth_indices], threshold,
+        )
+        pairs.extend(
+            (prediction_indices[prediction], truth_indices[truth], overlap)
+            for prediction, truth, overlap in local
+        )
+    return sorted(pairs)
+
+
 def _split_predictions(model: Any, device: Any, data_dir: Path,
                        input_size: tuple[int, int], nms_threshold: float,
-                       split: str = "val", pre_filter_confidence: float = 0.01
-                       ) -> tuple[dict[int, list[tuple[float, list[float]]]],
-                                  dict[int, list[list[float]]]]:
+                       split: str = "val", pre_filter_confidence: float = 0.01,
+                       classes: list[str] | tuple[str, ...] | None = None
+                       ) -> tuple[dict[int, list[tuple[float, list[float], int]]],
+                                  dict[int, list[tuple[int, list[float]]]]]:
     import cv2
     import torch
     from yolox.data import ValTransform
@@ -196,11 +258,23 @@ def _split_predictions(model: Any, device: Any, data_dir: Path,
             encoding="utf-8"
         )
     )
-    truths: dict[int, list[list[float]]] = {image["id"]: [] for image in annotation["images"]}
+    class_names = resolve_classes(classes=classes, coco=annotation)
+    truths: dict[int, list[tuple[int, list[float]]]] = {
+        image["id"]: [] for image in annotation["images"]
+    }
+    category_ids = {
+        int(item["id"]): class_names.index(item["name"].strip())
+        for item in annotation.get("categories", [])
+    }
     for item in annotation["annotations"]:
-        truths[item["image_id"]].append([float(value) for value in item["bbox"]])
+        # Datasets written by older geometry-only fixtures have no categories;
+        # they remain the historical single enemy class.
+        category_index = category_ids.get(int(item.get("category_id", 1)), 0)
+        truths[item["image_id"]].append(
+            (category_index, [float(value) for value in item["bbox"]])
+        )
     transform = ValTransform(legacy=False)
-    predictions: dict[int, list[tuple[float, list[float]]]] = {}
+    predictions: dict[int, list[tuple[float, list[float], int]]] = {}
     model.eval()
     with torch.inference_mode():
         for image_info in annotation["images"]:
@@ -213,44 +287,48 @@ def _split_predictions(model: Any, device: Any, data_dir: Path,
             tensor = torch.from_numpy(transformed).unsqueeze(0).float().to(device)
             raw = model(tensor).detach().cpu()
             detected = postprocess(
-                raw, 1, conf_thre=pre_filter_confidence, nms_thre=nms_threshold,
-                class_agnostic=True,
+                raw, len(class_names), conf_thre=pre_filter_confidence,
+                nms_thre=nms_threshold, class_agnostic=False,
             )[0]
-            found = []
+            found: list[tuple[float, list[float], int]] = []
             if detected is not None:
                 for row in detected.tolist():
-                    x0, y0, x1, y1, objectness, class_confidence, _ = row
+                    x0, y0, x1, y1, objectness, class_confidence, class_id = row
                     found.append((
                         float(objectness * class_confidence),
                         [x0 / ratio, y0 / ratio,
                          (x1 - x0) / ratio, (y1 - y0) / ratio],
+                        int(class_id),
                     ))
             predictions[image_info["id"]] = found
     return predictions, truths
 
 
 def _validation_predictions(model: Any, device: Any, data_dir: Path,
-                            input_size: tuple[int, int], nms_threshold: float
-                            ) -> tuple[dict[int, list[tuple[float, list[float]]]],
-                                       dict[int, list[list[float]]]]:
-    return _split_predictions(model, device, data_dir, input_size, nms_threshold, "val")
+                            input_size: tuple[int, int], nms_threshold: float,
+                            classes: list[str] | tuple[str, ...] | None = None
+                            ) -> tuple[dict[int, list[tuple[float, list[float], int]]],
+                                       dict[int, list[tuple[int, list[float]]]]]:
+    return _split_predictions(model, device, data_dir, input_size, nms_threshold, "val",
+                              classes=classes)
 
 
 def evaluate(model: Any, device: Any, data_dir: Path,
              input_size: tuple[int, int], nms_threshold: float,
-             minimum_precision: float = 0.9) -> dict[str, Any]:
+             minimum_precision: float = 0.9,
+             classes: list[str] | tuple[str, ...] | None = None) -> dict[str, Any]:
     predictions, truths = _validation_predictions(
-        model, device, data_dir, input_size, nms_threshold
+        model, device, data_dir, input_size, nms_threshold, classes
     )
     thresholds = [round(index / 100, 2) for index in range(1, 96, 2)]
     results = []
     for threshold in thresholds:
         tp = fp = fn = 0
         for image_id, ground_truth in truths.items():
-            boxes = [box for score, box in predictions[image_id] if score >= threshold]
-            matched = _match(boxes, ground_truth)
+            candidates = [item for item in predictions[image_id] if item[0] >= threshold]
+            matched = _match_class_aware(candidates, ground_truth)
             tp += matched
-            fp += len(boxes) - matched
+            fp += len(candidates) - matched
             fn += len(ground_truth) - matched
         result = {"confidence": threshold, **_finish(tp, fp, fn)}
         results.append(result)
@@ -272,6 +350,8 @@ def main() -> None:
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--pretrained", type=Path)
+    parser.add_argument("--classes", nargs="+", metavar="CLASS",
+                        help="Explicit class order; otherwise derive from COCO categories")
     parser.add_argument("--epochs", type=int, default=120)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--input-size", type=int, default=256)
@@ -339,6 +419,20 @@ def main() -> None:
         mps_seeded = True
     exp_path = root / "training/yolox_nano_minimap.py"
     exp = get_exp(str(exp_path), None)
+    try:
+        train_annotation_path = data_dir / "annotations/instances_train2017.json"
+        train_document = json.loads(train_annotation_path.read_text(encoding="utf-8"))
+        class_names = resolve_classes(
+            classes=args.classes, coco=train_document,
+        )
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        parser.error(str(error))
+    try:
+        _validate_canonical_split_classes(data_dir, class_names)
+    except ValueError as error:
+        parser.error(str(error))
+    exp.class_names = list(normalize_classes(class_names))
+    exp.num_classes = len(exp.class_names)
     exp.max_epoch = args.epochs
     exp.input_size = (args.input_size, args.input_size)
     exp.test_size = exp.input_size
@@ -376,6 +470,7 @@ def main() -> None:
     )
     ema = ModelEMA(model, 0.9998)
     output.mkdir(parents=True, exist_ok=True)
+    tensor_contract = yolox_tensor_contract(args.input_size, exp.class_names)
 
     metadata = {
         "schema_version": 1,
@@ -404,6 +499,10 @@ def main() -> None:
         "epochs": args.epochs,
         "batch_size": args.batch_size,
         "input_size": list(exp.input_size),
+        "input": tensor_contract["input"],
+        "classes": list(exp.class_names),
+        "output_width": 5 + exp.num_classes,
+        "output": tensor_contract["output"],
         "mosaic_prob": exp.mosaic_prob,
         "augmentation": {
             "mosaic_prob": exp.mosaic_prob,
@@ -415,6 +514,12 @@ def main() -> None:
             "shear": exp.shear,
         },
         "nms_threshold": exp.nmsthre,
+        "postprocess": {
+            "confidence": None,
+            "confidence_by_class": None,
+            "nms_iou": exp.nmsthre,
+            "strides": [8, 16, 32],
+        },
         "minimum_precision": args.minimum_precision,
         "selection": {
             "minimum_precision": args.minimum_precision,
@@ -506,7 +611,7 @@ def main() -> None:
         if should_evaluate:
             validation = evaluate(
                 ema.ema, device, data_dir, exp.test_size, exp.nmsthre,
-                args.minimum_precision,
+                args.minimum_precision, exp.class_names,
             )
             record["validation"] = validation
             selected = validation["selected"]
@@ -545,6 +650,12 @@ def main() -> None:
     best_f1 = _metric_value(best_selected, "f1") if best_selected is not None else -1.0
     metadata["best_validation_f1"] = round(best_f1, 6)
     metadata["best_validation_metric"] = best_selected
+    if best_selected is not None:
+        selected_confidence = float(best_selected["confidence"])
+        metadata["postprocess"]["confidence"] = selected_confidence
+        metadata["postprocess"]["confidence_by_class"] = {
+            name: selected_confidence for name in exp.class_names
+        }
     metadata["best_epoch"] = best_epoch
     metadata["completed_epochs"] = len(metadata["history"])
     metadata["stopped_early"] = stopped_early

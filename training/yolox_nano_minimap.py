@@ -1,8 +1,14 @@
-"""YOLOX-Nano experiment for cropped minimap enemy portraits."""
+"""YOLOX-Nano experiment for cropped minimap entities.
+
+The runner sets ``num_classes`` from the COCO categories before constructing
+the model.  Keeping the historical one-class default here allows the
+experiment to remain usable from older scripts and checkpoints.
+"""
 
 from __future__ import annotations
 
 import os
+import json
 
 import torch.nn as nn
 
@@ -12,7 +18,17 @@ from yolox.exp import Exp as BaseExp
 class Exp(BaseExp):
     def __init__(self) -> None:
         super().__init__()
-        self.num_classes = 1
+        configured = os.environ.get("MAPASSIST_CLASS_NAMES")
+        try:
+            configured_classes = json.loads(configured) if configured else None
+        except json.JSONDecodeError as error:
+            raise ValueError("MAPASSIST_CLASS_NAMES must be a JSON list") from error
+        if (configured_classes is not None and
+                (not isinstance(configured_classes, list) or not configured_classes or
+                 any(not isinstance(item, str) or not item for item in configured_classes))):
+            raise ValueError("MAPASSIST_CLASS_NAMES must be a non-empty JSON list")
+        self.class_names = configured_classes or ["minimap_enemy"]
+        self.num_classes = len(self.class_names)
         self.depth = 0.33
         self.width = 0.25
         self.depthwise = True

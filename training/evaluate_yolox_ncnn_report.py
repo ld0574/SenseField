@@ -14,6 +14,11 @@ import math
 import sys
 from pathlib import Path
 
+try:
+    from .yolox_decode import classes_from_coco, confidence_thresholds
+except ImportError:  # pragma: no cover - direct command-line execution.
+    from yolox_decode import classes_from_coco, confidence_thresholds  # type: ignore
+
 
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -41,14 +46,14 @@ def _finish(tp: int, fp: int, fn: int) -> dict[str, int | float | None]:
     }
 
 
-def _parse_runtime_boxes(value: object, image: str) -> list[tuple[float, list[float]]]:
+def _parse_runtime_boxes(value: object, image: str) -> list[tuple[float, list[float], int]]:
     if not isinstance(value, list):
         raise ValueError(f"runtime detections must be a list for {image}")
     result = []
     for item in value:
         if (
             not isinstance(item, list)
-            or len(item) != 5
+            or len(item) not in {5, 6}
             or any(
                 not isinstance(number, (int, float))
                 or isinstance(number, bool)
@@ -57,13 +62,33 @@ def _parse_runtime_boxes(value: object, image: str) -> list[tuple[float, list[fl
             )
         ):
             raise ValueError(f"invalid runtime detection in {image}: {item!r}")
-        x0, y0, x1, y1, score = map(float, item)
+        x0, y0, x1, y1, score = map(float, item[:5])
+        class_id = int(item[5]) if len(item) == 6 else 0
+        if len(item) == 6 and (float(item[5]) != class_id or class_id < 0):
+            raise ValueError(f"runtime detection has invalid class index in {image}: {item!r}")
         if x0 < 0 or y0 < 0 or x1 <= x0 or y1 <= y0 or not 0 <= score <= 1:
             raise ValueError(f"runtime detection is outside valid bounds in {image}: {item!r}")
         # The verifier stores XYXY in source-image pixels; COCO and the project
         # matcher use XYWH.
-        result.append((score, [x0, y0, x1 - x0, y1 - y0]))
+        result.append((score, [x0, y0, x1 - x0, y1 - y0], class_id))
     return result
+
+
+def _match_class_aware(predictions, truths, threshold: float, matcher):
+    pairs = []
+    for class_id in sorted({entry[2] for entry in predictions} |
+                            {entry[0] for entry in truths}):
+        prediction_indices = [index for index, entry in enumerate(predictions)
+                              if entry[2] == class_id]
+        truth_indices = [index for index, entry in enumerate(truths)
+                         if entry[0] == class_id]
+        local = matcher(
+            [predictions[index][1] for index in prediction_indices],
+            [truths[index][1] for index in truth_indices], threshold,
+        )
+        pairs.extend((prediction_indices[prediction], truth_indices[truth], overlap)
+                     for prediction, truth, overlap in local)
+    return pairs
 
 
 def main() -> None:
@@ -94,8 +119,11 @@ def main() -> None:
     gates = report.get("gates", {})
     runtime_gate = gates.get("runtime_preprocess_and_detections", {})
     confidence = runtime_gate.get("confidence")
+    confidence_by_class = runtime_gate.get("confidence_by_class")
     nms_threshold = runtime_gate.get("nms_threshold")
-    if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
+    if confidence_by_class is None and (
+        not isinstance(confidence, (int, float)) or isinstance(confidence, bool)
+    ):
         raise ValueError("parity report has no valid fixed confidence")
     if not isinstance(nms_threshold, (int, float)) or isinstance(nms_threshold, bool):
         raise ValueError("parity report has no valid fixed NMS threshold")
@@ -108,7 +136,19 @@ def main() -> None:
     if not isinstance(results, list) or len(results) != len(images):
         raise ValueError("parity report must contain one result for every COCO val image")
 
-    truths: dict[int, list[list[float]]] = {int(image["id"]): [] for image in images}
+    class_names = classes_from_coco(annotation)
+    confidence_by_class = confidence_thresholds(
+        confidence_by_class if confidence_by_class is not None else confidence,
+        class_names,
+    )
+    category_ids = {
+        int(item["id"]): index
+        for index, item in enumerate(sorted(annotation.get("categories", []),
+                                            key=lambda value: int(value["id"])))
+    }
+    truths: dict[int, list[tuple[int, list[float]]]] = {
+        int(image["id"]): [] for image in images
+    }
     for item in annotations:
         bbox = item.get("bbox")
         if not isinstance(bbox, list) or len(bbox) != 4:
@@ -118,9 +158,15 @@ def main() -> None:
             raise ValueError(f"non-finite COCO bbox: {item!r}")
         if width <= 0 or height <= 0:
             raise ValueError(f"non-positive COCO bbox: {item!r}")
-        truths[int(item["image_id"])].append([x, y, width, height])
+        truths[int(item["image_id"])].append((
+            category_ids.get(int(item.get("category_id", 1)), 0),
+            [x, y, width, height],
+        ))
 
     per_image = []
+    per_class_totals = {
+        name: {"tp": 0, "fp": 0, "fn": 0} for name in class_names
+    }
     result_by_name = {item.get("image"): item for item in results}
     if len(result_by_name) != len(results):
         raise ValueError("parity report contains duplicate or missing image names")
@@ -144,24 +190,54 @@ def main() -> None:
         detections = _parse_runtime_boxes(
             runtime.get("runtime_detections_xyxy_confidence"), name
         )
-        detections = [entry for entry in detections if entry[0] >= float(confidence)]
-        boxes = [box for _, box in detections]
-        matches = _match_boxes(boxes, truths[image_id], args.iou_threshold)
+        if any(entry[2] >= len(class_names) for entry in detections):
+            raise ValueError(f"runtime detection references an unknown class for {name}")
+        detections = [entry for entry in detections
+                      if entry[0] >= confidence_by_class[class_names[entry[2]]]]
+        matches = _match_class_aware(
+            detections, truths[image_id], args.iou_threshold, _match_boxes,
+        )
         image_tp = len(matches)
-        image_fp = len(boxes) - image_tp
+        image_fp = len(detections) - image_tp
         image_fn = len(truths[image_id]) - image_tp
         tp += image_tp
         fp += image_fp
         fn += image_fn
+        matched_prediction_indices = {prediction for prediction, _truth, _ in matches}
+        matched_truth_indices = {truth for _prediction, truth, _ in matches}
+        image_per_class = {}
+        for class_id, class_name in enumerate(class_names):
+            class_prediction_indices = {
+                index for index, entry in enumerate(detections)
+                if entry[2] == class_id
+            }
+            class_truth_indices = {
+                index for index, entry in enumerate(truths[image_id])
+                if entry[0] == class_id
+            }
+            class_tp = sum(
+                1 for prediction, truth, _overlap in matches
+                if detections[prediction][2] == class_id
+                and truths[image_id][truth][0] == class_id
+            )
+            class_fp = len(class_prediction_indices - matched_prediction_indices)
+            class_fn = len(class_truth_indices - matched_truth_indices)
+            per_class_totals[class_name]["tp"] += class_tp
+            per_class_totals[class_name]["fp"] += class_fp
+            per_class_totals[class_name]["fn"] += class_fn
+            image_per_class[class_name] = _finish(class_tp, class_fp, class_fn)
         matched_ious = [
-            _iou(boxes[prediction_index], truths[image_id][truth_index])
+            _iou(detections[prediction_index][1], truths[image_id][truth_index][1])
             for prediction_index, truth_index, _ in matches
         ]
         per_image.append({
             "image": name,
             "image_id": image_id,
             "truth_boxes": len(truths[image_id]),
-            "runtime_detections": len(boxes),
+            "runtime_detections": len(detections),
+            "runtime_classes": [class_names[item[2]] for item in detections
+                                 if item[2] < len(class_names)],
+            "per_class": image_per_class,
             "tp": image_tp,
             "fp": image_fp,
             "fn": image_fn,
@@ -189,10 +265,18 @@ def main() -> None:
             "parity failure is reported separately and is not waived by these detection metrics."
         ),
         "split": "COCO HD development val",
-        "confidence": float(confidence),
+        "confidence": (float(confidence) if isinstance(confidence, (int, float))
+                       and not isinstance(confidence, bool) else None),
+        "confidence_by_class": confidence_by_class,
+        "classes": list(class_names),
+        "output_width": 5 + len(class_names),
         "confidence_source": "fixed value recorded in ncnn parity report; no threshold search",
         "nms_threshold": float(nms_threshold),
         "iou_threshold": args.iou_threshold,
+        "per_class": {
+            name: _finish(values["tp"], values["fp"], values["fn"])
+            for name, values in per_class_totals.items()
+        },
         "metrics": metric,
         "development_quality_gate": quality_gate,
         "parity": {

@@ -431,9 +431,11 @@ def read_template(path: Path | None) -> tuple[Template | None, Any]:
 def observation_dict(value: Observation) -> dict[str, Any]:
     return {
         "type": {1: "main_enemy", 2: "minimap_enemy", 3: "danger_ping",
-                 4: "player_dead", 5: "player_alive"}[value.kind],
+                 4: "player_dead", 5: "player_alive",
+                 6: "minimap_player"}[value.kind],
         "source": {1: "main", 2: "minimap", 3: "ping",
-                   4: "player_state", 5: "player_state"}[value.kind],
+                   4: "player_state", 5: "player_state",
+                   6: "minimap"}[value.kind],
         "direction": {0: None, 1: "left", 2: "right", 3: "up", 4: "down"}[value.direction],
         "bbox_norm": [round(getattr(value.bbox, name), 5) for name in ("x", "y", "w", "h")],
         "confidence": round(value.confidence, 4),
@@ -444,7 +446,8 @@ def observation_dict(value: Observation) -> dict[str, Any]:
 def cue_dict(value: Cue) -> dict[str, Any]:
     return {
         "kind": {1: "main_enemy", 2: "minimap_enemy", 3: "danger_ping",
-                 4: "player_dead", 5: "player_alive"}[value.kind],
+                 4: "player_dead", 5: "player_alive",
+                 6: "minimap_player"}[value.kind],
         "direction": {0: None, 1: "left", 2: "right", 3: "up", 4: "down"}[value.direction],
         "priority": value.priority,
         "emitted_at_ms": value.emitted_at_ms,

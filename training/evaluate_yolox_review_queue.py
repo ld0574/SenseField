@@ -17,7 +17,28 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from mapassist.detection_evaluate import _match_boxes, _boxes
+from mapassist.detection_evaluate import _match_boxes_by_class, _boxes
+
+try:
+    from .yolox_decode import (
+        DEFAULT_CLASSES,
+        candidates_from_raw,
+        class_aware_nms,
+        confidence_from_metadata,
+        confidence_thresholds,
+        normalize_classes,
+        resolve_classes,
+    )
+except ImportError:  # pragma: no cover - direct command-line execution.
+    from yolox_decode import (  # type: ignore
+        DEFAULT_CLASSES,
+        candidates_from_raw,
+        class_aware_nms,
+        confidence_from_metadata,
+        confidence_thresholds,
+        normalize_classes,
+        resolve_classes,
+    )
 
 
 def _metrics(tp: int, fp: int, fn: int) -> dict[str, int | float | None]:
@@ -60,7 +81,22 @@ def _roi(value: object, label: str) -> list[float]:
     return result
 
 
-def _reviewed_frames(document: dict) -> tuple[dict, list[dict]]:
+def _categories(value: object, count: int, classes: list[str], default: str,
+                label: str) -> list[str]:
+    """Validate per-box categories while keeping old one-class queues usable."""
+    if value is None and len(classes) > 1 and count:
+        raise ValueError(
+            f"{label} categories are required for a multi-class manifest"
+        )
+    if value is None:
+        return [default] * count
+    if (not isinstance(value, list) or len(value) != count or
+            any(not isinstance(item, str) or item not in classes for item in value)):
+        raise ValueError(f"{label} categories must align with boxes and classes")
+    return list(value)
+
+
+def _reviewed_frames(document: dict, classes=None) -> tuple[dict, list[dict]]:
     if document.get("schema_version") != 1:
         raise ValueError("review manifest must have schema_version 1")
     if document.get("review_mode") != "manual":
@@ -84,6 +120,21 @@ def _reviewed_frames(document: dict) -> tuple[dict, list[dict]]:
         label_roi_value = document.get("label_roi")
     label_roi = (_roi(label_roi_value, f"{match_id} label roi")
                  if label_roi_value is not None else None)
+    default_category = document.get("kind", DEFAULT_CLASSES[0])
+    if not isinstance(default_category, str) or not default_category.strip():
+        default_category = DEFAULT_CLASSES[0]
+    declared_classes = document.get("classes")
+    if classes is None:
+        if declared_classes is None:
+            declared_classes = [default_category]
+        class_names = normalize_classes(declared_classes, "review classes")
+    else:
+        class_names = normalize_classes(classes, "canonical classes")
+        if declared_classes is not None and normalize_classes(
+                declared_classes, "review classes") != class_names:
+            raise ValueError("review classes do not match canonical model classes")
+    if default_category not in class_names:
+        default_category = class_names[0]
     samples = match.get("samples")
     if not isinstance(samples, list) or not samples:
         raise ValueError("review match needs samples")
@@ -108,8 +159,14 @@ def _reviewed_frames(document: dict) -> tuple[dict, list[dict]]:
                            f"{match_id}@{at_ms} reviewed_boxes")
             if not truth:
                 raise ValueError(f"{match_id}@{at_ms} corrected sample has no boxes")
+            truth_categories = sample.get("reviewed_categories")
+            truth_categories = _categories(
+                truth_categories, len(truth), list(class_names), default_category,
+                f"{match_id}@{at_ms} reviewed",
+            )
         else:
             truth = []
+            truth_categories = []
             if status == "negative" and sample.get("reviewed_boxes") not in (None, []):
                 raise ValueError(f"{match_id}@{at_ms} negative sample has reviewed boxes")
         frame = sample.get("frame")
@@ -121,6 +178,8 @@ def _reviewed_frames(document: dict) -> tuple[dict, list[dict]]:
             "status": status,
             "frame": frame,
             "truth": truth,
+            "truth_categories": truth_categories,
+            "classes": class_names,
             "roi": roi,
             "label_roi": label_roi,
         })
@@ -130,19 +189,64 @@ def _reviewed_frames(document: dict) -> tuple[dict, list[dict]]:
     return match, frames
 
 
+def _prediction_rows(value: object, label: str, classes: tuple[str, ...],
+                     default: str) -> tuple[list[list[float]], list[str]]:
+    """Normalize legacy boxes and category-aware detector rows."""
+    if not isinstance(value, list):
+        raise ValueError(f"{label} must be a list")
+    raw_boxes: list[object] = []
+    categories: list[str] = []
+    for row in value:
+        category: object = None
+        if isinstance(row, dict):
+            box = row.get("bbox_norm", row.get("bbox"))
+            category = row.get("class_name", row.get("category"))
+            if category is None and row.get("class_id") is not None:
+                class_id = row.get("class_id")
+                if (not isinstance(class_id, int) or isinstance(class_id, bool) or
+                        class_id < 0 or class_id >= len(classes)):
+                    raise ValueError(f"{label} has invalid class id: {class_id!r}")
+                category = classes[class_id]
+        elif (isinstance(row, (list, tuple)) and len(row) == 2 and
+              isinstance(row[1], (str, int)) and not isinstance(row[1], bool)):
+            box, category = row
+            if isinstance(category, int):
+                if category < 0 or category >= len(classes):
+                    raise ValueError(f"{label} has invalid class id: {category!r}")
+                category = classes[category]
+        elif (isinstance(row, (list, tuple)) and len(row) == 5 and
+              isinstance(row[4], (str, int)) and not isinstance(row[4], bool)):
+            box, category = row[:4], row[4]
+        else:
+            box = row
+        if category is None:
+            if box is not None and len(classes) > 1:
+                raise ValueError(
+                    f"{label} category is required for a multi-class prediction"
+                )
+            category = default
+        if not isinstance(category, str) or category not in classes:
+            raise ValueError(f"{label} contains unknown category {category!r}")
+        raw_boxes.append(box)
+        categories.append(category)
+    boxes = _boxes(raw_boxes, label)
+    return boxes, categories
+
+
 def summarize_predictions(
     document: dict,
     frame_sizes: dict[int, tuple[int, int]],
-    predictions: dict[int, list[list[float]]],
+    predictions: dict[int, list],
     iou_threshold: float = 0.5,
     edit_tolerance_px: float = 8.0,
+    classes=None,
 ) -> dict:
     """Score full-frame normalized predictions and count edit operations."""
     if not 0 < iou_threshold <= 1:
         raise ValueError("iou_threshold must be in (0, 1]")
     if not math.isfinite(edit_tolerance_px) or edit_tolerance_px < 0:
         raise ValueError("edit_tolerance_px must be finite and non-negative")
-    match, frames = _reviewed_frames(document)
+    match, frames = _reviewed_frames(document, classes)
     match_id = match["id"]
     status_counts: Counter[str] = Counter(frame["status"] for frame in frames)
     labeled = [frame for frame in frames if frame["status"] in {"corrected", "negative"}]
@@ -153,6 +257,9 @@ def summarize_predictions(
         raise ValueError(f"prediction timestamps differ from labeled frames: missing={len(missing)}, extra={len(extra)}")
 
     totals = Counter()
+    per_class_totals = {
+        name: Counter() for name in tuple(frames[0]["classes"]) if frames
+    }
     ground_truth_fingerprint = []
     frame_results = []
     truth_boxes_total = 0
@@ -162,8 +269,34 @@ def summarize_predictions(
         if width <= 0 or height <= 0:
             raise ValueError(f"invalid image dimensions at {match_id}@{at_ms}")
         truth = frame["truth"]
-        boxes = _boxes(predictions[at_ms], f"predictions for {match_id}@{at_ms}")
-        pairs = _match_boxes(boxes, truth, iou_threshold)
+        truth_categories = frame["truth_categories"]
+        class_names = tuple(frame["classes"])
+        default_category = class_names[0]
+        boxes, prediction_categories = _prediction_rows(
+            predictions[at_ms], f"predictions for {match_id}@{at_ms}",
+            class_names, default_category,
+        )
+        pairs = _match_boxes_by_class(
+            boxes, truth, prediction_categories, truth_categories, iou_threshold,
+        )
+        matched_predictions = {prediction for prediction, _truth, _ in pairs}
+        matched_truths = {truth_index for _prediction, truth_index, _ in pairs}
+        for class_name, class_totals in per_class_totals.items():
+            prediction_indices = {
+                index for index, value in enumerate(prediction_categories)
+                if value == class_name
+            }
+            truth_indices = {
+                index for index, value in enumerate(truth_categories)
+                if value == class_name
+            }
+            class_pairs = [pair for pair in pairs
+                           if prediction_categories[pair[0]] == class_name]
+            class_totals.update({
+                "tp": len(class_pairs),
+                "fp": len(prediction_indices - matched_predictions),
+                "fn": len(truth_indices - matched_truths),
+            })
         deletions = len(boxes) - len(pairs)
         additions = len(truth) - len(pairs)
         adjustments = 0
@@ -211,6 +344,7 @@ def summarize_predictions(
             "at_ms": at_ms,
             "review_status": frame["status"],
             "reviewed_boxes": truth,
+            "reviewed_categories": truth_categories,
         })
 
     metrics = _metrics(totals["tp"], totals["fp"], totals["fn"])
@@ -228,6 +362,10 @@ def summarize_predictions(
         "iou_threshold": iou_threshold,
         "edit_tolerance_px": edit_tolerance_px,
         "metrics": metrics,
+        "per_class": {
+            name: _metrics(values["tp"], values["fp"], values["fn"])
+            for name, values in per_class_totals.items()
+        },
         "workload": {
             "unit": "one add, delete, or reframe per box",
             "matching": f"maximum one-to-one IoU matching at {iou_threshold:g}",
@@ -271,11 +409,15 @@ def _center_inside_roi(box: list[float], roi: list[float]) -> bool:
             roi[1] <= center_y <= roi[1] + roi[3])
 
 
-def _filter_label_roi(boxes: list[list[float]], label_roi: list[float] | None
-                      ) -> list[list[float]]:
+def _filter_label_roi(boxes: list, label_roi: list[float] | None) -> list:
     if label_roi is None:
         raise ValueError("label ROI filtering requires label_roi in the review manifest")
-    return [box for box in boxes if _center_inside_roi(box, label_roi)]
+    return [
+        row for row in boxes
+        if _center_inside_roi(
+            row["bbox"] if isinstance(row, dict) else row, label_roi,
+        )
+    ]
 
 
 def _verify_display_size(document: dict, width: int, height: int) -> None:
@@ -293,11 +435,12 @@ def _verify_display_size(document: dict, width: int, height: int) -> None:
         )
 
 
-def _load_onnx(path: Path, input_size: int, confidence: float,
-               nms_threshold: float) -> tuple[Any, Any]:
+def _load_onnx(path: Path, input_size: int, confidence: object,
+               nms_threshold: float, classes=DEFAULT_CLASSES) -> tuple[Any, Any]:
     import onnxruntime as ort
 
-    from prelabel_review_queue import _decode, _nms
+    class_names = normalize_classes(classes)
+    confidence_by_class = confidence_thresholds(confidence, class_names)
 
     session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
     input_name = session.get_inputs()[0].name
@@ -314,24 +457,23 @@ def _load_onnx(path: Path, input_size: int, confidence: float,
         canvas[:resized.shape[0], :resized.shape[1]] = resized
         batch = canvas.transpose(2, 0, 1)[None].astype(np.float32)
         raw = session.run(None, {input_name: batch})[0]
-        decoded = _decode(raw, input_size)
-        scores = decoded[:, 4] * decoded[:, 5]
-        selected = scores >= confidence
-        decoded, scores = decoded[selected], scores[selected]
-        boxes = np.empty((len(decoded), 4), dtype=np.float32)
-        boxes[:, 0] = decoded[:, 0] - decoded[:, 2] / 2
-        boxes[:, 1] = decoded[:, 1] - decoded[:, 3] / 2
-        boxes[:, 2] = decoded[:, 0] + decoded[:, 2] / 2
-        boxes[:, 3] = decoded[:, 1] + decoded[:, 3] / 2
-        keep = _nms(boxes, scores, nms_threshold)
-        result = [[float(value) for value in boxes[index] / ratio] for index in keep]
+        detections = candidates_from_raw(
+            raw, input_size, width, height, confidence_by_class,
+            nms_threshold, class_names, np=np,
+        )
+        result = [{
+            "bbox": [float(value) for value in detection[:4]],
+            "class_id": int(detection[5]),
+            "class_name": class_names[int(detection[5])],
+        } for detection in detections]
         return result, ratio
 
     return predict, {"backend": "onnxruntime", "input_name": input_name}
 
 
-def _load_torch(path: Path, yolox_root: Path, input_size: int, confidence: float,
-                nms_threshold: float, device_name: str) -> tuple[Any, dict]:
+def _load_torch(path: Path, yolox_root: Path, input_size: int, confidence: object,
+                nms_threshold: float, device_name: str,
+                classes=DEFAULT_CLASSES) -> tuple[Any, dict]:
     import cv2
     import numpy as np
     import torch
@@ -339,14 +481,18 @@ def _load_torch(path: Path, yolox_root: Path, input_size: int, confidence: float
     sys.path.insert(0, str(yolox_root))
     from yolox.data import ValTransform
     from yolox.exp import get_exp
-    from yolox.utils import load_ckpt, postprocess
+    from yolox.utils import load_ckpt
 
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from train_yolox_minimap import _device, _git_revision
+    class_names = normalize_classes(classes)
+    confidence_by_class = confidence_thresholds(confidence, class_names)
 
     repository_root = Path(__file__).resolve().parents[1]
     exp_path = repository_root / "training/yolox_nano_minimap.py"
     exp = get_exp(str(exp_path), None)
+    exp.class_names = list(class_names)
+    exp.num_classes = len(class_names)
     exp.input_size = (input_size, input_size)
     exp.test_size = exp.input_size
     checkpoint = torch.load(path, map_location="cpu", weights_only=False)
@@ -361,19 +507,36 @@ def _load_torch(path: Path, yolox_root: Path, input_size: int, confidence: float
         transformed, _ = transform(crop, None, (input_size, input_size))
         tensor = torch.from_numpy(transformed).unsqueeze(0).float().to(device)
         with torch.inference_mode():
-            raw = model(tensor)
-            detected = postprocess(
-                raw, 1, conf_thre=min(confidence, 0.01),
-                nms_thre=nms_threshold, class_agnostic=True,
-            )[0]
-        if detected is not None:
-            detected = detected.detach().cpu()
-        result = []
-        if detected is not None:
-            for row in detected.tolist():
-                x0, y0, x1, y1, objectness, class_confidence, _ = row
-                if objectness * class_confidence >= confidence:
-                    result.append([x0 / ratio, y0 / ratio, x1 / ratio, y1 / ratio])
+            decoded = model(tensor).detach().cpu().numpy()[0]
+        if decoded.ndim != 2 or decoded.shape[1] != 5 + len(class_names):
+            raise ValueError(
+                f"model output width does not match classes {list(class_names)!r}"
+            )
+        objectness = decoded[:, 4]
+        class_confidences = objectness[:, None] * decoded[:, 5:]
+        thresholds = np.asarray(
+            [confidence_by_class[name] for name in class_names], dtype=np.float32,
+        )
+        eligible = np.isfinite(class_confidences)
+        eligible &= class_confidences >= thresholds[None, :]
+        filtered = np.where(eligible, class_confidences, -np.inf)
+        class_ids = np.argmax(filtered, axis=1).astype(np.int64)
+        scores = filtered[np.arange(len(decoded)), class_ids]
+        selected = eligible.any(axis=1) & np.isfinite(scores)
+        decoded = decoded[selected]
+        scores = scores[selected]
+        class_ids = class_ids[selected]
+        boxes = np.empty((len(decoded), 4), dtype=np.float32)
+        boxes[:, 0] = decoded[:, 0] - decoded[:, 2] * 0.5
+        boxes[:, 1] = decoded[:, 1] - decoded[:, 3] * 0.5
+        boxes[:, 2] = decoded[:, 0] + decoded[:, 2] * 0.5
+        boxes[:, 3] = decoded[:, 1] + decoded[:, 3] * 0.5
+        keep = class_aware_nms(boxes, scores, class_ids, nms_threshold, np=np)
+        result = [{
+            "bbox": [float(value) for value in boxes[index] / ratio],
+            "class_id": int(class_ids[index]),
+            "class_name": class_names[int(class_ids[index])],
+        } for index in keep]
         return result, ratio
 
     metadata = {
@@ -385,6 +548,34 @@ def _load_torch(path: Path, yolox_root: Path, input_size: int, confidence: float
         "experiment_sha256": _sha256(exp_path),
     }
     return predict, metadata
+
+
+def _metadata_path_for_model(model_path: Path) -> Path | None:
+    """Find the model sidecar, falling back to a training metrics file."""
+    candidates = (
+        model_path.with_suffix(".metadata.json"),
+        model_path.parent / "metrics.json",
+    )
+    return next((path for path in candidates if path.is_file()), None)
+
+
+def _metadata_confidence(path: Path | None, classes: tuple[str, ...],
+                         fallback: float | None = None) -> dict[str, float] | None:
+    if path is None:
+        return None
+    metadata = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(metadata, dict):
+        raise ValueError("model metadata must be an object")
+    postprocess = metadata.get("postprocess")
+    candidate = postprocess if isinstance(postprocess, dict) else {}
+    has_threshold = any(key in candidate for key in
+                        ("confidence_by_class", "confidence"))
+    has_threshold = has_threshold or any(key in metadata for key in
+                                         ("confidence_by_class", "confidence"))
+    if not has_threshold:
+        return None
+    return confidence_from_metadata(metadata, classes,
+                                    0.0 if fallback is None else fallback)
 
 
 def evaluate_checkpoint(
@@ -399,6 +590,7 @@ def evaluate_checkpoint(
     yolox_root: Path | None = None,
     device_name: str = "auto",
     filter_label_roi: bool = False,
+    classes=None,
 ) -> dict:
     import cv2
 
@@ -413,40 +605,74 @@ def evaluate_checkpoint(
         raise ValueError("iou_threshold must be in (0, 1]")
 
     document = json.loads(review_manifest.read_text(encoding="utf-8"))
-    match, frames = _reviewed_frames(document)
+    model_metadata = _metadata_path_for_model(model_path)
+    manifest_classes = document.get("classes")
+    if manifest_classes is None and isinstance(document.get("category"), str):
+        manifest_classes = [document["category"]]
+    class_names = resolve_classes(
+        classes=classes if classes is not None else manifest_classes,
+        metadata=model_metadata,
+    )
+    match, frames = _reviewed_frames(document, class_names)
     if model_path.suffix.lower() == ".pth":
         if yolox_root is None:
             raise ValueError("--yolox-root is required for a .pth checkpoint")
         checkpoint = None
+        checkpoint_confidence = None
         if confidence is None:
             import torch
 
             checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
-            confidence = float(checkpoint["validation"]["selected"]["confidence"])
-            confidence_source = "checkpoint_validation"
-        else:
+            try:
+                checkpoint_confidence = float(
+                    checkpoint["validation"]["selected"]["confidence"]
+                )
+            except (KeyError, TypeError, ValueError) as error:
+                raise ValueError(
+                    "Checkpoint has no validation-selected confidence; pass --confidence"
+                ) from error
+        if confidence is not None:
+            confidence_config = confidence_thresholds(confidence, class_names)
             confidence_source = "command_line"
-        if not math.isfinite(confidence) or not 0 <= confidence <= 1:
-            raise ValueError("confidence must be finite and between 0 and 1")
+        else:
+            confidence_config = _metadata_confidence(
+                model_metadata, class_names, checkpoint_confidence,
+            )
+            if confidence_config is None:
+                if checkpoint_confidence is None:
+                    raise ValueError(
+                        "no confidence in model metadata or checkpoint; pass --confidence"
+                    )
+                confidence_config = confidence_thresholds(
+                    checkpoint_confidence, class_names,
+                )
+                confidence_source = "checkpoint_validation"
+            else:
+                confidence_source = "model_metadata"
         predict, backend_metadata = _load_torch(
-            model_path, yolox_root.resolve(), input_size, confidence,
-            nms_threshold, device_name,
+            model_path, yolox_root.resolve(), input_size, confidence_config,
+            nms_threshold, device_name, class_names,
         )
     elif model_path.suffix.lower() == ".onnx":
-        if confidence is None:
-            raise ValueError("--confidence is required for an ONNX model")
-        if not math.isfinite(confidence) or not 0 <= confidence <= 1:
-            raise ValueError("confidence must be finite and between 0 and 1")
-        confidence_source = "command_line"
+        if confidence is not None:
+            confidence_config = confidence_thresholds(confidence, class_names)
+            confidence_source = "command_line"
+        else:
+            confidence_config = _metadata_confidence(model_metadata, class_names)
+            if confidence_config is None:
+                raise ValueError(
+                    "--confidence is required for an ONNX model when metadata has no threshold"
+                )
+            confidence_source = "model_metadata"
         predict, backend_metadata = _load_onnx(
-            model_path, input_size, confidence, nms_threshold,
+            model_path, input_size, confidence_config, nms_threshold, class_names,
         )
     else:
         raise ValueError("model must be a YOLOX .pth checkpoint or .onnx model")
 
     if filter_label_roi and any(frame["label_roi"] is None for frame in frames):
         raise ValueError("--filter-label-roi requires label_roi in the review manifest")
-    predictions: dict[int, list[list[float]]] = {}
+    predictions: dict[int, list] = {}
     frame_sizes: dict[int, tuple[int, int]] = {}
     frame_hashes = []
     for frame in frames:
@@ -469,18 +695,22 @@ def evaluate_checkpoint(
         crop = image[crop_y:crop_bottom, crop_x:crop_right]
         crop_boxes, _ratio = predict(crop)
         normalized = []
-        for box in crop_boxes:
+        for row in crop_boxes:
+            box = row["bbox"] if isinstance(row, dict) else row
             full_box = _crop_box_to_full_frame(
                 roi, (crop_x, crop_y), (width, height), box,
             )
             if full_box is not None:
-                normalized.append(full_box)
+                if isinstance(row, dict):
+                    normalized.append({**row, "bbox": full_box})
+                else:
+                    normalized.append(full_box)
         if filter_label_roi:
             normalized = _filter_label_roi(normalized, frame["label_roi"])
         predictions[frame["at_ms"]] = normalized
 
     result = summarize_predictions(document, frame_sizes, predictions,
-                                   iou_threshold, edit_tolerance_px)
+                                   iou_threshold, edit_tolerance_px, class_names)
     result.update({
         "schema_version": 1,
         "design": "fixed_checkpoint_manual_review_evaluation",
@@ -499,12 +729,15 @@ def evaluate_checkpoint(
             "sha256": _sha256(model_path),
             "format": model_path.suffix.lower().lstrip("."),
             "input_size": input_size,
-            "confidence": confidence,
+            "classes": list(class_names),
+            "output_width": 5 + len(class_names),
+            "confidence": (confidence if confidence is not None else None),
+            "confidence_by_class": confidence_config,
             "confidence_source": confidence_source,
             "nms_threshold": nms_threshold,
             **backend_metadata,
         },
-        "matching": "mapassist.detection_evaluate._match_boxes",
+        "matching": "mapassist.detection_evaluate._match_boxes_by_class",
         "postprocessing": {
             "center_inside_label_roi": filter_label_roi,
             "safe_roi_edge_contacts_removed": False,
@@ -531,6 +764,8 @@ def main() -> None:
     parser.add_argument("--iou-threshold", type=float, default=0.5)
     parser.add_argument("--edit-tolerance-px", type=float, default=8.0)
     parser.add_argument("--device", default="auto")
+    parser.add_argument("--classes", nargs="+", metavar="CLASS",
+                        help="Explicit class order; otherwise review metadata is used")
     parser.add_argument("--filter-label-roi", action="store_true",
                         help="Keep only detections whose centers fall inside label_roi")
     args = parser.parse_args()
@@ -545,6 +780,7 @@ def main() -> None:
             yolox_root=args.yolox_root,
             device_name=args.device,
             filter_label_roi=args.filter_label_roi,
+            classes=args.classes,
         )
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
         print(f"error: {error}", file=sys.stderr)

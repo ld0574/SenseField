@@ -17,7 +17,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
-from mapassist.detection_evaluate import _direction_state, _match_boxes
+from mapassist.detection_evaluate import _direction_state
 from mapassist.roi_safety import normalized_roi
 
 if __package__:
@@ -29,9 +29,11 @@ if __package__:
         _device,
         _finish,
         _git_revision,
+        _match_class_aware_pairs,
         _sha256,
         _split_predictions,
     )
+    from .yolox_decode import resolve_classes
 else:
     from evaluate_yolox_minimap import (
         _read_evaluation_annotations,
@@ -41,9 +43,11 @@ else:
         _device,
         _finish,
         _git_revision,
+        _match_class_aware_pairs,
         _sha256,
         _split_predictions,
     )
+    from yolox_decode import resolve_classes  # type: ignore
 
 
 @dataclass(frozen=True)
@@ -57,6 +61,36 @@ class HybridConfig:
     min_band: int = 2
     min_sides: int = 3
     pixels_per_side: int = 3
+
+
+def _prediction_entry(value: object) -> tuple[float, list[float], int]:
+    """Normalize old prediction dictionaries and class-aware prediction rows."""
+    if isinstance(value, dict):
+        confidence = value.get("confidence")
+        bbox = value.get("bbox")
+        class_id = value.get("class_id", 0)
+    elif isinstance(value, (list, tuple)) and len(value) in (2, 3):
+        confidence, bbox = value[:2]
+        class_id = value[2] if len(value) == 3 else 0
+    else:
+        raise ValueError(f"invalid prediction entry: {value!r}")
+    if (not isinstance(confidence, (int, float)) or isinstance(confidence, bool) or
+            not math.isfinite(float(confidence)) or not isinstance(bbox, list)):
+        raise ValueError(f"invalid prediction confidence/bbox: {value!r}")
+    if (not isinstance(class_id, int) or isinstance(class_id, bool) or class_id < 0):
+        raise ValueError(f"invalid prediction class id: {class_id!r}")
+    return float(confidence), bbox, int(class_id)
+
+
+def _truth_entry(value: object) -> tuple[int, list[float]]:
+    """Normalize legacy box-only truths to the historical class zero."""
+    if (isinstance(value, (list, tuple)) and len(value) == 2 and
+            isinstance(value[0], int) and not isinstance(value[0], bool) and
+            isinstance(value[1], list)):
+        return int(value[0]), value[1]
+    if not isinstance(value, list):
+        raise ValueError(f"invalid truth entry: {value!r}")
+    return 0, value
 
 
 def _validate_config(
@@ -179,7 +213,7 @@ def _hybrid_accept(confidence: float, features: dict[str, Any],
 
 def _metric_summary(
     predictions: dict[int, list[dict[str, Any]]],
-    truths: dict[int, list[list[float]]],
+    truths: dict[int, list[tuple[int, list[float]]]],
     images: dict[int, dict[str, Any]],
     direction_rois: dict[int, list[float]],
     image_ids: Sequence[int],
@@ -188,6 +222,7 @@ def _metric_summary(
     *,
     hybrid: bool,
     right_only: bool = False,
+    class_id: int = 0,
 ) -> dict[str, Any]:
     tp = fp = fn = predicted_count = truth_count = 0
     for image_id in image_ids:
@@ -200,10 +235,26 @@ def _metric_summary(
                               box[2] / image_width, box[3] / image_height]
             return _direction_state(normalized_box, roi)[0] == "right"
 
-        image_truths = truths[image_id]
-        candidates = predictions[image_id]
+        image_truths = [_truth_entry(item) for item in truths[image_id]]
+        candidates = []
+        for original in predictions[image_id]:
+            confidence, bbox, prediction_class_id = _prediction_entry(original)
+            candidate = (dict(original) if isinstance(original, dict) else {})
+            candidate.update({"confidence": confidence, "bbox": bbox,
+                              "class_id": prediction_class_id})
+            # Legacy unit callers supplied only confidence and bbox.  Their
+            # hybrid score is intentionally a rejected candidate unless they
+            # provide the red-ring evidence explicitly.
+            candidate.setdefault("ring_valid", False)
+            candidate.setdefault("ring_score", 0)
+            candidates.append(candidate)
+        # The red-ring cue is an enemy marker. Player detections remain in the
+        # model output but are excluded from this enemy-only diagnostic.
+        image_truths = [item for item in image_truths if item[0] == class_id]
+        candidates = [candidate for candidate in candidates
+                      if candidate["class_id"] == class_id]
         if right_only:
-            image_truths = [box for box in image_truths if is_right(box)]
+            image_truths = [item for item in image_truths if is_right(item[1])]
             candidates = [candidate for candidate in candidates
                           if is_right(candidate["bbox"])]
         if hybrid:
@@ -214,7 +265,12 @@ def _metric_summary(
                           if candidate["confidence"] >= config.high_confidence]
 
         boxes = [candidate["bbox"] for candidate in candidates]
-        matched = len(_match_boxes(boxes, image_truths, iou_threshold))
+        prediction_tuples = [(candidate["confidence"], candidate["bbox"],
+                              candidate["class_id"])
+                             for candidate in candidates]
+        matched = len(_match_class_aware_pairs(
+            prediction_tuples, image_truths, iou_threshold,
+        ))
         tp += matched
         fp += len(boxes) - matched
         fn += len(image_truths) - matched
@@ -228,28 +284,34 @@ def _metric_summary(
 
 def _evaluate_metrics(
     predictions: dict[int, list[dict[str, Any]]],
-    truths: dict[int, list[list[float]]],
+    truths: dict[int, list[list[float]] | list[tuple[int, list[float]]]],
     images: dict[int, dict[str, Any]],
     direction_rois: dict[int, list[float]],
     config: HybridConfig,
     iou_threshold: float,
+    class_id: int = 0,
 ) -> dict[str, dict[str, dict[str, Any]]]:
     all_ids = list(truths)
-    dense_ids = [image_id for image_id in all_ids if len(truths[image_id]) >= 3]
+    dense_ids = [image_id for image_id in all_ids if sum(
+        1 for item in truths[image_id] if _truth_entry(item)[0] == class_id
+    ) >= 3]
     result: dict[str, dict[str, dict[str, Any]]] = {}
     for label, hybrid in (("baseline", False), ("hybrid", True)):
         result[label] = {
             "overall": _metric_summary(
                 predictions, truths, images, direction_rois, all_ids,
                 config, iou_threshold, hybrid=hybrid,
+                class_id=class_id,
             ),
             "dense_3plus": _metric_summary(
                 predictions, truths, images, direction_rois, dense_ids,
                 config, iou_threshold, hybrid=hybrid,
+                class_id=class_id,
             ),
             "right_direction": _metric_summary(
                 predictions, truths, images, direction_rois, all_ids,
                 config, iou_threshold, hybrid=hybrid, right_only=True,
+                class_id=class_id,
             ),
         }
     return result
@@ -289,6 +351,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--input-size", type=int, required=True,
                         help="Square YOLOX input size, a multiple of 32 from 64 to 2048")
     parser.add_argument("--device", default="auto")
+    parser.add_argument("--classes", nargs="+", metavar="CLASS",
+                        help="Explicit canonical class order; otherwise model metadata/COCO is used")
     parser.add_argument("--iou-threshold", type=float, default=0.5)
     parser.add_argument("--nms-threshold", type=float, default=0.5)
     parser.add_argument("--high-confidence", type=float, default=0.807,
@@ -359,8 +423,15 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     device = _device(torch, args.device)
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    metadata_path = checkpoint_path.parent / "metrics.json"
+    model_metadata = metadata_path if metadata_path.is_file() else None
+    class_names = resolve_classes(
+        classes=args.classes, metadata=model_metadata, coco=annotation,
+    )
     experiment_path = root / "training/yolox_nano_minimap.py"
     experiment = get_exp(str(experiment_path), None)
+    experiment.class_names = list(class_names)
+    experiment.num_classes = len(class_names)
     experiment.input_size = (args.input_size, args.input_size)
     experiment.test_size = experiment.input_size
     model = load_ckpt(experiment.get_model(),
@@ -370,7 +441,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     prediction_floor = min(0.001, config.low_confidence)
     raw_predictions, raw_truths = _split_predictions(
         model, device, data_dir, experiment.test_size, args.nms_threshold,
-        args.split, pre_filter_confidence=prediction_floor,
+        args.split, pre_filter_confidence=prediction_floor, classes=class_names,
     )
 
     images = {int(item["id"]): item for item in annotation["images"]}
@@ -396,19 +467,24 @@ def main(argv: Sequence[str] | None = None) -> None:
             direction_rois.get(image_id, [0.0, 0.0, 1.0, 1.0]),
         )
         candidates = []
-        for confidence, bbox in entries:
+        for confidence, bbox, class_id in entries:
             features = _strict_red_ring_features(
                 rgb_image, bbox, map_short_side, config,
             )
             candidates.append({
                 "confidence": float(confidence),
                 "bbox": [float(value) for value in bbox],
+                "class_id": int(class_id),
                 **features,
             })
         predictions[image_id] = candidates
 
+    if "minimap_enemy" not in class_names:
+        parser.error("The red-ring hybrid evaluator requires a minimap_enemy class")
+    enemy_class_id = class_names.index("minimap_enemy")
     metrics = _evaluate_metrics(
         predictions, truths, images, direction_rois, config, args.iou_threshold,
+        class_id=enemy_class_id,
     )
     baseline_metrics = metrics["baseline"]["overall"]
     hybrid_metrics = metrics["hybrid"]["overall"]
@@ -425,6 +501,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         "split": args.split,
         "device": str(device),
         "input_size": [args.input_size, args.input_size],
+        "classes": list(class_names),
+        "evaluated_class": "minimap_enemy",
         "inference": {
             "nms_threshold": args.nms_threshold,
             "prediction_floor": prediction_floor,

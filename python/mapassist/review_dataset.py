@@ -81,10 +81,22 @@ def _prediction_frames(path: Path, kind: str,
                 continue
             observations = [item for item in record.get("observations", [])
                             if item.get("type") == kind]
+            # Frozen YOLOX replay records carry the richer detector rows in
+            # ``detections``.  Prefer them when available so a future player
+            # class survives queue generation; old replay files continue to
+            # use the observation rows below.
+            detector_rows = [item for item in record.get("detections", [])
+                             if isinstance(item, dict) and item.get("bbox_norm") is not None]
+            if detector_rows and kind.startswith("minimap"):
+                observations = detector_rows
             cues = [item for item in record.get("cues", []) if item.get("kind") == kind]
             candidate = {"at_ms": timestamp, "suggested_boxes": [
                 item["bbox_norm"] for item in observations
-            ], "directions": [item.get("direction") for item in observations]}
+            ], "directions": [item.get("direction") for item in observations],
+                "suggested_categories": [
+                    item.get("class_name", item.get("category", kind))
+                    for item in observations
+                ]}
             records.append((candidate, bool(observations), bool(cues)))
             if cues:
                 positives.append(candidate)
@@ -107,12 +119,16 @@ def _draw_overlay(source: Path, output: Path, sample: dict) -> None:
     with Image.open(source) as opened:
         image = opened.convert("RGB")
     draw = ImageDraw.Draw(image)
-    for box, direction in zip(sample["suggested_boxes"], sample["directions"]):
+    categories = sample.get("suggested_categories", [])
+    for index, (box, direction) in enumerate(
+            zip(sample["suggested_boxes"], sample["directions"])):
         x, y, width, height = box
         pixels = (round(x * image.width), round(y * image.height),
                   round((x + width) * image.width), round((y + height) * image.height))
         draw.rectangle(pixels, outline="#43ff77", width=max(2, image.width // 360))
-        draw.text((pixels[0], max(0, pixels[1] - 12)), direction or "center", fill="#43ff77")
+        category = categories[index] if index < len(categories) else ""
+        caption = "/".join(item for item in (category, direction or "center") if item)
+        draw.text((pixels[0], max(0, pixels[1] - 12)), caption, fill="#43ff77")
     draw.rectangle((0, image.height - 18, 230, image.height), fill="#000000")
     draw.text((4, image.height - 15),
               f"{sample['selection']} {sample['at_ms'] / 1000:.3f}s", fill="#ffffff")
@@ -172,6 +188,15 @@ def build(manifest: Path, output: Path, positives_per_match: int = 20,
     if data.get("schema_version") != 1:
         raise ValueError("Expected review manifest schema_version 1")
     kind = data.get("kind", "minimap_enemy")
+    classes = data.get("classes")
+    if classes is None:
+        classes = [kind]
+    if (not isinstance(classes, list) or not classes or
+            any(not isinstance(item, str) or not item.strip() for item in classes)):
+        raise ValueError("Review manifest classes must be a non-empty list of names")
+    classes = [item.strip() for item in classes]
+    if len(set(classes)) != len(classes):
+        raise ValueError("Review manifest classes must be unique")
     roi = data.get("roi")
     if roi is not None and (not isinstance(roi, list) or len(roi) != 4 or
                             any(not isinstance(value, (int, float)) for value in roi)):
@@ -228,6 +253,7 @@ def build(manifest: Path, output: Path, positives_per_match: int = 20,
 
     output.mkdir(parents=True, exist_ok=True)
     exported = {"schema_version": 1, "kind": kind, "roi": roi,
+                "classes": classes,
                 "warning": "Suggested boxes are unreviewed and are not ground truth.",
                 "matches": []}
     if widget_roi is not None:
@@ -255,6 +281,7 @@ def build(manifest: Path, output: Path, positives_per_match: int = 20,
                     display_rotation=rotation(match_orientation))
             sample = {"at_ms": timestamp, "selection": selection,
                       "suggested_boxes": item["suggested_boxes"],
+                      "suggested_categories": item.get("suggested_categories", []),
                       "directions": item["directions"], "review_status": "pending",
                       "reviewed_boxes": None,
                       "frame": str(frame.relative_to(output)),

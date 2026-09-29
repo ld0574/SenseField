@@ -49,6 +49,14 @@ def finalize(review_manifest: Path, output: Path) -> dict:
     default_label_roi = (_roi(default_label_roi_value, "Review label_roi")
                          if default_label_roi_value is not None else None)
     default_orientation = from_manifest(data)
+    declared_classes = data.get("classes")
+    if declared_classes is not None:
+        if (not isinstance(declared_classes, list) or not declared_classes or
+                any(not isinstance(item, str) or not item for item in declared_classes)):
+            raise ValueError("Review manifest classes must be a non-empty list of names")
+        declared_classes = [item.strip() for item in declared_classes]
+        if len(set(declared_classes)) != len(declared_classes):
+            raise ValueError("Review manifest classes must be unique")
 
     pending = []
     exported_matches = []
@@ -66,15 +74,41 @@ def finalize(review_manifest: Path, output: Path) -> dict:
                 continue
             if status == "accepted":
                 boxes = sample.get("suggested_boxes")
+                categories = sample.get("suggested_categories")
             elif status == "corrected":
                 boxes = sample.get("reviewed_boxes")
+                categories = sample.get("reviewed_categories")
             else:
                 boxes = []
+                categories = []
             if not isinstance(boxes, list):
                 raise ValueError(
                     f"{match.get('id')}@{sample.get('at_ms')} needs reviewed boxes"
                 )
-            frames.append({"at_ms": sample["at_ms"], "boxes": boxes})
+            if (categories is None and declared_classes is not None and
+                    len(declared_classes) > 1 and boxes):
+                raise ValueError(
+                    f"{match.get('id')}@{sample.get('at_ms')} categories are required "
+                    "for a multi-class manifest"
+                )
+            if categories is None:
+                categories = [kind] * len(boxes)
+            if (not isinstance(categories, list) or len(categories) != len(boxes) or
+                    any(not isinstance(item, str) or not item for item in categories)):
+                raise ValueError(
+                    f"{match.get('id')}@{sample.get('at_ms')} categories must align with boxes"
+                )
+            categories = [item.strip() for item in categories]
+            if declared_classes is not None:
+                unknown = sorted(set(categories) - set(declared_classes))
+                if unknown:
+                    raise ValueError(
+                        f"{match.get('id')}@{sample.get('at_ms')} uses unknown classes {unknown}"
+                    )
+            frame_record = {"at_ms": sample["at_ms"], "boxes": boxes}
+            if boxes:
+                frame_record["categories"] = categories
+            frames.append(frame_record)
             total_boxes += len(boxes)
         if frames:
             exported = {"id": match["id"], "video": match["video"],
@@ -111,6 +145,8 @@ def finalize(review_manifest: Path, output: Path) -> dict:
         raise ValueError("Review has no accepted, corrected, or negative samples")
 
     result = {"schema_version": 1, "category": kind, "matches": exported_matches}
+    if declared_classes is not None:
+        result["classes"] = declared_classes
     if default_roi is not None:
         result["roi"] = default_roi
     if default_widget_roi is not None:

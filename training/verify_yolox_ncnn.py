@@ -12,6 +12,25 @@ import sys
 from pathlib import Path
 from typing import Any
 
+try:
+    from .yolox_decode import (
+        DEFAULT_CLASSES,
+        candidates_from_raw,
+        confidence_from_metadata,
+        confidence_thresholds,
+        decoded_output_width,
+        resolve_classes,
+    )
+except ImportError:  # pragma: no cover - direct command-line execution.
+    from yolox_decode import (  # type: ignore
+        DEFAULT_CLASSES,
+        candidates_from_raw,
+        confidence_from_metadata,
+        confidence_thresholds,
+        decoded_output_width,
+        resolve_classes,
+    )
+
 
 def _require(module: str, package: str | None = None) -> Any:
     try:
@@ -162,59 +181,29 @@ def _decode_and_nms(
     input_size: int,
     image_width: int,
     image_height: int,
-    confidence: float,
+    confidence: object,
     nms_threshold: float,
     np: Any,
+    classes=DEFAULT_CLASSES,
 ) -> Any:
+    class_names = tuple(classes)
     expected_rows = sum((input_size // stride) ** 2 for stride in (8, 16, 32))
-    if raw.shape != (expected_rows, 6):
+    raw_shape = tuple(getattr(raw, "shape", ()))
+    expected_shape = (expected_rows, decoded_output_width(class_names))
+    if raw_shape != expected_shape:
         raise RuntimeError(
-            f"YOLOX raw output shape must be {(expected_rows, 6)}, got {raw.shape}"
+            f"YOLOX raw output shape must be {expected_shape}, got {raw_shape}"
         )
-    scale = min(input_size / image_width, input_size / image_height)
-    proposals = []
-    anchor = 0
-    for stride in (8, 16, 32):
-        grid = input_size // stride
-        for grid_y in range(grid):
-            for grid_x in range(grid):
-                row = raw[anchor]
-                anchor += 1
-                score = float(np.float32(row[4] * row[5]))
-                if not math.isfinite(score) or score < confidence:
-                    continue
-                center_x = float(np.float32((row[0] + grid_x) * stride))
-                center_y = float(np.float32((row[1] + grid_y) * stride))
-                box_width = float(np.float32(np.exp(np.clip(row[2], -10.0, 10.0)) * stride))
-                box_height = float(np.float32(np.exp(np.clip(row[3], -10.0, 10.0)) * stride))
-                detection = np.array(
-                    [
-                        center_x - box_width * 0.5,
-                        center_y - box_height * 0.5,
-                        center_x + box_width * 0.5,
-                        center_y + box_height * 0.5,
-                        score,
-                    ],
-                    dtype=np.float32,
-                )
-                detection[[0, 2]] = np.clip(
-                    detection[[0, 2]] / scale, 0.0, float(image_width)
-                )
-                detection[[1, 3]] = np.clip(
-                    detection[[1, 3]] / scale, 0.0, float(image_height)
-                )
-                if (detection[2] - detection[0] >= 1.0
-                        and detection[3] - detection[1] >= 1.0):
-                    proposals.append(detection)
-    proposals.sort(key=lambda item: float(item[4]), reverse=True)
-    kept = []
-    for candidate in proposals:
-        if all(_intersection_over_union(candidate, existing) <= nms_threshold
-               for existing in kept):
-            kept.append(candidate)
-    if not kept:
-        return np.empty((0, 5), dtype=np.float32)
-    return np.stack(kept).astype(np.float32, copy=False)
+    try:
+        result = candidates_from_raw(
+            raw, input_size, image_width, image_height, confidence,
+            nms_threshold, classes=class_names, np=np,
+        )
+    except ValueError as error:
+        raise RuntimeError(str(error)) from error
+    # Keep the historical Kx5 replay/parity format for the one-class model.
+    # Multi-class reports retain the final canonical class index column.
+    return result[:, :5] if len(class_names) == 1 else result
 
 
 def _pair_detections(reference: Any, candidate: Any, np: Any) -> list[tuple[int, int]]:
@@ -227,6 +216,8 @@ def _pair_detections(reference: Any, candidate: Any, np: Any) -> list[tuple[int,
         candidate_index = max(
             remaining,
             key=lambda index: (
+                (int(detection[5]) == int(candidate[index, 5]))
+                if detection.shape[0] > 5 and candidate.shape[1] > 5 else True,
                 _intersection_over_union(detection, candidate[index]),
                 -abs(float(detection[4] - candidate[index][4])),
                 -index,
@@ -253,6 +244,10 @@ def _paired_detection_metrics(reference: Any, candidate: Any,
             "score_abs_error": abs(float(left[4]) - float(right[4])),
             "max_box_coordinate_abs_error": max(
                 abs(float(left[index]) - float(right[index])) for index in range(4)
+            ),
+            "class_match": (
+                int(left[5]) == int(right[5])
+                if len(left) > 5 and len(right) > 5 else True
             ),
         })
     return metrics
@@ -355,8 +350,13 @@ def main() -> None:
         default=True,
         help="also verify Android-equivalent ncnn resize/padding and final detections",
     )
-    parser.add_argument("--confidence", type=float, default=0.29)
+    parser.add_argument("--confidence", type=float,
+                        help="Override metadata per-class confidence thresholds")
     parser.add_argument("--nms-threshold", type=float, default=0.5)
+    parser.add_argument("--metadata", type=Path,
+                        help="Model metadata JSON; its classes array is canonical")
+    parser.add_argument("--classes", nargs="+", metavar="CLASS",
+                        help="Explicit class order when metadata is unavailable")
     parser.add_argument("--max-runtime-input-error", type=float, default=1.0)
     parser.add_argument("--max-detection-error", type=float, default=0.01)
     parser.add_argument("--output", type=Path, required=True)
@@ -372,7 +372,8 @@ def main() -> None:
         not math.isfinite(value) or value < 0 for value in finite_non_negative
     ):
         parser.error("threads must be positive and error limits must be finite and non-negative")
-    if (not math.isfinite(args.confidence) or not 0 <= args.confidence <= 1
+    if ((args.confidence is not None and
+         (not math.isfinite(args.confidence) or not 0 <= args.confidence <= 1))
             or not math.isfinite(args.nms_threshold)
             or not 0 <= args.nms_threshold <= 1):
         parser.error("confidence and NMS thresholds must be finite and between 0 and 1")
@@ -397,6 +398,21 @@ def main() -> None:
     ncnn = _require("ncnn")
     selected, annotation_path = _select_images(
         args.data_dir, args.split, args.image_count, args.images
+    )
+    coco_document = None
+    if annotation_path is not None:
+        coco_document = json.loads(annotation_path.read_text(encoding="utf-8"))
+    metadata_path = args.metadata
+    if metadata_path is None:
+        candidate = args.torchscript.with_suffix(".metadata.json")
+        metadata_path = candidate if candidate.is_file() else None
+    class_names = resolve_classes(
+        classes=args.classes, metadata=metadata_path, coco=coco_document,
+    )
+    confidence = (
+        confidence_thresholds(args.confidence, class_names)
+        if args.confidence is not None else
+        confidence_from_metadata(metadata_path, class_names, 0.29)
     )
     if output in {path for _, path in selected}:
         parser.error("--output must not overwrite an input image")
@@ -468,8 +484,8 @@ def main() -> None:
                     (args.input_size // stride) ** 2 for stride in (8, 16, 32)
                 )
                 decodable = (
-                    torch_raw.shape == (expected_rows, 6)
-                    and runtime_raw.shape == (expected_rows, 6)
+                    torch_raw.shape == (expected_rows, decoded_output_width(class_names))
+                    and runtime_raw.shape == (expected_rows, decoded_output_width(class_names))
                     and torch_finite
                     and runtime_raw_finite
                 )
@@ -477,11 +493,11 @@ def main() -> None:
                     height, width = image.shape[:2]
                     reference_detections = _decode_and_nms(
                         torch_raw, args.input_size, width, height,
-                        args.confidence, args.nms_threshold, np,
+                        confidence, args.nms_threshold, np, class_names,
                     )
                     runtime_detections = _decode_and_nms(
                         runtime_raw, args.input_size, width, height,
-                        args.confidence, args.nms_threshold, np,
+                        confidence, args.nms_threshold, np, class_names,
                     )
                     count_match = len(reference_detections) == len(runtime_detections)
                     if count_match:
@@ -506,8 +522,9 @@ def main() -> None:
                         pair_metrics = []
                         detection_error = None
                 else:
-                    reference_detections = np.empty((0, 5), dtype=np.float32)
-                    runtime_detections = np.empty((0, 5), dtype=np.float32)
+                    detection_width = 5 if len(class_names) == 1 else 6
+                    reference_detections = np.empty((0, detection_width), dtype=np.float32)
+                    runtime_detections = np.empty((0, detection_width), dtype=np.float32)
                     count_match = False
                     pairs = []
                     pair_metrics = []
@@ -566,7 +583,8 @@ def main() -> None:
                         "max_error_detail": (
                             _raw_difference_detail(
                                 torch_raw, ncnn_raw, args.input_size,
-                                args.confidence, np, candidate_name="ncnn",
+                                confidence, np, candidate_name="ncnn",
+                                classes=class_names,
                             )
                             if shapes_match and torch_finite and ncnn_finite else None
                         ),
@@ -606,6 +624,8 @@ def main() -> None:
         "passed": passed,
         "images": len(results),
         "input_size": args.input_size,
+        "classes": list(class_names),
+        "output_width": decoded_output_width(class_names),
         "input_name": args.input_name,
         "output_name": args.output_name,
         "gates": {
@@ -648,6 +668,7 @@ def main() -> None:
                     ),
                 },
                 "confidence": args.confidence,
+                "confidence_by_class": confidence,
                 "nms_threshold": args.nms_threshold,
                 "strides": [8, 16, 32],
             },

@@ -25,7 +25,7 @@
         <img src="/assets/sensefield-mark-compact.png" alt="">
       </div>
       <div>
-        <strong>小地图数据标注台</strong>
+        <strong id="workbenchTitle">小地图数据标注台</strong>
         <span id="datasetLabel">正在连接数据集</span>
       </div>
     </div>
@@ -75,7 +75,7 @@
           <h2 id="taskTitle">从左侧领取一张图片</h2>
         </div>
         <div class="segmented" aria-label="查看模式">
-          <button id="minimapMode" class="active" type="button">放大小地图 <kbd>Z</kbd></button>
+          <button id="minimapMode" class="active" type="button"><span id="roiModeLabel">放大小地图</span> <kbd>Z</kbd></button>
           <button id="fullMode" type="button">完整画面</button>
         </div>
       </div>
@@ -84,7 +84,7 @@
               aria-label="查看完整画面上下文">
         <span class="context-copy">
           <strong>完整画面上下文</strong>
-          <small>先确认这是对局中画面，再标小地图</small>
+          <small id="contextGuide">先确认这是对局中画面，再标小地图</small>
         </span>
         <span class="context-image-wrap">
           <img id="contextImage" alt="">
@@ -96,7 +96,7 @@
       <section id="temporalContext" class="temporal-context hidden" aria-label="相邻帧参考">
         <div class="temporal-copy">
           <strong>相邻帧参考</strong>
-          <small>移动头像会改变位置；固定图标通常保持不动</small>
+          <small id="temporalGuide">移动头像会改变位置；固定图标通常保持不动</small>
         </div>
         <figure>
           <canvas id="contextBeforeCanvas" aria-label="当前帧之前 0.5 秒的小地图"></canvas>
@@ -130,6 +130,10 @@
         </div>
         <div class="box-counter"><span id="boxCount">0</span> 个框</div>
       </div>
+      <label id="categoryEditor" class="category-editor hidden" for="boxCategorySelect">
+        <span><strong>选中框类别</strong><small>每个框都要确认类别</small></span>
+        <select id="boxCategorySelect" disabled></select>
+      </label>
       <p id="roiBoundaryWarning" class="roi-boundary-warning hidden" role="status"></p>
 
       <div class="decision-grid">
@@ -157,13 +161,13 @@
         <span class="kicker">GUIDE</span>
         <h2>标注规则</h2>
         <ul class="guide-list">
-          <li><span class="guide-number">1</span><div><strong>只框红方英雄头像</strong><p>框住头像和红色阵营环，尽量贴边。</p></div></li>
-          <li><span class="guide-number">2</span><div><strong>补齐所有漏框</strong><p>一张图里有多个敌人时必须全部框出。</p></div></li>
-          <li><span class="guide-number">3</span><div><strong>排除地图符号</strong><p>防御塔、路径、基地、技能特效和信号圈都不标。</p></div></li>
-          <li><span class="guide-number">4</span><div><strong>识别对局边界</strong><p>准备、选人、加载和结算画面选择“非对局界面”，不要当负样本。</p></div></li>
-          <li><span class="guide-number">5</span><div><strong>检查小地图裁剪边缘</strong><p>目标碰到裁剪框边缘时可能已被切掉；无法确认完整目标请选“无法判断”，不能当完整框或负样本。</p></div></li>
-          <li><span class="guide-number">6</span><div><strong>按图标中心判断范围</strong><p>只标中心位于标注范围内的敌方英雄；忽略安全边距里的队伍头像和地图外 HUD。紫红实线是中心范围，青色虚线是地图/方向参考；两者都不限制画框。</p></div></li>
-          <li><span class="guide-number">7</span><div><strong>旧标注只作建议</strong><p>历史框可能在旧 ROI 右侧被截断；请人工检查、拖右侧中点扩宽或重新画框，再按“保存修正”。建议框不会自动成为真值。</p></div></li>
+          <li><span class="guide-number">1</span><div><strong id="primaryGuideTitle">只框红方英雄头像</strong><p id="primaryGuideDetail">框住头像和红色阵营环，尽量贴边。</p></div></li>
+          <li><span class="guide-number">2</span><div><strong id="secondGuideTitle">补齐所有漏框</strong><p id="secondGuideDetail">一张图里有多个敌人时必须全部框出。</p></div></li>
+          <li><span class="guide-number">3</span><div><strong id="thirdGuideTitle">排除地图符号</strong><p id="thirdGuideDetail">防御塔、路径、基地、技能特效和信号圈都不标。</p></div></li>
+          <li><span class="guide-number">4</span><div><strong id="fourthGuideTitle">识别对局边界</strong><p id="fourthGuideDetail">准备、选人、加载和结算画面选择“非对局界面”，不要当负样本。</p></div></li>
+          <li><span class="guide-number">5</span><div><strong id="fifthGuideTitle">检查小地图裁剪边缘</strong><p id="fifthGuideDetail">目标碰到裁剪框边缘时可能已被切掉；无法确认完整目标请选“无法判断”，不能当完整框或负样本。</p></div></li>
+          <li><span class="guide-number">6</span><div><strong id="sixthGuideTitle">按图标中心判断范围</strong><p id="sixthGuideDetail">只标中心位于标注范围内的敌方英雄；忽略安全边距里的队伍头像和地图外 HUD。紫红实线是中心范围，青色虚线是地图/方向参考；两者都不限制画框。</p></div></li>
+          <li><span class="guide-number">7</span><div><strong id="seventhGuideTitle">旧标注只作建议</strong><p id="seventhGuideDetail">历史框可能在旧 ROI 右侧被截断；请人工检查、拖右侧中点扩宽或重新画框，再按“保存修正”。建议框不会自动成为真值。</p></div></li>
         </ul>
       </section>
       <section class="how-to">

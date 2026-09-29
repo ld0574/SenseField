@@ -132,6 +132,13 @@ kbd { padding: 1px 5px; border: 1px solid #4a5968; border-bottom-width: 2px; bor
 .tool-group { display: flex; gap: 7px; }
 .tool-group button { padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel-2); cursor: pointer; color: var(--muted); font-size: 11px; }
 .box-counter { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.category-editor { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 0 0 12px; padding: 10px 12px; border: 1px solid #2d4353; border-radius: 9px; background: #0b141c; }
+.category-editor span { min-width: 120px; }
+.category-editor strong, .category-editor small { display: block; }
+.category-editor strong { font-size: 12px; }
+.category-editor small { margin-top: 3px; color: var(--muted); font-size: 10px; }
+.category-editor select { width: min(260px, 55%); margin: 0; }
+.category-editor select:disabled { opacity: .55; }
 .roi-boundary-warning { margin: 4px 0 12px; padding: 9px 12px; border: 1px solid #9a6330; border-radius: 8px; background: #2a1b0e; color: #ffd39b; font-size: 12px; line-height: 1.5; }
 .label-assistance-notice { margin: 0 0 15px; padding: 10px 12px; border: 1px solid #65542d; border-radius: 8px; background: #241f12; color: #f1d78c; font-size: 11px; line-height: 1.55; }
 

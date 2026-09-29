@@ -12,6 +12,7 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+from typing import Sequence
 
 from .roi_safety import normalized_roi
 
@@ -29,9 +30,13 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _external_predictions(path: Path, kind: str) -> dict[int, tuple[list[list[float]],
-                                                                    list[str | None]]]:
-    records: dict[int, tuple[list[list[float]], list[str | None]]] = {}
+def _external_predictions(
+    path: Path, kind: str, classes: Sequence[str] | None = None,
+) -> dict[int, tuple[list[list[float]], list[str | None], list[str]]]:
+    class_names = tuple(classes) if classes is not None else (kind,)
+    if not class_names or any(not isinstance(name, str) or not name for name in class_names):
+        raise ValueError("external prediction classes must be a non-empty sequence")
+    records: dict[int, tuple[list[list[float]], list[str | None], list[str]]] = {}
     with path.open(encoding="utf-8") as stream:
         for line_number, line in enumerate(stream, start=1):
             try:
@@ -44,12 +49,42 @@ def _external_predictions(path: Path, kind: str) -> dict[int, tuple[list[list[fl
                 raise ValueError(f"Invalid or duplicate timestamp at {path}:{line_number}")
             observations = [item for item in record.get("observations", [])
                             if isinstance(item, dict) and item.get("type") == kind]
+            # Replay files produced by the category-aware detector carry the
+            # richer rows in ``detections``.  Select only the requested class;
+            # otherwise a player detection can leak into an enemy evaluation.
+            detector_rows = [item for item in record.get("detections", [])
+                             if isinstance(item, dict) and item.get("bbox_norm") is not None]
+            if detector_rows and kind.startswith("minimap"):
+                for item in detector_rows:
+                    category = item.get("class_name", item.get("category"))
+                    if category is None and len(class_names) > 1:
+                        raise ValueError(
+                            f"{path}:{line_number} detection category is required "
+                            "for a multi-class prediction"
+                        )
+                observations = [item for item in detector_rows
+                                if item.get("class_name", item.get("category", kind)) == kind]
             boxes = _boxes([item.get("bbox_norm") for item in observations],
                            f"{path}:{line_number} observations")
             directions = [item.get("direction") for item in observations]
             if any(item not in (None, *DIRECTIONS) for item in directions):
                 raise ValueError(f"Invalid prediction direction at {path}:{line_number}")
-            records[timestamp] = (boxes, directions)
+            categories = []
+            for item in observations:
+                category = item.get("class_name", item.get("category"))
+                if category is None:
+                    if len(class_names) > 1:
+                        raise ValueError(
+                            f"{path}:{line_number} observation category is required "
+                            "for a multi-class prediction"
+                        )
+                    category = kind
+                if not isinstance(category, str) or category not in class_names:
+                    raise ValueError(
+                        f"{path}:{line_number} unknown prediction category {category!r}"
+                    )
+                categories.append(category)
+            records[timestamp] = (boxes, directions, categories)
     if not records:
         raise ValueError("External prediction file is empty")
     return records
@@ -95,6 +130,21 @@ def _boxes(value: object, label: str) -> list[list[float]]:
             raise ValueError(f"{label} box is outside the normalized frame: {box}")
         result.append([x, y, width, height])
     return result
+
+
+def _categories(value: object, count: int, classes: list[str], default: str,
+                label: str) -> list[str]:
+    """Validate a category array, preserving legacy single-class queues."""
+    if value is None and len(classes) > 1 and count:
+        raise ValueError(
+            f"{label} categories are required for a multi-class manifest"
+        )
+    if value is None:
+        return [default] * count
+    if (not isinstance(value, list) or len(value) != count or
+            any(not isinstance(item, str) or item not in classes for item in value)):
+        raise ValueError(f"{label} categories must align with boxes and classes")
+    return list(value)
 
 
 def _iou(first: list[float], second: list[float]) -> float:
@@ -152,6 +202,49 @@ def _match_boxes(predictions: list[list[float]], ground_truth: list[list[float]]
     matches = [(prediction_index, truth_index,
                 _iou(predictions[prediction_index], ground_truth[truth_index]))
                for truth_index, prediction_index in truth_to_prediction.items()]
+    return sorted(matches)
+
+
+def _match_boxes_by_class(
+    predictions: list[list[float]],
+    ground_truth: list[list[float]],
+    prediction_categories: list[str] | None,
+    truth_categories: list[str] | None,
+    threshold: float,
+) -> list[tuple[int, int, float]]:
+    """Match boxes only when their canonical category names agree.
+
+    Older single-class manifests do not carry category arrays.  In that case
+    both sides are treated as one class so the historical behavior remains
+    compatible.  The returned indices always refer to the original arrays.
+    """
+    if prediction_categories is None:
+        prediction_categories = ["__default__"] * len(predictions)
+    if truth_categories is None:
+        truth_categories = ["__default__"] * len(ground_truth)
+    if len(prediction_categories) != len(predictions):
+        raise ValueError("prediction categories must align with prediction boxes")
+    if len(truth_categories) != len(ground_truth):
+        raise ValueError("truth categories must align with truth boxes")
+    matches: list[tuple[int, int, float]] = []
+    for category in sorted(set(prediction_categories) | set(truth_categories)):
+        prediction_indices = [
+            index for index, value in enumerate(prediction_categories)
+            if value == category
+        ]
+        truth_indices = [
+            index for index, value in enumerate(truth_categories)
+            if value == category
+        ]
+        local = _match_boxes(
+            [predictions[index] for index in prediction_indices],
+            [ground_truth[index] for index in truth_indices],
+            threshold,
+        )
+        matches.extend(
+            (prediction_indices[prediction], truth_indices[truth], overlap)
+            for prediction, truth, overlap in local
+        )
     return sorted(matches)
 
 
@@ -253,6 +346,21 @@ def evaluate_review(review_manifest: Path, iou_threshold: float = 0.5,
     matches = data.get("matches")
     if not isinstance(matches, list) or not matches:
         raise ValueError("Review manifest needs matches")
+    default_category = data.get("kind")
+    if not isinstance(default_category, str) or not default_category:
+        default_category = "__default__"
+    declared_classes = data.get("classes")
+    if declared_classes is None:
+        declared_classes = [default_category]
+    if (not isinstance(declared_classes, list) or not declared_classes or
+            any(not isinstance(item, str) or not item.strip()
+                for item in declared_classes)):
+        raise ValueError("Review manifest classes must be a non-empty list")
+    declared_classes = [item.strip() for item in declared_classes]
+    if len(set(declared_classes)) != len(declared_classes):
+        raise ValueError("Review manifest classes must be unique")
+    if default_category not in declared_classes:
+        default_category = declared_classes[0]
 
     external = None
     prediction_source = None
@@ -271,11 +379,12 @@ def evaluate_review(review_manifest: Path, iou_threshold: float = 0.5,
         if not predictions.is_file() or not metadata.is_file():
             raise FileNotFoundError("External predictions or metadata are missing")
         prediction_source = _verify_prediction_commitment(data, predictions, metadata)
-        external = _external_predictions(predictions, data.get("kind"))
+        external = _external_predictions(predictions, data.get("kind"), declared_classes)
     elif prediction_metadata is not None:
         raise ValueError("--prediction-metadata requires --predictions")
 
     overall = _empty_metrics()
+    per_class = {name: _empty_metrics() for name in declared_classes}
     splits: dict[str, dict] = {}
     by_match: dict[str, dict] = {}
     failures = []
@@ -320,21 +429,35 @@ def evaluate_review(review_manifest: Path, iou_threshold: float = 0.5,
                 predicted = _boxes(sample.get("suggested_boxes"),
                                    f"{key} suggested_boxes")
                 stored_directions = sample.get("directions")
+                predicted_categories = _categories(
+                    sample.get("suggested_categories"), len(predicted),
+                    declared_classes, default_category, f"{key} suggested",
+                )
             else:
                 at_ms = sample.get("at_ms")
                 if at_ms not in external:
                     raise ValueError(f"No frozen prediction frame for {key}")
-                predicted, stored_directions = external[at_ms]
+                predicted, stored_directions, predicted_categories = external[at_ms]
+                predicted_categories = _categories(
+                    predicted_categories, len(predicted), declared_classes,
+                    default_category, f"{key} predictions",
+                )
             if status == "accepted":
                 if data.get("review_mode") == "blind":
                     raise ValueError(f"{key} blind sample cannot use accepted status")
                 truth = [box[:] for box in predicted]
+                truth_categories = list(predicted_categories)
             elif status == "corrected":
                 truth = _boxes(sample.get("reviewed_boxes"), f"{key} reviewed_boxes")
                 if not truth:
                     raise ValueError(f"{key} corrected sample has no boxes; use negative")
+                truth_categories = _categories(
+                    sample.get("reviewed_categories"), len(truth), declared_classes,
+                    default_category, f"{key} reviewed",
+                )
             else:
                 truth = []
+                truth_categories = []
             if stored_directions is None:
                 predicted_directions = [_direction(box, direction_roi) for box in predicted]
             else:
@@ -343,7 +466,9 @@ def evaluate_review(review_manifest: Path, iou_threshold: float = 0.5,
                         any(item not in (None, *DIRECTIONS) for item in stored_directions)):
                     raise ValueError(f"{key} directions must align with suggested_boxes")
                 predicted_directions = stored_directions
-            pairs = _match_boxes(predicted, truth, iou_threshold)
+            pairs = _match_boxes_by_class(
+                predicted, truth, predicted_categories, truth_categories, iou_threshold,
+            )
             matched_predictions = {prediction for prediction, _, _ in pairs}
             matched_truth = {ground_truth for _, ground_truth, _ in pairs}
             directed = []
@@ -397,6 +522,40 @@ def evaluate_review(review_manifest: Path, iou_threshold: float = 0.5,
             }
             for target in (overall, split_metrics, match_metrics):
                 _accumulate(target, frame)
+            for class_name in declared_classes:
+                class_prediction_indices = {
+                    index for index, value in enumerate(predicted_categories)
+                    if value == class_name
+                }
+                class_truth_indices = {
+                    index for index, value in enumerate(truth_categories)
+                    if value == class_name
+                }
+                class_pairs = [pair for pair in pairs
+                               if predicted_categories[pair[0]] == class_name]
+                class_frame = {
+                    "ground_truth": [truth[index] for index in class_truth_indices],
+                    "tp": len(class_pairs),
+                    "fp": len(class_prediction_indices) - len(class_pairs),
+                    "fn": len(class_truth_indices) - len(class_pairs),
+                    "iou_sum": sum(pair[2] for pair in class_pairs),
+                    "directed_matches": sum(
+                        1 for prediction, ground_truth in directed
+                        if predicted_categories[prediction] == class_name
+                    ),
+                    "correct_directions": sum(
+                        1 for prediction, ground_truth in directed
+                        if predicted_categories[prediction] == class_name and
+                        predicted_directions[prediction] == _direction(
+                            truth[ground_truth], direction_roi
+                        )
+                    ),
+                    "ambiguous_direction_matches": sum(
+                        1 for prediction, ground_truth in ambiguous_pairs
+                        if predicted_categories[prediction] == class_name
+                    ),
+                }
+                _accumulate(per_class[class_name], class_frame)
             if frame["fp"] or frame["fn"]:
                 failures.append({
                     "match_id": match_id, "split": split,
@@ -438,6 +597,7 @@ def evaluate_review(review_manifest: Path, iou_threshold: float = 0.5,
     return {
         "schema_version": 1,
         "kind": data.get("kind"),
+        "classes": declared_classes,
         "iou_threshold": iou_threshold,
         "evaluation_design": ("independent_blind_frame_holdout"
                               if independent_holdout else "development_diagnostic"),
@@ -452,6 +612,7 @@ def evaluate_review(review_manifest: Path, iou_threshold: float = 0.5,
         "skipped_frames": skipped,
         "excluded_frames": excluded,
         "overall": finished_overall,
+        "per_class": {name: _finish(metrics) for name, metrics in per_class.items()},
         "splits": {name: _finish(metrics) for name, metrics in sorted(splits.items())},
         "matches": {name: _finish(metrics) for name, metrics in by_match.items()},
         "targets": targets,

@@ -8,32 +8,44 @@ import os
 import sys
 from pathlib import Path
 
+try:
+    from .yolox_decode import (
+        DEFAULT_CLASSES,
+        confidence_from_metadata,
+        confidence_thresholds,
+        candidates_from_raw,
+        decode_yolox,
+        normalize_classes,
+        resolve_classes,
+    )
+except ImportError:  # pragma: no cover - direct command-line execution.
+    from yolox_decode import (  # type: ignore
+        DEFAULT_CLASSES,
+        confidence_from_metadata,
+        confidence_thresholds,
+        candidates_from_raw,
+        decode_yolox,
+        normalize_classes,
+        resolve_classes,
+    )
 
-def _decode(raw, input_size: int):
+
+def _decode(raw, input_size: int, classes=DEFAULT_CLASSES):
     import numpy as np
 
-    grids = []
-    strides = []
-    for stride in (8, 16, 32):
-        height = input_size // stride
-        width = input_size // stride
-        y, x = np.meshgrid(np.arange(height), np.arange(width), indexing="ij")
-        grid = np.stack((x, y), axis=2).reshape(1, -1, 2)
-        grids.append(grid)
-        strides.append(np.full((*grid.shape[:2], 1), stride))
-    grid = np.concatenate(grids, axis=1).astype(raw.dtype)
-    expanded_stride = np.concatenate(strides, axis=1).astype(raw.dtype)
-    decoded = raw.copy()
-    decoded[..., :2] = (decoded[..., :2] + grid) * expanded_stride
-    decoded[..., 2:4] = np.exp(decoded[..., 2:4]) * expanded_stride
-    return decoded
+    normalize_classes(classes)
+    return decode_yolox(raw, input_size, np=np)
 
 
 def _raw_difference_detail(torch_raw, candidate_raw, input_size: int,
-                           confidence: float, np, candidate_name: str = "onnx"):
+                           confidence: object, np, candidate_name: str = "onnx",
+                           classes=DEFAULT_CLASSES):
     """Describe the single worst raw cell without hiding a failed raw gate."""
-    torch_values = np.asarray(torch_raw, dtype=np.float32).reshape(-1, 6)
-    candidate_values = np.asarray(candidate_raw, dtype=np.float32).reshape(-1, 6)
+    class_names = normalize_classes(classes)
+    confidence_by_class = confidence_thresholds(confidence, class_names)
+    output_width = 5 + len(class_names)
+    torch_values = np.asarray(torch_raw, dtype=np.float32).reshape(-1, output_width)
+    candidate_values = np.asarray(candidate_raw, dtype=np.float32).reshape(-1, output_width)
     if torch_values.shape != candidate_values.shape or not len(torch_values):
         return None
 
@@ -58,21 +70,32 @@ def _raw_difference_detail(torch_raw, candidate_raw, input_size: int,
 
     torch_value = float(torch_values[row, channel])
     candidate_value = float(candidate_values[row, channel])
+    class_channel_names = (
+        ("class_probability",) if len(class_names) == 1 else
+        tuple(f"class_probability:{name}" for name in class_names)
+    )
+    channel_names = (
+        "center_x_offset", "center_y_offset", "log_width", "log_height",
+        "objectness_probability", *class_channel_names,
+    )
+    torch_class_id = int(np.argmax(torch_values[row, 5:]))
+    candidate_class_id = int(np.argmax(candidate_values[row, 5:]))
     item = {
         "row": row,
         "channel": channel,
-        "channel_name": (
-            "center_x_offset", "center_y_offset", "log_width", "log_height",
-            "objectness_probability", "class_probability",
-        )[channel],
+        "channel_name": channel_names[channel],
         "torch_value": torch_value,
         f"{candidate_name}_value": candidate_value,
         "absolute_error": float(delta[row, channel]),
-        "torch_confidence": float(torch_values[row, 4] * torch_values[row, 5]),
+        "torch_class": class_names[torch_class_id],
+        f"{candidate_name}_class": class_names[candidate_class_id],
+        "torch_confidence": float(torch_values[row, 4] *
+                                   torch_values[row, 5 + torch_class_id]),
         f"{candidate_name}_confidence": float(
-            candidate_values[row, 4] * candidate_values[row, 5]
+            candidate_values[row, 4] * candidate_values[row, 5 + candidate_class_id]
         ),
-        "confidence_threshold": confidence,
+        "confidence_threshold": confidence_by_class[class_names[torch_class_id]],
+        "confidence_by_class": confidence_by_class,
     }
     if stride is not None:
         item["stride"] = stride
@@ -88,16 +111,16 @@ def _raw_difference_detail(torch_raw, candidate_raw, input_size: int,
             item["decoded_size_error_pixels"] = (
                 float(decoded_delta) if np.isfinite(decoded_delta) else None
             )
-    item["torch_above_confidence_threshold"] = item["torch_confidence"] >= confidence
+    item["torch_above_confidence_threshold"] = (
+        item["torch_confidence"] >= confidence_by_class[class_names[torch_class_id]]
+    )
     item[f"{candidate_name}_above_confidence_threshold"] = (
-        item[f"{candidate_name}_confidence"] >= confidence
+        item[f"{candidate_name}_confidence"] >=
+        confidence_by_class[class_names[candidate_class_id]]
     )
     item["raw_max_error_by_channel"] = {
         name: float(delta[:, index].max())
-        for index, name in enumerate((
-            "center_x_offset", "center_y_offset", "log_width", "log_height",
-            "objectness_probability", "class_probability",
-        ))
+        for index, name in enumerate(channel_names)
     }
     return item
 
@@ -109,9 +132,14 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--onnx", type=Path, required=True)
     parser.add_argument("--input-size", type=int, default=320)
-    parser.add_argument("--confidence", type=float, default=0.21)
+    parser.add_argument("--confidence", type=float,
+                        help="Override metadata per-class confidence thresholds")
     parser.add_argument("--images", type=int, default=12)
     parser.add_argument("--max-raw-error", type=float, default=5e-4)
+    parser.add_argument("--metadata", type=Path,
+                        help="Model metadata JSON; its classes array is canonical")
+    parser.add_argument("--classes", nargs="+", metavar="CLASS",
+                        help="Explicit class order when metadata is unavailable")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
@@ -126,9 +154,25 @@ def main() -> None:
     import torch
     from yolox.data import ValTransform
     from yolox.exp import get_exp
-    from yolox.utils import postprocess
 
+    annotation = json.loads(
+        (data_dir / "annotations/instances_val2017.json").read_text(encoding="utf-8")
+    )
+    metadata_path = args.metadata
+    if metadata_path is None:
+        candidate = args.checkpoint.with_suffix(".metadata.json")
+        metadata_path = candidate if candidate.is_file() else None
+    class_names = resolve_classes(
+        classes=args.classes, metadata=metadata_path, coco=annotation,
+    )
+    confidence = (
+        confidence_thresholds(args.confidence, class_names)
+        if args.confidence is not None else
+        confidence_from_metadata(metadata_path, class_names, 0.21)
+    )
     exp = get_exp(str(root / "training/yolox_nano_minimap.py"), None)
+    exp.class_names = list(class_names)
+    exp.num_classes = len(class_names)
     exp.input_size = (args.input_size, args.input_size)
     exp.test_size = exp.input_size
     model = exp.get_model()
@@ -138,9 +182,6 @@ def main() -> None:
     model.eval()
     session = ort.InferenceSession(
         str(args.onnx), providers=["CPUExecutionProvider"]
-    )
-    annotation = json.loads(
-        (data_dir / "annotations/instances_val2017.json").read_text(encoding="utf-8")
     )
     selected = annotation["images"][:args.images]
     transform = ValTransform(legacy=False)
@@ -155,18 +196,18 @@ def main() -> None:
             torch_raw = model(torch.from_numpy(batch)).numpy()
         onnx_raw = session.run(None, {session.get_inputs()[0].name: batch})[0]
         raw_error = np.abs(torch_raw - onnx_raw)
-        torch_detections = postprocess(
-            torch.from_numpy(_decode(torch_raw, args.input_size)),
-            1, args.confidence, 0.5, class_agnostic=True,
-        )[0]
-        onnx_detections = postprocess(
-            torch.from_numpy(_decode(onnx_raw, args.input_size)),
-            1, args.confidence, 0.5, class_agnostic=True,
-        )[0]
-        torch_array = (torch_detections.numpy() if torch_detections is not None else
-                       np.empty((0, 7), dtype=np.float32))
-        onnx_array = (onnx_detections.numpy() if onnx_detections is not None else
-                      np.empty((0, 7), dtype=np.float32))
+        # Use the same threshold-before-class-selection rule as Android and
+        # ncnn parity. YOLOX's generic postprocess chooses the raw argmax class
+        # first, which drops a valid lower-scoring class when the argmax class
+        # has a stricter per-class threshold.
+        torch_array = candidates_from_raw(
+            torch_raw, args.input_size, image.shape[1], image.shape[0],
+            confidence, 0.5, class_names, np=np,
+        )
+        onnx_array = candidates_from_raw(
+            onnx_raw, args.input_size, image.shape[1], image.shape[0],
+            confidence, 0.5, class_names, np=np,
+        )
         same_detections = (torch_array.shape == onnx_array.shape and
                            np.allclose(torch_array, onnx_array, rtol=1e-4, atol=1e-4))
         results.append({
@@ -174,7 +215,8 @@ def main() -> None:
             "raw_max_abs_error": float(raw_error.max()),
             "raw_mean_abs_error": float(raw_error.mean()),
             "raw_max_detail": _raw_difference_detail(
-                torch_raw, onnx_raw, args.input_size, args.confidence, np
+                torch_raw, onnx_raw, args.input_size, confidence, np,
+                classes=class_names,
             ),
             "torch_detections": int(len(torch_array)),
             "onnx_detections": int(len(onnx_array)),
@@ -189,6 +231,9 @@ def main() -> None:
         "images": len(results),
         "input_size": args.input_size,
         "confidence": args.confidence,
+        "confidence_by_class": confidence,
+        "classes": list(class_names),
+        "output_width": 5 + len(class_names),
         "max_raw_error_allowed": args.max_raw_error,
         "passed": passed,
         "maximum_raw_error": max(item["raw_max_abs_error"] for item in results),

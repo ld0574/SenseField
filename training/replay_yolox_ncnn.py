@@ -26,6 +26,15 @@ from typing import Any
 
 import numpy as np
 
+try:
+    from .yolox_decode import (
+        DEFAULT_CLASSES, confidence_from_metadata, confidence_thresholds, resolve_classes,
+    )
+except ImportError:  # pragma: no cover - direct command-line execution.
+    from yolox_decode import (  # type: ignore
+        DEFAULT_CLASSES, confidence_from_metadata, confidence_thresholds, resolve_classes,
+    )
+
 try:  # Works both as ``python training/...`` and as a package import in tests.
     from .verify_yolox_ncnn import (
         _build_ncnn_net,
@@ -172,8 +181,14 @@ def _direction_for(center_x: float, center_y: float,
 
 def _bbox_dict(box: Any, width: int, height: int,
                area: tuple[int, int, int, int],
-               direction_reference: tuple[int, int, int, int]) -> dict[str, Any]:
-    x0, y0, x1, y1, score = [float(value) for value in box]
+               direction_reference: tuple[int, int, int, int],
+               classes=DEFAULT_CLASSES) -> dict[str, Any]:
+    values = [float(value) for value in box]
+    x0, y0, x1, y1, score = values[:5]
+    class_id = int(values[5]) if len(values) > 5 else 0
+    class_names = tuple(classes)
+    if class_id < 0 or class_id >= len(class_names):
+        raise ValueError(f"detector returned unknown class index {class_id}")
     crop_x, crop_y = area[:2]
     full_x0, full_y0 = crop_x + x0, crop_y + y0
     full_x1, full_y1 = crop_x + x1, crop_y + y1
@@ -185,6 +200,8 @@ def _bbox_dict(box: Any, width: int, height: int,
             round((full_y1 - full_y0) / height, 6),
         ],
         "confidence": round(score, 6),
+        "class_id": class_id,
+        "class_name": class_names[class_id],
         "direction": {0: None, 1: "left", 2: "right", 3: "up", 4: "down"}[
             _direction_for((full_x0 + full_x1) * 0.5,
                            (full_y0 + full_y1) * 0.5, direction_reference)
@@ -197,7 +214,7 @@ class FrozenReplay:
 
     def __init__(self, profile_path: Path, param: Path, model_bin: Path,
                  library: Path, threads: int, input_name: str, output_name: str,
-                 ncnn: Any):
+                 ncnn: Any, classes=None, metadata: Path | dict | None = None):
         self.profile_path = profile_path.resolve()
         self.param = param.resolve()
         self.model_bin = model_bin.resolve()
@@ -206,6 +223,16 @@ class FrozenReplay:
         self.np = np
         self.input_name = input_name
         self.output_name = output_name
+        model_metadata = metadata
+        if model_metadata is None:
+            for candidate in (
+                self.param.with_suffix(".metadata.json"),
+                self.model_bin.with_suffix(".metadata.json"),
+            ):
+                if candidate.is_file():
+                    model_metadata = candidate
+                    break
+        self.classes = resolve_classes(classes=classes, metadata=model_metadata)
         self.profile, self.profile_json = native.read_profile(self.profile_path)
         _validate_replay_profile(self.profile_json, self.model_bin)
         self.lib = native.load_library(self.library_path)
@@ -214,6 +241,35 @@ class FrozenReplay:
             raise ValueError("Profile thresholds must be an object")
         self.input_size = int(thresholds.get("minimap_yolox_input_size", 320))
         self.confidence = float(thresholds.get("minimap_yolox_confidence", 0.29))
+        class_thresholds = thresholds.get("minimap_yolox_confidence_by_class")
+        profile_confidence_by_class = (
+            confidence_thresholds(class_thresholds, self.classes)
+            if class_thresholds is not None else
+            confidence_thresholds(self.confidence, self.classes)
+        )
+        metadata_confidence_by_class = None
+        if model_metadata is not None:
+            if isinstance(model_metadata, (str, Path)):
+                metadata_document = json.loads(Path(model_metadata).read_text(
+                    encoding="utf-8"))
+            elif isinstance(model_metadata, dict):
+                metadata_document = model_metadata
+            else:
+                raise ValueError("model metadata must be an object or JSON path")
+            postprocess = metadata_document.get("postprocess", {})
+            if postprocess is None:
+                postprocess = {}
+            if not isinstance(postprocess, dict):
+                raise ValueError("model metadata postprocess must be an object")
+            has_threshold = any(key in postprocess for key in
+                                ("confidence_by_class", "confidence"))
+            has_threshold = has_threshold or any(key in metadata_document for key in
+                                                 ("confidence_by_class", "confidence"))
+            if has_threshold:
+                metadata_confidence_by_class = confidence_from_metadata(
+                    metadata_document, self.classes, self.confidence,
+                )
+        self.confidence_by_class = metadata_confidence_by_class or profile_confidence_by_class
         self.nms_threshold = float(thresholds.get("minimap_yolox_nms", 0.5))
         if self.input_size != 320:
             raise ValueError("Android YOLOX replay requires minimap_yolox_input_size=320")
@@ -376,20 +432,31 @@ class FrozenReplay:
             )
             detections = _decode_and_nms(
                 raw, self.input_size, x1 - x0, y1 - y0,
-                self.confidence, self.nms_threshold, self.np,
+                self.confidence_by_class or self.confidence,
+                self.nms_threshold, self.np,
+                self.classes,
             )
         observations = [native_observations[index] for index in range(native_count)]
         detection_dicts = []
         for detection in detections:
-            x_min, y_min, x_max, y_max, score = [float(value) for value in detection]
+            values = [float(value) for value in detection]
+            x_min, y_min, x_max, y_max, score = values[:5]
             full_x0, full_y0 = x0 + x_min, y0 + y_min
             full_x1, full_y1 = x0 + x_max, y0 + y_max
             direction = _direction_for(
                 (full_x0 + full_x1) * 0.5, (full_y0 + full_y1) * 0.5,
                 direction_reference,
             )
+            class_id = int(values[5]) if len(values) > 5 else 0
+            class_name = self.classes[class_id]
+            kind_by_class = {
+                "minimap_enemy": native.MA_MINIMAP_ENEMY,
+                "minimap_player": native.MA_MINIMAP_PLAYER,
+            }
+            if class_name not in kind_by_class:
+                raise ValueError(f"unsupported minimap detector class {class_name!r}")
             observations.append(native.Observation(
-                2, direction,
+                kind_by_class[class_name], direction,
                 native.Rect(
                     full_x0 / width, full_y0 / height,
                     (full_x1 - full_x0) / width, (full_y1 - full_y0) / height,
@@ -398,7 +465,7 @@ class FrozenReplay:
             ))
             detection_dicts.append(
                 _bbox_dict(detection, width, height, area,
-                           direction_reference))
+                           direction_reference, self.classes))
 
         observations.sort(key=lambda item: float(item.confidence), reverse=True)
         observations = observations[:64]
@@ -420,7 +487,8 @@ class FrozenReplay:
 def run(video: Path, profile: Path, param: Path, model_bin: Path,
         output: Path, fps: int = 12, library: Path | None = None,
         metadata: Path | None = None, threads: int = 2,
-        input_name: str = "in0", output_name: str = "out0") -> dict[str, Any]:
+        input_name: str = "in0", output_name: str = "out0",
+        classes=None, model_metadata: Path | None = None) -> dict[str, Any]:
     if fps < 1 or fps > 30:
         raise ValueError("fps must be between 1 and 30")
     if threads < 1:
@@ -438,9 +506,21 @@ def run(video: Path, profile: Path, param: Path, model_bin: Path,
     if output.resolve() in {video, profile, param, model_bin, library}:
         raise ValueError("Output must not overwrite a replay input")
     output = output.resolve()
-    metadata = (metadata or Path(f"{output}.meta.json")).resolve()
-    if metadata in {video, profile, param, model_bin, library, output}:
+    provenance_metadata = (metadata or Path(f"{output}.meta.json")).resolve()
+    if provenance_metadata in {video, profile, param, model_bin, library, output}:
         raise ValueError("Metadata must not overwrite a replay input or predictions")
+    if model_metadata is not None:
+        model_metadata = model_metadata.expanduser().resolve()
+        if not model_metadata.is_file():
+            raise FileNotFoundError(f"Missing model metadata: {model_metadata}")
+    else:
+        for candidate in (
+            param.with_suffix(".metadata.json"),
+            model_bin.with_suffix(".metadata.json"),
+        ):
+            if candidate.is_file():
+                model_metadata = candidate.resolve()
+                break
 
     import ncnn
 
@@ -450,7 +530,12 @@ def run(video: Path, profile: Path, param: Path, model_bin: Path,
         "video": _artifact(video),
         "profile": _artifact(profile),
         "profile_assets": _profile_assets(profile, profile_json),
-        "model": {"param": _artifact(param), "bin": _artifact(model_bin)},
+        "model": {
+            "param": _artifact(param),
+            "bin": _artifact(model_bin),
+            "metadata": (_artifact(model_metadata)
+                         if model_metadata is not None else None),
+        },
         "native_library": _artifact(library),
     }
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -464,7 +549,7 @@ def run(video: Path, profile: Path, param: Path, model_bin: Path,
     started = time.perf_counter()
     try:
         with FrozenReplay(profile, param, model_bin, library, threads,
-                          input_name, output_name, ncnn) as replay, \
+                          input_name, output_name, ncnn, classes, model_metadata) as replay, \
                 temporary.open("w", encoding="utf-8") as stream:
             for index, frame in enumerate(decoded_frames(video, width, height, fps)):
                 timestamp_ms = round(index * 1000 / fps)
@@ -537,16 +622,20 @@ def run(video: Path, profile: Path, param: Path, model_bin: Path,
             ),
             "determinism": "float32 ncnn arithmetic; Android packing may differ",
             "postprocess": {
+                "classes": list(replay.classes) if 'replay' in locals() else list(
+                    resolve_classes(classes=classes)
+                ),
                 "confidence": json.loads(profile.read_text(encoding="utf-8"))
                 .get("thresholds", {}).get("minimap_yolox_confidence", 0.29),
+                "confidence_by_class": replay.confidence_by_class,
                 "nms_iou": json.loads(profile.read_text(encoding="utf-8"))
                 .get("thresholds", {}).get("minimap_yolox_nms", 0.5),
                 "strides": [8, 16, 32],
             },
         },
     }
-    _write_json_atomic(metadata, provenance)
-    return {**stats, "metadata": str(metadata)}
+    _write_json_atomic(provenance_metadata, provenance)
+    return {**stats, "metadata": str(provenance_metadata)}
 
 
 def main() -> None:
@@ -559,6 +648,12 @@ def main() -> None:
     parser.add_argument("--fps", type=int, default=12)
     parser.add_argument("--library", type=Path)
     parser.add_argument("--metadata", type=Path)
+    parser.add_argument(
+        "--model-metadata", type=Path,
+        help="Model sidecar whose classes and per-class thresholds define decoding",
+    )
+    parser.add_argument("--classes", nargs="+", metavar="CLASS",
+                        help="Explicit model class order when sidecar metadata is unavailable")
     parser.add_argument("--threads", type=int, default=2)
     parser.add_argument("--input-name", default="in0")
     parser.add_argument("--output-name", default="out0")
@@ -567,7 +662,7 @@ def main() -> None:
         result = run(
             args.video, args.profile, args.param, args.model_bin, args.output,
             args.fps, args.library, args.metadata, args.threads,
-            args.input_name, args.output_name,
+            args.input_name, args.output_name, args.classes, args.model_metadata,
         )
     except (FileNotFoundError, OSError, RuntimeError, ValueError,
             subprocess.CalledProcessError, ImportError) as error:

@@ -126,6 +126,28 @@ def _boxes(frame: dict) -> list[list[float]]:
     return validated
 
 
+def _categories(frame: dict, count: int, default: str,
+                 known: set[str]) -> list[str]:
+    """Return one semantic class name for every frame box.
+
+    ``categories`` is an optional parallel array introduced for multi-class
+    minimap review.  Legacy manifests without it remain single-class.
+    """
+    value = frame.get("categories")
+    if value is None and len(known) > 1 and count:
+        raise ValueError("frame categories are required for a multi-class manifest")
+    if value is None:
+        return [default] * count
+    if (not isinstance(value, list) or len(value) != count or
+            any(not isinstance(item, str) or not item.strip() for item in value)):
+        raise ValueError("frame categories must align with boxes")
+    result = [item.strip() for item in value]
+    unknown = sorted(set(result) - known)
+    if unknown:
+        raise ValueError(f"frame categories contain unknown classes: {unknown}")
+    return result
+
+
 def _roi(value: object, label: str) -> list[float]:
     if (not isinstance(value, list) or len(value) != 4 or
             any(not isinstance(item, (int, float)) or isinstance(item, bool)
@@ -175,6 +197,18 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
         raise ValueError(f"Invalid detection category: {category}")
     if not isinstance(matches, list) or not matches:
         raise ValueError("Detection manifest needs at least one match")
+    classes = data.get("classes")
+    if classes is None:
+        classes = [category]
+    if (not isinstance(classes, list) or not classes or
+            any(not isinstance(item, str) or not item.strip() for item in classes)):
+        raise ValueError("Detection manifest classes must be a non-empty list of names")
+    classes = [item.strip() for item in classes]
+    if len(set(classes)) != len(classes):
+        raise ValueError("Detection manifest classes must be unique")
+    if category not in classes:
+        classes.insert(0, category)
+    category_ids = {name: index + 1 for index, name in enumerate(classes)}
     default_roi_value = data.get("roi")
     default_roi = (_roi(default_roi_value, "Detection manifest roi")
                    if default_roi_value is not None else None)
@@ -190,7 +224,7 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
         raise ValueError("--library requires --locator")
     adaptive_requested = locator is not None
 
-    prepared: dict[str, list[tuple[str, Path, int, list[list[float]],
+    prepared: dict[str, list[tuple[str, Path, int, list[list[float]], list[str],
                                   list[float] | None, list[float] | None, int]]] = {
         split: [] for split in SPLITS
     }
@@ -259,8 +293,12 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
             if at_ms in seen_times:
                 raise ValueError(f"Duplicate frame time in {match_id}: {at_ms}")
             seen_times.add(at_ms)
-            prepared[split].append((match_id, video, at_ms, _boxes(frame), match_roi,
-                                    match_widget_roi, rotation(match_orientation)))
+            boxes = _boxes(frame)
+            prepared[split].append((
+                match_id, video, at_ms, boxes,
+                _categories(frame, len(boxes), category, set(classes)), match_roi,
+                match_widget_roi, rotation(match_orientation)
+            ))
 
     # Validate all metadata before writing output so bad splits do not produce partial datasets.
     adaptive = _AdaptiveCropper(locator, library) if locator is not None else None
@@ -280,7 +318,7 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
             split_name = SPLIT_DIRS[split]
             split_dir = output / split_name
             split_dir.mkdir(parents=True, exist_ok=True)
-            for (match_id, video, at_ms, boxes, roi, widget_roi,
+            for (match_id, video, at_ms, boxes, box_categories, roi, widget_roi,
                  display_rotation) in frames:
                 filename = f"{match_id}_{at_ms:09d}.png"
                 frame_path = split_dir / filename
@@ -359,7 +397,7 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
                 images.append(image_record)
                 if not boxes:
                     negative_images += 1
-                for x, y, w, h in boxes:
+                for box_index, (x, y, w, h) in enumerate(boxes):
                     if roi is None:
                         px_box = [x * full_width, y * full_height,
                                   w * full_width, h * full_height]
@@ -368,14 +406,16 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
                                   (x * full_width - crop_x, y * full_height - crop_y,
                                    w * full_width, h * full_height)]
                     annotations.append({"id": len(annotations) + 1,
-                                        "image_id": image_id, "category_id": 1,
+                                        "image_id": image_id,
+                                        "category_id": category_ids[box_categories[box_index]],
                                         "bbox": px_box,
                                         "area": px_box[2] * px_box[3], "iscrowd": 0})
             annotation_dir = output / "annotations"
             annotation_dir.mkdir(parents=True, exist_ok=True)
             coco = {"images": images, "annotations": annotations,
-                    "categories": [{"id": 1, "name": category,
-                                    "supercategory": "game"}]}
+                    "categories": [{"id": identifier, "name": name,
+                                    "supercategory": "game"}
+                                   for name, identifier in category_ids.items()]}
             if default_widget_roi is not None or any(
                     match[5] is not None for match in frames):
                 coco["info"] = {

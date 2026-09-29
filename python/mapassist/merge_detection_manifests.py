@@ -30,12 +30,28 @@ def _roi(value: object, label: str) -> list[float]:
     return result
 
 
+def _classes(data: dict, category: str, label: str) -> list[str]:
+    value = data.get("classes")
+    if value is None:
+        value = [category]
+    if (not isinstance(value, list) or not value or
+            any(not isinstance(item, str) or not item.strip() for item in value)):
+        raise ValueError(f"{label} classes must be a non-empty list of names")
+    result = [item.strip() for item in value]
+    if len(set(result)) != len(result):
+        raise ValueError(f"{label} classes must not contain duplicates")
+    if category not in result:
+        raise ValueError(f"{label} category {category!r} is not in classes")
+    return result
+
+
 def merge(manifests: list[Path], output: Path,
           split_overrides: dict[str, str] | None = None) -> dict:
     if not manifests:
         raise ValueError("At least one detection manifest is required")
     split_overrides = split_overrides or {}
     category = None
+    classes: list[str] | None = None
     matches = []
     seen_ids: set[str] = set()
     seen_videos: set[Path] = set()
@@ -54,6 +70,11 @@ def merge(manifests: list[Path], output: Path,
             raise ValueError(
                 f"Detection categories differ: {category} and {current_category}"
             )
+        current_classes = _classes(data, current_category, str(manifest))
+        if classes is None:
+            classes = current_classes
+        elif current_classes != classes:
+            raise ValueError("Detection class order differs")
         default_roi = data.get("roi")
         default_widget_value = data.get("widget_roi")
         default_widget_roi = (_roi(default_widget_value, f"{manifest} widget_roi")
@@ -101,6 +122,27 @@ def merge(manifests: list[Path], output: Path,
             exported["video"] = str(video)
             exported["split"] = split
             exported["roi"] = roi
+            frames = exported.get("frames", [])
+            if not isinstance(frames, list):
+                raise ValueError(f"Invalid frames for {match_id}")
+            for frame in frames:
+                if not isinstance(frame, dict) or not isinstance(frame.get("boxes"), list):
+                    raise ValueError(f"Invalid frame in {match_id}")
+                frame_categories = frame.get("categories")
+                if frame_categories is None:
+                    if len(classes) > 1 and frame["boxes"]:
+                        raise ValueError(
+                            f"{match_id}@{frame.get('at_ms')} categories are required for a multi-class manifest"
+                        )
+                    frame_categories = [current_category] * len(frame["boxes"])
+                    frame["categories"] = frame_categories
+                if (not isinstance(frame_categories, list) or
+                        len(frame_categories) != len(frame["boxes"]) or
+                        any(not isinstance(item, str) or item not in classes
+                            for item in frame_categories)):
+                    raise ValueError(
+                        f"Invalid categories for {match_id}@{frame.get('at_ms')}"
+                    )
             if widget_roi is not None:
                 exported["widget_roi"] = widget_roi
             else:
@@ -116,7 +158,8 @@ def merge(manifests: list[Path], output: Path,
     unused = sorted(set(split_overrides) - used_overrides)
     if unused:
         raise ValueError(f"Split overrides did not match a recording: {', '.join(unused)}")
-    result = {"schema_version": 1, "category": category, "matches": matches}
+    result = {"schema_version": 1, "category": category,
+              "classes": classes, "matches": matches}
     if orientations and all(item == orientations[0] for item in orientations):
         if orientations[0] is not None:
             result["orientation"] = orientations[0]

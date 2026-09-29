@@ -6,7 +6,9 @@ import ctypes
 import hashlib
 import json
 import shutil
+import sqlite3
 import subprocess
+import threading
 from types import SimpleNamespace
 from pathlib import Path
 
@@ -158,6 +160,225 @@ def test_annotation_store_coordinates_collaborators_and_exports(
         "skip": 0, "excluded": 0,
     }
     assert stats["contributors"] == [{"name": "Alice", "count": 1}]
+
+
+def test_annotation_store_round_trips_multiclass_categories(
+    annotation_dataset: Path,
+) -> None:
+    manifest_path = annotation_dataset / "review-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["classes"] = ["minimap_enemy", "minimap_player"]
+    first = manifest["matches"][0]["samples"][0]
+    first["suggested_categories"] = ["minimap_player"]
+    manifest["matches"][0]["samples"][1]["suggested_categories"] = [
+        "minimap_enemy"
+    ]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    store = AnnotationStore(annotation_dataset, lease_seconds=60)
+    assert store.bootstrap()["classes"] == ["minimap_enemy", "minimap_player"]
+    task = store.claim_next("Class reviewer")
+    assert task is not None
+    assert task["suggested_categories"] == ["minimap_player"]
+
+    boxes = [[0.06, 0.12, 0.05, 0.07], [0.14, 0.14, 0.04, 0.06]]
+    with pytest.raises(ValueError, match="one category per box"):
+        store.save(task["id"], "Class reviewer", task["version"],
+                   "corrected", boxes)
+    with pytest.raises(ValueError, match="unknown class"):
+        store.save(task["id"], "Class reviewer", task["version"],
+                   "corrected", boxes, ["minimap_enemy", "tower"])
+
+    saved = store.save(
+        task["id"], "Class reviewer", task["version"], "corrected", boxes,
+        ["minimap_enemy", "minimap_player"],
+    )
+    assert saved["reviewed_categories"] == [
+        "minimap_enemy", "minimap_player",
+    ]
+    exported = json.loads(manifest_path.read_text(encoding="utf-8"))
+    sample = exported["matches"][0]["samples"][0]
+    assert sample["suggested_categories"] == ["minimap_player"]
+    assert sample["reviewed_categories"] == [
+        "minimap_enemy", "minimap_player",
+    ]
+
+    # An older manifest can omit both corrected fields while the database
+    # still has a valid review.  Reopening must keep the stored categories.
+    sample.pop("reviewed_boxes")
+    sample.pop("reviewed_categories")
+    manifest_path.write_text(json.dumps(exported), encoding="utf-8")
+    reopened = AnnotationStore(annotation_dataset, lease_seconds=60)
+    assert reopened.get(saved["id"])["reviewed_categories"] == [
+        "minimap_enemy", "minimap_player",
+    ]
+
+
+def test_annotation_store_migrates_category_columns_without_losing_reviews(
+    annotation_dataset: Path,
+) -> None:
+    database = annotation_dataset / "legacy.sqlite3"
+    with sqlite3.connect(database) as connection:
+        connection.execute("""
+            CREATE TABLE tasks (
+                id INTEGER PRIMARY KEY,
+                match_id TEXT NOT NULL,
+                split TEXT NOT NULL,
+                at_ms INTEGER NOT NULL,
+                selection TEXT NOT NULL,
+                frame TEXT NOT NULL,
+                overlay TEXT NOT NULL,
+                suggested_boxes TEXT NOT NULL,
+                directions TEXT NOT NULL,
+                review_status TEXT NOT NULL DEFAULT 'pending',
+                reviewed_boxes TEXT,
+                reviewed_by TEXT,
+                reviewed_at TEXT,
+                lease_owner TEXT,
+                lease_until REAL,
+                version INTEGER NOT NULL DEFAULT 1,
+                UNIQUE(match_id, at_ms)
+            )
+        """)
+        connection.execute("""
+            INSERT INTO tasks (
+                match_id, split, at_ms, selection, frame, overlay,
+                suggested_boxes, directions, review_status, reviewed_boxes,
+                reviewed_by, reviewed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            "match-01", "train", 0, "cue",
+            "train/match-01/frame-0.png",
+            "train/match-01/frame-0-overlay.jpg",
+            json.dumps([[0.05, 0.1, 0.04, 0.06]]),
+            json.dumps(["left"]), "corrected",
+            json.dumps([[0.06, 0.12, 0.05, 0.07]]), "Legacy reviewer",
+            "2026-09-30T00:00:00+00:00",
+        ))
+
+    store = AnnotationStore(annotation_dataset, database=database, lease_seconds=60)
+    task = store.list_tasks()[0]
+    assert task["suggested_categories"] == ["minimap_enemy"]
+    assert task["review_status"] == "corrected"
+    assert task["reviewed_boxes"] == [[0.06, 0.12, 0.05, 0.07]]
+    assert task["reviewed_categories"] == ["minimap_enemy"]
+    assert task["reviewed_by"] == "Legacy reviewer"
+
+    reopened = AnnotationStore(annotation_dataset, database=database, lease_seconds=60)
+    reopened_task = reopened.get(task["id"])
+    assert reopened_task["reviewed_categories"] == ["minimap_enemy"]
+
+
+def test_annotation_store_rejects_ambiguous_multiclass_legacy_review(
+    annotation_dataset: Path,
+) -> None:
+    manifest_path = annotation_dataset / "review-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["classes"] = ["minimap_enemy", "minimap_player"]
+    for sample in manifest["matches"][0]["samples"]:
+        if sample["suggested_boxes"]:
+            sample["suggested_categories"] = ["minimap_player"]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    database = annotation_dataset / "legacy-multiclass.sqlite3"
+    store = AnnotationStore(annotation_dataset, database=database, lease_seconds=60)
+    task = store.list_tasks()[0]
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """
+            UPDATE tasks SET review_status = 'corrected', reviewed_boxes = ?,
+                reviewed_categories = NULL WHERE id = ?
+            """,
+            (json.dumps([[0.06, 0.12, 0.05, 0.07]]), task["id"]),
+        )
+
+    with pytest.raises(ValueError, match="reviewed_categories are missing.*multi-class"):
+        AnnotationStore(annotation_dataset, database=database, lease_seconds=60)
+
+
+def test_annotation_store_keeps_accepted_and_negative_category_semantics(
+    annotation_dataset: Path,
+) -> None:
+    manifest_path = annotation_dataset / "review-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["classes"] = ["minimap_enemy", "minimap_player"]
+    for sample in manifest["matches"][0]["samples"]:
+        if sample["suggested_boxes"]:
+            sample["suggested_categories"] = ["minimap_player"]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    store = AnnotationStore(annotation_dataset, lease_seconds=60)
+    accepted = store.claim_next("Accepted reviewer")
+    assert accepted is not None
+    saved_accepted = store.save(
+        accepted["id"], "Accepted reviewer", accepted["version"], "accepted"
+    )
+    assert saved_accepted["suggested_categories"] == ["minimap_player"]
+    assert saved_accepted["reviewed_boxes"] is None
+    assert saved_accepted["reviewed_categories"] is None
+
+    negative = store.claim_next("Negative reviewer")
+    assert negative is not None
+    saved_negative = store.save(
+        negative["id"], "Negative reviewer", negative["version"], "negative"
+    )
+    assert saved_negative["reviewed_boxes"] is None
+    assert saved_negative["reviewed_categories"] is None
+
+
+def test_annotation_store_concurrent_legacy_migration_is_safe(
+    annotation_dataset: Path,
+) -> None:
+    database = annotation_dataset / "concurrent-legacy.sqlite3"
+    with sqlite3.connect(database) as connection:
+        connection.execute("""
+            CREATE TABLE tasks (
+                id INTEGER PRIMARY KEY,
+                match_id TEXT NOT NULL,
+                split TEXT NOT NULL,
+                at_ms INTEGER NOT NULL,
+                selection TEXT NOT NULL,
+                frame TEXT NOT NULL,
+                overlay TEXT NOT NULL,
+                suggested_boxes TEXT NOT NULL,
+                directions TEXT NOT NULL,
+                review_status TEXT NOT NULL DEFAULT 'pending',
+                reviewed_boxes TEXT,
+                reviewed_by TEXT,
+                reviewed_at TEXT,
+                lease_owner TEXT,
+                lease_until REAL,
+                version INTEGER NOT NULL DEFAULT 1,
+                UNIQUE(match_id, at_ms)
+            )
+        """)
+
+    barrier = threading.Barrier(2)
+    stores: list[AnnotationStore] = []
+    errors: list[BaseException] = []
+
+    def open_store() -> None:
+        try:
+            barrier.wait(timeout=5)
+            stores.append(AnnotationStore(
+                annotation_dataset, database=database, lease_seconds=60
+            ))
+        except BaseException as error:  # report both worker failures below
+            errors.append(error)
+
+    threads = [threading.Thread(target=open_store) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=20)
+    assert not errors
+    assert len(stores) == 2
+    with sqlite3.connect(database) as connection:
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(tasks)")
+        }
+    assert "suggested_categories" in columns
+    assert "reviewed_categories" in columns
 
 
 def test_annotation_store_releases_unfinished_task(annotation_dataset: Path) -> None:

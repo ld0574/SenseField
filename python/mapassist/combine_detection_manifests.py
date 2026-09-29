@@ -30,12 +30,28 @@ def _roi(value: object, label: str) -> list[float]:
     return result
 
 
+def _classes(data: dict, category: str, label: str) -> list[str]:
+    value = data.get("classes")
+    if value is None:
+        value = [category]
+    if (not isinstance(value, list) or not value or
+            any(not isinstance(item, str) or not item.strip() for item in value)):
+        raise ValueError(f"{label} classes must be a non-empty list of names")
+    result = [item.strip() for item in value]
+    if len(set(result)) != len(result):
+        raise ValueError(f"{label} classes must not contain duplicates")
+    if category not in result:
+        raise ValueError(f"{label} category {category!r} is not in classes")
+    return result
+
+
 def combine(manifests: list[Path], output: Path,
             split_overrides: dict[str, str] | None = None) -> dict:
     if not manifests:
         raise ValueError("At least one detection manifest is required")
     split_overrides = split_overrides or {}
     category = None
+    classes: list[str] | None = None
     grouped: dict[Path, dict] = {}
     ids: dict[str, Path] = {}
     used_overrides: set[str] = set()
@@ -51,6 +67,11 @@ def combine(manifests: list[Path], output: Path,
             category = current_category
         elif current_category != category:
             raise ValueError("Detection categories differ")
+        current_classes = _classes(data, current_category, str(manifest))
+        if classes is None:
+            classes = current_classes
+        elif current_classes != classes:
+            raise ValueError("Detection class order differs")
         default_roi = data.get("roi")
         default_widget_value = data.get("widget_roi")
         default_widget_roi = (_roi(default_widget_value, f"{manifest} widget_roi")
@@ -118,8 +139,23 @@ def combine(manifests: list[Path], output: Path,
                 boxes = frame.get("boxes")
                 if not isinstance(timestamp, int) or not isinstance(boxes, list):
                     raise ValueError(f"Invalid frame in {match_id}")
-                previous = record["frames"].setdefault(timestamp, boxes)
-                if previous != boxes:
+                frame_categories = frame.get("categories")
+                if frame_categories is None:
+                    if len(classes) > 1 and boxes:
+                        raise ValueError(
+                            f"{match_id}@{timestamp} categories are required for a multi-class manifest"
+                        )
+                    frame_categories = [current_category] * len(boxes)
+                if (not isinstance(frame_categories, list) or
+                        len(frame_categories) != len(boxes) or
+                        any(not isinstance(item, str) or item not in classes
+                            for item in frame_categories)):
+                    raise ValueError(
+                        f"Invalid categories for {match_id}@{timestamp}; they must align with boxes"
+                    )
+                frame_value = {"boxes": boxes, "categories": list(frame_categories)}
+                previous = record["frames"].setdefault(timestamp, frame_value)
+                if previous != frame_value:
                     raise ValueError(
                         f"Conflicting labels for {match_id}@{timestamp}; review manually"
                     )
@@ -131,8 +167,8 @@ def combine(manifests: list[Path], output: Path,
         exported = {
             "id": record["id"], "video": record["video"],
             "split": record["split"], "roi": record["roi"],
-            "frames": [{"at_ms": timestamp, "boxes": boxes}
-                       for timestamp, boxes in sorted(record["frames"].items())],
+            "frames": [{"at_ms": timestamp, **frame}
+                       for timestamp, frame in sorted(record["frames"].items())],
         }
         if record["widget_roi"] is not None:
             exported["widget_roi"] = record["widget_roi"]
@@ -143,7 +179,8 @@ def combine(manifests: list[Path], output: Path,
         matches.append(exported)
         if record["orientation"] is not None:
             matches[-1]["orientation"] = record["orientation"]
-    result = {"schema_version": 1, "category": category, "matches": matches}
+    result = {"schema_version": 1, "category": category,
+              "classes": classes, "matches": matches}
     if orientations and all(item == orientations[0] for item in orientations):
         if orientations[0] is not None:
             result["orientation"] = orientations[0]

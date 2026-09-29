@@ -209,7 +209,7 @@ video10 和 video11 已完成全部人工复核并通过队列、ROI、尺寸、
 
 从 video4/5 扩充候选初始化，在 Apple MPS 上以 seed `20260930`、输入 320、batch 16、`lr_scale=0.25` 训练最多 12 轮；best epoch 为 8，实际用时约 337 秒。训练阶段开发 val 原选 confidence `0.49`。首轮 Android 14 真机反馈出现过密提示和至少一次方向误报后，部署候选改为优先降低误报的 `0.67`：Android 同款 ncnn 在固定开发 val 上 TP/FP/FN 为 `353/15/47`，precision / recall / F1 为 `95.9239% / 88.2500% / 91.9271%`；video13 为 `192/16/19` 和 `92.3077% / 90.9953% / 91.6468%`。video2-HD、video11 和 video13 都参与了开发判断，因此这些都不是独立留出成绩。
 
-该 checkpoint 已作为桌面与 Android 本机实验候选。ONNX、TorchScript、ncnn 导出已经完成；ONNX 最终 detection 数组在 230 张固定开发图上相同，但 raw 门限超 1 张。ncnn raw 门限超 12 张，Android 等价预处理后的 detection values 超限 187 张，严格 parity 未通过。本机 ignored param/bin、tracked metadata 与两份 `hok_minimap_hd_bootstrap` profile 已绑定 v2，构建哈希门禁通过；候选保持 `verified=false`、`release_ready=false`，公共默认 profile 继续关闭 detector。完整数值与 artifact 哈希见[模型接入记录](../validation/MODEL_PIPELINE.md#v2-onnxtorchscriptncnn-导出与-parity2026-09-29)。
+该 checkpoint 已作为桌面与 Android 本机实验候选。ONNX、TorchScript、ncnn 导出已经完成；ONNX 最终 detection 数组在 230 张固定开发图上相同，但 raw 门限超 1 张。ncnn raw 门限超 12 张，Android 等价预处理后的 detection values 超限 187 张，严格 parity 未通过。本机 ignored param/bin、tracked metadata 与两份 `hok_minimap_hd_bootstrap` profile 已绑定 v2，构建哈希门禁通过；候选保持 `verified=false`、`release_ready=false`。当前内置 profile 在新安装时默认启用实验 detector 和新头像提醒，用户可在设置中关闭；这一试用默认值不改变候选未验收的状态。完整数值与 artifact 哈希见[模型接入记录](../validation/MODEL_PIPELINE.md#v2-onnxtorchscriptncnn-导出与-parity2026-09-29)。
 
 ### v2 候选导出与 parity 复现
 
@@ -622,3 +622,34 @@ OpenCV 输入的最大像素差为 `1`，每张图的最终检测数量一致，
 `--images image-a.png image-b.png` 检查指定原图；报告会记录每张图片及三个模型
 文件的 SHA-256。只排查模型转换时可传 `--no-runtime-preprocess-check`。Android
 真机仍需单独验收截屏格式、精度、耗时和发热。
+
+### 多类别模型契约
+
+训练、ONNX/ncnn parity 和预标注工具都使用同一份类别顺序。模型 metadata
+的 `classes` 数组是唯一的 canonical order；COCO `categories` 会按数值
+`id` 排序映射为从 0 开始的模型 class index。raw YOLOX 输出宽度必须是
+`5 + len(classes)`，因此单类旧模型仍为 `1×2100×6`，敌人＋玩家模型为
+`1×2100×7`。类别冲突或 raw 宽度不匹配会直接失败。
+
+新模型建议把后处理阈值写成：
+
+```json
+{
+  "classes": ["minimap_enemy", "minimap_player"],
+  "output": [1, 2100, 7],
+  "postprocess": {
+    "confidence": 0.67,
+    "confidence_by_class": {
+      "minimap_enemy": 0.67,
+      "minimap_player": 0.72
+    },
+    "nms_iou": 0.5,
+    "strides": [8, 16, 32]
+  }
+}
+```
+
+`confidence_by_class` 必须完整覆盖 `classes`；旧 metadata 的单一
+`postprocess.confidence` 会继续兼容。多类别 NMS 只抑制同一 class 的重叠框，
+预标注建议和 review/COCO 导出通过平行的 `suggested_categories`、`categories`
+数组保留每个框的 class。

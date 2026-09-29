@@ -22,6 +22,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
+try:
+    from .yolox_decode import (
+        DEFAULT_CLASSES, decoded_output_width, resolve_classes, yolox_tensor_contract,
+    )
+except ImportError:  # pragma: no cover - direct command-line execution.
+    from yolox_decode import (  # type: ignore
+        DEFAULT_CLASSES, decoded_output_width, resolve_classes, yolox_tensor_contract,
+    )
+
 
 NCNN_MAGIC = "7767517"
 FOCUS_POSITIONS = ((0, 0), (1, 0), (0, 1), (1, 1))
@@ -425,6 +434,10 @@ def main() -> None:
         help="JSON output; defaults to <output-param>.conversion.json",
     )
     parser.add_argument("--input-size", type=int, default=320)
+    parser.add_argument("--model-metadata", type=Path,
+                        help="Input model metadata whose classes array is canonical")
+    parser.add_argument("--classes", nargs="+", metavar="CLASS",
+                        help="Explicit model class order when metadata is unavailable")
     parser.add_argument("--pnnx", type=Path)
     args = parser.parse_args()
     if args.input_size < 32 or args.input_size % 32:
@@ -433,6 +446,11 @@ def main() -> None:
     torchscript = args.torchscript.expanduser().resolve()
     output_param = args.output_param.expanduser().resolve()
     output_bin = args.output_bin.expanduser().resolve()
+    model_metadata = (
+        args.model_metadata.expanduser().resolve()
+        if args.model_metadata is not None else None
+    )
+    class_names = resolve_classes(classes=args.classes, metadata=model_metadata)
     metadata = (
         args.metadata.expanduser().resolve()
         if args.metadata is not None
@@ -469,10 +487,17 @@ def main() -> None:
         focus_details["pnnx_source_validation"] = pnnx_focus_details
         staged_param = work_dir / "model.focus.ncnn.param"
         staged_param.write_text(rewritten, encoding="utf-8")
+        tensor_contract = yolox_tensor_contract(args.input_size, class_names)
         report = {
             "schema_version": 1,
             "conversion": "yolox_torchscript_to_ncnn",
-            "input_shape": [1, 3, args.input_size, args.input_size],
+            "input": tensor_contract["input"],
+            "input_shape": tensor_contract["input"],
+            "input_size": args.input_size,
+            "classes": list(class_names),
+            "output_width": decoded_output_width(class_names),
+            "output": tensor_contract["output"],
+            "output_shape": tensor_contract["output"],
             "pnnx": {
                 "install": pnnx_install,
                 "options": list(stable_options),

@@ -37,6 +37,42 @@ FINAL_STATUSES = {"accepted", "corrected", "negative", "skip", "excluded"}
 ALL_STATUSES = {"pending", *FINAL_STATUSES}
 ANNOTATOR = re.compile(r"^[^\x00-\x1f\x7f]{1,40}$")
 CONTEXT_OFFSETS_MS = (-500, 500)
+_SCHEMA_LOCK = threading.Lock()
+_SQLITE_RETRY_LIMIT = 5
+_SQLITE_RETRY_DELAY = 0.05
+
+
+def _is_sqlite_busy(error: sqlite3.OperationalError) -> bool:
+    message = str(error).lower()
+    return any(fragment in message for fragment in (
+        "database is locked",
+        "database table is locked",
+        "database schema is locked",
+        "database is busy",
+    ))
+
+
+def _rollback(connection: sqlite3.Connection) -> None:
+    if not connection.in_transaction:
+        return
+    try:
+        connection.execute("ROLLBACK")
+    except sqlite3.OperationalError:
+        # The transaction may already have been rolled back by SQLite after a
+        # failed DDL statement.  Preserve the original migration error.
+        pass
+
+
+def _begin_immediate(connection: sqlite3.Connection) -> None:
+    for attempt in range(_SQLITE_RETRY_LIMIT):
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            return
+        except sqlite3.OperationalError as error:
+            if (not _is_sqlite_busy(error) or
+                    attempt == _SQLITE_RETRY_LIMIT - 1):
+                raise
+            time.sleep(_SQLITE_RETRY_DELAY * (attempt + 1))
 
 
 def _validate_boxes(boxes: object) -> list[list[float]]:
@@ -59,6 +95,38 @@ def _validate_boxes(boxes: object) -> list[list[float]]:
             raise ValueError("box is outside the normalized frame")
         result.append([round(x, 7), round(y, 7), round(width, 7), round(height, 7)])
     return result
+
+
+def _validate_classes(value: object, kind: object) -> list[str]:
+    """Return the canonical per-box class order for a review manifest."""
+    if value is None:
+        value = [kind]
+    if (not isinstance(value, list) or not value or
+            any(not isinstance(item, str) or not item.strip() for item in value)):
+        raise ValueError("classes must be a non-empty list of names")
+    result = [item.strip() for item in value]
+    if len(result) > 32:
+        raise ValueError("classes must contain at most 32 names")
+    if len(set(result)) != len(result):
+        raise ValueError("classes must be unique")
+    return result
+
+
+def _validate_categories(categories: object, boxes: list[list[float]],
+                         classes: list[str], default_class: str,
+                         label: str, *, allow_default: bool = True) -> list[str]:
+    """Validate a category parallel array, filling legacy single-class rows."""
+    if categories is None:
+        if not allow_default:
+            raise ValueError(f"{label} is required when boxes are present")
+        return [default_class] * len(boxes)
+    if not isinstance(categories, list):
+        raise ValueError(f"{label} must be a list")
+    if len(categories) != len(boxes):
+        raise ValueError(f"{label} must have one entry per box")
+    if any(not isinstance(item, str) or item not in classes for item in categories):
+        raise ValueError(f"{label} contains an unknown class")
+    return list(categories)
 
 
 def _validate_roi(value: object, label: str = "roi") -> list[float]:
@@ -92,6 +160,13 @@ def _annotator(value: object) -> str:
     return value
 
 
+def _decode_stored_json(value: object, label: str) -> object:
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError, json.JSONDecodeError) as error:
+        raise ValueError(f"Stored {label} is not valid JSON") from error
+
+
 class ConflictError(RuntimeError):
     pass
 
@@ -119,11 +194,98 @@ class AnnotationStore:
         connection.execute("PRAGMA foreign_keys = ON")
         return connection
 
+    @staticmethod
+    def _existing_columns(connection: sqlite3.Connection) -> set[str]:
+        return {
+            row["name"] for row in connection.execute("PRAGMA table_info(tasks)")
+        }
+
+    def _ensure_schema(self) -> None:
+        """Create or migrate the task schema under one serialized write lock."""
+        # The process lock avoids two stores in this process racing through
+        # SQLite DDL.  BEGIN IMMEDIATE also serializes stores in other
+        # processes before they inspect the columns or run ALTER TABLE.
+        with _SCHEMA_LOCK:
+            for attempt in range(_SQLITE_RETRY_LIMIT):
+                connection = self._connect()
+                try:
+                    # WAL mode is a persistent database setting and cannot be
+                    # changed from inside the transaction below.
+                    connection.execute("PRAGMA journal_mode = WAL")
+                    connection.execute("BEGIN IMMEDIATE")
+                    try:
+                        connection.execute("""
+                            CREATE TABLE IF NOT EXISTS tasks (
+                                id INTEGER PRIMARY KEY,
+                                match_id TEXT NOT NULL,
+                                split TEXT NOT NULL,
+                                at_ms INTEGER NOT NULL,
+                                selection TEXT NOT NULL,
+                                frame TEXT NOT NULL,
+                                overlay TEXT NOT NULL,
+                                suggested_boxes TEXT NOT NULL,
+                                suggested_categories TEXT NOT NULL DEFAULT '[]',
+                                directions TEXT NOT NULL,
+                                review_status TEXT NOT NULL DEFAULT 'pending',
+                                reviewed_boxes TEXT,
+                                reviewed_categories TEXT,
+                                reviewed_by TEXT,
+                                reviewed_at TEXT,
+                                lease_owner TEXT,
+                                lease_until REAL,
+                                version INTEGER NOT NULL DEFAULT 1,
+                                UNIQUE(match_id, at_ms)
+                            )
+                        """)
+                        connection.execute(
+                            "CREATE INDEX IF NOT EXISTS tasks_status "
+                            "ON tasks(review_status, id)"
+                        )
+                        connection.execute(
+                            "CREATE INDEX IF NOT EXISTS tasks_lease "
+                            "ON tasks(lease_until)"
+                        )
+                        existing_columns = self._existing_columns(connection)
+                        for name, definition in (
+                            ("suggested_categories",
+                             "TEXT NOT NULL DEFAULT '[]'"),
+                            ("reviewed_categories", "TEXT"),
+                        ):
+                            if name in existing_columns:
+                                continue
+                            try:
+                                connection.execute(
+                                    f"ALTER TABLE tasks ADD COLUMN {name} {definition}"
+                                )
+                            except sqlite3.OperationalError as error:
+                                # A legacy server may have added the column
+                                # between the PRAGMA and ALTER.  Accept the
+                                # race only after confirming the column exists.
+                                if ("duplicate column name" not in str(error).lower() or
+                                        name not in self._existing_columns(connection)):
+                                    raise
+                            existing_columns.add(name)
+                        connection.execute("COMMIT")
+                    except Exception:
+                        _rollback(connection)
+                        raise
+                    return
+                except sqlite3.OperationalError as error:
+                    _rollback(connection)
+                    if (not _is_sqlite_busy(error) or
+                            attempt == _SQLITE_RETRY_LIMIT - 1):
+                        raise
+                    time.sleep(_SQLITE_RETRY_DELAY * (attempt + 1))
+                finally:
+                    connection.close()
+
     def _initialize(self) -> None:
         data = json.loads(self.manifest.read_text(encoding="utf-8"))
         if data.get("schema_version") != 1 or not isinstance(data.get("matches"), list):
             raise ValueError("Expected review manifest schema_version 1 with matches")
         self.kind = data.get("kind")
+        self.classes = _validate_classes(data.get("classes"), self.kind)
+        self.default_class = (self.kind if self.kind in self.classes else self.classes[0])
         self.review_mode = data.get("review_mode", "suggestion")
         if self.review_mode not in {"suggestion", "blind", "manual"}:
             raise ValueError("review_mode must be suggestion, blind, or manual")
@@ -143,32 +305,9 @@ class AnnotationStore:
         self.match_widget_rois: dict[str, list[float] | None] = {}
         self.match_label_rois: dict[str, list[float] | None] = {}
         self.database.parent.mkdir(parents=True, exist_ok=True)
+        self._ensure_schema()
         with self._connect() as connection:
-            connection.execute("PRAGMA journal_mode = WAL")
-            connection.executescript("""
-                CREATE TABLE IF NOT EXISTS tasks (
-                    id INTEGER PRIMARY KEY,
-                    match_id TEXT NOT NULL,
-                    split TEXT NOT NULL,
-                    at_ms INTEGER NOT NULL,
-                    selection TEXT NOT NULL,
-                    frame TEXT NOT NULL,
-                    overlay TEXT NOT NULL,
-                    suggested_boxes TEXT NOT NULL,
-                    directions TEXT NOT NULL,
-                    review_status TEXT NOT NULL DEFAULT 'pending',
-                    reviewed_boxes TEXT,
-                    reviewed_by TEXT,
-                    reviewed_at TEXT,
-                    lease_owner TEXT,
-                    lease_until REAL,
-                    version INTEGER NOT NULL DEFAULT 1,
-                    UNIQUE(match_id, at_ms)
-                );
-                CREATE INDEX IF NOT EXISTS tasks_status ON tasks(review_status, id);
-                CREATE INDEX IF NOT EXISTS tasks_lease ON tasks(lease_until);
-            """)
-            connection.execute("BEGIN IMMEDIATE")
+            _begin_immediate(connection)
             try:
                 for match in data["matches"]:
                     match_id = match.get("id")
@@ -229,26 +368,156 @@ class AnnotationStore:
                         status = sample.get("review_status", "pending")
                         if status not in ALL_STATUSES:
                             status = "pending"
-                        boxes = sample.get("reviewed_boxes")
+                        suggested_boxes = _validate_boxes(
+                            sample.get("suggested_boxes", [])
+                        )
+                        suggested_categories = _validate_categories(
+                            sample.get("suggested_categories"), suggested_boxes,
+                            self.classes, self.default_class,
+                            "suggested_categories",
+                            allow_default=(len(self.classes) == 1 or
+                                           not suggested_boxes),
+                        )
+                        boxes_value = sample.get("reviewed_boxes")
+                        boxes = (_validate_boxes(boxes_value)
+                                 if boxes_value is not None else None)
+                        reviewed_categories_value = sample.get("reviewed_categories")
+                        if boxes is None:
+                            reviewed_categories = None
+                        elif reviewed_categories_value is None:
+                            # Defer the multi-class missing-category decision
+                            # until the existing database row is inspected.
+                            # A valid existing row may already carry its own
+                            # categories even when the manifest is older.
+                            reviewed_categories = (
+                                [self.default_class] * len(boxes)
+                                if len(self.classes) == 1
+                                else ([] if not boxes else None)
+                            )
+                        else:
+                            reviewed_categories = _validate_categories(
+                                reviewed_categories_value, boxes,
+                                self.classes, self.default_class,
+                                "reviewed_categories", allow_default=False,
+                            )
+                        existing = connection.execute(
+                            """
+                            SELECT reviewed_boxes, reviewed_categories
+                            FROM tasks WHERE match_id = ? AND at_ms = ?
+                            """,
+                            (match_id, sample["at_ms"]),
+                        ).fetchone()
+                        if existing is not None:
+                            existing_boxes = (
+                                _validate_boxes(_decode_stored_json(
+                                    existing["reviewed_boxes"],
+                                    f"{match_id}@{sample['at_ms']} reviewed_boxes",
+                                )) if existing["reviewed_boxes"] is not None else None
+                            )
+                            existing_categories = None
+                            if existing["reviewed_categories"] is not None:
+                                existing_categories_value = _decode_stored_json(
+                                    existing["reviewed_categories"],
+                                    f"{match_id}@{sample['at_ms']} reviewed_categories",
+                                )
+                                if existing_boxes is None:
+                                    if existing_categories_value != []:
+                                        raise ValueError(
+                                            f"Cannot migrate {match_id}@{sample['at_ms']}: "
+                                            "reviewed_categories exist without reviewed_boxes"
+                                        )
+                                    existing_categories = []
+                                else:
+                                    existing_categories = _validate_categories(
+                                        existing_categories_value, existing_boxes,
+                                        self.classes, self.default_class,
+                                        f"{match_id}@{sample['at_ms']} reviewed_categories",
+                                        allow_default=False,
+                                    )
+                            if existing_boxes is not None and existing_categories is None:
+                                if (reviewed_categories is not None and
+                                        (boxes is None or boxes == existing_boxes)):
+                                    reviewed_categories = _validate_categories(
+                                        reviewed_categories, existing_boxes,
+                                        self.classes, self.default_class,
+                                        f"{match_id}@{sample['at_ms']} reviewed_categories",
+                                        allow_default=False,
+                                    )
+                                elif (reviewed_categories_value is not None and
+                                      (boxes is None or boxes == existing_boxes)):
+                                    if reviewed_categories_value == []:
+                                        raise ValueError(
+                                            f"Cannot migrate {match_id}@{sample['at_ms']}: "
+                                            "reviewed_categories are empty for existing "
+                                            "reviewed_boxes"
+                                        )
+                                    reviewed_categories = _validate_categories(
+                                        reviewed_categories_value, existing_boxes,
+                                        self.classes, self.default_class,
+                                        f"{match_id}@{sample['at_ms']} reviewed_categories",
+                                        allow_default=False,
+                                    )
+                                elif len(self.classes) == 1:
+                                    reviewed_categories = [
+                                        self.default_class for _ in existing_boxes
+                                    ]
+                                else:
+                                    raise ValueError(
+                                        f"Cannot migrate {match_id}@{sample['at_ms']}: "
+                                        "reviewed_categories are missing for existing "
+                                        "reviewed_boxes in a multi-class queue"
+                                    )
+                            elif (existing_boxes is None and
+                                  reviewed_categories_value not in (None, [])):
+                                raise ValueError(
+                                    f"Cannot migrate {match_id}@{sample['at_ms']}: "
+                                    "reviewed_categories exist without reviewed_boxes"
+                                )
+                            if existing_boxes is None:
+                                # The database row is authoritative.  Do not
+                                # attach categories from a newer manifest to a
+                                # row whose reviewed boxes are still absent.
+                                reviewed_categories = existing_categories
+                        elif (boxes is None and
+                              reviewed_categories_value not in (None, [])):
+                            raise ValueError(
+                                f"Cannot migrate {match_id}@{sample['at_ms']}: "
+                                "reviewed_categories exist without reviewed_boxes"
+                            )
+                        elif boxes and reviewed_categories is None:
+                            raise ValueError(
+                                f"Cannot migrate {match_id}@{sample['at_ms']}: "
+                                "reviewed_categories are required for boxes in a "
+                                "multi-class queue"
+                            )
                         connection.execute("""
                             INSERT INTO tasks (
                                 match_id, split, at_ms, selection, frame, overlay,
-                                suggested_boxes, directions, review_status,
-                                reviewed_boxes, reviewed_by, reviewed_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                suggested_boxes, suggested_categories, directions,
+                                review_status, reviewed_boxes, reviewed_categories,
+                                reviewed_by, reviewed_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             ON CONFLICT(match_id, at_ms) DO UPDATE SET
                                 split=excluded.split,
                                 selection=excluded.selection,
                                 frame=excluded.frame,
                                 overlay=excluded.overlay,
                                 suggested_boxes=excluded.suggested_boxes,
+                                suggested_categories=excluded.suggested_categories,
+                                reviewed_categories=COALESCE(
+                                    tasks.reviewed_categories,
+                                    excluded.reviewed_categories
+                                ),
                                 directions=excluded.directions
                         """, (
                             match_id, match["split"], sample["at_ms"],
                             sample["selection"], sample["frame"], sample["overlay"],
-                            json.dumps(sample.get("suggested_boxes", [])),
+                            json.dumps(suggested_boxes),
+                            json.dumps(suggested_categories),
                             json.dumps(sample.get("directions", [])), status,
                             json.dumps(boxes) if boxes is not None else None,
+                            (json.dumps(reviewed_categories)
+                             if reviewed_categories is not None else None),
                             sample.get("reviewed_by"), sample.get("reviewed_at"),
                         ))
                 connection.execute("COMMIT")
@@ -267,10 +536,15 @@ class AnnotationStore:
             "widget_roi": self.match_widget_rois[row["match_id"]],
             "label_roi": self.match_label_rois[row["match_id"]],
             "suggested_boxes": json.loads(row["suggested_boxes"]),
+            "suggested_categories": json.loads(row["suggested_categories"]),
             "directions": json.loads(row["directions"]),
             "review_status": row["review_status"],
             "reviewed_boxes": (json.loads(row["reviewed_boxes"])
                                if row["reviewed_boxes"] is not None else None),
+            "reviewed_categories": (
+                json.loads(row["reviewed_categories"])
+                if row["reviewed_categories"] is not None else None
+            ),
             "reviewed_by": row["reviewed_by"], "reviewed_at": row["reviewed_at"],
             "lease_owner": row["lease_owner"] if lease_active else None,
             "lease_until": row["lease_until"] if lease_active else None,
@@ -291,7 +565,8 @@ class AnnotationStore:
         for match in matches:
             match["label_roi"] = self.match_label_rois[match["id"]]
             match["widget_roi"] = self.match_widget_rois[match["id"]]
-        return {"kind": self.kind, "review_mode": self.review_mode,
+        return {"kind": self.kind, "classes": self.classes,
+                "review_mode": self.review_mode,
                 "label_assistance": self.label_assistance,
                 "suggestions_available": suggestions_available,
                 "roi": self.roi, "widget_roi": self.widget_roi,
@@ -448,7 +723,8 @@ class AnnotationStore:
         return self.get(task_id)
 
     def save(self, task_id: int, annotator: str, version: int,
-             status: str, boxes: object = None) -> dict:
+             status: str, boxes: object = None,
+             categories: object = None) -> dict:
         annotator = _annotator(annotator)
         if not isinstance(version, int) or isinstance(version, bool) or version < 1:
             raise ValueError("version must be a positive integer")
@@ -461,6 +737,16 @@ class AnnotationStore:
         reviewed_boxes = _validate_boxes(boxes or []) if status == "corrected" else None
         if status == "corrected" and not reviewed_boxes:
             raise ValueError("corrected samples need at least one box; use negative for no target")
+        reviewed_categories = None
+        if status == "corrected":
+            if categories is None and len(self.classes) > 1:
+                raise ValueError(
+                    "corrected multi-class samples need one category per box"
+                )
+            reviewed_categories = _validate_categories(
+                categories, reviewed_boxes or [], self.classes,
+                self.default_class, "categories",
+            )
         if self.kind == "minimap_region":
             if status == "negative":
                 raise ValueError("minimap region tasks use excluded for non-gameplay screens")
@@ -474,6 +760,13 @@ class AnnotationStore:
                 row = connection.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
                 if row is None:
                     raise KeyError(task_id)
+                if status == "accepted":
+                    suggested_boxes = json.loads(row["suggested_boxes"])
+                    _validate_categories(
+                        json.loads(row["suggested_categories"]), suggested_boxes,
+                        self.classes, self.default_class,
+                        "suggested_categories",
+                    )
                 if reviewed_boxes is not None and self.kind == "minimap_region":
                     roi_x, roi_y, roi_width, roi_height = self.match_rois[row["match_id"]]
                     for x, y, width, height in reviewed_boxes:
@@ -543,11 +836,17 @@ class AnnotationStore:
                     raise ConflictError("Task lease expired; claim it again before saving")
                 connection.execute("""
                     UPDATE tasks SET review_status = ?, reviewed_boxes = ?,
+                        reviewed_categories = ?,
                         reviewed_by = ?, reviewed_at = ?, lease_owner = NULL,
                         lease_until = NULL, version = version + 1
                     WHERE id = ? AND version = ?
-                """, (status, json.dumps(reviewed_boxes) if reviewed_boxes is not None else None,
-                      annotator, reviewed_at, task_id, version))
+                """, (
+                    status,
+                    json.dumps(reviewed_boxes) if reviewed_boxes is not None else None,
+                    (json.dumps(reviewed_categories)
+                     if reviewed_categories is not None else None),
+                    annotator, reviewed_at, task_id, version,
+                ))
                 connection.execute("COMMIT")
             except Exception:
                 connection.execute("ROLLBACK")
@@ -567,6 +866,13 @@ class AnnotationStore:
                     sample["review_status"] = row["review_status"]
                     sample["reviewed_boxes"] = (json.loads(row["reviewed_boxes"])
                                                 if row["reviewed_boxes"] is not None else None)
+                    sample["suggested_categories"] = json.loads(
+                        row["suggested_categories"]
+                    )
+                    sample["reviewed_categories"] = (
+                        json.loads(row["reviewed_categories"])
+                        if row["reviewed_categories"] is not None else None
+                    )
                     if row["reviewed_by"]:
                         sample["reviewed_by"] = row["reviewed_by"]
                         sample["reviewed_at"] = row["reviewed_at"]
@@ -763,7 +1069,7 @@ class AnnotationHandler(BaseHTTPRequestHandler):
             body = self._body()
             task = self._store(parsed).save(
                 task_id, body.get("annotator"), body.get("version"),
-                body.get("status"), body.get("boxes")
+                body.get("status"), body.get("boxes"), body.get("categories")
             )
             self._json(task)
         except KeyError:
@@ -803,6 +1109,7 @@ class AnnotationHTTPServer(ThreadingHTTPServer):
             "id": dataset_id,
             "label": dataset_id,
             "kind": store.kind,
+            "classes": store.classes,
             "review_mode": store.review_mode,
             "stats": store.stats(),
         } for dataset_id, store in self.stores.items()]

@@ -128,6 +128,35 @@ def test_metrics_compare_fixed_baseline_and_hybrid_in_dense_and_right_groups() -
     assert result["hybrid"]["right_direction"] == result["hybrid"]["overall"]
 
 
+def test_metrics_keep_red_ring_diagnostic_on_requested_enemy_class() -> None:
+    config = HybridConfig()
+    truths = {
+        1: [
+            (0, [10.0, 10.0, 10.0, 10.0]),
+            (1, [60.0, 60.0, 10.0, 10.0]),
+        ],
+    }
+    # Put the player last to catch accidental shadowing of the requested
+    # enemy class id while normalizing prediction entries.
+    predictions = {
+        1: [
+            {"confidence": 0.9, "bbox": [10.0, 10.0, 10.0, 10.0],
+             "class_id": 0, "ring_valid": False, "ring_score": 0},
+            {"confidence": 0.9, "bbox": [60.0, 60.0, 10.0, 10.0],
+             "class_id": 1, "ring_valid": True, "ring_score": 999},
+        ],
+    }
+    images = {1: {"id": 1, "width": 100, "height": 100}}
+
+    result = _evaluate_metrics(
+        predictions, truths, images, {}, config, 0.5, class_id=0,
+    )
+
+    assert result["baseline"]["overall"]["tp"] == 1
+    assert result["baseline"]["overall"]["truth"] == 1
+    assert result["baseline"]["overall"]["predictions"] == 1
+
+
 def _cli_config(*extra: str) -> tuple[HybridConfig, int, float, float]:
     args = _build_parser().parse_args([
         "--yolox-root", "YOLOX",

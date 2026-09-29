@@ -12,53 +12,47 @@ from mapassist.roi_safety import (
     inspect_box_roi,
 )
 
-
-def _decode(raw, input_size: int):
-    import numpy as np
-
-    grids = []
-    strides = []
-    for stride in (8, 16, 32):
-        side = input_size // stride
-        y, x = np.meshgrid(np.arange(side), np.arange(side), indexing="ij")
-        grid = np.stack((x, y), axis=2).reshape(-1, 2)
-        grids.append(grid)
-        strides.append(np.full((side * side, 1), stride))
-    grid = np.concatenate(grids, axis=0).astype(raw.dtype)
-    expanded_stride = np.concatenate(strides, axis=0).astype(raw.dtype)
-    decoded = raw.copy()[0]
-    decoded[:, :2] = (decoded[:, :2] + grid) * expanded_stride
-    decoded[:, 2:4] = np.exp(decoded[:, 2:4]) * expanded_stride
-    return decoded
-
-
-def _nms(boxes, scores, threshold: float):
-    import numpy as np
-
-    if not len(boxes):
-        return np.empty((0,), dtype=np.int64)
-    areas = np.maximum(0, boxes[:, 2] - boxes[:, 0]) * np.maximum(
-        0, boxes[:, 3] - boxes[:, 1]
+try:  # Works both as ``python training/...`` and package imports in tests.
+    from .yolox_decode import (
+        DEFAULT_CLASSES,
+        candidates_from_raw,
+        class_aware_nms,
+        classes_from_metadata,
+        confidence_from_metadata,
+        confidence_thresholds,
+        decode_yolox,
+        normalize_classes,
+        resolve_classes,
     )
-    order = scores.argsort()[::-1]
-    keep = []
-    while order.size:
-        current = int(order[0])
-        keep.append(current)
-        if order.size == 1:
-            break
-        remaining = order[1:]
-        x0 = np.maximum(boxes[current, 0], boxes[remaining, 0])
-        y0 = np.maximum(boxes[current, 1], boxes[remaining, 1])
-        x1 = np.minimum(boxes[current, 2], boxes[remaining, 2])
-        y1 = np.minimum(boxes[current, 3], boxes[remaining, 3])
-        intersection = np.maximum(0, x1 - x0) * np.maximum(0, y1 - y0)
-        union = areas[current] + areas[remaining] - intersection
-        overlap = np.divide(
-            intersection, union, out=np.zeros_like(intersection), where=union > 0
-        )
-        order = remaining[overlap <= threshold]
-    return np.asarray(keep, dtype=np.int64)
+except ImportError:  # pragma: no cover - exercised by the command-line path.
+    from yolox_decode import (  # type: ignore
+        DEFAULT_CLASSES,
+        candidates_from_raw,
+        class_aware_nms,
+        classes_from_metadata,
+        confidence_from_metadata,
+        confidence_thresholds,
+        decode_yolox,
+        normalize_classes,
+        resolve_classes,
+    )
+
+
+def _decode(raw, input_size: int, classes=DEFAULT_CLASSES):
+    """Decode raw YOLOX rows while retaining all category scores."""
+    import numpy as np
+
+    class_names = normalize_classes(classes)
+    decoded = decode_yolox(raw, input_size, np=np)
+    return decoded[0] if decoded.ndim == 3 else decoded
+
+
+def _nms(boxes, scores, threshold: float, class_ids=None):
+    import numpy as np
+
+    if class_ids is None:
+        class_ids = np.zeros(len(boxes), dtype=np.int64)
+    return class_aware_nms(boxes, scores, class_ids, threshold, np=np)
 
 
 def _roi(value: object) -> list[float]:
@@ -175,15 +169,35 @@ def _page(images: list, captions: list[str], output: Path, columns: int = 4) -> 
 
 
 def build(manifest: Path, model: Path, output: Path, input_size: int = 320,
-          confidence: float = 0.03, nms_threshold: float = 0.5,
+          confidence: object = None, nms_threshold: float = 0.5,
           filter_label_roi: bool = False,
-          remove_safe_roi_edge_contacts: bool = False) -> dict:
+          remove_safe_roi_edge_contacts: bool = False,
+          metadata: Path | dict | None = None,
+          classes: list[str] | tuple[str, ...] | None = None) -> dict:
     import cv2
     import numpy as np
     import onnxruntime as ort
     from PIL import Image, ImageDraw
 
     data = json.loads(manifest.read_text(encoding="utf-8"))
+    metadata_value = metadata
+    if metadata_value is None:
+        for candidate in (
+            model.with_suffix(".metadata.json"),
+            model.parent / f"{model.stem}.metadata.json",
+        ):
+            if candidate.is_file():
+                metadata_value = candidate
+                break
+    class_names = resolve_classes(classes=classes, metadata=metadata_value)
+    confidence_by_class = (
+        confidence_from_metadata(metadata_value, class_names, 0.03)
+        if confidence is None else confidence_thresholds(confidence, class_names)
+    )
+    confidence_scalar = (
+        confidence if isinstance(confidence, (int, float)) and
+        not isinstance(confidence, bool) else None
+    )
     default_roi = _roi(data["roi"])
     effective_label_rois = {}
     for match in data["matches"]:
@@ -201,7 +215,10 @@ def build(manifest: Path, model: Path, output: Path, input_size: int = 320,
         "schema_version": 1,
         "model": str(model.resolve()),
         "input_size": input_size,
-        "confidence": confidence,
+        "classes": list(class_names),
+        "output_width": 5 + len(class_names),
+        "confidence": confidence_scalar,
+        "confidence_by_class": confidence_by_class,
         "nms_threshold": nms_threshold,
         "warning": "Low-threshold suggestions are not ground truth; inspect every image.",
         "filtering_provenance": {
@@ -265,23 +282,17 @@ def build(manifest: Path, model: Path, output: Path, input_size: int = 320,
             canvas = np.full((input_size, input_size, 3), 114, dtype=np.uint8)
             canvas[:resized.shape[0], :resized.shape[1]] = resized
             batch = canvas.transpose(2, 0, 1)[None].astype(np.float32)
-            decoded = _decode(session.run(None, {input_name: batch})[0], input_size)
-            scores = decoded[:, 4] * decoded[:, 5]
-            selected = scores >= confidence
-            decoded = decoded[selected]
-            scores = scores[selected]
-            boxes = np.empty((len(decoded), 4), dtype=np.float32)
-            boxes[:, 0] = decoded[:, 0] - decoded[:, 2] / 2
-            boxes[:, 1] = decoded[:, 1] - decoded[:, 3] / 2
-            boxes[:, 2] = decoded[:, 0] + decoded[:, 2] / 2
-            boxes[:, 3] = decoded[:, 1] + decoded[:, 3] / 2
-            keep = _nms(boxes, scores, nms_threshold)
+            raw = session.run(None, {input_name: batch})[0]
+            detections = candidates_from_raw(
+                raw, input_size, crop_width, crop_height,
+                confidence_by_class, nms_threshold, class_names, np=np,
+            )
             found = []
             overlay_boxes = {}
             overlay = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
             draw = ImageDraw.Draw(overlay)
-            for index in keep:
-                x0, y0, x1, y1 = boxes[index] / ratio
+            for detection in detections:
+                x0, y0, x1, y1, score, class_id_value = detection
                 x0 = float(np.clip(x0, 0, crop_width))
                 y0 = float(np.clip(y0, 0, crop_height))
                 x1 = float(np.clip(x1, 0, crop_width))
@@ -297,9 +308,15 @@ def build(manifest: Path, model: Path, output: Path, input_size: int = 320,
                 )
                 if normalized is None:
                     continue
-                score = float(scores[index])
+                score = float(score)
+                class_id = int(class_id_value)
                 suggestion = {"bbox": [round(value, 8) for value in normalized],
-                              "confidence": round(score, 6)}
+                              "confidence": round(score, 6),
+                              "class_id": class_id,
+                              "class_name": class_names[class_id],
+                              # ``category`` is the review schema spelling;
+                              # keep the explicit class_name for model reports.
+                              "category": class_names[class_id],}
                 found.append(suggestion)
                 overlay_boxes[id(suggestion)] = (x0, y0, x1, y1, score)
             found, counts = _filter_suggestions(
@@ -356,8 +373,13 @@ def main() -> None:
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--input-size", type=int, default=320)
-    parser.add_argument("--confidence", type=float, default=0.03)
+    parser.add_argument("--confidence", type=float,
+                        help="Override metadata per-class confidence thresholds")
     parser.add_argument("--nms-threshold", type=float, default=0.5)
+    parser.add_argument("--metadata", type=Path,
+                        help="Model metadata JSON; its classes array is canonical")
+    parser.add_argument("--classes", nargs="+", metavar="CLASS",
+                        help="Explicit class order when metadata is unavailable")
     parser.add_argument("--filter-label-roi", action="store_true",
                         help="Keep suggestions whose centers fall inside review label_roi")
     parser.add_argument("--remove-safe-roi-edge-contacts", action="store_true",
@@ -366,7 +388,8 @@ def main() -> None:
     summary = build(args.manifest, args.model, args.output, args.input_size,
                     args.confidence, args.nms_threshold,
                     filter_label_roi=args.filter_label_roi,
-                    remove_safe_roi_edge_contacts=args.remove_safe_roi_edge_contacts)
+                    remove_safe_roi_edge_contacts=args.remove_safe_roi_edge_contacts,
+                    metadata=args.metadata, classes=args.classes)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
 

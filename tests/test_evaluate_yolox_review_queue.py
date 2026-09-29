@@ -81,3 +81,14 @@ def test_orientation_display_size_is_checked() -> None:
 def test_incomplete_or_accepted_queues_are_rejected(status: str) -> None:
     with pytest.raises(ValueError):
         _reviewed_frames(_manual_queue(status))
+
+
+def test_multiclass_review_requires_explicit_reviewed_categories() -> None:
+    document = _manual_queue()
+    document["classes"] = ["minimap_enemy", "minimap_player"]
+    document["matches"][0]["samples"][0]["suggested_categories"] = [
+        "minimap_player"
+    ]
+
+    with pytest.raises(ValueError, match="categories are required"):
+        _reviewed_frames(document)

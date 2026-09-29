@@ -16,7 +16,7 @@ from decimal import Decimal
 from fractions import Fraction
 from pathlib import Path
 
-from mapassist.detection_evaluate import _direction, _direction_state, _iou, _match_boxes
+from mapassist.detection_evaluate import _direction, _direction_state, _iou
 from mapassist.roi_safety import (
     assert_coco_boxes_within_images,
     assert_coco_roi_safe,
@@ -28,16 +28,30 @@ if __package__:
         _device,
         _finish,
         _git_revision,
+        _match_class_aware_pairs,
         _sha256,
         _split_predictions,
+    )
+    from .yolox_decode import (
+        DEFAULT_CLASSES,
+        confidence_from_metadata,
+        confidence_thresholds,
+        resolve_classes,
     )
 else:
     from train_yolox_minimap import (
         _device,
         _finish,
         _git_revision,
+        _match_class_aware_pairs,
         _sha256,
         _split_predictions,
+    )
+    from yolox_decode import (  # type: ignore
+        DEFAULT_CLASSES,
+        confidence_from_metadata,
+        confidence_thresholds,
+        resolve_classes,
     )
 
 
@@ -53,6 +67,35 @@ def _checkpoint_threshold(checkpoint: dict) -> float:
     return float(value)
 
 
+def _prediction_entry(value: object) -> tuple[float, list[float], int]:
+    """Normalize legacy ``(score, box)`` and class-aware prediction rows."""
+    if not isinstance(value, (list, tuple)) or len(value) not in (2, 3):
+        raise ValueError(f"prediction must be (score, box[, class_id]): {value!r}")
+    score, box = value[0], value[1]
+    if (not isinstance(score, (int, float)) or isinstance(score, bool) or
+            not math.isfinite(float(score)) or not isinstance(box, list)):
+        raise ValueError(f"invalid prediction row: {value!r}")
+    class_id = value[2] if len(value) == 3 else 0
+    if (not isinstance(class_id, int) or isinstance(class_id, bool) or class_id < 0):
+        raise ValueError(f"invalid prediction class id: {class_id!r}")
+    return float(score), box, int(class_id)
+
+
+def _truth_entry(value: object) -> tuple[int, list[float]]:
+    """Normalize legacy boxes and ``(class_id, box)`` truth rows."""
+    if (isinstance(value, (list, tuple)) and len(value) == 2 and
+            isinstance(value[0], int) and not isinstance(value[0], bool) and
+            isinstance(value[1], list)):
+        class_id = int(value[0])
+        box = value[1]
+    else:
+        class_id = 0
+        box = value
+    if not isinstance(box, list):
+        raise ValueError(f"truth must be a box or (class_id, box): {value!r}")
+    return class_id, box
+
+
 def _read_evaluation_annotations(data_dir: Path, split: str) -> tuple[Path, dict]:
     split_name = f"{split}2017"
     annotation_path = data_dir / "annotations" / f"instances_{split_name}.json"
@@ -62,25 +105,58 @@ def _read_evaluation_annotations(data_dir: Path, split: str) -> tuple[Path, dict
     return annotation_path, annotation
 
 
-def _fixed_metrics(predictions: dict[int, list[tuple[float, list[float]]]],
-                   truths: dict[int, list[list[float]]], confidence: float,
+def _fixed_metrics(predictions: dict[int, list[tuple[float, list[float], int]]],
+                   truths: dict[int, list[tuple[int, list[float]]]], confidence: object,
                    iou_threshold: float,
                    image_sizes: dict[int, tuple[int, int]],
-                   direction_rois: dict[int, list[float]] | None = None
+                   direction_rois: dict[int, list[float]] | None = None,
+                   classes=DEFAULT_CLASSES,
                    ) -> tuple[dict, list[dict]]:
+    class_names = tuple(classes)
+    thresholds = confidence_thresholds(confidence, class_names)
     tp = fp = fn = 0
     directed_matches = correct_directions = ambiguous_directions = 0
+    per_class_counts = {
+        name: {"tp": 0, "fp": 0, "fn": 0} for name in class_names
+    }
     per_image = []
     for image_id, ground_truth in truths.items():
-        boxes = [box for score, box in predictions[image_id] if score >= confidence]
-        pairs = _match_boxes(boxes, ground_truth, iou_threshold)
+        normalized_predictions = [_prediction_entry(item)
+                                  for item in predictions[image_id]]
+        normalized_truths = [_truth_entry(item) for item in ground_truth]
+        candidates = [item for item in normalized_predictions
+                      if 0 <= item[2] < len(class_names) and
+                      item[0] >= thresholds[class_names[item[2]]]]
+        boxes = [box for _score, box, _class_id in candidates]
+        truth_boxes = [box for _class_id, box in normalized_truths]
+        pairs = _match_class_aware_pairs(candidates, normalized_truths, iou_threshold)
         matched = len(pairs)
+        matched_predictions = {prediction for prediction, _truth, _ in pairs}
+        matched_truths = {truth for _prediction, truth, _ in pairs}
+        for class_id, class_name in enumerate(class_names):
+            class_predictions = [
+                index for index, item in enumerate(candidates) if item[2] == class_id
+            ]
+            class_truths = [
+                index for index, item in enumerate(normalized_truths) if item[0] == class_id
+            ]
+            per_class_counts[class_name]["tp"] += sum(
+                1 for prediction, truth, _ in pairs
+                if candidates[prediction][2] == class_id and
+                normalized_truths[truth][0] == class_id
+            )
+            per_class_counts[class_name]["fp"] += sum(
+                1 for index in class_predictions if index not in matched_predictions
+            )
+            per_class_counts[class_name]["fn"] += sum(
+                1 for index in class_truths if index not in matched_truths
+            )
         width, height = image_sizes[image_id]
         roi = (direction_rois or {}).get(image_id, [0.0, 0.0, 1.0, 1.0])
         image_directed = image_correct = image_ambiguous = 0
         for prediction_index, truth_index, _ in pairs:
             prediction = boxes[prediction_index]
-            truth = ground_truth[truth_index]
+            truth = truth_boxes[truth_index]
             normalized_prediction = [
                 prediction[0] / width, prediction[1] / height,
                 prediction[2] / width, prediction[3] / height,
@@ -98,11 +174,11 @@ def _fixed_metrics(predictions: dict[int, list[tuple[float, list[float]]]],
                     image_correct += 1
         image_result = {
             "image_id": image_id,
-            "truth": len(ground_truth),
+            "truth": len(truth_boxes),
             "predicted": len(boxes),
             "tp": matched,
             "fp": len(boxes) - matched,
-            "fn": len(ground_truth) - matched,
+            "fn": len(truth_boxes) - matched,
             "directed_matches": image_directed,
             "correct_directions": image_correct,
             "ambiguous_direction_matches": image_ambiguous,
@@ -115,6 +191,10 @@ def _fixed_metrics(predictions: dict[int, list[tuple[float, list[float]]]],
         correct_directions += image_correct
         ambiguous_directions += image_ambiguous
     metrics = _finish(tp, fp, fn)
+    metrics["per_class"] = {
+        name: _finish(values["tp"], values["fp"], values["fn"])
+        for name, values in per_class_counts.items()
+    }
     metrics.update({
         "directed_matches": directed_matches,
         "correct_directions": correct_directions,
@@ -126,22 +206,27 @@ def _fixed_metrics(predictions: dict[int, list[tuple[float, list[float]]]],
 
 
 def _confidence_curve(
-    predictions: dict[int, list[tuple[float, list[float]]]],
-    truths: dict[int, list[list[float]]],
+    predictions: dict[int, list[tuple[float, list[float], int]]],
+    truths: dict[int, list[tuple[int, list[float]]]],
     thresholds: list[float],
     iou_threshold: float,
+    classes=DEFAULT_CLASSES,
 ) -> list[dict]:
     """Return box-level metrics at each requested confidence cutoff."""
     curve = []
     for confidence in thresholds:
         tp = fp = fn = 0
         for image_id, ground_truth in truths.items():
-            boxes = [box for score, box in predictions[image_id]
-                     if score >= confidence]
-            matched = len(_match_boxes(boxes, ground_truth, iou_threshold))
+            normalized_predictions = [_prediction_entry(item)
+                                      for item in predictions[image_id]]
+            normalized_truths = [_truth_entry(item) for item in ground_truth]
+            candidates = [item for item in normalized_predictions if item[0] >= confidence]
+            matched = len(_match_class_aware_pairs(
+                candidates, normalized_truths, iou_threshold,
+            ))
             tp += matched
-            fp += len(boxes) - matched
-            fn += len(ground_truth) - matched
+            fp += len(candidates) - matched
+            fn += len(normalized_truths) - matched
         curve.append({"confidence": confidence, **_finish(tp, fp, fn)})
     return curve
 
@@ -239,12 +324,13 @@ def _resolve_sweep_thresholds(
 
 
 def _direction_event_metrics(
-    predictions: dict[int, list[tuple[float, list[float]]]],
-    truths: dict[int, list[list[float]]],
-    confidence: float,
+    predictions: dict[int, list[tuple[float, list[float], int]]],
+    truths: dict[int, list[tuple[int, list[float]]]],
+    confidence: object,
     iou_threshold: float,
     image_sizes: dict[int, tuple[int, int]],
     direction_rois: dict[int, list[float]] | None = None,
+    classes=DEFAULT_CLASSES,
 ) -> dict:
     """Score the unique cardinal directions present in each frame.
 
@@ -259,12 +345,20 @@ def _direction_event_metrics(
     truth_boxes = usable_truth_boxes = ambiguous_truth_boxes = 0
     center_truth_boxes = truth_events = 0
     direction_rois = direction_rois or {}
+    class_names = tuple(classes)
+    confidence_map = confidence_thresholds(confidence, class_names)
+    event_class_ids = ({class_names.index("minimap_enemy")}
+                       if "minimap_enemy" in class_names else
+                       ({0} if len(class_names) == 1 else set()))
 
     for image_id, ground_truth in truths.items():
         width, height = image_sizes[image_id]
         roi = direction_rois.get(image_id, [0.0, 0.0, 1.0, 1.0])
         ground_truth_by_direction: dict[str, list[list[float]]] = {}
-        for truth in ground_truth:
+        normalized_truths = [_truth_entry(item) for item in ground_truth]
+        for truth_class_id, truth in normalized_truths:
+            if truth_class_id not in event_class_ids:
+                continue
             truth_boxes += 1
             normalized_truth = [
                 truth[0] / width, truth[1] / height,
@@ -283,8 +377,11 @@ def _direction_event_metrics(
         truth_events += len(ground_truth_directions)
 
         predicted_by_direction: dict[str, list[list[float]]] = {}
-        for score, prediction in predictions.get(image_id, []):
-            if score < confidence:
+        for item in predictions.get(image_id, []):
+            score, prediction, class_id = _prediction_entry(item)
+            if (class_id not in event_class_ids or
+                    class_id < 0 or class_id >= len(class_names) or
+                    score < confidence_map[class_names[class_id]]):
                 continue
             normalized_prediction = [
                 prediction[0] / width, prediction[1] / height,
@@ -358,6 +455,8 @@ def main() -> None:
         "--confidence", type=float,
         help="Frozen confidence selected without inspecting this split; defaults to checkpoint",
     )
+    parser.add_argument("--classes", nargs="+", metavar="CLASS",
+                        help="Explicit canonical class order; otherwise model metadata/COCO is used")
     sweep = parser.add_mutually_exclusive_group()
     sweep.add_argument(
         "--threshold-range", nargs=2, type=float, metavar=("MIN", "MAX"),
@@ -406,20 +505,60 @@ def main() -> None:
 
     device = _device(torch, args.device)
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    confidence = (args.confidence if args.confidence is not None
-                  else _checkpoint_threshold(checkpoint))
+    metadata_path = checkpoint_path.parent / "metrics.json"
+    model_metadata = metadata_path if metadata_path.is_file() else None
+    class_names = resolve_classes(
+        classes=args.classes, metadata=model_metadata, coco=annotation,
+    )
+    try:
+        checkpoint_confidence = _checkpoint_threshold(checkpoint)
+    except ValueError:
+        checkpoint_confidence = None
+    metadata_has_confidence = False
+    if model_metadata is not None:
+        metadata_document = json.loads(model_metadata.read_text(encoding="utf-8"))
+        postprocess = metadata_document.get("postprocess", {})
+        if postprocess is None:
+            postprocess = {}
+        if not isinstance(postprocess, dict):
+            raise ValueError("model metadata postprocess must be an object")
+        metadata_has_confidence = any(key in postprocess for key in
+                                      ("confidence_by_class", "confidence"))
+        metadata_has_confidence = metadata_has_confidence or any(
+            key in metadata_document for key in ("confidence_by_class", "confidence")
+        )
+    if args.confidence is not None:
+        confidence = args.confidence
+        confidence_source = "command_line"
+    elif metadata_has_confidence:
+        confidence = confidence_from_metadata(
+            model_metadata, class_names,
+            0.0 if checkpoint_confidence is None else checkpoint_confidence,
+        )
+        confidence_source = "model_metadata"
+    else:
+        if checkpoint_confidence is None:
+            raise ValueError(
+                "Checkpoint has no validation-selected confidence; pass --confidence"
+            )
+        confidence = checkpoint_confidence
+        confidence_source = "checkpoint_validation"
     exp_path = root / "training/yolox_nano_minimap.py"
     exp = get_exp(str(exp_path), None)
+    exp.class_names = list(class_names)
+    exp.num_classes = len(class_names)
     exp.input_size = (args.input_size, args.input_size)
     exp.test_size = exp.input_size
     model = load_ckpt(exp.get_model(), checkpoint.get("model", checkpoint))
     model.to(device)
+    prefilter_confidence = min(confidence_thresholds(confidence, class_names).values())
+    if sweep_thresholds is not None:
+        prefilter_confidence = min(prefilter_confidence, min(sweep_thresholds))
+    prefilter_confidence = min(prefilter_confidence, 0.01)
     predictions, truths = _split_predictions(
         model, device, data_dir, exp.test_size, args.nms_threshold, args.split,
-        pre_filter_confidence=(
-            min(confidence, 0.01, min(sweep_thresholds))
-            if sweep_thresholds is not None else min(confidence, 0.01)
-        ),
+        pre_filter_confidence=prefilter_confidence,
+        classes=class_names,
     )
     image_sizes = {
         item["id"]: (int(item["width"]), int(item["height"]))
@@ -428,23 +567,23 @@ def main() -> None:
     direction_rois = _read_image_direction_rois(annotation)
     metrics, per_image = _fixed_metrics(
         predictions, truths, confidence, args.iou_threshold, image_sizes,
-        direction_rois,
+        direction_rois, class_names,
     )
     direction_events = _direction_event_metrics(
         predictions, truths, confidence, args.iou_threshold, image_sizes,
-        direction_rois,
+        direction_rois, class_names,
     )
     confidence_sweep = None
     if sweep_thresholds is not None:
         curve = _confidence_curve(
-            predictions, truths, sweep_thresholds, args.iou_threshold,
+            predictions, truths, sweep_thresholds, args.iou_threshold, class_names,
         )
         confidence_sweep = {
             "thresholds": curve,
             "summary": _confidence_sweep_summary(curve),
         }
 
-    if args.split == "val" and args.confidence is None:
+    if args.split == "val" and args.confidence is None and confidence_source == "checkpoint_validation":
         threshold_relation = "selected_on_evaluated_validation_split"
         warning = (
             "The checkpoint confidence was selected on this same validation split. "
@@ -457,9 +596,10 @@ def main() -> None:
             "that the evaluated split was excluded from threshold or model selection."
         )
     else:
-        threshold_relation = "checkpoint_validation_to_different_split"
+        threshold_relation = ("model_metadata_to_split" if confidence_source == "model_metadata"
+                              else "checkpoint_validation_to_different_split")
         warning = (
-            "The confidence came from checkpoint validation rather than this split. "
+            "The confidence came from frozen model metadata or checkpoint validation rather than this split. "
             "Independent-test claims still require external proof that these frames and "
             "labels were excluded from model and configuration selection."
         )
@@ -471,8 +611,8 @@ def main() -> None:
         "device": str(device),
         "input_size": [args.input_size, args.input_size],
         "confidence": confidence,
-        "confidence_source": ("command_line" if args.confidence is not None
-                              else "checkpoint_validation"),
+        "confidence_source": confidence_source,
+        "confidence_by_class": confidence_thresholds(confidence, class_names),
         "threshold_relation": threshold_relation,
         "iou_threshold": args.iou_threshold,
         "nms_threshold": args.nms_threshold,
