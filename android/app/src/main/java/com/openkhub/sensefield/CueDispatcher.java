@@ -9,6 +9,7 @@ import java.util.PriorityQueue;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.EnumMap;
+import java.util.concurrent.atomic.AtomicLongArray;
 
 /** Applies expiry, policy, deduplication and bounded priority ordering before rendering. */
 final class CueDispatcher implements AutoCloseable {
@@ -33,6 +34,7 @@ final class CueDispatcher implements AutoCloseable {
         boolean speak(CueRequest request, boolean interrupt, PlaybackCallback callback);
         void stopSpeech();
         default void cancelPendingTone() {}
+        default void cancelPendingTone(CueRequest.Category category) {}
     }
     interface Listener {
         void onDispatch(CueRequest request, DispatchResult result);
@@ -69,11 +71,21 @@ final class CueDispatcher implements AutoCloseable {
     private final Listener listener;
     private final Clock clock;
     private final Map<String, Long> lastAccepted = new HashMap<>();
+    private final Map<String, CueRequest.Category> acceptedCategories = new HashMap<>();
     private final Map<CueRequest.Category, Long> lastSpeech =
             new EnumMap<>(CueRequest.Category.class);
     private final Map<CueRequest.Category, Long> lastSpeechStarted =
             new EnumMap<>(CueRequest.Category.class);
     private final Set<String> cancelledSpeech = new HashSet<>();
+    /**
+     * Tone callbacks arrive on SoundPool's load/callback thread, while
+     * category clears happen on the capture worker.  Keep the per-category
+     * epoch in atomics so the callback can validate it without taking the
+     * dispatcher monitor (which would invert the audioLock/dispatcher lock
+     * order during a synchronous SoundPool callback).
+     */
+    private final AtomicLongArray toneCategoryEpoch =
+            new AtomicLongArray(CueRequest.Category.values().length);
     private final PriorityQueue<Pending> speechQueue = new PriorityQueue<>(
             Comparator.<Pending>comparingInt(value -> value.request.priority).reversed()
                     .thenComparingLong(value -> value.sequence));
@@ -83,6 +95,7 @@ final class CueDispatcher implements AutoCloseable {
     private volatile boolean closed;
     private volatile boolean paused;
     private volatile long speechEpoch;
+    private volatile long toneEpoch;
 
     CueDispatcher(Renderer renderer, Policy policy, Listener listener, Clock clock) {
         this.renderer = renderer;
@@ -108,17 +121,20 @@ final class CueDispatcher implements AutoCloseable {
         String suppressionReason = null;
         if ((accepted & CueRequest.CHANNEL_TONE) != 0) {
             // Tone completion can be posted after pause/close (for example the
-            // SoundPool short-tone timer).  Tie callbacks to the same epoch as
-            // speech so late renderer work cannot add audit records to the
-            // paused or destroyed session.
-            final long playbackEpoch = speechEpoch;
+            // SoundPool short-tone timer). Tie callbacks to a session epoch and
+            // a category epoch so late renderer work cannot add audit records
+            // after a reset or a category clear.
+            final long playbackEpoch = toneEpoch;
+            final long categoryToneEpoch = toneEpoch(request.category);
             boolean toneAccepted = renderer.playTone(request, new PlaybackCallback() {
                 @Override public void onStarted(long atMs) {
-                    if (!callbackIsCurrent(playbackEpoch)) return;
+                    if (!toneCallbackIsCurrent(request.category, playbackEpoch,
+                            categoryToneEpoch)) return;
                     listener.onPlayback(request, "TONE", atMs, "STARTED");
                 }
                 @Override public void onFinished(long atMs, boolean success) {
-                    if (!callbackIsCurrent(playbackEpoch)) return;
+                    if (!toneCallbackIsCurrent(request.category, playbackEpoch,
+                            categoryToneEpoch)) return;
                     listener.onPlayback(request, "TONE", atMs,
                             success ? "COMPLETED" : "FAILED");
                 }
@@ -153,7 +169,10 @@ final class CueDispatcher implements AutoCloseable {
         }
         String reason = suppressionReason != null ? suppressionReason
                 : rendered == 0 ? "renderer_unavailable" : "none";
-        if (rendered != 0) lastAccepted.put(request.eventKey, now);
+        if (rendered != 0) {
+            lastAccepted.put(request.eventKey, now);
+            acceptedCategories.put(request.eventKey, request.category);
+        }
         return report(request, rendered, rendered == 0 ? "DROPPED" : "ACCEPTED", reason);
     }
 
@@ -186,8 +205,19 @@ final class CueDispatcher implements AutoCloseable {
         return false;
     }
 
-    private boolean callbackIsCurrent(long playbackEpoch) {
-        return !closed && !paused && speechEpoch == playbackEpoch;
+    private long toneEpoch(CueRequest.Category category) {
+        return category == null ? 0L : toneCategoryEpoch.get(category.ordinal());
+    }
+
+    private void bumpToneEpoch(CueRequest.Category category) {
+        if (category != null) toneCategoryEpoch.incrementAndGet(category.ordinal());
+    }
+
+    private boolean toneCallbackIsCurrent(CueRequest.Category category,
+                                           long playbackEpoch,
+                                           long categoryEpoch) {
+        return !closed && !paused && toneEpoch == playbackEpoch
+                && toneEpoch(category) == categoryEpoch;
     }
 
     private void drainSpeech() {
@@ -265,11 +295,56 @@ final class CueDispatcher implements AutoCloseable {
         return ids;
     }
 
+    /** Clear output queued for one category when its feature is disabled/reset. */
+    synchronized void clearCategory(CueRequest.Category category) {
+        if (closed || category == null) return;
+        speechQueue.removeIf(pending -> pending.request.category == category);
+        if (speaking != null && speaking.category == category) {
+            cancelledSpeech.add(speaking.cueId);
+            speaking = null;
+            speechEpoch++;
+            renderer.stopSpeech();
+        }
+        lastSpeech.remove(category);
+        lastSpeechStarted.remove(category);
+        lastAccepted.entrySet().removeIf(entry -> category == acceptedCategories.get(entry.getKey()));
+        acceptedCategories.entrySet().removeIf(entry -> entry.getValue() == category);
+        // SoundPool has one bounded pending load slot. The renderer keeps the
+        // category on that slot so clearing one category cannot cancel another.
+        bumpToneEpoch(category);
+        renderer.cancelPendingTone(category);
+        // Clearing the active category may have exposed a queued cue from a
+        // different category. Continue draining while the dispatcher lock is
+        // held so settings changes do not leave speech stranded.
+        drainSpeech();
+    }
+
+    /** Clear all output atomically when native/session state is reset. */
+    synchronized void clearAll() {
+        if (closed) return;
+        speechQueue.clear();
+        if (speaking != null) {
+            cancelledSpeech.add(speaking.cueId);
+            speaking = null;
+            speechEpoch++;
+            renderer.stopSpeech();
+        }
+        lastSpeech.clear();
+        lastSpeechStarted.clear();
+        lastAccepted.clear();
+        acceptedCategories.clear();
+        toneEpoch++;
+        renderer.cancelPendingTone();
+        lastHapticAtMs = Long.MIN_VALUE / 2;
+        cancelledSpeech.clear();
+    }
+
     /** Stop all queued and active output while the capture session is paused. */
     synchronized void pause() {
         if (closed || paused) return;
         paused = true;
         speechEpoch++;
+        toneEpoch++;
         if (speaking != null) {
             cancelledSpeech.add(speaking.cueId);
             speaking = null;
@@ -281,6 +356,7 @@ final class CueDispatcher implements AutoCloseable {
         // event accepted just before the pause from suppressing the first new
         // event after it.
         lastAccepted.clear();
+        acceptedCategories.clear();
         lastSpeech.clear();
         lastSpeechStarted.clear();
         lastHapticAtMs = Long.MIN_VALUE / 2;
@@ -297,11 +373,13 @@ final class CueDispatcher implements AutoCloseable {
         if (closed) return;
         closed = true;
         speechEpoch++;
+        toneEpoch++;
         renderer.stopSpeech();
         renderer.cancelPendingTone();
         speechQueue.clear();
         speaking = null;
         lastAccepted.clear();
+        acceptedCategories.clear();
         lastSpeech.clear();
         lastSpeechStarted.clear();
         cancelledSpeech.clear();

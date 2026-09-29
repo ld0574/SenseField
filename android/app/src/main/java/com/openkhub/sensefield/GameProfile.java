@@ -60,6 +60,17 @@ final class GameProfile {
         }
     }
 
+    /** Runtime output contract read from the model metadata bundled with the APK. */
+    static final class YoloxModelData {
+        final int[] classKinds;
+        final float[] classThresholds;
+
+        YoloxModelData(int[] classKinds, float[] classThresholds) {
+            this.classKinds = classKinds.clone();
+            this.classThresholds = classThresholds.clone();
+        }
+    }
+
     final String name;
     final String version;
     final boolean verified;
@@ -73,6 +84,10 @@ final class GameProfile {
     final float yoloxConfidence;
     final float yoloxNms;
     final String minimapYoloxBinSha256;
+    /** Optional profile thresholds keyed by the metadata class name. */
+    final JSONObject yoloxProfileClassThresholds;
+    final int[] yoloxClassKinds;
+    final float[] yoloxClassThresholds;
     /** Optional screen-layout calibration passed to the native minimap locator. */
     final boolean minimapLocatorEnabled;
     final float[] minimapLocatorFloats;
@@ -86,7 +101,9 @@ final class GameProfile {
                         float[] tuning, int[] eventInts, float minConfidence,
                         boolean minimapYolox, int yoloxInputSize,
                         float yoloxConfidence, float yoloxNms,
-                        String minimapYoloxBinSha256,
+                        String minimapYoloxBinSha256, JSONObject yoloxProfileClassThresholds,
+                        int[] yoloxClassKinds,
+                        float[] yoloxClassThresholds,
                         boolean minimapLocatorEnabled, float[] minimapLocatorFloats,
                         int[] minimapLocatorInts, byte[] minimapLocatorDescriptor,
                         TemplateData enemyTemplate, TemplateData pingTemplate,
@@ -104,6 +121,9 @@ final class GameProfile {
         this.yoloxConfidence = yoloxConfidence;
         this.yoloxNms = yoloxNms;
         this.minimapYoloxBinSha256 = minimapYoloxBinSha256;
+        this.yoloxProfileClassThresholds = yoloxProfileClassThresholds;
+        this.yoloxClassKinds = yoloxClassKinds.clone();
+        this.yoloxClassThresholds = yoloxClassThresholds.clone();
         this.minimapLocatorEnabled = minimapLocatorEnabled;
         this.minimapLocatorFloats = minimapLocatorFloats;
         this.minimapLocatorInts = minimapLocatorInts;
@@ -126,11 +146,22 @@ final class GameProfile {
             if (profile.minimapYolox) {
                 requireAsset(context, "minimap-yolox-nano-320.param");
                 requireAsset(context, "minimap-yolox-nano-320.bin");
-                verifyMinimapYoloxModelBinding(context, profile.minimapYoloxBinSha256,
-                        profile.verified);
+                YoloxModelData model = verifyMinimapYoloxModelBinding(
+                        context, profile.minimapYoloxBinSha256, profile.verified,
+                        profile.yoloxConfidence, profile.yoloxProfileClassThresholds);
+                profile = profile.withYoloxModel(model);
             }
             return profile;
         }
+    }
+
+    private GameProfile withYoloxModel(YoloxModelData model) {
+        return new GameProfile(name, version, verified, rois, flags, tuning, eventInts,
+                minConfidence, minimapYolox, yoloxInputSize, yoloxConfidence, yoloxNms,
+                minimapYoloxBinSha256, yoloxProfileClassThresholds,
+                model.classKinds, model.classThresholds,
+                minimapLocatorEnabled, minimapLocatorFloats, minimapLocatorInts,
+                minimapLocatorDescriptor, enemyTemplate, pingTemplate, playerLife);
     }
 
     private static void requireAsset(Context context, String name) throws IOException {
@@ -146,8 +177,9 @@ final class GameProfile {
         }
     }
 
-    private static void verifyMinimapYoloxModelBinding(Context context, String profileSha256,
-                                                       boolean requireVerifiedModel)
+    private static YoloxModelData verifyMinimapYoloxModelBinding(
+            Context context, String profileSha256, boolean requireVerifiedModel,
+            float fallbackConfidence, JSONObject profileClassThresholds)
             throws IOException {
         if (profileSha256 == null || !profileSha256.matches("[0-9a-f]{64}")) {
             throw new IOException("启用 minimap_yolox 的 GameProfile 必须在 "
@@ -190,6 +222,216 @@ final class GameProfile {
             throw new IOException("GameProfile 绑定的 ncnn bin SHA-256 与 APK 模型不一致；"
                     + "请导入与当前 APK 权重匹配的 profile。");
         }
+        try {
+            return parseYoloxModelData(metadata, fallbackConfidence, profileClassThresholds);
+        } catch (JSONException malformed) {
+            throw new IOException("APK 模型 metadata 的 classes 或分类阈值无效。", malformed);
+        }
+    }
+
+    /**
+     * Convert metadata class names into the stable native entity kinds. The optional
+     * postprocess.confidence_by_class object overrides the profile threshold per class.
+     */
+    static YoloxModelData parseYoloxModelData(JSONObject metadata, float fallbackConfidence)
+            throws JSONException {
+        return parseYoloxModelData(metadata, fallbackConfidence, null);
+    }
+
+    /** Parse metadata while applying a profile's optional per-class fallback. */
+    static YoloxModelData parseYoloxModelData(JSONObject metadata, float fallbackConfidence,
+                                              JSONObject profileClassThresholds)
+            throws JSONException {
+        if (!finiteRange(fallbackConfidence, 0f, 1f))
+            throw new JSONException("Invalid fallback confidence");
+        JSONArray classes = metadata.getJSONArray("classes");
+        if (classes.length() < 1 || classes.length() > 8)
+            throw new JSONException("classes must contain 1 to 8 entries");
+        validateYoloxTensorContract(
+                jsonShape(metadata.getJSONArray("input"), "input"),
+                jsonShape(metadata.getJSONArray("output"), "output"),
+                classes.length());
+        JSONObject postprocess = null;
+        if (metadata.has("postprocess") && !metadata.isNull("postprocess")) {
+            Object rawPostprocess = metadata.get("postprocess");
+            if (!(rawPostprocess instanceof JSONObject)) {
+                throw new JSONException("postprocess must be an object");
+            }
+            postprocess = (JSONObject) rawPostprocess;
+        }
+        JSONObject perClass = null;
+        Object scalarThreshold = null;
+        if (postprocess != null) {
+            // Accept the early local spelling while all produced metadata uses
+            // confidence_by_class. A present but non-object value is malformed;
+            // silently falling back would change a class threshold at runtime.
+            String thresholdKey = postprocess.has("confidence_by_class")
+                    ? "confidence_by_class"
+                    : postprocess.has("class_confidence") ? "class_confidence" : null;
+            if (thresholdKey != null) {
+                Object value = postprocess.get(thresholdKey);
+                if (!(value instanceof JSONObject)) {
+                    throw new JSONException(thresholdKey + " must be an object");
+                }
+                perClass = (JSONObject) value;
+            } else if (postprocess.has("confidence") &&
+                    !postprocess.isNull("confidence")) {
+                scalarThreshold = postprocess.get("confidence");
+            }
+        }
+        // A few early sidecars wrote these fields at the metadata root. Keep
+        // the same precedence as the training/replay tools for imported
+        // profiles: postprocess fields, then root fields, then profile.
+        if (perClass == null && scalarThreshold == null &&
+                metadata.has("confidence_by_class") &&
+                !metadata.isNull("confidence_by_class")) {
+            Object value = metadata.get("confidence_by_class");
+            if (!(value instanceof JSONObject)) {
+                throw new JSONException("confidence_by_class must be an object");
+            }
+            perClass = (JSONObject) value;
+        }
+        if (perClass == null && scalarThreshold == null && metadata.has("confidence") &&
+                !metadata.isNull("confidence")) {
+            scalarThreshold = metadata.get("confidence");
+        }
+        String[] names = new String[classes.length()];
+        float[] metadataClassThresholds = perClass == null
+                ? null : new float[classes.length()];
+        float[] profileThresholds = profileClassThresholds == null
+                ? null : new float[classes.length()];
+        Set<String> classNames = new HashSet<>();
+        for (int index = 0; index < classes.length(); index++) {
+            String name = classes.getString(index);
+            names[index] = name;
+            classNames.add(name);
+            if (perClass != null) {
+                metadataClassThresholds[index] = yoloxThreshold(perClass.get(name), name);
+            }
+            if (profileClassThresholds != null) {
+                profileThresholds[index] = yoloxThreshold(
+                        profileClassThresholds.get(name), name);
+            }
+        }
+        if (perClass != null) {
+            Set<String> thresholdNames = new HashSet<>();
+            java.util.Iterator<String> keys = perClass.keys();
+            while (keys.hasNext()) thresholdNames.add(keys.next());
+            if (!thresholdNames.equals(classNames))
+                throw new JSONException(
+                        "confidence_by_class keys must exactly match classes"
+                );
+        }
+        if (profileClassThresholds != null) {
+            Set<String> profileNames = new HashSet<>();
+            java.util.Iterator<String> keys = profileClassThresholds.keys();
+            while (keys.hasNext()) profileNames.add(keys.next());
+            if (!profileNames.equals(classNames))
+                throw new JSONException(
+                        "minimap_yolox_confidence_by_class keys must exactly match classes"
+                );
+        }
+        Float metadataScalarThreshold = scalarThreshold == null
+                ? null : yoloxThreshold(scalarThreshold, "confidence");
+        float[] thresholds = selectYoloxThresholds(
+                classes.length(), fallbackConfidence, metadataScalarThreshold,
+                metadataClassThresholds, profileThresholds);
+        return yoloxModelData(names, thresholds);
+    }
+
+    /** Pure Java precedence rule shared by the JSON parser and JVM tests. */
+    static float[] selectYoloxThresholds(int classCount, float fallbackConfidence,
+                                         Float metadataScalarThreshold,
+                                         float[] metadataClassThresholds,
+                                         float[] profileClassThresholds)
+            throws JSONException {
+        if (classCount < 1 || classCount > 8 ||
+                !finiteRange(fallbackConfidence, 0f, 1f)) {
+            throw new JSONException("Invalid YOLOX threshold contract");
+        }
+        if (metadataClassThresholds != null &&
+                metadataClassThresholds.length != classCount) {
+            throw new JSONException("Metadata class thresholds do not match classes");
+        }
+        if (profileClassThresholds != null &&
+                profileClassThresholds.length != classCount) {
+            throw new JSONException("Profile class thresholds do not match classes");
+        }
+        if (metadataScalarThreshold != null &&
+                !finiteRange(metadataScalarThreshold, 0f, 1f)) {
+            throw new JSONException("Invalid metadata confidence");
+        }
+        float[] selected = new float[classCount];
+        for (int index = 0; index < classCount; index++) {
+            float value = metadataClassThresholds != null
+                    ? metadataClassThresholds[index]
+                    : metadataScalarThreshold != null
+                    ? metadataScalarThreshold
+                    : profileClassThresholds != null
+                    ? profileClassThresholds[index] : fallbackConfidence;
+            if (!finiteRange(value, 0f, 1f)) {
+                throw new JSONException("Invalid YOLOX class confidence");
+            }
+            selected[index] = value;
+        }
+        return selected;
+    }
+
+    /** Parse one JSON-compatible numeric threshold without Android framework state. */
+    static float yoloxThreshold(Object value, String name) throws JSONException {
+        if (!(value instanceof Number))
+            throw new JSONException("Invalid YOLOX threshold for " + name);
+        double threshold = ((Number) value).doubleValue();
+        if (!Double.isFinite(threshold) || threshold < 0.0 || threshold > 1.0)
+            throw new JSONException("Invalid YOLOX threshold for " + name);
+        return (float) threshold;
+    }
+
+    private static int[] jsonShape(JSONArray shape, String label) throws JSONException {
+        int[] result = new int[shape.length()];
+        for (int index = 0; index < shape.length(); index++) {
+            Object value = shape.get(index);
+            if (!(value instanceof Number))
+                throw new JSONException(label + " shape must contain integers");
+            double number = ((Number) value).doubleValue();
+            if (!Double.isFinite(number) || number != Math.rint(number) ||
+                    number < 0 || number > Integer.MAX_VALUE)
+                throw new JSONException(label + " shape must contain integers");
+            result[index] = (int) number;
+        }
+        return result;
+    }
+
+    /** Pure Java tensor-contract guard for unit tests and the JSON parser. */
+    static void validateYoloxTensorContract(int[] input, int[] output, int classCount)
+            throws JSONException {
+        if (input == null || output == null || classCount < 1 || classCount > 8)
+            throw new JSONException("Invalid YOLOX tensor contract");
+        if (!java.util.Arrays.equals(input, new int[] {1, 3, 320, 320}))
+            throw new JSONException("YOLOX input shape must be [1,3,320,320]");
+        if (!java.util.Arrays.equals(output, new int[] {1, 2100, 5 + classCount}))
+            throw new JSONException("YOLOX output shape must be [1,2100,5+C]");
+    }
+
+    /** Pure-Java portion of the metadata contract, kept directly unit-testable. */
+    static YoloxModelData yoloxModelData(String[] classes, float[] thresholds)
+            throws JSONException {
+        if (classes == null || thresholds == null || classes.length < 1 ||
+                classes.length > 8 || thresholds.length != classes.length)
+            throw new JSONException("Invalid YOLOX class arrays");
+        int[] kinds = new int[classes.length];
+        Set<String> seen = new HashSet<>();
+        for (int index = 0; index < classes.length; index++) {
+            String name = classes[index];
+            if (name == null || !seen.add(name))
+                throw new JSONException("Duplicate or missing YOLOX class " + name);
+            if ("minimap_enemy".equals(name)) kinds[index] = 2;
+            else if ("minimap_player".equals(name)) kinds[index] = 6;
+            else throw new JSONException("Unsupported YOLOX class " + name);
+            if (!finiteRange(thresholds[index], 0f, 1f))
+                throw new JSONException("Invalid YOLOX threshold for " + name);
+        }
+        return new YoloxModelData(kinds, thresholds);
     }
 
     private static boolean metadataAllowsVerifiedYolox(JSONObject metadata) {
@@ -309,11 +551,31 @@ final class GameProfile {
                 data.optString("profile_version", "unversioned"), verified, rois, flags,
                 tuning, eventInts, minConfidence, minimapYolox, yoloxInputSize,
                 yoloxConfidence, yoloxNms, minimapYoloxBinSha256,
+                parseYoloxProfileClassThresholds(thresholds),
+                new int[] {2}, new float[] {yoloxConfidence},
                 useMinimapLocator,
                 locator == null ? new float[0] : locator.floats,
                 locator == null ? new int[0] : locator.ints,
                 locator == null ? null : locator.descriptor,
                 enemy, ping, playerLife);
+    }
+
+    /** Validate the optional profile-side per-class confidence mapping. */
+    private static JSONObject parseYoloxProfileClassThresholds(JSONObject thresholds)
+            throws JSONException {
+        final String key = "minimap_yolox_confidence_by_class";
+        if (!thresholds.has(key) || thresholds.isNull(key)) return null;
+        Object value = thresholds.get(key);
+        if (!(value instanceof JSONObject)) {
+            throw new JSONException(key + " must be an object");
+        }
+        JSONObject result = (JSONObject) value;
+        java.util.Iterator<String> keys = result.keys();
+        while (keys.hasNext()) {
+            String name = keys.next();
+            yoloxThreshold(result.get(name), name);
+        }
+        return result;
     }
 
     private static PlayerLifeData parsePlayerLife(JSONObject stateRecognition, boolean allowed)

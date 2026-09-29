@@ -18,19 +18,23 @@ final class NativeBridge {
             byte[] pingRgba, int pingWidth, int pingHeight,
             boolean minimapYolox, int yoloxInputSize,
             float yoloxConfidence, float yoloxNms,
+            int[] yoloxClassKinds, float[] yoloxClassThresholds,
             boolean minimapLocatorEnabled, float[] minimapLocatorFloats,
             int[] minimapLocatorInts, byte[] minimapLocatorDescriptor,
             boolean playerLifeEnabled, float[] playerLifeRoiAndThresholds,
             int playerLifeMaxDhashDistance, long[] playerLifeHashes,
             byte[] playerLifeStates, byte[] playerLifeLuma, byte[] playerLifeChroma);
 
-    // [kind, direction, priority, observation count, native processing microseconds,
-    //  locator state, locator score milli, locator x/y/w/h parts per million,
-    //  marker count, then marker records: state, movement direction, x/y/w/h ppm,
-    //  age milliseconds, transition event, stable track id]
+    // The JNI boundary stays a compact int[] while its payload is explicitly
+    // versioned. Callers must use NativeFrameResult.parse(); it also accepts
+    // the legacy 0.2.2 marker packet for local compatibility tests.
     static native int[] nativeProcess(long session, ByteBuffer rgba,
                                       int width, int height, int rowStride,
                                       long frameTimestampMs, long processingNowMs);
+
+    static NativeFrameResult parseFrameResult(int[] packed, long frameTimestampMs) {
+        return NativeFrameResult.parse(packed, frameTimestampMs);
+    }
 
     static native void nativeReset(long session);
     static native void nativeDestroy(long session);

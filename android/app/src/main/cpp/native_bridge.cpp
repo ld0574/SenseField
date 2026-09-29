@@ -84,6 +84,7 @@ struct Detection {
     float x1;
     float y1;
     float confidence;
+    int kind;
 };
 
 struct Session {
@@ -97,6 +98,8 @@ struct Session {
     int yolox_input_size = 320;
     float yolox_confidence = 0.29f;
     float yolox_nms = 0.5f;
+    std::vector<int> yolox_class_kinds{MA_MINIMAP_ENEMY};
+    std::vector<float> yolox_class_thresholds{0.29f};
     bool yolox_runtime_error_logged = false;
     ma_minimap_locator *minimap_locator = nullptr;
     ma_player_state_matcher *player_state_matcher = nullptr;
@@ -176,7 +179,8 @@ void non_maximum_suppression(std::vector<Detection> &detections, float threshold
     for (const Detection &candidate : detections) {
         bool overlaps = false;
         for (const Detection &existing : kept) {
-            if (intersection_over_union(candidate, existing) > threshold) {
+            if (candidate.kind == existing.kind &&
+                intersection_over_union(candidate, existing) > threshold) {
                 overlaps = true;
                 break;
             }
@@ -214,8 +218,8 @@ bool load_yolox(AAssetManager *assets, Session &session) {
         return false;
     }
     __android_log_print(ANDROID_LOG_INFO, kLogTag,
-                        "Loaded YOLOX Nano minimap model (%d px)",
-                        session.yolox_input_size);
+                        "Loaded YOLOX Nano minimap model (%d px, %zu classes)",
+                        session.yolox_input_size, session.yolox_class_kinds.size());
     return true;
 }
 
@@ -224,7 +228,9 @@ void append_yolox_observations(Session &session, const uint8_t *rgba,
                                int64_t timestamp_ms, ma_rect minimap_roi,
                                bool minimap_ready,
                                std::vector<ma_observation> &observations) {
-    if (!session.minimap_yolox || !minimap_ready) return;
+    if (!session.minimap_yolox || !minimap_ready ||
+        session.yolox_class_kinds.empty() ||
+        session.yolox_class_kinds.size() != session.yolox_class_thresholds.size()) return;
     const PixelRect area = to_pixels(minimap_roi, width, height);
     const PixelRect direction_reference = has_rect(session.profile.minimap_direction)
             ? to_direction_reference_pixels(
@@ -270,7 +276,8 @@ void append_yolox_observations(Session &session, const uint8_t *rgba,
     constexpr int expected_anchors = 40 * 40 + 20 * 20 + 10 * 10;
     const int extract_status = extractor.extract("out0", output);
     if (extract_status != 0 || output.empty() || output.dims != 2 ||
-        output.w != 6 || output.h != expected_anchors || output.elempack != 1) {
+        output.w != 5 + static_cast<int>(session.yolox_class_kinds.size()) ||
+        output.h != expected_anchors || output.elempack != 1) {
         if (!session.yolox_runtime_error_logged) {
             __android_log_print(ANDROID_LOG_ERROR, kLogTag,
                                 "Invalid YOLOX output status=%d dims=%d w=%d h=%d pack=%d",
@@ -291,9 +298,20 @@ void append_yolox_observations(Session &session, const uint8_t *rgba,
             for (int grid_x = 0; grid_x < grid; ++grid_x, ++anchor) {
                 if (anchor >= output.h) break;
                 const float *row = output.row(anchor);
-                const float confidence = row[4] * row[5];
-                if (!std::isfinite(confidence) || confidence < session.yolox_confidence)
-                    continue;
+                int best_class = -1;
+                float confidence = -1.0f;
+                if (!std::isfinite(row[4])) continue;
+                for (size_t class_index = 0;
+                     class_index < session.yolox_class_kinds.size(); ++class_index) {
+                    const float class_score = row[5 + class_index];
+                    const float candidate = row[4] * class_score;
+                    if (!std::isfinite(candidate) ||
+                        candidate < session.yolox_class_thresholds[class_index] ||
+                        candidate <= confidence) continue;
+                    best_class = static_cast<int>(class_index);
+                    confidence = candidate;
+                }
+                if (best_class < 0) continue;
                 const float center_x = (row[0] + grid_x) * stride;
                 const float center_y = (row[1] + grid_y) * stride;
                 const float box_width = std::exp(std::clamp(row[2], -10.0f, 10.0f)) * stride;
@@ -304,6 +322,7 @@ void append_yolox_observations(Session &session, const uint8_t *rgba,
                         center_x + box_width * 0.5f,
                         center_y + box_height * 0.5f,
                         confidence,
+                        session.yolox_class_kinds[best_class],
                 };
                 detection.x0 = std::clamp(detection.x0 / scale, 0.0f,
                                            static_cast<float>(crop_width));
@@ -328,7 +347,7 @@ void append_yolox_observations(Session &session, const uint8_t *rgba,
         const float x1 = area.x0 + detection.x1;
         const float y1 = area.y0 + detection.y1;
         observations.push_back({
-                MA_MINIMAP_ENEMY,
+                detection.kind,
                 direction_for((x0 + x1) * 0.5f, (y0 + y1) * 0.5f,
                               direction_reference),
                 {x0 / width, y0 / height, (x1 - x0) / width, (y1 - y0) / height},
@@ -348,6 +367,7 @@ Java_com_openkhub_sensefield_NativeBridge_nativeCreate(
         jbyteArray ping_rgba, jint ping_width, jint ping_height,
         jboolean minimap_yolox, jint yolox_input_size,
         jfloat yolox_confidence, jfloat yolox_nms,
+        jintArray yolox_class_kinds, jfloatArray yolox_class_thresholds,
         jboolean minimap_locator_enabled, jfloatArray minimap_locator_floats,
         jintArray minimap_locator_ints, jbyteArray minimap_locator_descriptor,
         jboolean player_life_enabled, jfloatArray player_life_values,
@@ -361,7 +381,12 @@ Java_com_openkhub_sensefield_NativeBridge_nativeCreate(
     if (minimap_yolox &&
         (yolox_input_size != 320 ||
          !std::isfinite(yolox_confidence) || yolox_confidence < 0.0f || yolox_confidence > 1.0f ||
-         !std::isfinite(yolox_nms) || yolox_nms < 0.0f || yolox_nms > 1.0f))
+         !std::isfinite(yolox_nms) || yolox_nms < 0.0f || yolox_nms > 1.0f ||
+         !yolox_class_kinds || !yolox_class_thresholds ||
+         env->GetArrayLength(yolox_class_kinds) < 1 ||
+         env->GetArrayLength(yolox_class_kinds) > 8 ||
+         env->GetArrayLength(yolox_class_thresholds) !=
+                 env->GetArrayLength(yolox_class_kinds)))
         return 0;
     if (minimap_locator_enabled &&
         (!minimap_locator_floats || !minimap_locator_ints ||
@@ -405,6 +430,28 @@ Java_com_openkhub_sensefield_NativeBridge_nativeCreate(
     session->yolox_input_size = yolox_input_size;
     session->yolox_confidence = yolox_confidence;
     session->yolox_nms = yolox_nms;
+    if (minimap_yolox) {
+        const int class_count = env->GetArrayLength(yolox_class_kinds);
+        session->yolox_class_kinds.resize(static_cast<size_t>(class_count));
+        session->yolox_class_thresholds.resize(static_cast<size_t>(class_count));
+        env->GetIntArrayRegion(yolox_class_kinds, 0, class_count,
+                               session->yolox_class_kinds.data());
+        env->GetFloatArrayRegion(yolox_class_thresholds, 0, class_count,
+                                 session->yolox_class_thresholds.data());
+        if (env->ExceptionCheck()) return 0;
+        bool enemy_seen = false;
+        bool player_seen = false;
+        for (int index = 0; index < class_count; ++index) {
+            const int kind = session->yolox_class_kinds[index];
+            const float threshold = session->yolox_class_thresholds[index];
+            if (!std::isfinite(threshold) || threshold < 0.0f || threshold > 1.0f ||
+                (kind != MA_MINIMAP_ENEMY && kind != MA_MINIMAP_PLAYER) ||
+                (kind == MA_MINIMAP_ENEMY && enemy_seen) ||
+                (kind == MA_MINIMAP_PLAYER && player_seen)) return 0;
+            enemy_seen = enemy_seen || kind == MA_MINIMAP_ENEMY;
+            player_seen = player_seen || kind == MA_MINIMAP_PLAYER;
+        }
+    }
     if (minimap_locator_enabled) {
         jfloat locator_floats[12];
         jint locator_ints[10];
@@ -485,16 +532,22 @@ Java_com_openkhub_sensefield_NativeBridge_nativeProcess(
         JNIEnv *env, jclass, jlong handle, jobject frame,
         jint width, jint height, jint row_stride,
         jlong frame_timestamp_ms, jlong processing_now_ms) {
-    // kind, direction, priority, observation count, processing micros,
-    // locator state/score, normalized minimap ROI in parts per million,
-    // marker count, then marker records of:
-    // state, movement direction, x/y/w/h ppm, age ms, transition event, track id.
-    constexpr int marker_offset = 12;
-    constexpr int marker_stride = 9;
-    constexpr int marker_capacity = 8;
-    constexpr int result_size = marker_offset + marker_stride * marker_capacity;
+    // Versioned packet consumed by NativeFrameResult. Header fields are:
+    // magic/version/header size/record stride, cue, observation/latency,
+    // locator state/score, minimap ROI (ppm), entity count. Records carry the
+    // stable ma_tracked_entity snapshot plus a derived movement direction.
+    constexpr jint packet_magic = 0x4e465231;  // ASCII NFR1
+    constexpr int packet_version = 1;
+    constexpr int entity_offset = 16;
+    constexpr int entity_stride = 16;
+    constexpr int entity_capacity = MA_MAX_TRACKED_ENTITIES;
+    constexpr int result_size = entity_offset + entity_stride * entity_capacity;
     jint result[result_size] = {};
-    result[5] = -1;
+    result[0] = packet_magic;
+    result[1] = packet_version;
+    result[2] = entity_offset;
+    result[3] = entity_stride;
+    result[9] = -1;
     auto *session = reinterpret_cast<Session *>(handle);
     auto *rgba = frame ? static_cast<uint8_t *>(env->GetDirectBufferAddress(frame)) : nullptr;
     const jlong capacity = frame ? env->GetDirectBufferCapacity(frame) : -1;
@@ -503,7 +556,7 @@ Java_com_openkhub_sensefield_NativeBridge_nativeProcess(
     if (!session || !rgba || width <= 0 || height <= 0 ||
         width > 8192 || height > 8192 || row_stride < width * 4 ||
         capacity < required) {
-        result[3] = -1;
+        result[7] = -1;
     } else {
         const auto start = std::chrono::steady_clock::now();
         ma_profile frame_profile = session->profile;
@@ -515,8 +568,8 @@ Java_com_openkhub_sensefield_NativeBridge_nativeProcess(
             const int locator_state = ma_minimap_locator_update(
                     session->minimap_locator, rgba, width, height, row_stride,
                     &located_minimap, &content, &locator_score);
-            result[5] = locator_state;
-            result[6] = static_cast<jint>(std::lround(locator_score * 1000.0f));
+            result[9] = locator_state;
+            result[10] = static_cast<jint>(std::lround(locator_score * 1000.0f));
             minimap_ready = locator_state != MA_LOCATOR_SEARCHING;
             if (!minimap_ready) {
                 // A lost/unknown minimap ROI is not evidence that tracked
@@ -526,19 +579,19 @@ Java_com_openkhub_sensefield_NativeBridge_nativeProcess(
             }
             if (minimap_ready) {
                 frame_profile.minimap = located_minimap;
-                result[7] = static_cast<jint>(std::lround(located_minimap.x * 1000000.0f));
-                result[8] = static_cast<jint>(std::lround(located_minimap.y * 1000000.0f));
-                result[9] = static_cast<jint>(std::lround(located_minimap.w * 1000000.0f));
-                result[10] = static_cast<jint>(std::lround(located_minimap.h * 1000000.0f));
+                result[11] = static_cast<jint>(std::lround(located_minimap.x * 1000000.0f));
+                result[12] = static_cast<jint>(std::lround(located_minimap.y * 1000000.0f));
+                result[13] = static_cast<jint>(std::lround(located_minimap.w * 1000000.0f));
+                result[14] = static_cast<jint>(std::lround(located_minimap.h * 1000000.0f));
             } else {
                 frame_profile.enable_minimap_template = 0;
                 frame_profile.enable_minimap_red_ring = 0;
             }
         } else {
-            result[7] = static_cast<jint>(std::lround(frame_profile.minimap.x * 1000000.0f));
-            result[8] = static_cast<jint>(std::lround(frame_profile.minimap.y * 1000000.0f));
-            result[9] = static_cast<jint>(std::lround(frame_profile.minimap.w * 1000000.0f));
-            result[10] = static_cast<jint>(std::lround(frame_profile.minimap.h * 1000000.0f));
+            result[11] = static_cast<jint>(std::lround(frame_profile.minimap.x * 1000000.0f));
+            result[12] = static_cast<jint>(std::lround(frame_profile.minimap.y * 1000000.0f));
+            result[13] = static_cast<jint>(std::lround(frame_profile.minimap.w * 1000000.0f));
+            result[14] = static_cast<jint>(std::lround(frame_profile.minimap.h * 1000000.0f));
         }
         ma_observation native_observations[64];
         const int native_count = ma_detect_rgba(
@@ -577,31 +630,48 @@ Java_com_openkhub_sensefield_NativeBridge_nativeProcess(
                 session->engine, observations.data(), static_cast<int>(observations.size()),
                 processing_now_ms + processing_ms, &cue, 1);
         if (cue_count) {
-            result[0] = cue.kind;
-            result[1] = cue.direction;
-            result[2] = cue.priority;
+            result[4] = cue.kind;
+            result[5] = cue.direction;
+            result[6] = cue.priority;
         }
-        ma_minimap_marker markers[marker_capacity];
-        const int marker_count = std::clamp(
-                ma_engine_read_minimap_markers(
-                        session->engine, markers, marker_capacity),
-                0, marker_capacity);
-        result[11] = marker_count;
-        for (int index = 0; index < marker_count; ++index) {
-            const ma_minimap_marker &marker = markers[index];
-            const int base = marker_offset + index * marker_stride;
-            result[base] = marker.state;
-            result[base + 1] = marker.movement_direction;
-            result[base + 2] = static_cast<jint>(std::lround(marker.bbox.x * 1000000.0f));
-            result[base + 3] = static_cast<jint>(std::lround(marker.bbox.y * 1000000.0f));
-            result[base + 4] = static_cast<jint>(std::lround(marker.bbox.w * 1000000.0f));
-            result[base + 5] = static_cast<jint>(std::lround(marker.bbox.h * 1000000.0f));
-            result[base + 6] = marker.age_ms;
-            result[base + 7] = marker.event;
-            result[base + 8] = marker.track_id;
+        ma_tracked_entity entities[entity_capacity];
+        const int entity_count = std::clamp(
+                ma_engine_read_tracked_entities(
+                        session->engine, entities, entity_capacity),
+                0, entity_capacity);
+        result[15] = entity_count;
+        for (int index = 0; index < entity_count; ++index) {
+            const ma_tracked_entity &entity = entities[index];
+            const int base = entity_offset + index * entity_stride;
+            int movement = MA_DIR_NONE;
+            constexpr float minimum_motion = 0.0015f;
+            if (std::hypot(entity.velocity_x, entity.velocity_y) >= minimum_motion) {
+                if (std::abs(entity.velocity_x) >= std::abs(entity.velocity_y)) {
+                    movement = entity.velocity_x < 0.0f ? MA_DIR_LEFT : MA_DIR_RIGHT;
+                } else {
+                    movement = entity.velocity_y < 0.0f ? MA_DIR_UP : MA_DIR_DOWN;
+                }
+            }
+            result[base] = entity.entity_kind;
+            result[base + 1] = entity.track_id;
+            result[base + 2] = entity.state;
+            result[base + 3] = entity.transition;
+            result[base + 4] = movement;
+            result[base + 5] = static_cast<jint>(std::lround(entity.bbox.x * 1000000.0f));
+            result[base + 6] = static_cast<jint>(std::lround(entity.bbox.y * 1000000.0f));
+            result[base + 7] = static_cast<jint>(std::lround(entity.bbox.w * 1000000.0f));
+            result[base + 8] = static_cast<jint>(std::lround(entity.bbox.h * 1000000.0f));
+            result[base + 9] = static_cast<jint>(std::lround(
+                    std::clamp(entity.confidence, 0.0f, 1.0f) * 1000.0f));
+            result[base + 10] = entity.freshness_ms;
+            result[base + 11] = static_cast<jint>(std::lround(entity.velocity_x * 1000000.0f));
+            result[base + 12] = static_cast<jint>(std::lround(entity.velocity_y * 1000000.0f));
+            const uint64_t last_seen = static_cast<uint64_t>(entity.last_seen_ms);
+            result[base + 13] = static_cast<jint>(last_seen & 0xffffffffULL);
+            result[base + 14] = static_cast<jint>((last_seen >> 32) & 0xffffffffULL);
         }
-        result[3] = static_cast<jint>(observations.size());
-        result[4] = static_cast<jint>(std::chrono::duration_cast<std::chrono::microseconds>(
+        result[7] = static_cast<jint>(observations.size());
+        result[8] = static_cast<jint>(std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - start).count());
     }
     jintArray output = env->NewIntArray(result_size);

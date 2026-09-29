@@ -527,7 +527,9 @@ struct Track {
     uint8_t recent = 0;
     int missing = 0;
     bool announced = false;
-    int64_t cleared_at_ms = 0;
+    // Keep a real sentinel instead of zero: capture/test timelines may start
+    // at timestamp 0, which is a valid native frame time.
+    int64_t cleared_at_ms = std::numeric_limits<int64_t>::min();
 };
 
 struct SpatialTrack {
@@ -733,6 +735,14 @@ extern "C" int ma_engine_step(ma_engine *engine,
             player_alive_seen = player_alive_seen || obs.kind == MA_PLAYER_ALIVE;
             continue;
         }
+        // The main-screen branch is deliberately a left/right peripheral
+        // threat detector.  Top/bottom red UI fragments previously reached
+        // the speech path as false "above/below" enemies; they are not part
+        // of the accessible edge contract and must not arm temporal state.
+        if (obs.kind == MA_MAIN_ENEMY &&
+            obs.direction != MA_DIR_LEFT && obs.direction != MA_DIR_RIGHT) {
+            continue;
+        }
         if (obs.kind == MA_MINIMAP_ENEMY || obs.kind == MA_MINIMAP_PLAYER) {
             if (!valid_normalized_rect(obs.bbox)) continue;
             const float x = obs.bbox.x + obs.bbox.w * 0.5f;
@@ -757,6 +767,13 @@ extern "C" int ma_engine_step(ma_engine *engine,
             for (int index = 0; index < track_count; ++index) {
                 SpatialTrack &candidate = track_array[index];
                 if (!candidate.active || candidate.matched) continue;
+                // The local player is a singleton class. A large camera/map
+                // jump must update that one track instead of leaving a stale
+                // coordinate alive for the four-second enemy retention window.
+                if (obs.kind == MA_MINIMAP_PLAYER) {
+                    nearest = index;
+                    break;
+                }
                 const float dx = x - candidate.x;
                 const float dy = y - candidate.y;
                 const float distance = dx * dx + dy * dy;
@@ -814,6 +831,16 @@ extern "C" int ma_engine_step(ma_engine *engine,
                 track.w = obs.bbox.w;
                 track.h = obs.bbox.h;
                 track.track_id = engine->next_minimap_track_id++;
+            } else if (obs.kind == MA_MINIMAP_PLAYER) {
+                // The player marker is a singleton coordinate origin. Keep it
+                // current across camera/map jumps instead of smoothing a
+                // large displacement into a stale intermediate position.
+                track.velocity_x = 0.0f;
+                track.velocity_y = 0.0f;
+                track.x = x;
+                track.y = y;
+                track.w = obs.bbox.w;
+                track.h = obs.bbox.h;
             } else if (!reappeared_after_grace && !resumed_after_loss) {
                 const float delta_x = x - track.x;
                 const float delta_y = y - track.y;
@@ -913,11 +940,12 @@ extern "C" int ma_engine_step(ma_engine *engine,
         track.recent = static_cast<uint8_t>(((track.recent << 1) | (seen[i] ? 1 : 0)) & 7);
         if (seen[i]) {
             track.missing = 0;
-            track.cleared_at_ms = 0;
+            track.cleared_at_ms = std::numeric_limits<int64_t>::min();
         } else if (++track.missing >= engine->config.reset_after_missing_frames) {
             track.recent = 0;
             if (kind == MA_MAIN_ENEMY) {
-                if (track.cleared_at_ms == 0) track.cleared_at_ms = now_ms;
+                if (track.cleared_at_ms == std::numeric_limits<int64_t>::min())
+                    track.cleared_at_ms = now_ms;
                 if (now_ms - track.cleared_at_ms >= kMainEdgeRearmMs)
                     track.announced = false;
             } else {

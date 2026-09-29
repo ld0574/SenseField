@@ -2,19 +2,30 @@ package com.openkhub.sensefield;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
 public final class CueRoutingTest {
     @Test public void minimapDetectionsNeverBypassTrackedTransitions() {
-        assertFalse(CueRouting.shouldDispatchDirectNativeCue(0));
-        assertFalse(CueRouting.shouldDispatchDirectNativeCue(2));
+        assertFalse(CueRouting.shouldDispatchDirectNativeCue(0, 0));
+        assertFalse(CueRouting.shouldDispatchDirectNativeCue(2, 1));
+        assertFalse(CueRouting.shouldDispatchDirectNativeCue(6, 1));
 
-        assertTrue(CueRouting.shouldDispatchDirectNativeCue(1));
-        assertTrue(CueRouting.shouldDispatchDirectNativeCue(3));
-        assertTrue(CueRouting.shouldDispatchDirectNativeCue(4));
-        assertTrue(CueRouting.shouldDispatchDirectNativeCue(5));
+        assertTrue(CueRouting.shouldDispatchDirectNativeCue(1, 1));
+        assertTrue(CueRouting.shouldDispatchDirectNativeCue(1, 2));
+        assertFalse(CueRouting.shouldDispatchDirectNativeCue(1, 3));
+        assertFalse(CueRouting.shouldDispatchDirectNativeCue(1, 4));
+        assertTrue(CueRouting.shouldDispatchDirectNativeCue(3, 0));
+        assertTrue(CueRouting.shouldDispatchDirectNativeCue(4, 0));
+        assertTrue(CueRouting.shouldDispatchDirectNativeCue(5, 0));
+    }
+
+    @Test public void stateOnlyMinimapPlayerIsNotAnAudibleDirectCue() {
+        assertNull(CueRouting.directCueCategory(6, 0));
+        assertEquals(CueRequest.CHANNEL_TONE,
+                CueRouting.directCueRequestedChannels(1, 0));
     }
 
     @Test public void onlyNewAppearancesAreAudibleAndDoNotClaimPlayerRelativeDirection() {

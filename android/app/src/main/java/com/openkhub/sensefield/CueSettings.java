@@ -25,6 +25,7 @@ final class CueSettings implements CueDispatcher.Policy {
                 .putBoolean("cue_channel_speech", true)
                 .putBoolean("cue_channel_haptic", true)
                 .putBoolean("cue_category_vision", true)
+                .putBoolean("cue_category_peripheral", true)
                 .putBoolean("cue_category_danger", false)
                 .putBoolean("cue_category_player", true)
                 .putBoolean("cue_category_system", true)
@@ -54,6 +55,8 @@ final class CueSettings implements CueDispatcher.Policy {
     @Override public boolean categoryEnabled(CueRequest.Category category) {
         if (category == CueRequest.Category.VISION_MEMORY)
             return preferences.getBoolean("cue_category_vision", true);
+        if (category == CueRequest.Category.PERIPHERAL_THREAT)
+            return preferences.getBoolean("cue_category_peripheral", true);
         if (category == CueRequest.Category.DANGER)
             return preferences.getBoolean("cue_category_danger", false);
         if (category == CueRequest.Category.PLAYER_STATE)
@@ -86,8 +89,24 @@ final class CueSettings implements CueDispatcher.Policy {
     }
 
     static int presetCategoryChannels(String preset, CueRequest.Category category) {
-        if (PRESET_COMPACT.equals(preset) && category == CueRequest.Category.VISION_MEMORY)
-            return CueRequest.CHANNEL_VISUAL;
+        if (category == CueRequest.Category.VISION_MEMORY) {
+            if (PRESET_COMPACT.equals(preset)) return CueRequest.CHANNEL_VISUAL;
+            // Standard visual memory is deliberately quiet: the overlay and
+            // one neutral tone are available, while speech and haptics remain
+            // reserved for the detailed preset or other event categories.
+            if (PRESET_STANDARD.equals(preset)) {
+                return CueRequest.CHANNEL_VISUAL | CueRequest.CHANNEL_TONE;
+            }
+            if (PRESET_DETAILED.equals(preset)) {
+                return CueRequest.CHANNEL_VISUAL | CueRequest.CHANNEL_TONE |
+                        CueRequest.CHANNEL_SPEECH;
+            }
+        }
+        if (category == CueRequest.Category.PERIPHERAL_THREAT) {
+            // Edge threats have no reliable screen overlay coordinate. Their
+            // default feedback is one short stereo tone in every preset.
+            return CueRequest.CHANNEL_TONE;
+        }
         return CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH |
                 CueRequest.CHANNEL_HAPTIC | CueRequest.CHANNEL_VISUAL;
     }
@@ -96,6 +115,7 @@ final class CueSettings implements CueDispatcher.Policy {
         if (category == CueRequest.Category.VISION_MEMORY) {
             return preferences.getInt("cue_vision_speech_gap_ms", 2000);
         }
+        if (category == CueRequest.Category.PERIPHERAL_THREAT) return 2000;
         return category == CueRequest.Category.SYSTEM ? 1000 : 500;
     }
 

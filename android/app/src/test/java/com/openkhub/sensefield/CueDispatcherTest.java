@@ -182,6 +182,70 @@ public final class CueDispatcherTest {
         assertTrue(renderer.started.contains("after"));
     }
 
+    @Test public void clearingVisionCategoryStopsItsPendingSpeech() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        renderer.autoStartSpeech = false;
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(),
+                new Events(), clock);
+        dispatcher.submit(request("vision", "vision", "VISION_APPEAR",
+                CueRequest.Category.VISION_MEMORY, CueRequest.CHANNEL_SPEECH,
+                10000, "发现敌方头像"));
+        assertFalse(renderer.stopped);
+        dispatcher.clearCategory(CueRequest.Category.VISION_MEMORY);
+        assertTrue(dispatcher.pendingCueIdsForTest().isEmpty());
+        assertTrue(renderer.stopped);
+    }
+
+    @Test public void clearingSpeakingCategoryContinuesWithOtherSpeech() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        renderer.autoStartSpeech = false;
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(),
+                new Events(), clock);
+        dispatcher.submit(request("vision", "vision", "VISION_APPEAR",
+                CueRequest.Category.VISION_MEMORY, CueRequest.CHANNEL_SPEECH,
+                10000, "发现敌方头像"));
+        dispatcher.submit(request("danger", "danger", "DANGER_PING",
+                CueRequest.Category.DANGER, CueRequest.CHANNEL_SPEECH,
+                10000, "危险信号"));
+
+        dispatcher.clearCategory(CueRequest.Category.VISION_MEMORY);
+
+        assertEquals(List.of("vision", "danger"), renderer.started);
+        assertTrue(dispatcher.pendingCueIdsForTest().isEmpty());
+    }
+
+    @Test public void clearAllDropsEveryCategoryAndResetsHapticWindow() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        renderer.autoStartSpeech = false;
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(),
+                new Events(), clock);
+        dispatcher.submit(request("vision", "vision", "VISION_APPEAR",
+                CueRequest.Category.VISION_MEMORY, CueRequest.CHANNEL_SPEECH,
+                10000, "发现敌方头像"));
+        dispatcher.submit(request("danger", "danger", "DANGER_PING",
+                CueRequest.Category.DANGER, CueRequest.CHANNEL_SPEECH,
+                10000, "危险信号"));
+        CueRequest beforeReset = new CueRequest("session", "before-haptic", "before-haptic",
+                "PLAYER_DEAD", CueRequest.Category.PLAYER_STATE, 100, 0, 10000,
+                CueRequest.CHANNEL_HAPTIC, 0, 0, 1, null);
+        assertEquals(CueRequest.CHANNEL_HAPTIC, dispatcher.submit(beforeReset).acceptedChannels);
+
+        dispatcher.clearAll();
+
+        assertTrue(dispatcher.pendingCueIdsForTest().isEmpty());
+        assertTrue(renderer.stopped);
+        CueRequest afterReset = new CueRequest("session", "after-haptic", "after-haptic",
+                "PLAYER_DEAD", CueRequest.Category.PLAYER_STATE, 60, 0, 10000,
+                CueRequest.CHANNEL_HAPTIC, 0, 0, 1, null);
+        assertEquals(CueRequest.CHANNEL_HAPTIC, dispatcher.submit(afterReset).acceptedChannels);
+        assertTrue(dispatcher.submit(request("after", "vision", "VISION_APPEAR",
+                CueRequest.Category.VISION_MEMORY, CueRequest.CHANNEL_SPEECH,
+                10000, "重新发现")).audioQueued());
+    }
+
     @Test public void lateToneCallbackAfterPauseDoesNotPollutePlaybackLog() {
         MutableClock clock = new MutableClock();
         FakeRenderer renderer = new FakeRenderer();
@@ -197,6 +261,23 @@ public final class CueDispatcherTest {
         renderer.toneCallback.onFinished(101, true);
 
         assertEquals(beforePause, events.events.size());
+    }
+
+    @Test public void lateToneCallbackAfterCategoryClearDoesNotPollutePlaybackLog() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+        CueRequest tone = new CueRequest("session", "tone-category", "tone-category", "TONE",
+                CueRequest.Category.VISION_MEMORY, 40, 0, 10000,
+                CueRequest.CHANNEL_TONE, 2, 1, 1, null);
+
+        dispatcher.submit(tone);
+        int beforeClear = events.events.size();
+        dispatcher.clearCategory(CueRequest.Category.VISION_MEMORY);
+        renderer.toneCallback.onFinished(101, true);
+
+        assertEquals(beforeClear, events.events.size());
     }
 
     @Test public void speechStartingAfterExpiryIsLoggedAsExpiredAndCannotComplete() {

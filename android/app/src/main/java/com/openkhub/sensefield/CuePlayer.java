@@ -208,7 +208,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
             return played;
         }
         return pendingTones.enqueue(tone, request.toneKind, request.direction,
-                request.expiresAtMs, now, callback);
+                request.expiresAtMs, now, request.category, callback);
     }
 
     private void finishToneAttempt(CueDispatcher.PlaybackCallback callback, long now,
@@ -286,6 +286,14 @@ final class CuePlayer implements CueDispatcher.Renderer {
     @Override public void cancelPendingTone() {
         synchronized (audioLock) {
             PendingToneQueue.Pending pending = pendingTones.clear();
+            if (pending != null && pending.callback != null)
+                pending.callback.onFinished(SystemClock.elapsedRealtime(), false);
+        }
+    }
+
+    @Override public void cancelPendingTone(CueRequest.Category category) {
+        synchronized (audioLock) {
+            PendingToneQueue.Pending pending = pendingTones.clearCategory(category);
             if (pending != null && pending.callback != null)
                 pending.callback.onFinished(SystemClock.elapsedRealtime(), false);
         }

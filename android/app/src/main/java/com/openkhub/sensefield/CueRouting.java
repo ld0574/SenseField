@@ -3,6 +3,7 @@ package com.openkhub.sensefield;
 /** Pure routing rules kept separate from the Android service for unit testing. */
 final class CueRouting {
     private static final int MINIMAP_ENEMY = 2;
+    private static final int MINIMAP_PLAYER = 6;
     private static final int VISION_APPEAR = 1;
     private static final long MIN_MINIMAP_APPEAR_GAP_MS = 15_000;
     static final long NO_MINIMAP_CUE = Long.MIN_VALUE;
@@ -16,8 +17,39 @@ final class CueRouting {
      * through the tracked APPEAR/DISAPPEAR path so a persistent marker cannot
      * be announced again whenever the native cooldown expires.
      */
-    static boolean shouldDispatchDirectNativeCue(int kind) {
-        return kind > 0 && kind != MINIMAP_ENEMY;
+    static boolean shouldDispatchDirectNativeCue(int kind, int direction) {
+        if (kind == MINIMAP_ENEMY || kind == MINIMAP_PLAYER || kind <= 0) return false;
+        // The main-screen classifier is a left/right peripheral branch.  A
+        // vertical red fragment is outside that contract and remains silent.
+        return kind != 1 || direction == 1 || direction == 2;
+    }
+
+    /** Map a direct native cue to the output category used by its policy. */
+    static CueRequest.Category directCueCategory(int kind, int direction) {
+        if (!shouldDispatchDirectNativeCue(kind, direction)) return null;
+        if (isPeripheralThreat(kind, direction)) {
+            return CueRequest.Category.PERIPHERAL_THREAT;
+        }
+        if (kind == 3) return CueRequest.Category.DANGER;
+        if (kind >= 4) return CueRequest.Category.PLAYER_STATE;
+        return CueRequest.Category.VISION_MEMORY;
+    }
+
+    /** Channels that dispatchNativeCue requests for a direct cue. */
+    static int directCueRequestedChannels(int kind, int direction) {
+        if (kind == 4 || kind == 5) {
+            return CueRequest.CHANNEL_SPEECH | CueRequest.CHANNEL_HAPTIC;
+        }
+        int channels = CueRequest.CHANNEL_TONE;
+        if (kind == 3) {
+            channels |= CueRequest.CHANNEL_SPEECH;
+        }
+        return channels;
+    }
+
+    /** Main-screen detections on the horizontal edges use stereo only. */
+    static boolean isPeripheralThreat(int kind, int direction) {
+        return kind == 1 && (direction == 1 || direction == 2);
     }
 
     /** A confirmed appearance is a new minimap enemy; loss transitions stay quiet. */

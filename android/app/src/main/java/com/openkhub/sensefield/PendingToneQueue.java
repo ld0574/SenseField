@@ -7,14 +7,16 @@ final class PendingToneQueue {
         final int kind;
         final int direction;
         final long expiresAtMs;
+        final CueRequest.Category category;
         final CueDispatcher.PlaybackCallback callback;
 
         Pending(int sampleId, int kind, int direction, long expiresAtMs,
-                CueDispatcher.PlaybackCallback callback) {
+                CueRequest.Category category, CueDispatcher.PlaybackCallback callback) {
             this.sampleId = sampleId;
             this.kind = kind;
             this.direction = direction;
             this.expiresAtMs = expiresAtMs;
+            this.category = category;
             this.callback = callback;
         }
     }
@@ -27,9 +29,14 @@ final class PendingToneQueue {
 
     boolean enqueue(int sampleId, int kind, int direction, long expiresAtMs, long nowMs,
                     CueDispatcher.PlaybackCallback callback) {
+        return enqueue(sampleId, kind, direction, expiresAtMs, nowMs, null, callback);
+    }
+
+    boolean enqueue(int sampleId, int kind, int direction, long expiresAtMs, long nowMs,
+                    CueRequest.Category category, CueDispatcher.PlaybackCallback callback) {
         if (sampleId <= 0 || nowMs > expiresAtMs) return false;
         pending = null;
-        pending = new Pending(sampleId, kind, direction, expiresAtMs, callback);
+        pending = new Pending(sampleId, kind, direction, expiresAtMs, category, callback);
         return true;
     }
 
@@ -51,5 +58,10 @@ final class PendingToneQueue {
         Pending cleared = pending;
         pending = null;
         return cleared;
+    }
+
+    Pending clearCategory(CueRequest.Category category) {
+        if (pending == null || pending.category != category) return null;
+        return clear();
     }
 }

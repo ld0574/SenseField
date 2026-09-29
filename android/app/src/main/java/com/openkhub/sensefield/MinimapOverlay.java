@@ -15,19 +15,27 @@ import android.view.View;
 import android.view.WindowManager;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /** Non-interactive, opt-in overlay for confirmed minimap tracks. */
 final class MinimapOverlay implements AutoCloseable {
     private static final String TAG = "MapAssistOverlay";
+    // Kept as ABI documentation for callers compiled against the 0.2.2
+    // marker packet. New callers should use NativeFrameResult instead.
     private static final int MARKER_OFFSET = 12;
     static final int MARKER_STRIDE = 9;
-    private static final int MAX_MARKERS = 8;
+    private static final int MAX_MARKERS = 9;
 
     private final WindowManager windows;
     private final MarkerView view;
     private final Handler main = new Handler(Looper.getMainLooper());
+    private final WindowManager.LayoutParams layoutParams;
+    // WindowManager and View mutations are confined to the main looper. The
+    // capture worker only builds immutable marker snapshots and posts them.
     private boolean attached;
+    private volatile boolean closed;
+    private List<Marker> pendingMarkers = Collections.emptyList();
 
     static MinimapOverlay createIfAllowed(Context context) {
         if (!Settings.canDrawOverlays(context)) return null;
@@ -43,7 +51,7 @@ final class MinimapOverlay implements AutoCloseable {
         windows = context.getSystemService(WindowManager.class);
         view = new MarkerView(context);
         view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+        layoutParams = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -53,47 +61,101 @@ final class MinimapOverlay implements AutoCloseable {
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                         | WindowManager.LayoutParams.FLAG_SECURE,
                 PixelFormat.TRANSLUCENT);
-        params.gravity = Gravity.START | Gravity.TOP;
-        params.setTitle("听野小地图残留提示");
-        windows.addView(view, params);
-        attached = true;
+        layoutParams.gravity = Gravity.START | Gravity.TOP;
+        layoutParams.setTitle("听野小地图残留提示");
+        main.post(this::attachOnMainThread);
     }
 
-    void update(int[] nativeResult) {
-        if (!attached || nativeResult == null || nativeResult.length <= MARKER_OFFSET) return;
-        int count = Math.max(0, Math.min(MAX_MARKERS, nativeResult[11]));
-        List<Marker> markers = new ArrayList<>(count);
-        for (int index = 0; index < count; index++) {
-            int base = MARKER_OFFSET + index * MARKER_STRIDE;
-            if (base + MARKER_STRIDE > nativeResult.length) break;
-            markers.add(new Marker(
-                    nativeResult[base], nativeResult[base + 1],
-                    nativeResult[base + 2] / 1_000_000f,
-                    nativeResult[base + 3] / 1_000_000f,
-                    nativeResult[base + 4] / 1_000_000f,
-                    nativeResult[base + 5] / 1_000_000f,
-                    nativeResult[base + 6]));
+    private void attachOnMainThread() {
+        if (closed || attached) return;
+        try {
+            windows.addView(view, layoutParams);
+            attached = true;
+            view.setMarkers(pendingMarkers);
+        } catch (RuntimeException error) {
+            // addView can fail after attaching the view (for example when a
+            // WindowManager policy check races the permission transition).
+            // Remove that partial attachment before retiring this instance so
+            // a later settings toggle cannot leak an overlay window.
+            try {
+                if (attached || view.isAttachedToWindow()) {
+                    windows.removeViewImmediate(view);
+                }
+            } catch (RuntimeException cleanupError) {
+                Log.w(TAG, "Could not clean up partially attached overlay", cleanupError);
+            }
+            attached = false;
+            closed = true;
+            pendingMarkers = Collections.emptyList();
+            Log.w(TAG, "Could not attach minimap overlay", error);
         }
-        view.post(() -> view.setMarkers(markers));
+    }
+
+    void update(NativeFrameResult frame) {
+        if (closed || frame == null) return;
+        List<Marker> markers = new ArrayList<>(Math.min(MAX_MARKERS, frame.entities.size()));
+        for (TrackedEntity entity : frame.entities) {
+            if (!entity.isMinimapTrack() || entity.state == TrackedEntity.STATE_EXPIRED
+                    || (entity.state != TrackedEntity.STATE_VISIBLE
+                    && entity.state != TrackedEntity.STATE_LOST)
+                    || !validNormalizedBox(entity)
+                    || markers.size() >= MAX_MARKERS) continue;
+            float width = Math.max(0f, entity.bbox.width());
+            float height = Math.max(0f, entity.bbox.height());
+            markers.add(new Marker(entity.entityKind, entity.state,
+                    entity.movementDirection, entity.bbox.left, entity.bbox.top,
+                    width, height, entity.ageMs));
+        }
+        List<Marker> snapshot = Collections.unmodifiableList(new ArrayList<>(markers));
+        main.post(() -> {
+            if (closed) return;
+            pendingMarkers = snapshot;
+            if (attached) view.setMarkers(snapshot);
+        });
+    }
+
+    private static boolean validNormalizedBox(TrackedEntity entity) {
+        return Float.isFinite(entity.bbox.left) && Float.isFinite(entity.bbox.top)
+                && Float.isFinite(entity.bbox.right) && Float.isFinite(entity.bbox.bottom)
+                && entity.bbox.left >= 0f && entity.bbox.top >= 0f
+                && entity.bbox.right > entity.bbox.left
+                && entity.bbox.bottom > entity.bbox.top
+                && entity.bbox.right <= 1.001f && entity.bbox.bottom <= 1.001f;
+    }
+
+    /** Compatibility entry point for callers that still hold a packed JNI result. */
+    void update(int[] nativeResult) {
+        update(NativeFrameResult.parse(nativeResult));
     }
 
     void clear() {
-        if (attached) view.post(() -> view.setMarkers(List.of()));
+        if (closed) return;
+        main.post(() -> {
+            if (closed) return;
+            pendingMarkers = Collections.emptyList();
+            if (attached) view.setMarkers(pendingMarkers);
+        });
     }
 
     @Override public void close() {
-        if (!attached) return;
-        attached = false;
+        if (closed) return;
+        closed = true;
         main.post(() -> {
             try {
-                if (view.isAttachedToWindow()) windows.removeViewImmediate(view);
+                if (attached || view.isAttachedToWindow()) {
+                    windows.removeViewImmediate(view);
+                }
             } catch (RuntimeException error) {
                 Log.w(TAG, "Could not remove minimap overlay", error);
+            } finally {
+                attached = false;
+                pendingMarkers = Collections.emptyList();
             }
         });
     }
 
     private static final class Marker {
+        final int entityKind;
         final int state;
         final int direction;
         final float x;
@@ -102,8 +164,9 @@ final class MinimapOverlay implements AutoCloseable {
         final float height;
         final int ageMs;
 
-        Marker(int state, int direction, float x, float y,
+        Marker(int entityKind, int state, int direction, float x, float y,
                float width, float height, int ageMs) {
+            this.entityKind = entityKind;
             this.state = state;
             this.direction = direction;
             this.x = x;
@@ -119,7 +182,7 @@ final class MinimapOverlay implements AutoCloseable {
         private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Path arrow = new Path();
         private final float density;
-        private List<Marker> markers = List.of();
+        private List<Marker> markers = Collections.emptyList();
 
         MarkerView(Context context) {
             super(context);
@@ -127,7 +190,7 @@ final class MinimapOverlay implements AutoCloseable {
         }
 
         void setMarkers(List<Marker> next) {
-            markers = List.copyOf(next);
+            markers = Collections.unmodifiableList(new ArrayList<>(next));
             invalidate();
         }
 
@@ -146,7 +209,8 @@ final class MinimapOverlay implements AutoCloseable {
             stroke.setStrokeCap(Paint.Cap.ROUND);
             stroke.setStrokeWidth(3f * density);
 
-            if (marker.state == 2) {
+            boolean player = marker.entityKind == TrackedEntity.KIND_MINIMAP_PLAYER;
+            if (marker.state == TrackedEntity.STATE_LOST) {
                 int alpha = Math.max(0,
                         235 - Math.max(0, marker.ageMs) * 235 / 4000);
                 fill.setStyle(Paint.Style.FILL);
@@ -159,10 +223,12 @@ final class MinimapOverlay implements AutoCloseable {
                 drawDirection(canvas, centerX, centerY, radius, marker.direction,
                         Color.argb(alpha, 109, 222, 255));
             } else {
-                stroke.setColor(Color.argb(245, 255, 91, 107));
+                stroke.setColor(Color.argb(245,
+                        player ? 91 : 255, player ? 196 : 91, player ? 255 : 107));
                 canvas.drawCircle(centerX, centerY, radius, stroke);
                 drawDirection(canvas, centerX, centerY, radius, marker.direction,
-                        Color.argb(245, 255, 211, 92));
+                        Color.argb(245, player ? 159 : 255, player ? 235 : 211,
+                                player ? 255 : 92));
             }
         }
 

@@ -4,7 +4,14 @@ import java.util.Objects;
 
 /** Immutable, channel-independent description of one accessibility event. */
 final class CueRequest {
-    enum Category { VISION_MEMORY, DANGER, PLAYER_STATE, SYSTEM }
+    enum Category {
+        VISION_MEMORY,
+        /** A confirmed left/right main-screen edge threat. */
+        PERIPHERAL_THREAT,
+        DANGER,
+        PLAYER_STATE,
+        SYSTEM
+    }
 
     static final int CHANNEL_TONE = 1;
     static final int CHANNEL_SPEECH = 1 << 1;

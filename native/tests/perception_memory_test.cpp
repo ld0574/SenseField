@@ -121,6 +121,16 @@ int main() {
     assert(read_entities(engine, entities, MA_MAX_TRACKED_ENTITIES) == 1);
     assert(entities[0].freshness_ms > MA_PLAYER_RELEVANCE_MAX_AGE_MS);
 
+    // The player class has one logical target. A teleport or large minimap
+    // jump updates that track immediately instead of being dropped because it
+    // exceeds the enemy association radius.
+    player = observation(MA_MINIMAP_PLAYER, 9667, 0.80f);
+    assert(step(engine, &player, 1, 9667, cue) == 0);
+    assert(read_entities(engine, entities, MA_MAX_TRACKED_ENTITIES) == 1);
+    assert(entities[0].entity_kind == MA_MINIMAP_PLAYER);
+    assert(entities[0].bbox.x > 0.70f);
+    assert(entities[0].freshness_ms == 0);
+
     ma_engine_reset(engine);
     assert(read_entities(engine, entities, MA_MAX_TRACKED_ENTITIES) == 0);
 
@@ -150,6 +160,35 @@ int main() {
     assert(step(engine, &edge, 1, 12830, cue) == 0);
     edge.timestamp_ms = 12913;
     assert(step(engine, &edge, 1, 12913, cue) == 1);
+    assert(cue.kind == MA_MAIN_ENEMY);
+
+    // Main-screen memory only represents the two horizontal edges. Vertical
+    // red UI fragments must never become an "above/below enemy" cue.
+    ma_engine_reset(engine);
+    ma_observation vertical = observation(MA_MAIN_ENEMY, 13000, 0.50f);
+    vertical.direction = MA_DIR_UP;
+    assert(step(engine, &vertical, 1, 13000, cue) == 0);
+    vertical.timestamp_ms = 13083;
+    assert(step(engine, &vertical, 1, 13083, cue) == 0);
+    vertical.direction = MA_DIR_DOWN;
+    vertical.timestamp_ms = 13166;
+    assert(step(engine, &vertical, 1, 13166, cue) == 0);
+    vertical.timestamp_ms = 13249;
+    assert(step(engine, &vertical, 1, 13249, cue) == 0);
+
+    // Zero is a valid frame timestamp. The edge rearm clock must not use it
+    // as an "unset" marker or a session starting at zero will never rearm.
+    ma_engine_reset(engine);
+    edge.timestamp_ms = 0;
+    assert(step(engine, &edge, 1, 0, cue) == 0);
+    edge.timestamp_ms = 83;
+    assert(step(engine, &edge, 1, 83, cue) == 1);
+    for (int64_t timestamp = 166; timestamp <= 2407; timestamp += 83)
+        assert(step(engine, nullptr, 0, timestamp, cue) == 0);
+    edge.timestamp_ms = 2490;
+    assert(step(engine, &edge, 1, 2490, cue) == 0);
+    edge.timestamp_ms = 2573;
+    assert(step(engine, &edge, 1, 2573, cue) == 1);
     assert(cue.kind == MA_MAIN_ENEMY);
 
     ma_engine_reset(engine);

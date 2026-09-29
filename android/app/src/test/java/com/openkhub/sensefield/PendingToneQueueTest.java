@@ -46,4 +46,15 @@ public final class PendingToneQueueTest {
         PendingToneQueue.Pending loaded = queue.completeLoad(12, 300, true);
         assertEquals(2, loaded.kind);
     }
+
+    @Test public void clearingOneCategoryKeepsOtherCategoryInGlobalSlot() {
+        PendingToneQueue queue = new PendingToneQueue();
+
+        assertTrue(queue.enqueue(12, 2, 3, 1000, 100,
+                CueRequest.Category.DANGER, null));
+        assertNull(queue.clearCategory(CueRequest.Category.VISION_MEMORY));
+
+        PendingToneQueue.Pending loaded = queue.completeLoad(12, 300, true);
+        assertEquals(CueRequest.Category.DANGER, loaded.category);
+    }
 }
