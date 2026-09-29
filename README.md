@@ -17,6 +17,12 @@
   赛题：为视力障碍玩家打造识别全屏地图的工具
 </p>
 
+<p align="center">
+  <a href="https://www.openkhub.com/">
+    <img src="assets/openkhub-logo.png" width="300" alt="K-Hub 罕见病开源社区 Logo">
+  </a>
+</p>
+
 ---
 
 **听野（SenseField）** 是一个面向视野狭窄玩家的安卓实验原型。它尝试把玩家视野之外的关键战局转译成空间音频、触觉与高对比视觉线索，补充信息而不代替操作。当前原型优先验证小地图识别和“视野记忆”，所有游戏决策与操作仍由玩家完成。
@@ -137,6 +143,7 @@ Android Studio 直接打开 `android/`。首次原生构建会下载并校验固
 - [App / GitHub 高清图标（1024×1024）](assets/sensefield-icon.png)
 - [透明底品牌标记](assets/sensefield-mark.png)
 - [GitHub 社交预览图（1280×640）](assets/sensefield-social-preview.png)
+- [K-Hub 罕见病开源社区 Logo](assets/openkhub-logo.png)
 
 ## 开源许可
 

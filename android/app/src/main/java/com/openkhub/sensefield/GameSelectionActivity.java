@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -24,14 +25,36 @@ public final class GameSelectionActivity extends Activity {
         scroll.addView(page);
 
         UiKit.addBrandHeader(page, "多游戏辅助");
-        UiKit.add(page, UiKit.text(this, "选择辅助游戏", 28, UiKit.INK, true), 22);
+        UiKit.add(page, UiKit.text(this, "选择辅助游戏", 28, UiKit.INK, true), 4);
+        UiKit.add(page, UiKit.body(this, "选择可用游戏后开始辅助。"), 18);
 
         for (GameCatalog.GameEntry game : GameCatalog.GAMES) {
             addGameButton(page, game);
             UiKit.gap(page, 14);
         }
 
+        addCommunityLogo(page);
+
         setContentView(scroll);
+    }
+
+    private void addCommunityLogo(LinearLayout page) {
+        // Keep the community mark below the game entrances and visually secondary.
+        View spacer = new View(this);
+        page.addView(spacer, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.openkhub_logo);
+        logo.setAdjustViewBounds(true);
+        logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        logo.setContentDescription("K-Hub 罕见病开源社区");
+        LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(
+                UiKit.dp(this, 210), UiKit.dp(this, 71));
+        logoParams.gravity = Gravity.CENTER_HORIZONTAL;
+        logoParams.topMargin = UiKit.dp(this, 32);
+        logoParams.bottomMargin = UiKit.dp(this, 8);
+        page.addView(logo, logoParams);
     }
 
     private void addGameButton(LinearLayout page, GameCatalog.GameEntry game) {
@@ -49,8 +72,8 @@ public final class GameSelectionActivity extends Activity {
         button.setClickable(available);
         button.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
         button.setContentDescription(available
-                ? game.name + "，当前可用，进入辅助。"
-                : game.name + "，即将适配。暂不可进入。");
+                ? game.name + "，" + game.subtitle + "，当前可用，进入辅助。"
+                : game.name + "，" + game.subtitle + "，即将适配。暂不可进入。");
         button.setAccessibilityDelegate(new View.AccessibilityDelegate() {
             @Override public void onInitializeAccessibilityNodeInfo(
                     View host, AccessibilityNodeInfo info) {
@@ -61,9 +84,18 @@ public final class GameSelectionActivity extends Activity {
             }
         });
 
+        LinearLayout labels = UiKit.vertical(this);
         TextView name = UiKit.text(this, game.name, 24, UiKit.INK, true);
-        button.addView(name, new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        labels.addView(name);
+        TextView subtitle = UiKit.body(this, game.subtitle);
+        LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        subtitleParams.topMargin = UiKit.dp(this, 2);
+        labels.addView(subtitle, subtitleParams);
+        LinearLayout.LayoutParams labelsParams = new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        labelsParams.rightMargin = UiKit.dp(this, 12);
+        button.addView(labels, labelsParams);
 
         TextView status = UiKit.text(this, available ? "开始辅助" : "即将适配", 18,
                 available ? UiKit.PRIMARY : UiKit.MUTED, true);

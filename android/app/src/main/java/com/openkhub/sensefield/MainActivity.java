@@ -38,13 +38,20 @@ public final class MainActivity extends Activity {
         scroll.addView(content);
 
         UiKit.addBrandHeader(content, "王者荣耀");
-        UiKit.add(content, UiKit.text(this, "王者荣耀辅助", 28, UiKit.INK, true), 22);
+        UiKit.add(content, UiKit.text(this, "王者荣耀辅助", 28, UiKit.INK, true), 4);
+        UiKit.add(content, UiKit.body(this, "关键情况会通过声音与触觉提醒。"), 18);
 
         LinearLayout statusCard = UiKit.card(this);
         UiKit.add(statusCard, UiKit.heading(this, "运行状态"), 8);
         status = UiKit.text(this, "尚未开始", 20, UiKit.MUTED, true);
         UiKit.add(statusCard, status, 0);
-        UiKit.add(content, statusCard, 18);
+        UiKit.add(content, statusCard, 14);
+
+        LinearLayout quickStart = UiKit.accentCard(this);
+        UiKit.add(quickStart, UiKit.text(this, "快速开始", 17, UiKit.INK, true), 4);
+        UiKit.add(quickStart, UiKit.body(this, "1. 点击授权按钮，选择共享整个屏幕"), 2);
+        UiKit.add(quickStart, UiKit.body(this, "2. 返回游戏，听取声音与触觉提示"), 0);
+        UiKit.add(content, quickStart, 18);
 
         Button start = largeButton("授权截屏并开始", true);
         start.setOnClickListener(view -> requestCapture());

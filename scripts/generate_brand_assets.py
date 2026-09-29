@@ -81,10 +81,11 @@ def main() -> None:
     compact_canvas.save(android_res / "drawable-nodpi/sensefield_mark_compact.png",
                         optimize=True)
 
-    # Adaptive foreground has no background pixels. Keep the art centered and
-    # sized consistently with Android's mask-safe foreground area.
+    # Adaptive foreground has no background pixels. Android launchers crop the
+    # 108dp layer down to a roughly 72dp mask; keep the complete mark inside
+    # the 66dp safe zone so vendor launchers do not cut off its side accents.
     foreground = Image.new("RGBA", (432, 432), (0, 0, 0, 0))
-    centered_mark(foreground, fit_width(artwork, 336))
+    centered_mark(foreground, fit_width(artwork, 264))
     foreground.save(android_res / "drawable-nodpi/sensefield_foreground.png",
                     optimize=True)
 
