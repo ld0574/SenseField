@@ -54,7 +54,7 @@
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
 | Android 13/14 截屏与横屏取帧 | 已实现 | 已完成模拟器链路验证 |
-| 小地图敌方头像识别 | HD-only bootstrap v2 本机开发候选，默认关闭 | video10 已纳入 train，video11 已纳入 HD dev-val；当前人工复核 train 为 664 图／1211 框，val 为 230 图／400 框，test 为空。v2 在该开发 val 上选得 `c=0.49`，TP/FP/FN `366/35/34`，P/R/F1 `91.2718% / 91.5000% / 91.3858%`；这不是独立留出成绩，候选仍 `verified=false`，APK 默认关闭检测器 |
+| 小地图敌方头像识别 | HD-only bootstrap v2 本机开发候选，默认关闭 | video10 已纳入 train，video11 已纳入 HD dev-val；当前人工复核 train 为 664 图／1211 框，val 为 230 图／400 框，test 为空。v2 在该开发 val 上选得 `c=0.49`，TP/FP/FN `366/35/34`，P/R/F1 `91.2718% / 91.5000% / 91.3858%`。ONNX/TorchScript/ncnn 已导出并绑定本机实验 APK，但严格 parity 未通过；这不是独立成绩，候选仍 `verified=false`，APK 默认关闭检测器 |
 | 小地图自适应定位 | 旧版定位器实验留档，尚未接入 Android | v2 使用旧低清 video6 val；其定位指标仅作历史，不属于当前 HD-only 验证，也不代表独立发布门禁通过。video8 布局帧为同场诊断；见[定位器记录](validation/MINIMAP_LOCATOR.md) |
 | 简短声音提示 | 已实现 | 事件合并、冷却与优先级规则可用 |
 | 视野记忆 | 已实现实验版 | APPEAR / TRACK / DISAPPEAR / LAST_DIRECTION；连续命中后才显示，消失需多帧确认，DISAPPEAR 后最后位置与移动方向保留 4 秒 |
@@ -90,7 +90,7 @@ PYTHONPATH=python python3 -m mapassist.annotation_server \
   --host 127.0.0.1 --port 8765 --open
 ```
 
-当前 HD bootstrap v2 使用 video1+8+3+4+5+10 train（664 图／1211 框）和 video2-HD+11 val（230 图／400 框）；test 为空，不能报告最终成绩。video10/11 已完成逐帧人工复核和 ROI/provenance 审计；v2 在同一开发 val 上以 `c=0.49` 得到 TP/FP/FN `366/35/34`（P/R/F1 `91.2718% / 91.5000% / 91.3858%`），这些指标用于开发比较，不是独立留出成绩。新候选尚未完成 ONNX/TorchScript/ncnn parity，仍 `verified=false`；公共默认 detector 继续关闭。video9/12 没有读取或运行模型，继续封存；队列状态见[验证状态](validation/STATUS.md)、[video10/11 审计](validation/VIDEO10_11.md)与[录像接收记录](validation/VIDEO_INTAKE_2026-09-28.md)。
+当前 HD bootstrap v2 使用 video1+8+3+4+5+10 train（664 图／1211 框）和 video2-HD+11 val（230 图／400 框）；test 为空，不能报告最终成绩。video10/11 已完成逐帧人工复核和 ROI/provenance 审计；v2 在同一开发 val 上以 `c=0.49` 得到 TP/FP/FN `366/35/34`（P/R/F1 `91.2718% / 91.5000% / 91.3858%`），这些指标用于开发比较，不是独立留出成绩。ONNX、TorchScript 和 ncnn 已导出，230/230 张开发图的 ncnn 检测数量一致，但 raw 与坐标严格 parity 仍失败；本机实验 APK 已绑定该权重，候选继续 `verified=false`，公共默认 detector 关闭。video9/12 没有读取或运行模型，继续封存；队列状态见[验证状态](validation/STATUS.md)、[video10/11 审计](validation/VIDEO10_11.md)与[录像接收记录](validation/VIDEO_INTAKE_2026-09-28.md)。
 
 Android Studio 直接打开 `android/`。首次原生构建会下载并校验固定版本的 ncnn Android 依赖；调试 APK 的命令行构建方式记录在[团队协作文档](docs/团队协作与本地运行.md)。
 

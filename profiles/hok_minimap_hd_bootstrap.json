@@ -1,16 +1,16 @@
 {
   "schema_version": 1,
   "name": "hok_minimap_hd_bootstrap_dev",
-  "profile_version": "0.7.0-yolox-nano-hd-bootstrap-video4-video5-v1",
+  "profile_version": "0.8.0-yolox-nano-hd-bootstrap-video10-video11-v2",
   "game": "王者荣耀",
   "verified": false,
-  "notes": "Local development-only HD bootstrap candidate. Train uses reviewed video1+8+3+4+5 (534 crops / 981 boxes); video2-HD dev-val (100 crops / 197 boxes) was used for model and confidence selection, so results are same-match diagnostics, not an independent evaluation. At c=0.51 and NMS 0.5 the PyTorch checkpoint scored 174/13/23 TP/FP/FN (P/R/F1 93.0481%/88.3249%/90.6250%); recorded Android-equivalent ncnn detections scored 175/14/22 (92.5926%/88.8325%/90.6736%). Strict parity still fails: PyTorch-to-ONNX raw max error 0.002296686 (40/100 frames above 0.0005); TorchScript-to-ncnn raw max error 0.000997305 (3/100 frames above 0.0005); the Android-equivalent input pixel gate passes at max difference 1, but detection counts differ on 2/100 frames (187 vs 189 total) and max detection-value error is 0.724518 against a 0.01 limit. Keep verified=false and public defaults off.",
+  "notes": "Local experimental-only HD bootstrap v2 candidate. Train: video1+8+3+4+5+10 (664 images/1211 boxes); development val: video2-HD+11 (230 images/400 boxes), used for model and confidence selection; test is empty, so these are not independent results. Threshold confidence=0.49, NMS=0.5. Safe crop from the reviewed video10/11 record is [44,0,408,334) on 1920x860 frames; widget/direction ROI is [96,0,372,277). Strict PyTorch-to-ONNX raw parity failed (max 0.000595391 > 0.0005). Strict TorchScript-to-ncnn raw parity failed (max 0.001058936 > 0.0005); Android-equivalent detection coordinate parity also failed (max value error 0.433487 > 0.01) despite matching detection counts on all 230 images. Keep verified=false and public defaults off. Runtime remains behind the explicit allow_experimental toggle; no physical-device validation has been run.",
   "rois": {
     "minimap": [
-      0.0229166667,
+      0.022916666666666665,
       0.0,
-      0.1895833333,
-      0.3888888889
+      0.18958333333333333,
+      0.3883720930232558
     ],
     "ping_area": [
       0.4027777778,
@@ -28,7 +28,7 @@
       0.05,
       0.0,
       0.14375,
-      0.3212962963
+      0.32209302325581396
     ]
   },
   "detectors": {
@@ -39,7 +39,7 @@
     "minimap_yolox": true
   },
   "models": {
-    "minimap_yolox_bin_sha256": "bb4ac4583dd668388180ddaa3265827f8c6d71aa1980a5cfba8e1f784bd7992d"
+    "minimap_yolox_bin_sha256": "d5b4b5dcee290122ae823750d247dd7336f656ab2430f86f68ba87f6ad1e4bd3"
   },
   "templates": {
     "minimap_enemy": null,
@@ -53,11 +53,11 @@
     "main_min_aspect": 3.5,
     "template_match": 0.94,
     "minimap_yolox_input_size": 320,
-    "minimap_yolox_confidence": 0.51,
+    "minimap_yolox_confidence": 0.49,
     "minimap_yolox_nms": 0.5
   },
   "events": {
-    "min_confidence": 0.51,
+    "min_confidence": 0.49,
     "max_observation_age_ms": 250,
     "min_global_gap_ms": 1000,
     "minimap_min_gap_ms": 5000,

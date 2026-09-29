@@ -48,6 +48,7 @@ data/raw/
 video/
 validation/private/
 *.mp4
+*.mp4.part
 *.mov
 *.mkv
 *.avi

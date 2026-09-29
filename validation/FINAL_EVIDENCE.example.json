@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "enabled_kinds": [
     "minimap_enemy",
     "danger_ping"
@@ -7,6 +7,30 @@
   "directional_kinds": [
     "minimap_enemy"
   ],
+  "training_data": {
+    "match_manifest": {
+      "path": "training-match-manifest.json",
+      "sha256": "replace_with_64_character_sha256"
+    },
+    "split_annotations": {
+      "train": {
+        "path": "instances_train2017.json",
+        "sha256": "replace_with_64_character_sha256"
+      },
+      "val": {
+        "path": "instances_val2017.json",
+        "sha256": "replace_with_64_character_sha256"
+      },
+      "test": {
+        "path": "instances_test2017.json",
+        "sha256": "replace_with_64_character_sha256"
+      }
+    }
+  },
+  "model_candidate_metadata": {
+    "path": "model-candidate-metadata.json",
+    "sha256": "replace_with_64_character_sha256"
+  },
   "holdout": {
     "id": "holdout-match-06",
     "split": "test",

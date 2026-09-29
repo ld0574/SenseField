@@ -184,11 +184,11 @@ def main() -> None:
         "schema_version": 1,
         "design": "fixed_confidence_ncnn_runtime_coco_validation",
         "warning": (
-            "video2-HD was used for model and confidence selection; this is a same-match "
-            "development diagnostic, not an independent evaluation. Strict parity failure "
-            "is reported separately and is not waived by these detection metrics."
+            "This COCO val split was used for model and/or confidence selection; these "
+            "metrics are a development diagnostic, not an independent evaluation. Strict "
+            "parity failure is reported separately and is not waived by these detection metrics."
         ),
-        "split": "video2-HD dev-val",
+        "split": "COCO HD development val",
         "confidence": float(confidence),
         "confidence_source": "fixed value recorded in ncnn parity report; no threshold search",
         "nms_threshold": float(nms_threshold),

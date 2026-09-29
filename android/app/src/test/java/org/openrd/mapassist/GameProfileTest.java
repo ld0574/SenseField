@@ -54,4 +54,12 @@ public final class GameProfileTest {
         assertInvalidCounts(3, 2, "total minimum");
         assertInvalidCounts(32, 33, "total maximum");
     }
+
+    @Test public void verifiedYoloxRequiresReadyModelMetadata() throws Exception {
+        assertTrue(GameProfile.metadataAllowsVerifiedYolox(1, true, true, true));
+        assertFalse(GameProfile.metadataAllowsVerifiedYolox(1, false, true, true));
+        assertFalse(GameProfile.metadataAllowsVerifiedYolox(1, true, true, false));
+        assertFalse(GameProfile.metadataAllowsVerifiedYolox(1, true, false, true));
+        assertFalse(GameProfile.metadataAllowsVerifiedYolox(2, true, true, true));
+    }
 }

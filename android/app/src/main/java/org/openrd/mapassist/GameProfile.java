@@ -122,7 +122,8 @@ final class GameProfile {
             if (profile.minimapYolox) {
                 requireAsset(context, "minimap-yolox-nano-320.param");
                 requireAsset(context, "minimap-yolox-nano-320.bin");
-                verifyMinimapYoloxBinBinding(context, profile.minimapYoloxBinSha256);
+                verifyMinimapYoloxModelBinding(context, profile.minimapYoloxBinSha256,
+                        profile.verified);
             }
             return profile;
         }
@@ -141,7 +142,8 @@ final class GameProfile {
         }
     }
 
-    private static void verifyMinimapYoloxBinBinding(Context context, String profileSha256)
+    private static void verifyMinimapYoloxModelBinding(Context context, String profileSha256,
+                                                       boolean requireVerifiedModel)
             throws IOException {
         if (profileSha256 == null || !profileSha256.matches("[0-9a-f]{64}")) {
             throw new IOException("启用 minimap_yolox 的 GameProfile 必须在 "
@@ -157,9 +159,10 @@ final class GameProfile {
                     + "无法核对启用的 YOLOX 权重。", missing);
         }
 
+        final JSONObject metadata;
         final String runtimeSha256;
         try {
-            JSONObject metadata = new JSONObject(metadataText);
+            metadata = new JSONObject(metadataText);
             JSONObject runtime = metadata.optJSONObject("runtime");
             Object value = runtime == null ? null : runtime.opt("bin_sha256");
             if (!(value instanceof String)) {
@@ -174,10 +177,27 @@ final class GameProfile {
             throw new IOException("APK 模型 metadata 的 runtime.bin_sha256 格式无效，"
                     + "必须是 64 位小写 SHA-256。");
         }
+        if (requireVerifiedModel && !metadataAllowsVerifiedYolox(metadata)) {
+            throw new IOException("GameProfile 将 YOLOX 标记为已验证，但 APK 模型 metadata "
+                    + "尚未同时标记 verified=true 和 candidate.release_ready=true。"
+                    + "请将该 profile 保持为实验配置，直到模型验证完成。");
+        }
         if (!profileSha256.equals(runtimeSha256)) {
             throw new IOException("GameProfile 绑定的 ncnn bin SHA-256 与 APK 模型不一致；"
                     + "请导入与当前 APK 权重匹配的 profile。");
         }
+    }
+
+    private static boolean metadataAllowsVerifiedYolox(JSONObject metadata) {
+        JSONObject candidate = metadata.optJSONObject("candidate");
+        return metadataAllowsVerifiedYolox(metadata.optInt("schema_version", -1),
+                metadata.optBoolean("verified", false), candidate != null,
+                candidate != null && candidate.optBoolean("release_ready", false));
+    }
+
+    static boolean metadataAllowsVerifiedYolox(int schemaVersion, boolean metadataVerified,
+                                               boolean hasCandidate, boolean releaseReady) {
+        return schemaVersion == 1 && metadataVerified && hasCandidate && releaseReady;
     }
 
     static GameProfile parse(String text, SharedPreferences preferences) throws JSONException {

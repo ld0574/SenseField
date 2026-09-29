@@ -56,11 +56,19 @@ def _evidence_bundle(tmp_path: Path) -> tuple[Path, dict, dict]:
     device_log = tmp_path / "device-logcat.txt"
     metadata_file = tmp_path / "predictions.jsonl.meta.json"
     evidence_file = tmp_path / "final-evidence.json"
+    match_manifest_file = tmp_path / "match-manifest.json"
+    split_annotations = {split: tmp_path / f"instances_{split}2017.json"
+                         for split in ("train", "val", "test")}
+    candidate_metadata_file = tmp_path / "model-candidate-metadata.json"
 
     video.write_bytes(b"frozen holdout video")
+    model_param.write_bytes(b"frozen ncnn param")
+    model_bin.write_bytes(b"frozen ncnn weights")
     _write_json(profile, {
         "schema_version": 1,
+        "verified": True,
         "detectors": {"minimap_yolox": True},
+        "models": {"minimap_yolox_bin_sha256": _sha(model_bin)},
         "thresholds": {
             "minimap_yolox_input_size": 320,
             "minimap_yolox_confidence": 0.29,
@@ -69,8 +77,27 @@ def _evidence_bundle(tmp_path: Path) -> tuple[Path, dict, dict]:
         "events": {},
         "templates": {},
     })
-    model_param.write_bytes(b"frozen ncnn param")
-    model_bin.write_bytes(b"frozen ncnn weights")
+    split_match_ids = {
+        "train": "dev-train-01",
+        "val": "dev-val-11",
+        "test": "holdout-match-06",
+    }
+    manifest_matches = []
+    for split, match_id in split_match_ids.items():
+        _write_json(split_annotations[split], {
+            "images": [{"id": 1, "file_name": f"{match_id}_000000000.png",
+                        "width": 320, "height": 320}],
+            "annotations": [],
+            "categories": [{"id": 1, "name": "minimap_enemy"}],
+        })
+        manifest_matches.append({
+            "id": match_id,
+            "split": split,
+            "video_sha256": _sha(video) if split == "test" else hashlib.sha256(
+                f"{match_id} recording".encode()
+            ).hexdigest(),
+        })
+    _write_json(match_manifest_file, {"matches": manifest_matches})
     library.write_bytes(b"frozen native engine")
     recording.write_bytes(b"physical phone screen and audible cue recording")
     cues = [
@@ -158,7 +185,8 @@ def _evidence_bundle(tmp_path: Path) -> tuple[Path, dict, dict]:
         "runtime": {
             "ncnn": "1.0.test-ncnn",
             "preprocessing": (
-                "RGBA crop -> ncnn PIXEL_RGBA2BGR resize -> right/bottom 114 border"
+                "native minimap locator when configured -> RGBA crop -> ncnn "
+                "PIXEL_RGBA2BGR resize -> right/bottom 114 border"
             ),
             "postprocess": {
                 "confidence": 0.29,
@@ -168,6 +196,30 @@ def _evidence_bundle(tmp_path: Path) -> tuple[Path, dict, dict]:
         },
     }
     _write_json(metadata_file, metadata)
+    _write_json(candidate_metadata_file, {
+        "schema_version": 1,
+        "verified": True,
+        "candidate": {
+            "status": "release_ready",
+            "release_ready": True,
+            "profile_sha256": _sha(profile),
+        },
+        "input": [1, 3, 320, 320],
+        "runtime": {
+            "name": "ncnn",
+            "version": "test-ncnn",
+            "param_sha256": _sha(model_param),
+            "bin_sha256": _sha(model_bin),
+        },
+        "postprocess": {"confidence": 0.29, "nms_iou": 0.5, "strides": [8, 16, 32]},
+        "parity": {
+            "pytorch_vs_onnx": {"passed": True},
+            "torchscript_vs_ncnn_and_android_preprocess": {
+                "overall_passed": True,
+                "android_preprocess_gate_passed": True,
+            },
+        },
+    })
     apk_model_metadata = json.dumps({
         "schema_version": 1,
         "runtime": {
@@ -182,9 +234,16 @@ def _evidence_bundle(tmp_path: Path) -> tuple[Path, dict, dict]:
         archive.writestr("assets/minimap-yolox-nano-320.bin", model_bin.read_bytes())
         archive.writestr("assets/minimap-yolox-nano-320.metadata.json", apk_model_metadata)
     evidence = {
-        "schema_version": 2,
+        "schema_version": 3,
         "enabled_kinds": ["main_enemy", "minimap_enemy", "danger_ping"],
         "directional_kinds": ["main_enemy", "minimap_enemy"],
+        "training_data": {
+            "match_manifest": _ref(match_manifest_file),
+            "split_annotations": {
+                split: _ref(path) for split, path in split_annotations.items()
+            },
+        },
+        "model_candidate_metadata": _ref(candidate_metadata_file),
         "holdout": {
             "id": "holdout-match-06",
             "split": "test",
@@ -290,6 +349,86 @@ def test_validation_gate_lists_semantic_failures(
         "device.actual_audio_verified",
         "device.external_recording_duration",
     }.issubset(report["failures"])
+
+
+def test_validation_gate_rejects_empty_test_and_match_group_leakage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "mapassist.validation_gate._probe_external_recording",
+        lambda _: _recording_probe(960.0),
+    )
+    evidence_file, evidence, _ = _evidence_bundle(tmp_path)
+    train = tmp_path / "instances_train2017.json"
+    val = tmp_path / "instances_val2017.json"
+    test = tmp_path / "instances_test2017.json"
+    _write_json(train, {"images": [{"file_name": "dev-val-11_000000000.png"}]})
+    _write_json(test, {"images": []})
+    evidence["training_data"]["split_annotations"]["train"] = _ref(train)
+    evidence["training_data"]["split_annotations"]["test"] = _ref(test)
+    _write_json(evidence_file, evidence)
+
+    report = evaluate_gate(evidence_file)
+
+    assert report["passed"] is False
+    assert {
+        "dataset.test_nonempty",
+        "dataset.match_groups_disjoint",
+        "holdout.matches_test_group",
+    }.issubset(report["failures"])
+
+
+def test_validation_gate_rejects_unverified_frozen_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "mapassist.validation_gate._probe_external_recording",
+        lambda _: _recording_probe(960.0),
+    )
+    evidence_file, evidence, metadata = _evidence_bundle(tmp_path)
+    profile = tmp_path / "profile.json"
+    profile_document = json.loads(profile.read_text(encoding="utf-8"))
+    profile_document["verified"] = False
+    _write_json(profile, profile_document)
+    evidence["holdout"]["profile"] = _ref(profile)
+    metadata["profile"] = _ref(profile)
+    metadata_file = tmp_path / "predictions.jsonl.meta.json"
+    _write_json(metadata_file, metadata)
+    evidence["holdout"]["prediction_metadata"] = _ref(metadata_file)
+    candidate_file = tmp_path / "model-candidate-metadata.json"
+    candidate = json.loads(candidate_file.read_text(encoding="utf-8"))
+    candidate["candidate"]["profile_sha256"] = _sha(profile)
+    _write_json(candidate_file, candidate)
+    evidence["model_candidate_metadata"] = _ref(candidate_file)
+    _write_json(evidence_file, evidence)
+
+    report = evaluate_gate(evidence_file)
+
+    assert report["passed"] is False
+    assert "provenance.profile_verified" in report["failures"]
+
+
+def test_validation_gate_rejects_candidate_without_strict_parity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "mapassist.validation_gate._probe_external_recording",
+        lambda _: _recording_probe(960.0),
+    )
+    evidence_file, evidence, _ = _evidence_bundle(tmp_path)
+    candidate_file = tmp_path / "model-candidate-metadata.json"
+    candidate = json.loads(candidate_file.read_text(encoding="utf-8"))
+    candidate["parity"]["torchscript_vs_ncnn_and_android_preprocess"][
+        "overall_passed"
+    ] = False
+    _write_json(candidate_file, candidate)
+    evidence["model_candidate_metadata"] = _ref(candidate_file)
+    _write_json(evidence_file, evidence)
+
+    report = evaluate_gate(evidence_file)
+
+    assert report["passed"] is False
+    assert "candidate.ncnn_parity" in report["failures"]
 
 
 def test_validation_gate_rejects_changed_evidence_file(tmp_path: Path) -> None:

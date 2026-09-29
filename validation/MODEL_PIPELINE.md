@@ -6,7 +6,29 @@
 
 从 video4/5 扩充候选初始化，在 Apple MPS、YOLOX-Nano、输入 320、batch 16、seed `20260930`、`lr_scale=0.25` 下最多训练 12 轮，best epoch 8，约 337 秒。checkpoint SHA-256 为 `a11b560c6507f51f3e239b358445fb2acc95694edf80bc86c5cc207cc2a12f72`。开发 val 以 confidence `0.49`、NMS `0.5`、IoU `0.5` 评估，TP/FP/FN 为 `366/35/34`，precision / recall / F1 为 `91.2718% / 91.5000% / 91.3858%`。
 
-这些指标是开发诊断：video2-HD 和 video11 已参与选模或阈值选择，video10 已参与训练，不能称独立留出成绩。逐场复测见[video10/11 记录](VIDEO10_11.md)：video10 `213/3/17`（P/R/F1 `98.6111% / 92.6087% / 95.5157%`），video11 `190/12/13`（`94.0594% / 93.5961% / 93.8272%`）。新候选尚未完成 ONNX/TorchScript/ncnn 严格 parity，保持 `verified=false`，没有替换 Android 公共默认模型；实体 Android 仍未验收。
+这些指标是开发诊断：video2-HD 和 video11 已参与选模或阈值选择，video10 已参与训练，不能称独立留出成绩。逐场复测见[video10/11 记录](VIDEO10_11.md)：video10 `213/3/17`（P/R/F1 `98.6111% / 92.6087% / 95.5157%`），video11 `190/12/13`（`94.0594% / 93.5961% / 93.8272%`）。
+
+### v2 ONNX、TorchScript、ncnn 导出与 parity（2026-09-29）
+
+固定使用 v2 COCO val 的 230 张开发图（video2-HD + video11，400 个真值框），输入 320、confidence `0.49`、NMS `0.5`。所有结果都是开发诊断。表中检测门禁逐图比较最终框和 confidence；开发集质量分数单独记录，不能抵消 raw 或最终检测 parity 失败。
+
+| 门禁 | 结果 | 状态 |
+| --- | --- | --- |
+| PyTorch→ONNX raw（上限 `0.0005`） | 最大误差 `0.000595391`；1/230 图超限 | 失败 |
+| PyTorch→ONNX 最终 detections | 230/230 张数组通过 `np.allclose(rtol=1e-4, atol=1e-4)`，合计 401/401 个检测 | 通过 |
+| TorchScript→ncnn raw（上限 `0.0005`） | 最大误差 `0.001058936`；12/230 图超限 | 失败 |
+| Android 等价 resize/pad 输入（像素差上限 `1`） | 最大像素差 `1` | 通过 |
+| Android 等价检测数量 | 230/230 张一致，合计 401 个；没有数量不一致帧 | 通过 |
+| Android 等价 detection values（最大坐标或分数差上限 `0.01`） | 187/230 张超限；最大差 `0.433487`，位于 `video2-hd_000675010.png` | 失败 |
+| ncnn detections 对 val 真值（IoU `0.5`） | TP/FP/FN `366/35/34`，P/R/F1 `91.2718% / 91.5000% / 91.3858%` | 开发质量门槛通过；不改变 parity 失败结论 |
+
+ONNX 最大 raw 差在 `video11-hd-development_000837584.png`，stride 8 cell `(x=26,y=37)` 的 `center_y_offset`，绝对误差 `0.000595391`；该 raw 候选 confidence 约 `2.97e-11`。最终 detections 仍在全部 230 张图上一致。ncnn 最大 raw 差在 `video11-hd-development_000236476.png`，stride 16 cell `(x=9,y=19)` 的 `center_x_offset`，绝对误差 `0.001058936`；该候选 confidence 约 `2.49e-11`。低分候选仍计入严格 raw 门禁。
+
+Android 等价检测共配对 401 个框，IoU 最小值／中位数为 `0.981624 / 0.998719`，confidence 绝对差中位数／最大值为 `0.000321 / 0.011870`。例如 `video2-hd_000675010.png` 的一对框，参考坐标为 `[219.9304,167.1348,265.4030,211.3868]`，运行时为 `[220.3639,166.9271,265.5376,211.3258]`；数量相同但最大坐标差超过 `0.01`。IoU 和分数统计只作描述，不取代严格门禁。ncnn 真值评估通过 P≥90%、R≥80% 开发质量条件，也不改变这一点。
+
+当前候选仍保持 `verified=false`、`release_ready=false`。本机 Android param/bin、tracked metadata 与 `hok_minimap_hd_bootstrap` 开发 profiles 已绑定 v2；公共默认 profile 的 detector 继续关闭，只有显式允许实验识别器后才可运行。模型哈希校验、Android 单测、`assembleDebug` 和 `lintDebug` 已通过；没有实体 Android 验收记录。导出命令见 [training/README.md 的 v2 parity 流程](../training/README.md#v2-候选导出与-parity-复现)。
+
+artifact SHA-256：checkpoint `a11b560c6507f51f3e239b358445fb2acc95694edf80bc86c5cc207cc2a12f72`；ONNX `517f296a99c79fe57b44746f9bdc33fb1cb564cffe0456e8f4fcaee8b0c58dea`；TorchScript `e20e37fca81f660e79d7badfa39de6da336d002573ebec065b6cb66645070b27`；ncnn param/bin `4649269cae16fef3b64cc366f123ba58259a756b79f7f55d6be20cd3903cae14` / `d5b4b5dcee290122ae823750d247dd7336f656ab2430f86f68ba87f6ad1e4bd3`；conversion metadata `5553b5183d01f8abbc3bc90fc35e84449f8fda04d7a3700f30107de23eed51c6`；ONNX parity JSON `1392a8a9778b1ac368a04bcc5f99bc7ed7613c571122a77e97e098dd82ad3fca`；ncnn parity JSON `ce69bbfe922d7b45a3d6cfbef8b60b1b9c9a74d920f4d425f380c2ca4b5d5769`；ncnn val metrics JSON `2fd3a97cd8388c21bb10ace8a7efe6c8205a681ac742b404b3353fc9fb61e09b`；val annotations `2212db52693e9f218bb81e4c255044956ae0fbf84a8d6fa09cdc8c53383611f5`。转换使用 pnnx `20260526`、ncnn `1.0.20260526`、PyTorch `2.14.0`、ONNX Runtime `1.30.0`。
 
 训练与评测 JSON 保存在被 Git 忽略的 `build/training/yolox-nano-hd-bootstrap-video10-video11-v2-320/`，不会把录像、私有标注或 checkpoint 提交到仓库。
 

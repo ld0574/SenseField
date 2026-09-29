@@ -2,11 +2,11 @@
   "schema_version": 1,
   "model": "YOLOX-Nano minimap enemy detector",
   "candidate": {
-    "id": "yolox-nano-hd-bootstrap-video4-video5-dev-candidate",
+    "id": "yolox-nano-hd-bootstrap-video10-video11-v2-dev-candidate",
     "status": "development_candidate_not_promoted",
     "release_ready": false,
-    "profile_version": "0.7.0-yolox-nano-hd-bootstrap-video4-video5-v1",
-    "development_profile_android_sha256": "2536d6db4f8d107762acc24e7f40967e4dc44dd5c8d59268bf506497300be3d3"
+    "profile_version": "0.8.0-yolox-nano-hd-bootstrap-video10-video11-v2",
+    "development_profile_android_sha256": "8145b2f07e1b6dccd39a2a07db512eb292154ee0ddd5b3eb40363bba0ca40c18"
   },
   "input": [
     1,
@@ -26,15 +26,15 @@
     "name": "ncnn",
     "version": "20260526",
     "param_sha256": "4649269cae16fef3b64cc366f123ba58259a756b79f7f55d6be20cd3903cae14",
-    "bin_sha256": "bb4ac4583dd668388180ddaa3265827f8c6d71aa1980a5cfba8e1f784bd7992d"
+    "bin_sha256": "d5b4b5dcee290122ae823750d247dd7336f656ab2430f86f68ba87f6ad1e4bd3"
   },
   "source": {
-    "checkpoint_sha256": "6112fa5ca4829eed583eb2f07c84b679b468294bc78c6410e11c7f071987f1fa",
-    "onnx_sha256": "b5868060b2794c4eea7885b26bbc55e9d5b22462936e7952dd8fb19097dd1926",
-    "torchscript_sha256": "996ea09e8136c265d4c7d44538f4241d74be719d5c55291e80809c7caf274257"
+    "checkpoint_sha256": "a11b560c6507f51f3e239b358445fb2acc95694edf80bc86c5cc207cc2a12f72",
+    "onnx_sha256": "517f296a99c79fe57b44746f9bdc33fb1cb564cffe0456e8f4fcaee8b0c58dea",
+    "torchscript_sha256": "e20e37fca81f660e79d7badfa39de6da336d002573ebec065b6cb66645070b27"
   },
   "postprocess": {
-    "confidence": 0.51,
+    "confidence": 0.49,
     "nms_iou": 0.5,
     "strides": [
       8,
@@ -43,144 +43,91 @@
     ]
   },
   "development_validation": {
-    "split": "video2-HD dev-val; used for model and confidence selection; not independent",
-    "images": 100,
-    "truth_boxes": 197,
-    "confidence": 0.51,
+    "split": "video2-HD + video11 HD development val; used for model/confidence selection; not independent",
+    "images": 230,
+    "truth_boxes": 400,
+    "confidence": 0.49,
     "nms_iou": 0.5,
-    "box_detection_metrics": {
-      "tp": 174,
-      "fp": 13,
-      "fn": 23,
-      "precision": 0.930481,
-      "recall": 0.883249,
-      "f1": 0.90625,
-      "directed_matches": 136,
-      "correct_directions": 136,
-      "ambiguous_direction_matches": 18,
-      "direction_accuracy": 1.0
-    },
     "ncnn_runtime_box_detection_metrics": {
-      "tp": 175,
-      "fp": 14,
-      "fn": 22,
-      "precision": 0.925926,
-      "recall": 0.888325,
-      "f1": 0.906736
+      "tp": 366,
+      "fp": 35,
+      "fn": 34,
+      "precision": 0.912718,
+      "recall": 0.915,
+      "f1": 0.913858
     },
     "ncnn_development_quality_gate": {
       "minimum_precision": 0.9,
       "minimum_recall": 0.8,
       "passed": true
-    }
+    },
+    "interpretation": "development diagnostic only; quality metrics do not waive strict parity failures or establish independent performance"
   },
   "parity": {
     "pytorch_vs_onnx": {
       "passed": false,
-      "images": 100,
-      "maximum_raw_error": 0.0022966861724853516,
+      "images": 230,
+      "maximum_raw_error": 0.000595390796661377,
       "maximum_raw_error_allowed": 0.0005,
-      "raw_failed_images": 40,
-      "all_final_detection_counts_and_values_match": true,
-      "worst_raw_location": {
-        "row": 1471,
-        "channel": 1,
-        "channel_name": "center_y_offset",
-        "torch_value": 1.0227866172790527,
-        "onnx_value": 1.0204899311065674,
-        "absolute_error": 0.0022966861724853516,
-        "torch_confidence": 1.6832025773183545e-09,
-        "onnx_confidence": 0.0,
-        "confidence_threshold": 0.51,
-        "stride": 8,
-        "grid_x": 31,
-        "grid_y": 36,
-        "decoded_coordinate_error_pixels": 0.018373489379882812,
-        "torch_above_confidence_threshold": false,
-        "onnx_above_confidence_threshold": false,
-        "raw_max_error_by_channel": {
-          "center_x_offset": 0.001256108283996582,
-          "center_y_offset": 0.0022966861724853516,
-          "log_width": 0.000638127326965332,
-          "log_height": 0.0016541332006454468,
-          "objectness_probability": 1.6689300537109375e-06,
-          "class_probability": 0.00019812583923339844
-        }
-      },
-      "final_detection_array_check": {
-        "passed_images": 100,
-        "comparison": "numpy.allclose",
-        "rtol": 0.0001,
-        "atol": 0.0001,
-        "scope": "postprocessed final detection arrays; does not satisfy the independent raw-output gate"
-      }
+      "raw_failed_images": 1,
+      "all_final_detection_arrays_match": true,
+      "report_sha256": "1392a8a9778b1ac368a04bcc5f99bc7ed7613c571122a77e97e098dd82ad3fca"
     },
     "torchscript_vs_ncnn_and_android_preprocess": {
       "overall_passed": false,
-      "images": 100,
-      "raw_max_error": 0.000997304916381836,
+      "images": 230,
+      "raw_max_error": 0.0010589361190795898,
       "raw_max_error_allowed": 0.0005,
-      "raw_passed_images": 97,
-      "raw_failed_images": [
-        "video2-hd_000224750.png",
-        "video2-hd_000531310.png",
-        "video2-hd_000876190.png"
-      ],
+      "raw_failed_images": 12,
       "android_preprocess_gate_passed": true,
       "maximum_input_pixel_error": 1.0,
-      "all_final_detection_counts_match": false,
-      "images_with_matching_final_detection_counts": 98,
-      "reference_detections": 187,
-      "runtime_detections": 189,
-      "minimum_paired_iou": 0.9590952396392822,
-      "median_paired_iou": 0.9987560510635376,
-      "maximum_score_abs_error": 0.008446931838989258,
-      "max_detection_value_error": 0.724517822265625,
-      "max_detection_value_error_allowed": 0.01,
-      "detection_gate_passed": false
+      "all_final_detection_counts_match": true,
+      "images_with_matching_final_detection_counts": 230,
+      "reference_detections": 401,
+      "runtime_detections": 401,
+      "maximum_detection_value_error": 0.4334869384765625,
+      "maximum_detection_value_error_allowed": 0.01,
+      "detection_gate_passed": false,
+      "report_sha256": "ce69bbfe922d7b45a3d6cfbef8b60b1b9c9a74d920f4d425f380c2ca4b5d5769"
     }
   },
-  "release_status": "experimental; development only; ONNX/ncnn strict raw-output parity and ncnn Android-equivalent detection parity failed; same-match quality metrics do not promote the candidate; no physical-device validation has been run",
+  "release_status": "experimental; development only; strict ONNX/ncnn raw-output and Android-equivalent detection parity failed; no independent test split or physical-device validation; not promoted",
   "provenance": {
-    "train_annotations": {
-      "path": "data/private/hd-bootstrap-assistance-video4-video5-v1/coco/annotations/instances_train2017.json",
-      "sha256": "7060428da188cb371df93842ad29ce6b74acca76c69c18b893e7d36712f1f537"
+    "training_checkpoint": {
+      "path": "build/training/yolox-nano-hd-bootstrap-video10-video11-v2-320/best_ckpt.pth",
+      "sha256": "a11b560c6507f51f3e239b358445fb2acc95694edf80bc86c5cc207cc2a12f72"
+    },
+    "training_annotations": {
+      "path": "data/private/hd-bootstrap-assistance-video4-video5-video10-video11-v2/coco/annotations/instances_train2017.json",
+      "sha256": "87efc635af6f5f94e3ab6d5c818e8cdd9a4038a6dea173a6e30ce1fe7b627976"
     },
     "validation_annotations": {
-      "path": "data/private/hd-bootstrap-assistance-video4-video5-v1/coco/annotations/instances_val2017.json",
-      "sha256": "9220e751343ca8c2050cab79aa543f1689ca563a4abbee4dad3a469201f425e6"
+      "path": "data/private/hd-bootstrap-assistance-video4-video5-video10-video11-v2/coco/annotations/instances_val2017.json",
+      "sha256": "2212db52693e9f218bb81e4c255044956ae0fbf84a8d6fa09cdc8c53383611f5"
     },
-    "dataset_audit": {
-      "path": "data/private/hd-bootstrap-assistance-video4-video5-v1/coco/audit.json",
-      "sha256": "cee324488fac7fc50ae9d4d1cb6b334b044a7b85710a24024d551e5e43af4a33"
+    "video10_video11_review_record": {
+      "path": "validation/VIDEO10_11.md",
+      "sha256": "4d9fea60285e91402c5aa85de177c351a617639ceaeda121f1623c61f7119d4b"
     },
     "training_metrics": {
-      "path": "build/training/yolox-nano-hd-bootstrap-video4-video5-v1-320/metrics.json",
-      "sha256": "3821efca68feb8fd4861a4f7bee5a771cde81af3c2dec9931700e3c4a6126d0b"
+      "path": "build/training/yolox-nano-hd-bootstrap-video10-video11-v2-320/metrics.json",
+      "sha256": "57686a4adf25a925167d9367ceebd42835bd841856a71289a32b18f63e75c45d"
+    },
+    "ncnn_conversion_report": {
+      "path": "build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/ncnn-conversion.json",
+      "sha256": "5553b5183d01f8abbc3bc90fc35e84449f8fda04d7a3700f30107de23eed51c6"
     },
     "onnx_parity_report": {
-      "path": "build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/onnx-parity-video2-100-c051-detailed.json",
-      "sha256": "ce2bc9b7b407f9b0495d11530097acb9801ad2ec2d7b1783e350b6029b821162"
-    },
-    "ncnn_conversion": {
-      "path": "build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/ncnn-conversion.json",
-      "sha256": "bdd13c9d8edb72dea6320f42e84d8ebc1b6869f29a19268d3c692c5815bbb756"
+      "path": "build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/onnx-parity-val230-c049.json",
+      "sha256": "1392a8a9778b1ac368a04bcc5f99bc7ed7613c571122a77e97e098dd82ad3fca"
     },
     "ncnn_parity_report": {
-      "path": "build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/ncnn-parity-video2-100-c051-detailed.json",
-      "sha256": "8e02b500ed21811d7ad0815edd9811f6efb755b7c490d38b9d37d07b15f97a30"
+      "path": "build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/ncnn-parity-val230-c049.json",
+      "sha256": "ce69bbfe922d7b45a3d6cfbef8b60b1b9c9a74d920f4d425f380c2ca4b5d5769"
     },
     "ncnn_development_evaluation": {
-      "path": "build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/ncnn-development-evaluation-video2-100-c051-iou050.json",
-      "sha256": "eb72b17fd65abc1a2bdce0c78fbc5f8e5e360abac1e653a4f98981162a2329d2"
-    },
-    "ncnn_evaluation_script": {
-      "path": "training/evaluate_yolox_ncnn_report.py",
-      "sha256": "9268c703719bb1ef4e65be725ca75a9c37db9e44950fc546d9bd0403b3d46c33"
-    },
-    "torchscript_development_evaluation": {
-      "path": "build/models/yolox-nano-hd-bootstrap-video4-video5-v1-320/torchscript-development-evaluation-video2-100-c051-iou050.json",
-      "sha256": "218650f7edb208e0cdfd2d69230d4fe1ccae2331a8e17461a73152ab19208b9e"
+      "path": "build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/ncnn-development-evaluation-val230-c049-iou050.json",
+      "sha256": "2fd3a97cd8388c21bb10ace8a7efe6c8205a681ac742b404b3353fc9fb61e09b"
     }
   },
   "historical_candidate": {
@@ -269,5 +216,35 @@
       }
     }
   },
-  "verified": false
+  "verified": false,
+  "geometry": {
+    "source_frame_size": [
+      1920,
+      860
+    ],
+    "safe_roi_pixels_half_open": [
+      44,
+      0,
+      408,
+      334
+    ],
+    "widget_roi_pixels_half_open": [
+      96,
+      0,
+      372,
+      277
+    ],
+    "profile_safe_roi_normalized_xywh": [
+      0.022916666666666665,
+      0.0,
+      0.18958333333333333,
+      0.3883720930232558
+    ],
+    "profile_widget_roi_normalized_xywh": [
+      0.05,
+      0.0,
+      0.14375,
+      0.32209302325581396
+    ]
+  }
 }

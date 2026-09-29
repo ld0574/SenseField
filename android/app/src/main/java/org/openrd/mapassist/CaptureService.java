@@ -80,6 +80,8 @@ public final class CaptureService extends Service {
     private int maxObservationAgeMs;
     private int frameWidth;
     private int frameHeight;
+    private int frameRotation = -1;
+    private boolean discardFrameAfterRotation;
     private boolean lastFrameLandscape;
     private boolean visionMemoryEnabled;
     private String auditSessionId;
@@ -294,8 +296,12 @@ public final class CaptureService extends Service {
         }
     }
 
+    private Display defaultDisplay() {
+        return getSystemService(DisplayManager.class).getDisplay(Display.DEFAULT_DISPLAY);
+    }
+
     private Point screenSize() {
-        Display display = getSystemService(DisplayManager.class).getDisplay(Display.DEFAULT_DISPLAY);
+        Display display = defaultDisplay();
         Point size = new Point();
         if (display != null) display.getRealSize(size);
         if (size.x < 1 || size.y < 1) {
@@ -305,9 +311,15 @@ public final class CaptureService extends Service {
         return size;
     }
 
+    private int screenRotation() {
+        Display display = defaultDisplay();
+        return display == null ? -1 : display.getRotation();
+    }
+
     private void createReader(int width, int height) {
         frameWidth = width;
         frameHeight = height;
+        frameRotation = screenRotation();
         int generation = ++readerGeneration;
         reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3);
         reader.setOnImageAvailableListener(source -> onImageAvailable(source, generation), worker);
@@ -322,7 +334,21 @@ public final class CaptureService extends Service {
 
     private void resizeIfNeeded() {
         Point current = screenSize();
-        if (current.x == frameWidth && current.y == frameHeight) return;
+        int rotation = screenRotation();
+        boolean sizeChanged = current.x != frameWidth || current.y != frameHeight;
+        boolean rotationChanged = CaptureGeometry.rotationChanged(frameRotation, rotation);
+        if (!sizeChanged && !rotationChanged) return;
+        if (!sizeChanged) {
+            frameRotation = rotation;
+            resetNativeLocked();
+            if (minimapOverlay != null) minimapOverlay.clear();
+            lastFrameLandscape = frameWidth > frameHeight;
+            discardFrameAfterRotation = true;
+            blackSinceMs = 0;
+            Log.i(TAG, "Capture rotation changed to " + rotation
+                    + " without a size change; temporal state reset");
+            return;
+        }
         boolean recoveryPending =
                 captureHealth.state() == CaptureHealthMonitor.State.RECOVERING;
         if (recoveryRunnable != null) {
@@ -342,6 +368,8 @@ public final class CaptureService extends Service {
         }
         resetNativeLocked();
         if (minimapOverlay != null) minimapOverlay.clear();
+        lastFrameLandscape = frameWidth > frameHeight;
+        discardFrameAfterRotation = rotationChanged;
         blackSinceMs = 0;
         if (recoveryPending)
             captureHealth.recoveryRebuilt(SystemClock.elapsedRealtime());
@@ -447,6 +475,31 @@ public final class CaptureService extends Service {
             int width = image.getWidth();
             int height = image.getHeight();
             boolean landscape = width > height;
+            synchronized (processingLock) {
+                if (stopping || source != reader || generation != readerGeneration) return;
+                Point currentSize = screenSize();
+                if (currentSize.x != frameWidth || currentSize.y != frameHeight) {
+                    // Do not infer from a frame in the previous display geometry.
+                    resizeAfterClose = true;
+                    return;
+                }
+                if (width != frameWidth || height != frameHeight) return;
+                int rotation = screenRotation();
+                if (CaptureGeometry.rotationChanged(frameRotation, rotation)) {
+                    frameRotation = rotation;
+                    resetNativeLocked();
+                    if (minimapOverlay != null) minimapOverlay.clear();
+                    lastFrameLandscape = landscape;
+                    discardFrameAfterRotation = true;
+                    blackSinceMs = 0;
+                    Log.i(TAG, "Capture rotation changed to " + rotation
+                            + " on frame; temporal state reset");
+                }
+                if (discardFrameAfterRotation) {
+                    discardFrameAfterRotation = false;
+                    return;
+                }
+            }
             long observedAtMs = now;
             long frameTimestampNs = image.getTimestamp();
             long ageNs = System.nanoTime() - frameTimestampNs;

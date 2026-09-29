@@ -54,7 +54,7 @@ recall:    91.5000%
 F1:        91.3858%
 ```
 
-这些结果来自 video2-HD+video11 开发 val，且 video11 参与了选模或阈值选择，因此只是开发诊断，不能称为独立留出成绩。新候选尚未完成严格 ONNX/TorchScript/ncnn parity，仍为 `verified=false`，没有替换 Android 公共默认模型；实体 Android 也尚未验收。
+这些结果来自 video2-HD+video11 开发 val，且 video11 参与了选模或阈值选择，因此只是开发诊断，不能称为独立留出成绩。新候选已经导出 ONNX/TorchScript/ncnn 并绑定本机 Android 实验 assets，但严格 raw／坐标 parity 未通过，仍为 `verified=false`、`release_ready=false`；公共默认 profile 继续关闭 detector，实体 Android 也尚未验收。
 
 ## 证据边界
 

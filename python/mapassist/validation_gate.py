@@ -33,6 +33,11 @@ TARGETS = {
     "max_processed_gap_ms": 2000,
 }
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+MATCH_IMAGE = re.compile(r"^(?P<match_id>.+)_(?P<at_ms>[0-9]{9})\.png$")
+EXPECTED_PREPROCESSING = (
+    "native minimap locator when configured -> RGBA crop -> ncnn "
+    "PIXEL_RGBA2BGR resize -> right/bottom 114 border"
+)
 APK_ASSETS = {
     "profile": "assets/profile.json",
     "model_param": "assets/minimap-yolox-nano-320.param",
@@ -267,12 +272,85 @@ def _prediction_timeline(path: Path, fps: int) -> dict[str, object]:
     }
 
 
+def _dataset_split_groups(path: Path, split: str) -> set[str]:
+    """Read source-match IDs from COCO names emitted by detection_dataset."""
+    document = _json(path, f"training_data.{split}_annotations")
+    images = document.get("images")
+    if not isinstance(images, list):
+        raise ValueError(f"training_data.{split}_annotations.images must be a list")
+    groups: set[str] = set()
+    for index, image in enumerate(images):
+        if not isinstance(image, dict) or not isinstance(image.get("file_name"), str):
+            raise ValueError(
+                f"training_data.{split}_annotations.images[{index}].file_name is required"
+            )
+        file_name = image["file_name"]
+        match = MATCH_IMAGE.fullmatch(file_name)
+        if match is None:
+            raise ValueError(
+                f"training_data.{split}_annotations image name must be "
+                "<match_id>_<9 digit timestamp>.png"
+            )
+        groups.add(match.group("match_id"))
+    return groups
+
+
+def _match_manifest(path: Path) -> tuple[dict[str, list[dict[str, str]]], dict[str, set[str]]]:
+    """Read match-level split and recording hashes without opening any recordings."""
+    document = _json(path, "training_data.match_manifest")
+    matches = document.get("matches")
+    if not isinstance(matches, list):
+        raise ValueError("training_data.match_manifest.matches must be a list")
+    by_id: dict[str, list[dict[str, str]]] = {}
+    by_hash: dict[str, set[str]] = {}
+    for index, item in enumerate(matches):
+        if not isinstance(item, dict):
+            raise ValueError(f"training_data.match_manifest.matches[{index}] must be an object")
+        match_id, split, digest = item.get("id"), item.get("split"), item.get("video_sha256")
+        if not _nonempty(match_id) or split not in ("train", "val", "test"):
+            raise ValueError(
+                f"training_data.match_manifest.matches[{index}] needs id and train/val/test split"
+            )
+        if not isinstance(digest, str) or not SHA256.fullmatch(digest.lower()):
+            raise ValueError(
+                f"training_data.match_manifest.matches[{index}].video_sha256 must be SHA-256"
+            )
+        record = {"id": match_id, "split": split, "video_sha256": digest.lower()}
+        by_id.setdefault(match_id, []).append(record)
+        by_hash.setdefault(digest.lower(), set()).add(split)
+    return by_id, by_hash
+
+
 def evaluate_gate(evidence_file: Path) -> dict:
     evidence_file = evidence_file.resolve()
     data = _json(evidence_file, "evidence manifest")
-    if data.get("schema_version") != 2:
-        raise ValueError("Expected evidence schema_version 2")
+    if data.get("schema_version") != 3:
+        raise ValueError("Expected evidence schema_version 3")
     base = evidence_file.parent
+
+    training_data = data.get("training_data")
+    if not isinstance(training_data, dict):
+        raise ValueError("Evidence needs a training_data object")
+    match_manifest_path, match_manifest_sha = _reference(
+        base, training_data.get("match_manifest"), "training_data.match_manifest"
+    )
+    manifest_by_id, source_hash_splits = _match_manifest(match_manifest_path)
+    split_references = training_data.get("split_annotations")
+    if not isinstance(split_references, dict):
+        raise ValueError("training_data.split_annotations must contain train, val, and test")
+    split_annotation_records: dict[str, tuple[Path, str]] = {}
+    split_groups: dict[str, set[str]] = {}
+    for split in ("train", "val", "test"):
+        annotation_path, digest = _reference(
+            base, split_references.get(split), f"training_data.split_annotations.{split}"
+        )
+        split_annotation_records[split] = (annotation_path, digest)
+        split_groups[split] = _dataset_split_groups(annotation_path, split)
+
+    candidate_metadata_path, _ = _reference(
+        base, data.get("model_candidate_metadata"), "model_candidate_metadata"
+    )
+    candidate_metadata = _json(candidate_metadata_path, "model candidate metadata")
 
     enabled = data.get("enabled_kinds")
     if (not isinstance(enabled, list) or not enabled or len(set(enabled)) != len(enabled) or
@@ -421,6 +499,44 @@ def evaluate_gate(evidence_file: Path) -> dict:
                        "actual": actual, "requirement": requirement})
 
     holdout_id = holdout.get("id")
+    match_holdout_id = holdout_id if isinstance(holdout_id, str) else ""
+    check("dataset.train_nonempty", bool(split_groups["train"]), len(split_groups["train"]),
+          "training COCO annotations include at least one source match")
+    check("dataset.val_nonempty", bool(split_groups["val"]), len(split_groups["val"]),
+          "development-val COCO annotations include at least one source match")
+    check("dataset.test_nonempty", bool(split_groups["test"]), len(split_groups["test"]),
+          "independent test COCO annotations include at least one source match")
+    group_overlaps = {
+        "train_val": sorted(split_groups["train"] & split_groups["val"]),
+        "train_test": sorted(split_groups["train"] & split_groups["test"]),
+        "val_test": sorted(split_groups["val"] & split_groups["test"]),
+    }
+    check("dataset.match_groups_disjoint", not any(group_overlaps.values()), group_overlaps,
+          "source match IDs must not cross train, val, and test")
+    manifest_group_mismatches = sorted(
+        (split, match_id, [item["split"] for item in manifest_by_id.get(match_id, [])])
+        for split, groups in split_groups.items()
+        for match_id in groups
+        if len(manifest_by_id.get(match_id, [])) != 1
+        or manifest_by_id[match_id][0]["split"] != split
+    )
+    check("dataset.manifest_matches_splits", not manifest_group_mismatches,
+          manifest_group_mismatches,
+          "COCO source IDs must map to exactly one matching split-manifest entry")
+    reused_recordings = sorted(
+        digest for digest, splits in source_hash_splits.items() if len(splits) > 1
+    )
+    check("dataset.recording_hashes_disjoint", not reused_recordings, reused_recordings,
+          "the same source recording SHA-256 must not occur in multiple splits")
+    test_manifest_records = manifest_by_id.get(match_holdout_id, [])
+    check("holdout.matches_test_group", match_holdout_id in split_groups["test"], holdout_id,
+          "holdout.id must be a populated source group in the test split")
+    check("holdout.test_video_hash", len(test_manifest_records) == 1 and
+          test_manifest_records[0]["split"] == "test" and
+          test_manifest_records[0]["video_sha256"] == video_sha,
+          {"holdout_video_sha256": video_sha,
+           "test_manifest_records": test_manifest_records},
+          "test source manifest must bind holdout.id to the holdout video SHA-256")
     check("holdout.id", _nonempty(holdout_id), holdout_id, "nonempty match id")
     check("holdout.labels_video_id", labels_document.get("video_id") == holdout_id,
           labels_document.get("video_id"), "must equal holdout.id")
@@ -467,6 +583,9 @@ def evaluate_gate(evidence_file: Path) -> dict:
           f"APK bin must equal frozen bin SHA-256 {frozen_bin_sha}")
     profile_detectors = profile_document.get("detectors")
     profile_thresholds = profile_document.get("thresholds")
+    profile_models = profile_document.get("models")
+    check("provenance.profile_verified", profile_document.get("verified") is True,
+          profile_document.get("verified"), "frozen release profile must be verified")
     check("provenance.profile_yolox",
           isinstance(profile_detectors, dict)
           and profile_detectors.get("minimap_yolox") is True,
@@ -478,6 +597,12 @@ def evaluate_gate(evidence_file: Path) -> dict:
           profile_thresholds.get("minimap_yolox_input_size")
           if isinstance(profile_thresholds, dict) else None,
           "frozen Android YOLOX input size must equal 320")
+    check("provenance.profile_model_bin",
+          isinstance(profile_models, dict)
+          and profile_models.get("minimap_yolox_bin_sha256") == frozen_bin_sha,
+          profile_models.get("minimap_yolox_bin_sha256")
+          if isinstance(profile_models, dict) else None,
+          "profile model bin SHA-256 must match the frozen ncnn bin")
     replay_fps = (metadata.get("stats") or {}).get("fps") if isinstance(
         metadata.get("stats"), dict) else None
     check("provenance.replay_fps",
@@ -509,10 +634,9 @@ def evaluate_gate(evidence_file: Path) -> dict:
           "zero queue delay media-time event policy")
     preprocessing = runtime.get("preprocessing")
     check("provenance.preprocessing",
-          isinstance(preprocessing, str) and "PIXEL_RGBA2BGR" in preprocessing
-          and "right/bottom 114" in preprocessing,
+          preprocessing == EXPECTED_PREPROCESSING,
           preprocessing,
-          "RGBA crop with ncnn RGBA2BGR resize and right/bottom 114 padding")
+          f"must equal the frozen runtime preprocessing contract: {EXPECTED_PREPROCESSING}")
     desktop_ncnn_version = runtime.get("ncnn")
     apk_ncnn_version = apk_artifacts.get("ncnn_version")
     check("provenance.ncnn_version",
@@ -533,6 +657,60 @@ def evaluate_gate(evidence_file: Path) -> dict:
           and postprocess.get("strides") == [8, 16, 32],
           postprocess,
           "postprocess thresholds must match the frozen profile and strides 8/16/32")
+
+    candidate = candidate_metadata.get("candidate")
+    candidate_runtime = candidate_metadata.get("runtime")
+    candidate_postprocess = candidate_metadata.get("postprocess")
+    candidate_parity = candidate_metadata.get("parity")
+    onnx_parity = candidate_parity.get("pytorch_vs_onnx") \
+        if isinstance(candidate_parity, dict) else None
+    ncnn_parity = candidate_parity.get("torchscript_vs_ncnn_and_android_preprocess") \
+        if isinstance(candidate_parity, dict) else None
+    candidate_profile_sha = (
+        candidate.get("profile_sha256", candidate.get("development_profile_android_sha256"))
+        if isinstance(candidate, dict) else None
+    )
+    check("candidate.verified", candidate_metadata.get("verified") is True,
+          candidate_metadata.get("verified"), "candidate metadata must be verified")
+    check("candidate.release_ready",
+          isinstance(candidate, dict) and candidate.get("release_ready") is True
+          and candidate.get("status") == "release_ready",
+          candidate,
+          "candidate metadata must declare release_ready after all gates pass")
+    check("candidate.profile_hash", candidate_profile_sha == profile_sha,
+          candidate_profile_sha, f"candidate profile SHA-256 must equal {profile_sha}")
+    check("candidate.input_shape", candidate_metadata.get("input") == [1, 3, 320, 320],
+          candidate_metadata.get("input"), "candidate model input must be [1, 3, 320, 320]")
+    check("candidate.runtime_model_hashes",
+          isinstance(candidate_runtime, dict)
+          and candidate_runtime.get("param_sha256") == frozen_param_sha
+          and candidate_runtime.get("bin_sha256") == frozen_bin_sha,
+          candidate_runtime,
+          "candidate metadata param/bin hashes must match the frozen ncnn model")
+    check("candidate.runtime_version",
+          isinstance(candidate_runtime, dict)
+          and isinstance(desktop_ncnn_version, str)
+          and candidate_runtime.get("version") == desktop_ncnn_version.split(".")[-1]
+          and candidate_runtime.get("version") == apk_ncnn_version,
+          candidate_runtime.get("version") if isinstance(candidate_runtime, dict) else None,
+          "candidate, desktop replay, and APK must use the same ncnn release")
+    check("candidate.postprocess",
+          isinstance(candidate_postprocess, dict)
+          and candidate_postprocess.get("confidence") == expected_confidence
+          and candidate_postprocess.get("nms_iou") == expected_nms
+          and candidate_postprocess.get("strides") == [8, 16, 32],
+          candidate_postprocess,
+          "candidate metadata thresholds and strides must match the frozen profile")
+    check("candidate.onnx_parity",
+          isinstance(onnx_parity, dict) and onnx_parity.get("passed") is True,
+          onnx_parity, "strict PyTorch-to-ONNX parity must pass")
+    check("candidate.ncnn_parity",
+          isinstance(ncnn_parity, dict) and ncnn_parity.get("overall_passed") is True,
+          ncnn_parity, "strict TorchScript-to-ncnn and Android preprocessing parity must pass")
+    check("candidate.android_preprocess_parity",
+          isinstance(ncnn_parity, dict)
+          and ncnn_parity.get("android_preprocess_gate_passed") is True,
+          ncnn_parity, "Android resize and padding parity must pass")
 
     for kind in enabled:
         metrics = event_metrics[kind]

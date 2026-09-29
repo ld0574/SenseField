@@ -82,7 +82,7 @@ PYTHONPATH=python python3 -m mapassist.measure_latency \
 
 最终每个启用事件至少需要 5 个实际发声样本，总计至少 20 个；任何漏发声都会使验收失败。Android 日志还需证明横屏处理跨度至少 15 分钟、平均至少 8 FPS、最大处理帧间隔不超过 2 秒。
 
-完成记录后，将同一证据整理为 `FINAL_EVIDENCE.example.json` 的 schema 2 格式，填写冻结 profile、ncnn param/bin、native library、实际安装 APK、`device_log`、`session_id`、原始外部录像和 CSV 的 SHA-256，再运行：
+完成记录后，将同一证据整理为 `FINAL_EVIDENCE.example.json` 的 schema 3 格式。除冻结 profile、ncnn param/bin、native library、实际安装 APK、`device_log`、`session_id`、原始外部录像和 CSV 的 SHA-256 外，还要填写 train/val/test COCO 标注、匹配录像 manifest 和候选元数据的 SHA-256。COCO 文件名须保留导出器的 `<match_id>_<9 位毫秒时间戳>.png` 格式；门禁会从中重建来源对局分组，检查 test 非空、train/val/test 不交叉，并将 test 的 `match_id` 和录像 SHA-256 绑定到本次留出录像。
 
 ```sh
 PYTHONPATH=python python3 -m mapassist.validation_gate \

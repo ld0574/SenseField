@@ -8,11 +8,11 @@
 
 | 项目 | 结果 |
 | --- | --- |
-| 桌面共享 C++ 引擎与录像回放 | 2026-09-28 全量 `.venv/bin/python -m pytest -q`：252 项通过、1 项条件跳过；标注网页 Node 测试 4 项通过。覆盖完整 GameProfile 定位读取、小地图自动定位、显示方向抽帧、三层 ROI 传递与门禁、标注站、数据导出、红环几何过滤、空间跟踪、冷却与抢占、冻结模型与 Android 资产哈希、会话日志、最终门禁及 ncnn 回放约束。跳过项需要专用合成 YOLOX profile。 |
+| 桌面共享 C++ 引擎与录像回放 | 2026-09-29 全量 `.venv/bin/python -m pytest -q`：297 项通过、1 项条件跳过；标注网页 Node 测试 5 项通过。覆盖完整 GameProfile 定位读取、小地图自动定位、显示方向抽帧、三层 ROI 传递与门禁、标注站、数据导出、红环几何过滤、空间跟踪、冷却与抢占、冻结模型与 Android 资产哈希、会话日志、最终门禁及 ncnn 回放约束。跳过项需要专用合成 YOLOX profile。 |
 | 主画面检测数据准备 | 当前 HD bootstrap v2 split 为人工复核 train 664 图／1211 框（video1+8+3+4+5+10）和 val 230 图／400 框（video2-HD+11）；test 为空，不能报告最终成绩。video10/11 已完成复核和 ROI/provenance 检查并纳入对应 split；video7-edge 尚未完成，不能纳入。video9/12 继续封存；低清旧数据、checkpoint 与指标均已退役。 |
-| HD bootstrap v2 训练候选（仅开发） | 从 video4/5 扩充候选初始化，在 MPS、320 输入、batch 16、seed `20260930`、`lr_scale=0.25` 下最多训练 12 轮；best epoch 8，约 337 秒。开发 val 以 confidence `0.49` 选择：TP/FP/FN `366/35/34`，P/R/F1 `91.2718% / 91.5000% / 91.3858%`。video2-HD 和 video11 参与了选模或阈值选择，video10 已在 train，因此不是独立成绩。候选尚未完成严格 ONNX/TorchScript/ncnn parity，保持 `verified=false`，公共 Android detector 默认关闭；无实体 Android 验收。详见[训练记录](../training/README.md)与[video10/11 记录](VIDEO10_11.md)。 |
+| HD bootstrap v2 训练候选（仅开发） | 从 video4/5 扩充候选初始化，在 MPS、320 输入、batch 16、seed `20260930`、`lr_scale=0.25` 下最多训练 12 轮；best epoch 8，约 337 秒。开发 val 以 confidence `0.49` 选择：TP/FP/FN `366/35/34`，P/R/F1 `91.2718% / 91.5000% / 91.3858%`。video2-HD 和 video11 参与了选模或阈值选择，video10 已在 train，因此不是独立成绩。ONNX/TorchScript/ncnn 已导出；ncnn 在 230/230 张图上的检测数量一致，但严格 raw／坐标 parity 失败。本机实验 Android assets/profiles 已绑定 v2，候选保持 `verified=false`、`release_ready=false`，公共默认 detector 关闭；无实体 Android 验收。详见[训练记录](../training/README.md)与[video10/11 记录](VIDEO10_11.md)。 |
 | 端到端延迟统计工具 | 已能从外部记录的证据／实际发声配对时间计算逐类及总体 P95，并单列漏提示；尚无真机样本 |
-| Android debug 构建 | 最终门禁执行 clean `./gradlew clean assembleDebug lintDebug`：成功，lint 通过；APK SHA-256 `e262afb55e956b32dd748faa453218227e8f0f3dadb501d415627d3541b38c41`，仅 arm64、minSdk 29、targetSdk 35、debug 签名。构建按 tracked metadata 校验本机 ignored param／bin 哈希；CMake 同时校验 ncnn 下载包和缓存包哈希。 |
+| Android debug 构建 | v2 绑定后执行 `./gradlew testDebugUnitTest assembleDebug lintDebug`：成功，lint 通过；APK SHA-256 `f75d8dcd45357ae079f7a6bbbbd0c5391a4eb79d53debb6625a96a1c4a0227f0`，仅 arm64、minSdk 29、targetSdk 35、debug 签名。构建按 tracked metadata 校验本机 ignored param／bin 哈希；CMake 同时校验 ncnn 下载包和缓存包哈希。 |
 | APK 结构 | Android 29 起、目标 35；只包含 arm64 ABI。APK 已打包 ncnn 静态运行时、3.4 MiB YOLOX 权重、Focus 修复后的 param、哈希元数据、完整第三方许可文本和未验证开发配置；实验开关默认关闭 |
 | APK 签名 | debug APK 的 v2 签名通过 `apksigner verify` |
 | Android 会话健壮性 | 当前 `0.2.0` 在加载模型前先进入前台服务状态；SoundPool 尚未完成异步加载时会暂存仍在证据有效期内的最近提示。每次启动生成 UUID，并输出可解析的 `SessionStart`、逐事件 `CueEvent` 和唯一 `SessionSummary`；汇总横屏处理跨度、平均采样所需帧数、最大帧间隔、过期和音频排队失败。旧 ImageReader 回调不会污染新会话。黑屏停止按连续时长判断；VirtualDisplay 在 ImageReader 前释放；系统或投屏授权结束时显式移除前台通知。 |
@@ -48,15 +48,17 @@
 
 APK：`android/app/build/outputs/apk/debug/app-debug.apk`
 版本：`0.2.0`（versionCode 4）
-SHA-256：`e262afb55e956b32dd748faa453218227e8f0f3dadb501d415627d3541b38c41`
+SHA-256：`f75d8dcd45357ae079f7a6bbbbd0c5391a4eb79d53debb6625a96a1c4a0227f0`
 
 公开仓库检查通过；当前公开版本不再跟踪模型文件，默认 profile 已关闭 `minimap_yolox`。旧 Git 历史仍含模型文件；历史清理的 force-push 尚未执行，仍待明确授权。
 
 合成录像的 3 个事件均被评测脚本匹配，**仅证明数据管线和规则工作，不能代表真实游戏准确率或真机延迟**。模拟器验证也不能替代实体手机测试。
 
-## 新真机会话审计日志与 schema 2 门禁
+## 新真机会话审计日志与 schema 3 门禁
 
-最终验收使用 `FINAL_EVIDENCE` schema 2，并以同一 `session_id` 关联 Android 审计日志、外部屏幕与实际声音录像、延迟 CSV。门禁需要同时复核：
+最终验收使用 `FINAL_EVIDENCE` schema 3，并以同一 `session_id` 关联 Android 审计日志、外部屏幕与实际声音录像、延迟 CSV。除原有真机验收外，门禁现在会读取哈希固定的 train/val/test COCO 标注和 match manifest，从导出的帧名重建对局分组，要求 test 有实际图像、三组来源对局不交叉，并验证 test 对局 ID 与本次留出录像 SHA-256 一致。它也要求 profile `verified=true`、候选元数据声明 `release_ready`、模型 bin/param 与候选和 profile 哈希一致、阈值一致且 ONNX/ncnn/Android 预处理 parity 均通过。
+
+门禁仍需同时复核：
 
 - 外部录像的音频和视频 packet 时间轴连续，两个流各自最大 packet gap 均 `<=2s`，并检查音视频起止偏移；
 - 留出预测逐帧符合 12 FPS CFR 时间公式；prediction metadata 的 profile、ncnn param/bin 和 native library 哈希与冻结证据一致，实际安装 APK 内的 profile 与模型也必须一致；
@@ -64,7 +66,7 @@ SHA-256：`e262afb55e956b32dd748faa453218227e8f0f3dadb501d415627d3541b38c41`
 - Android 日志证明至少 15 分钟横屏处理，平均处理速率 `>=8 FPS`，最大处理帧间隔 `<=2s`；
 - 真机实际发声、每类至少 5 个配对样本且总计至少 20 个，P95 `<=250 ms`，并通过实体 Android 13/14 与授权、场景和录像完整性检查。
 
-当前新真机会话的机器审计报告仍待最终复核；在 schema 2 报告和原始证据完成前，不将模拟器的 `queued=4` 视为实际发声通过，也不宣称最终验收已通过。
+当前新真机会话的机器审计报告仍待最终复核；在 schema 3 报告和原始证据完成前，不将模拟器的 `queued=4` 视为实际发声通过，也不宣称最终验收已通过。
 
 `physical_device`、实际听到声音、录像是否未剪辑、场景是否获允许等字段仍是测试人员声明，机器门禁只能检查文件、时间轴和内部一致性。最终报告需要人工观看原始外部录像并核对这些声明。
 

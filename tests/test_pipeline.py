@@ -1527,15 +1527,16 @@ def test_hd_bootstrap_android_profile_matches_candidate_metadata() -> None:
     assert bundled["verified"] is False
     assert bundled["detectors"]["minimap_yolox"] is True
     assert bundled["rois"]["minimap"] == pytest.approx(
-        [55 / 2400, 0, (510 - 55) / 2400, 420 / 1080]
+        [44 / 1920, 0, (408 - 44) / 1920, 334 / 860]
     )
     assert bundled["rois"]["minimap_direction"] == pytest.approx(
-        [120 / 2400, 0, (465 - 120) / 2400, 347 / 1080]
+        [96 / 1920, 0, (372 - 96) / 1920, 277 / 860]
     )
-    assert bundled["profile_version"] == "0.7.0-yolox-nano-hd-bootstrap-video4-video5-v1"
-    assert bundled["thresholds"]["minimap_yolox_confidence"] == pytest.approx(0.51)
+    assert bundled["profile_version"] == "0.8.0-yolox-nano-hd-bootstrap-video10-video11-v2"
+    assert bundled["thresholds"]["minimap_yolox_confidence"] == pytest.approx(0.49)
+    assert bundled["thresholds"]["minimap_yolox_nms"] == pytest.approx(0.5)
     assert bundled["models"]["minimap_yolox_bin_sha256"] == (
-        "bb4ac4583dd668388180ddaa3265827f8c6d71aa1980a5cfba8e1f784bd7992d"
+        "d5b4b5dcee290122ae823750d247dd7336f656ab2430f86f68ba87f6ad1e4bd3"
     )
     android_profile = root / "profiles/hok_minimap_hd_bootstrap.android.json"
     profile_sha256 = hashlib.sha256(android_profile.read_bytes()).hexdigest()
@@ -1545,46 +1546,52 @@ def test_hd_bootstrap_android_profile_matches_candidate_metadata() -> None:
     )
     assert metadata["candidate"]["development_profile_android_sha256"] == profile_sha256
     assert metadata["candidate"]["id"] == (
-        "yolox-nano-hd-bootstrap-video4-video5-dev-candidate"
+        "yolox-nano-hd-bootstrap-video10-video11-v2-dev-candidate"
     )
     assert metadata["candidate"]["profile_version"] == bundled["profile_version"]
     assert metadata["source"]["checkpoint_sha256"] == (
-        "6112fa5ca4829eed583eb2f07c84b679b468294bc78c6410e11c7f071987f1fa"
+        "a11b560c6507f51f3e239b358445fb2acc95694edf80bc86c5cc207cc2a12f72"
+    )
+    assert metadata["source"]["onnx_sha256"] == (
+        "517f296a99c79fe57b44746f9bdc33fb1cb564cffe0456e8f4fcaee8b0c58dea"
     )
     assert metadata["runtime"]["bin_sha256"] == bundled["models"][
         "minimap_yolox_bin_sha256"
     ]
     assert metadata["verified"] is False
-    assert metadata["development_validation"]["split"].startswith("video2-HD dev-val")
-    assert metadata["development_validation"]["images"] == 100
+    assert metadata["candidate"]["release_ready"] is False
+    assert metadata["development_validation"]["split"].startswith(
+        "video2-HD + video11 HD development val"
+    )
+    assert metadata["development_validation"]["images"] == 230
     assert metadata["development_validation"]["ncnn_runtime_box_detection_metrics"] == {
-        "tp": 175,
-        "fp": 14,
-        "fn": 22,
-        "precision": 0.925926,
-        "recall": 0.888325,
-        "f1": 0.906736,
+        "tp": 366,
+        "fp": 35,
+        "fn": 34,
+        "precision": 0.912718,
+        "recall": 0.915,
+        "f1": 0.913858,
     }
     assert metadata["parity"]["pytorch_vs_onnx"]["passed"] is False
     assert metadata["parity"]["pytorch_vs_onnx"]["maximum_raw_error"] == pytest.approx(
-        0.0022966861724853516
+        0.000595390796661377
     )
-    assert metadata["parity"]["pytorch_vs_onnx"]["raw_failed_images"] == 40
-    assert metadata["parity"]["pytorch_vs_onnx"]["final_detection_array_check"] == {
-        "passed_images": 100,
-        "comparison": "numpy.allclose",
-        "rtol": 1e-4,
-        "atol": 1e-4,
-        "scope": "postprocessed final detection arrays; does not satisfy the independent raw-output gate",
-    }
+    assert metadata["parity"]["pytorch_vs_onnx"]["raw_failed_images"] == 1
+    assert metadata["parity"]["pytorch_vs_onnx"]["all_final_detection_arrays_match"] is True
     assert metadata["parity"]["torchscript_vs_ncnn_and_android_preprocess"]["overall_passed"] is False
     ncnn_parity = metadata["parity"]["torchscript_vs_ncnn_and_android_preprocess"]
-    assert ncnn_parity["raw_max_error"] == pytest.approx(0.000997304916381836)
-    assert ncnn_parity["images_with_matching_final_detection_counts"] == 98
-    assert ncnn_parity["reference_detections"] == 187
-    assert ncnn_parity["runtime_detections"] == 189
-    assert ncnn_parity["all_final_detection_counts_match"] is False
-    assert ncnn_parity["max_detection_value_error"] == pytest.approx(0.724517822265625)
+    assert ncnn_parity["raw_max_error"] == pytest.approx(0.0010589361190795898)
+    assert ncnn_parity["raw_failed_images"] == 12
+    assert ncnn_parity["images_with_matching_final_detection_counts"] == 230
+    assert ncnn_parity["reference_detections"] == 401
+    assert ncnn_parity["runtime_detections"] == 401
+    assert ncnn_parity["all_final_detection_counts_match"] is True
+    assert ncnn_parity["maximum_detection_value_error"] == pytest.approx(0.4334869384765625)
+    bundled_default = json.loads(
+        (root / "android/app/src/main/assets/profile.json").read_text(encoding="utf-8")
+    )
+    assert bundled_default["verified"] is False
+    assert bundled_default["detectors"]["minimap_yolox"] is False
 
 
 def test_android_metadata_records_video7_development_replay_smokes() -> None:

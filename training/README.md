@@ -209,7 +209,59 @@ video10 和 video11 已完成全部人工复核并通过队列、ROI、尺寸、
 
 从 video4/5 扩充候选初始化，在 Apple MPS 上以 seed `20260930`、输入 320、batch 16、`lr_scale=0.25` 训练最多 12 轮；best epoch 为 8，实际用时约 337 秒。开发 val 选择 confidence `0.49` 时，TP/FP/FN 为 `366/35/34`，precision / recall / F1 为 `91.2718% / 91.5000% / 91.3858%`。video2-HD 和 video11 都参与了选模或阈值选择，因此这只是开发诊断，不能作为独立留出成绩；video10 已在 train 中，也不能把其回放结果称为独立评估。
 
-该 checkpoint 目前只作为桌面开发候选，尚未完成 ONNX/TorchScript/ncnn 的严格 parity，也没有替换 Android 公共默认模型。候选保持 `verified=false`，Android detector 继续默认关闭；video9 和 video12 仍是封存留出，不得运行模型或查看预测。
+该 checkpoint 已作为桌面与 Android 本机实验候选。ONNX、TorchScript、ncnn 导出已经完成；ONNX 最终 detection 数组在 230 张固定开发图上相同，但 raw 门限超 1 张。ncnn raw 门限超 12 张，Android 等价预处理后的 detection values 超限 187 张，严格 parity 未通过。本机 ignored param/bin、tracked metadata 与两份 `hok_minimap_hd_bootstrap` profile 已绑定 v2，构建哈希门禁通过；候选保持 `verified=false`、`release_ready=false`，公共默认 profile 继续关闭 detector。完整数值与 artifact 哈希见[模型接入记录](../validation/MODEL_PIPELINE.md#v2-onnxtorchscriptncnn-导出与-parity2026-09-29)。
+
+### v2 候选导出与 parity 复现
+
+以下命令只使用 `data/private/hd-bootstrap-assistance-video4-video5-video10-video11-v2/coco` 的固定 230 张 COCO val 开发图（video2-HD + video11），输入 320、confidence `0.49`、NMS `0.5`。这些图已经参与选模或阈值选择，不是独立 test。两个 parity verifier 会先写完整 JSON，再在严格门禁失败时返回退出码 1；每条命令单独运行，以便随后查看失败报告。所有输出放在 Git 忽略的 `build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/`。
+
+```sh
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python build/third_party/YOLOX/tools/export_onnx.py \
+  -f training/yolox_nano_minimap.py \
+  -c build/training/yolox-nano-hd-bootstrap-video10-video11-v2-320/best_ckpt.pth \
+  --output-name build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/model.onnx \
+  --no-onnxsim test_size '(320,320)' input_size '(320,320)'
+
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python training/verify_yolox_onnx.py \
+  --yolox-root build/third_party/YOLOX \
+  --data-dir data/private/hd-bootstrap-assistance-video4-video5-video10-video11-v2/coco \
+  --checkpoint build/training/yolox-nano-hd-bootstrap-video10-video11-v2-320/best_ckpt.pth \
+  --onnx build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/model.onnx \
+  --input-size 320 --confidence 0.49 --images 230 --max-raw-error 0.0005 \
+  --output build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/onnx-parity-val230-c049.json
+
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python build/third_party/YOLOX/tools/export_torchscript.py \
+  -f training/yolox_nano_minimap.py \
+  -c build/training/yolox-nano-hd-bootstrap-video10-video11-v2-320/best_ckpt.pth \
+  --output-name build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/model.torchscript.pt \
+  test_size '(320,320)' input_size '(320,320)'
+
+.venv/bin/python training/convert_yolox_ncnn.py \
+  --torchscript build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/model.torchscript.pt \
+  --output-param build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/model.ncnn.param \
+  --output-bin build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/model.ncnn.bin \
+  --metadata build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/ncnn-conversion.json \
+  --input-size 320 --pnnx .venv/bin/pnnx
+
+.venv/bin/python training/verify_yolox_ncnn.py \
+  --torchscript build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/model.torchscript.pt \
+  --param build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/model.ncnn.param \
+  --bin build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/model.ncnn.bin \
+  --data-dir data/private/hd-bootstrap-assistance-video4-video5-video10-video11-v2/coco \
+  --split val --image-count 230 --input-size 320 --threads 1 \
+  --max-raw-error 0.0005 --confidence 0.49 --nms-threshold 0.5 \
+  --max-runtime-input-error 1.0 --max-detection-error 0.01 \
+  --output build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/ncnn-parity-val230-c049.json
+
+PYTHONPATH=python .venv/bin/python training/evaluate_yolox_ncnn_report.py \
+  --data-dir data/private/hd-bootstrap-assistance-video4-video5-video10-video11-v2/coco \
+  --parity-report build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/ncnn-parity-val230-c049.json \
+  --iou-threshold 0.5 \
+  --output build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/ncnn-development-evaluation-val230-c049-iou050.json
+```
 
 ### 首轮 video1+8+3 checkpoint TorchScript/ONNX/ncnn parity（2026-09-29，历史）
 
