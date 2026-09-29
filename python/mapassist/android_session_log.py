@@ -414,9 +414,14 @@ def parse_session_log(path: Path, session_id: str) -> dict[str, object]:
         if elapsed_since_processed is not None:
             item["elapsed_since_processed_ms"] = elapsed_since_processed
         capture_health.append(item)
+    enhanced = bool(dispatches or playbacks or capture_health)
     for cue_id, cue in cue_by_id.items():
         dispatch = dispatch_by_id.get(cue_id)
         if dispatch is None:
+            if enhanced:
+                raise ValueError(
+                    f"CueEvent {cue_id!r} is missing its CueDispatch record"
+                )
             continue
         expected_audio_queued = bool(
             dispatch["accepted_mask"] & (CHANNEL_BITS["TONE"] | CHANNEL_BITS["SPEECH"])
@@ -425,7 +430,6 @@ def parse_session_log(path: Path, session_id: str) -> dict[str, object]:
             raise ValueError(
                 f"CueEvent {cue_id!r} audioQueued does not match CueDispatch"
             )
-    enhanced = bool(dispatches or playbacks or capture_health)
     actual_audio_ids = []
     if enhanced:
         actual_audio_ids = list(dict.fromkeys(

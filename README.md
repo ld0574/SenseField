@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="assets/sensefield-icon.png" width="160" height="160" alt="听野 SenseField 图标">
+  <img src="assets/sensefield-mark.png" width="112" alt="听野 SenseField 标志" align="middle">
+  &nbsp;&nbsp;<strong>×</strong>&nbsp;&nbsp;
+  <a href="https://www.openkhub.com/">
+    <img src="assets/openkhub-logo.png" width="300" alt="K-Hub 罕见病开源社区 Logo" align="middle">
+  </a>
 </p>
 
 <h1 align="center">听野 · SenseField</h1>
@@ -17,138 +21,99 @@
   赛题：为视力障碍玩家打造识别全屏地图的工具
 </p>
 
-<p align="center">
-  <a href="https://www.openkhub.com/">
-    <img src="assets/openkhub-logo.png" width="300" alt="K-Hub 罕见病开源社区 Logo">
-  </a>
-</p>
-
 ---
 
-**听野（SenseField）** 是一个面向视野狭窄玩家的安卓实验原型。它尝试把玩家视野之外的关键战局转译成空间音频、触觉与高对比视觉线索，补充信息而不代替操作。当前原型优先验证小地图识别和“视野记忆”，所有游戏决策与操作仍由玩家完成。
+**听野（SenseField）** 是面向视野狭窄和低视力玩家的 Android 实验原型。它尝试把游戏画面中玩家可能难以持续观察的信息，转译成空间音频、语音、触觉和高对比视觉线索，补充信息而不代替操作。
+
+本项目由参赛团队独立开发，是非官方作品，与腾讯、天美工作室群及《王者荣耀》官方无隶属、合作或认可关系。相关名称、商标和游戏内容归各自权利人所有。
 
 ## 为什么做听野
 
-对管状视野、低视力等玩家来说，放大屏幕会让可见范围变得更小，通用读屏软件又难以跟上实时对局。他们需要的不是被“代打”，而是在不遮挡仅存视野的前提下，及时知道周边发生了什么。
+对管状视野、低视力等玩家来说，放大屏幕会让同一时刻可见的范围更小，通用读屏软件又难以跟上实时对局。玩家需要的是在不遮挡仅存视野的前提下，及时感知屏幕边缘和小地图上已经出现的信息。
 
 > **补信息，不添乱；做队友，不做代打。**
 
-听野不是“告诉玩家该怎么打”的竞技助手，而是一层无障碍信息转换：重新表达玩家本来能够看见、却可能无法持续观察或记住的事件。兵线计时、路线推荐、打龙决策等战术指挥不属于当前 MVP。
+听野是一层无障碍信息转换：重新表达玩家本来能够看见、却可能无法持续观察或记住的事件。它不提供兵线计时、路线推荐、打龙建议等战术指挥，游戏判断和操作始终由玩家完成。
 
 ## 工作方式
 
 ```text
-用户授权截屏 → 端侧识别关键事件 → 优先级排序与去重 → 声音/触觉线索 → 玩家自主决策
+用户授权截屏 → 端侧识别关键事件 → 筛选、排序与去重 → 声音、触觉或视觉线索 → 玩家自主决策
 ```
 
-- 屏幕画面只在用户授权后获取，并在设备本地处理。
-- 优先识别已呈现在游戏界面中、但处于玩家有效视野之外的信息。
-- 只提示必要事件，通过合并、冷却和优先级减少信息过载。
+- 屏幕画面只在用户授权后获取，并优先在设备本地处理。
+- 只提示游戏界面中已经呈现、但可能处于玩家有效视野之外的信息。
+- 通过事件确认、合并、冷却和优先级控制提示频率，减少信息过载。
 - 工具不产生任何游戏输入，不帮玩家点击、走位或攻击。
-
-本项目是参赛团队独立制作的非官方作品，与腾讯、天美工作室群及《王者荣耀》官方无隶属、合作或认可关系。“王者荣耀”等名称、商标及游戏内容归相应权利人所有。本仓库不提供游戏客户端、游戏素材或玩家录像。
 
 ## 使用边界
 
-- 仅通过 Android `MediaProjection` 获取用户明确授权的屏幕画面，并在设备本地处理。
-- 不注入游戏、不读取游戏内存、不模拟触控。
-- 私有录像、抽帧、标注数据和实验产物均由 `.gitignore` 排除。
-- 这是尚未完成实体机验收的研究原型；实际使用前需自行核实游戏条款和赛事规则。
+- 仅通过 Android `MediaProjection` 获取用户明确授权的屏幕画面；不读取游戏进程或内存。
+- 不注入游戏、不模拟触控、不替玩家作战术判断。
+- 私有录像、抽帧、标注数据和实验产物不纳入公开仓库。
+- 这是尚未完成最终实体机与玩家验收的研究原型；实际使用前请核实游戏条款和赛事规则。
 
 ## 当前进度
 
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
-| Android 13/14 截屏与横屏取帧 | 已实现 | 已完成模拟器链路验证 |
-| 小地图敌方头像识别 | HD-only bootstrap v2 本机开发候选，默认关闭 | 开发 val 的 P/R/F1 为 `91.27% / 91.50% / 91.39%`；video13 跨来源诊断为 `87.93% / 96.68% / 92.10%`，方向 `171/171`。召回与方向已过本轮诊断目标，框级 precision 未过 90% 门槛；严格 ncnn parity 与真机验收仍未完成 |
-| 小地图自适应定位 | 旧版定位器实验留档，尚未接入 Android | v2 使用旧低清 video6 val；其定位指标仅作历史，不属于当前 HD-only 验证，也不代表独立发布门禁通过。video8 布局帧为同场诊断；见[定位器记录](validation/MINIMAP_LOCATOR.md) |
-| 简短声音提示 | 已实现 | 事件合并、冷却与优先级规则可用 |
-| 视野记忆 | 已实现实验版 | APPEAR / TRACK / DISAPPEAR / LAST_DIRECTION；连续命中后才显示，消失需多帧确认，DISAPPEAR 后最后位置与移动方向保留 4 秒 |
-| 空间音频与触觉编码 | 已接入实验版 | 左右声道增益和方向震动已实现；尚未完成真实玩家验收 |
-| 录像回放、多人标注与离线评测 | 已实现 | 支持 COCO 数据导出 |
-| 独立留出对局与实体机验收 | 待测 | video13 是模型辅助的 test-only 诊断，不能代替盲测；video12 与 video9 继续封存且未读取。Android 13/14 实体机仍待验收 |
+| Android 屏幕采集 | 已实现实验链路 | Android 13/14 模拟器流程已验证；Android 14 首轮真机已跑通授权、横屏采集和提示播放，长时会话验收仍待完成。 |
+| 小地图识别 | HD 实验候选；Android 首装默认关闭实验识别开关 | 当前候选已在本地开发 profile 中配置；严格跨运行时一致性和独立留出验证尚未通过。 |
+| 视野记忆与提示 | 实验版，待复测 | 已接入事件跟踪和多通道提示。首轮真机反馈提示过频并出现方向误报，路由修复已完成，仍需真机复测和玩家体验验证。 |
+| 最终验收 | 进行中 | 仍需完成独立对局、Android 实体机长时运行、端到端延迟测量和目标玩家评估。 |
 
-完整指标、证据边界与待验证项见 [当前验证状态](validation/STATUS.md)。
+当前 HD 候选的开发评估如下。置信度为 `0.67`、NMS 为 `0.5`，框匹配 IoU 阈值为 `0.5`。
+
+| 评估集 | TP / FP / FN | 精确率 | 召回率 | F1 |
+| --- | ---: | ---: | ---: | ---: |
+| Android 同款 ncnn 开发验证集（230 张图、400 个真值框） | 353 / 15 / 47 | 95.92% | 88.25% | 91.93% |
+| 跨来源开发诊断集（121 张图、211 个真值框） | 192 / 16 / 19 | 92.31% | 91.00% | 91.65% |
+
+以上均为开发数据评估，不是独立盲测成绩；候选尚未通过严格跨运行时一致性检查，首轮真机反馈后的修复版也待复测。完整证据边界和待验证项见[当前验证状态](validation/STATUS.md)。
 
 ## 本地运行
 
-需要 Python 3.10+ 和 FFmpeg。完整步骤见 [团队协作与本地运行](docs/团队协作与本地运行.md)。
+Python 工具需要 Python 3.10 或更新版本；录像处理需要 FFmpeg。完整环境配置见[团队协作与本地运行](docs/团队协作与本地运行.md)。
 
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[test]'
-python -m pytest -q
 ```
 
-启动当前 HD 人工复核队列（共用 `8765` 端口）：
+Android 应用可用 Android Studio 打开 `android/`，也可以运行：
 
 ```sh
-PYTHONPATH=python python3 -m mapassist.annotation_server \
-  --dataset video1-hd=data/private/minimap-review-video1-hd-v1 \
-  --dataset video2-hd=data/private/minimap-review-video2-hd-v1 \
-  --dataset video3-hd=data/private/minimap-video3hd-new-match-20260928-a/blind-review-v1 \
-  --dataset video4-hd=data/private/minimap-review-video4-hd-v1 \
-  --dataset video5-hd=data/private/minimap-review-video5-hd-v1 \
-  --dataset video7-edge=data/private/minimap-review-video7-edge-recheck-v1 \
-  --dataset video8-hd=data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi \
-  --dataset video10-11-hd=data/private/minimap-video10-11-hd-development-v1/queue \
-  --dataset video13-hd=data/private/minimap-video13-holdout-v1/queue \
-  --host 127.0.0.1 --port 8765 --open
+cd android
+./gradlew assembleDebug
 ```
 
-当前 HD bootstrap v2 使用 video1+8+3+4+5+10 train（664 图／1211 框）和 video2-HD+11 val（230 图／400 框）；bootstrap test 仍为空。开发 val 在 `c=0.49` 下的 P/R/F1 为 `91.2718% / 91.5000% / 91.3858%`。
+首次原生构建会下载并校验项目锁定版本的 ncnn Android 依赖。
 
-video13 已完成 130/130 任务人工复核与审计，得到 121 个可评测 test 图／211 框。冻结 v2 的 TP/FP/FN 为 `204/28/7`，P/R/F1 为 `87.9310% / 96.6825% / 92.0993%`，方向为 `171/171=100%`。召回与方向已过本轮诊断目标，框级 precision 未过 90% 门槛；这组模型辅助诊断不能用于调参，也不能代替 blind independent holdout。video9/12 继续封存且未读取。
-
-ONNX、TorchScript 和 ncnn 已导出；严格 parity 仍失败，实验 APK 的检测器默认关闭。完整边界见[验证状态](validation/STATUS.md)、[video13 记录](validation/VIDEO13.md)与[录像接收记录](validation/VIDEO_INTAKE_2026-09-28.md)。
-
-Android Studio 直接打开 `android/`。首次原生构建会下载并校验固定版本的 ncnn Android 依赖；调试 APK 的命令行构建方式记录在[团队协作文档](docs/团队协作与本地运行.md)。
-
-公开源码不包含 Roboflow 图片、模型权重或训练产物，默认 profile 关闭小地图识别器；获准在本机复现实验的步骤见[团队运行文档](docs/团队协作与本地运行.md)。当前公开历史仍含旧提交中的模型文件；历史清理决定见[发布清单](docs/GITHUB发布检查清单.md)。
-
-“视野记忆”是可选实验功能。用户需在首页主动开启并授予“显示在其他应用上层”权限；提示层不接收触控，并请求系统用安全窗口将其排除在截屏内容之外。系统只在 APPEAR / DISAPPEAR 状态切换时产生触觉反馈；只有消失目标具有可靠移动向量时才播报方向，并设置语音冷却，避免把持续识别变成持续打扰。该功能仍依赖实验识别器的准确度，安全窗口行为也需实体机确认；目前未完成实体机与目标玩家验收，默认关闭。
-
-## 仓库结构
+## 项目结构
 
 | 目录 | 内容 |
 | --- | --- |
-| `android/` | 安卓截屏与声音提示 |
-| `native/` | C++ 检测和事件规则 |
-| `python/mapassist/` | 回放、标注、评测与数据导出 |
-| `profiles/` | 画面区域和检测参数 |
-| `validation/` | 测试结果与验收记录 |
+| `android/` | Android 屏幕采集、事件处理与提示 |
+| `native/` | C++ 视觉识别和事件逻辑 |
+| `python/mapassist/` | 数据处理、回放、标注与评测工具 |
+| `training/` | 模型训练与评估工具 |
+| `profiles/` | 识别区域和参数配置 |
+| `validation/` | 验证状态与实验记录 |
 
 ## 文档
 
-- [赛题背景（公开脱敏版）](docs/赛题背景.md)
-- [参赛技术方案](docs/技术方案.md)
-- [视野记忆产品与事件设计](docs/视野记忆.md)
-- [团队协作与本地运行](docs/团队协作与本地运行.md)
-- [外部数据引入与预训练](docs/外部数据引入与预训练.md)
-- [当前验证状态](validation/STATUS.md)
-- [外部数据审计与预训练验证](validation/EXTERNAL_PRETRAINING.md)
-- [小地图自动定位器](validation/MINIMAP_LOCATOR.md)
-- [video7 扩展人工标注](validation/VIDEO7_EXPANDED.md)
-- [video1 高清重导出与标签迁移](validation/VIDEO1_HD.md)
-- [困难误报加权实验](validation/HARD_NEGATIVES.md)
-- [video8 真人排位冻结盲测](validation/VIDEO8.md)
-- [video10/11 HD 人工复核与开发训练](validation/VIDEO10_11.md)
-- [video13 高清对局模型辅助人工复核](validation/VIDEO13.md)
-- [GitHub 发布检查清单](docs/GITHUB发布检查清单.md)
-- [参与开发](CONTRIBUTING.md)
+| 主题 | 文档 |
+| --- | --- |
+| 赛题背景与用户问题 | [赛题背景](docs/赛题背景.md) |
+| 产品和系统方案 | [技术方案](docs/技术方案.md)、[视野记忆设计](docs/视野记忆.md) |
+| 端侧事件处理 | [事件感知与可靠性方案](docs/端侧事件感知与可靠性增强技术方案.md) |
+| 开发与本地运行 | [团队协作与本地运行](docs/团队协作与本地运行.md)、[贡献指南](CONTRIBUTING.md) |
+| 当前验证结论 | [验证状态](validation/STATUS.md) |
+| 第三方依赖和许可 | [第三方声明](THIRD_PARTY_NOTICES.md) |
 
-## 品牌素材
-
-- [App / GitHub 高清图标（1024×1024）](assets/sensefield-icon.png)
-- [透明底品牌标记](assets/sensefield-mark.png)
-- [GitHub 社交预览图（1280×640）](assets/sensefield-social-preview.png)
-- [K-Hub 罕见病开源社区 Logo](assets/openkhub-logo.png)
+逐场录像、标注与历史实验文档保留在 `validation/` 中供需要时查阅，不逐项放在项目首页。
 
 ## 开源许可
 
-本项目的自有代码和自行创作的项目材料按 [Apache License 2.0](LICENSE) 授权。第三方代码、模型、商标、游戏内容及其他引用材料仍遵循各自的许可与权利归属，不因本项目的 Apache-2.0 许可而改变。
-
-ncnn、YOLOX 与 pnnx 的版本、用途和许可证见 [第三方声明](THIRD_PARTY_NOTICES.md)。
-
-公开提交前请执行发布检查，避免上传录像、游戏画面、个人信息、签名密钥和其他未获授权的内容。
+本项目自有代码和材料按 [Apache License 2.0](LICENSE) 授权。第三方代码、模型、商标、游戏内容及其他引用材料遵循各自的权利和许可，详见[第三方声明](THIRD_PARTY_NOTICES.md)。

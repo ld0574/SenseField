@@ -38,7 +38,7 @@ public final class AlertSettingsActivity extends Activity {
 
         LinearLayout categories = UiKit.card(this);
         UiKit.add(categories, UiKit.heading(this, "事件提示"), 8);
-        addToggle(categories, "视野记忆", "cue_category_vision", true);
+        addToggle(categories, "小地图新目标", "cue_category_vision", true);
         addToggle(categories, "危险接近（默认关闭）", "cue_category_danger", false);
         addToggle(categories, "玩家死亡／复活", "cue_category_player", true);
         addToggle(categories, "系统状态", "cue_category_system", true);

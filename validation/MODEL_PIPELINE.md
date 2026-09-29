@@ -2,15 +2,15 @@
 
 ## HD bootstrap v2 PyTorch 开发候选（2026-09-29）
 
-当前 HD bootstrap v2 使用人工复核后的 video1+8+3+4+5+10 作为 train（664 图／1211 框），video2-HD+11 作为开发 val（230 图／400 框），test 为空。video10/11 的队列、ROI、尺寸和来源 provenance 均已审计通过；video10 已进入 train，video11 是 dev-val。video9/12 未读取、未预标注、未查看预测，继续封存。
+当前 HD bootstrap v2 使用人工复核后的 video1+8+3+4+5+10 作为 train（664 图／1211 框），video2-HD+11 作为开发 val（230 图／400 框），bootstrap test 为空。video10/11 的队列、ROI、尺寸和来源 provenance 均已审计通过；video10 已进入 train，video11 是 dev-val。video13 首轮按 test-only COCO audit 评测后又参与多档阈值检查，现为跨来源开发诊断，不能称为独立 test；video9/12 未读取、未预标注、未查看预测，继续封存。
 
-从 video4/5 扩充候选初始化，在 Apple MPS、YOLOX-Nano、输入 320、batch 16、seed `20260930`、`lr_scale=0.25` 下最多训练 12 轮，best epoch 8，约 337 秒。checkpoint SHA-256 为 `a11b560c6507f51f3e239b358445fb2acc95694edf80bc86c5cc207cc2a12f72`。开发 val 以 confidence `0.49`、NMS `0.5`、IoU `0.5` 评估，TP/FP/FN 为 `366/35/34`，precision / recall / F1 为 `91.2718% / 91.5000% / 91.3858%`。
+从 video4/5 扩充候选初始化，在 Apple MPS、YOLOX-Nano、输入 320、batch 16、seed `20260930`、`lr_scale=0.25` 下最多训练 12 轮，best epoch 8，约 337 秒。checkpoint SHA-256 为 `a11b560c6507f51f3e239b358445fb2acc95694edf80bc86c5cc207cc2a12f72`。训练阶段原以 confidence `0.49`、NMS `0.5`、IoU `0.5` 评估开发 val，历史 TP/FP/FN 为 `366/35/34`，precision / recall / F1 为 `91.2718% / 91.5000% / 91.3858%`。首轮真机反馈后当前部署 confidence 改为 `0.67`；Android 同款 ncnn 开发 val 为 TP/FP/FN `353/15/47`，P/R/F1 `95.9239% / 88.2500% / 91.9271%`。video2-HD、video11 和 video13 均已参与开发判断；这些数值都不是独立留出成绩。
 
-这些指标是开发诊断：video2-HD 和 video11 已参与选模或阈值选择，video10 已参与训练，不能称独立留出成绩。逐场复测见[video10/11 记录](VIDEO10_11.md)：video10 `213/3/17`（P/R/F1 `98.6111% / 92.6087% / 95.5157%`），video11 `190/12/13`（`94.0594% / 93.5961% / 93.8272%`）。
+上述逐场复测是训练阶段 confidence `0.49` 下的开发诊断：video2-HD 和 video11 已参与选模或阈值选择，video10 已参与训练，不能称独立留出成绩。逐场复测见[video10/11 记录](VIDEO10_11.md)：video10 `213/3/17`（P/R/F1 `98.6111% / 92.6087% / 95.5157%`），video11 `190/12/13`（`94.0594% / 93.5961% / 93.8272%`）。
 
 ### v2 ONNX、TorchScript、ncnn 导出与 parity（2026-09-29）
 
-固定使用 v2 COCO val 的 230 张开发图（video2-HD + video11，400 个真值框），输入 320、confidence `0.49`、NMS `0.5`。所有结果都是开发诊断。表中检测门禁逐图比较最终框和 confidence；开发集质量分数单独记录，不能抵消 raw 或最终检测 parity 失败。
+以下 parity 报告固定使用 v2 COCO val 的 230 张开发图（video2-HD + video11，400 个真值框）、输入 320 和训练阶段历史 confidence `0.49`、NMS `0.5`。部署阈值现为 `0.67`；本表保留原始报告供审计，候选在 ONNX/ncnn raw 及 Android 检测 parity 上仍未通过。所有质量结果都是开发诊断，不能抵消 parity 失败。
 
 | 门禁 | 结果 | 状态 |
 | --- | --- | --- |
@@ -26,7 +26,7 @@ ONNX 最大 raw 差在 `video11-hd-development_000837584.png`，stride 8 cell `(
 
 Android 等价检测共配对 401 个框，IoU 最小值／中位数为 `0.981624 / 0.998719`，confidence 绝对差中位数／最大值为 `0.000321 / 0.011870`。例如 `video2-hd_000675010.png` 的一对框，参考坐标为 `[219.9304,167.1348,265.4030,211.3868]`，运行时为 `[220.3639,166.9271,265.5376,211.3258]`；数量相同但最大坐标差超过 `0.01`。IoU 和分数统计只作描述，不取代严格门禁。ncnn 真值评估通过 P≥90%、R≥80% 开发质量条件，也不改变这一点。
 
-当前候选仍保持 `verified=false`、`release_ready=false`。本机 Android param/bin、tracked metadata 与 `hok_minimap_hd_bootstrap` 开发 profiles 已绑定 v2；公共默认 profile 的 detector 继续关闭，只有显式允许实验识别器后才可运行。模型哈希校验、Android 单测、`assembleDebug` 和 `lintDebug` 已通过；没有实体 Android 验收记录。导出命令见 [training/README.md 的 v2 parity 流程](../training/README.md#v2-候选导出与-parity-复现)。
+当前候选仍保持 `verified=false`、`release_ready=false`。本机 Android param/bin、tracked metadata 与 `hok_minimap_hd_bootstrap` 开发 profiles 已绑定 v2、confidence `0.67`；公共默认 profile 的 detector 继续关闭，只有显式允许实验识别器后才可运行。模型哈希校验、Android 单测、`assembleDebug` 和 `lintDebug` 已通过。Android 14 首轮实体机冒烟使用 0.2.1 debug，已记录提示过密和 kind 2 旧直通路径问题；当前开发构建为 0.2.2（versionCode 6），修复版待真机复测。导出命令见 [training/README.md 的 v2 parity 流程](../training/README.md#v2-候选导出与-parity-复现)。
 
 artifact SHA-256：checkpoint `a11b560c6507f51f3e239b358445fb2acc95694edf80bc86c5cc207cc2a12f72`；ONNX `517f296a99c79fe57b44746f9bdc33fb1cb564cffe0456e8f4fcaee8b0c58dea`；TorchScript `e20e37fca81f660e79d7badfa39de6da336d002573ebec065b6cb66645070b27`；ncnn param/bin `4649269cae16fef3b64cc366f123ba58259a756b79f7f55d6be20cd3903cae14` / `d5b4b5dcee290122ae823750d247dd7336f656ab2430f86f68ba87f6ad1e4bd3`；conversion metadata `5553b5183d01f8abbc3bc90fc35e84449f8fda04d7a3700f30107de23eed51c6`；ONNX parity JSON `1392a8a9778b1ac368a04bcc5f99bc7ed7613c571122a77e97e098dd82ad3fca`；ncnn parity JSON `ce69bbfe922d7b45a3d6cfbef8b60b1b9c9a74d920f4d425f380c2ca4b5d5769`；ncnn val metrics JSON `2fd3a97cd8388c21bb10ace8a7efe6c8205a681ac742b404b3353fc9fb61e09b`；val annotations `2212db52693e9f218bb81e4c255044956ae0fbf84a8d6fa09cdc8c53383611f5`。转换使用 pnnx `20260526`、ncnn `1.0.20260526`、PyTorch `2.14.0`、ONNX Runtime `1.30.0`。
 

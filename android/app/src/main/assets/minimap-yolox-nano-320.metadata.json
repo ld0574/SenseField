@@ -2,11 +2,11 @@
   "schema_version": 1,
   "model": "YOLOX-Nano minimap enemy detector",
   "candidate": {
-    "id": "yolox-nano-hd-bootstrap-video10-video11-v2-dev-candidate",
+    "id": "yolox-nano-hd-bootstrap-video10-video11-v2-c067-dev-candidate",
     "status": "development_candidate_not_promoted",
     "release_ready": false,
-    "profile_version": "0.8.0-yolox-nano-hd-bootstrap-video10-video11-v2",
-    "development_profile_android_sha256": "8145b2f07e1b6dccd39a2a07db512eb292154ee0ddd5b3eb40363bba0ca40c18"
+    "profile_version": "0.8.1-yolox-nano-hd-bootstrap-video10-video11-v2-c067",
+    "development_profile_android_sha256": "de09903e4c2f8b7cb79d305ce2e07f55274fbf86e50df7cea038a7d4be7983f4"
   },
   "input": [
     1,
@@ -34,7 +34,7 @@
     "torchscript_sha256": "e20e37fca81f660e79d7badfa39de6da336d002573ebec065b6cb66645070b27"
   },
   "postprocess": {
-    "confidence": 0.49,
+    "confidence": 0.67,
     "nms_iou": 0.5,
     "strides": [
       8,
@@ -46,15 +46,15 @@
     "split": "video2-HD + video11 HD development val; used for model/confidence selection; not independent",
     "images": 230,
     "truth_boxes": 400,
-    "confidence": 0.49,
+    "confidence": 0.67,
     "nms_iou": 0.5,
     "ncnn_runtime_box_detection_metrics": {
-      "tp": 366,
-      "fp": 35,
-      "fn": 34,
-      "precision": 0.912718,
-      "recall": 0.915,
-      "f1": 0.913858
+      "tp": 353,
+      "fp": 15,
+      "fn": 47,
+      "precision": 0.959239,
+      "recall": 0.8825,
+      "f1": 0.919271
     },
     "ncnn_development_quality_gate": {
       "minimum_precision": 0.9,
@@ -62,6 +62,30 @@
       "passed": true
     },
     "interpretation": "development diagnostic only; quality metrics do not waive strict parity failures or establish independent performance"
+  },
+  "post_smoke_threshold_diagnostics": {
+    "reason": "The first Android 14 smoke reported excessive cue repetition and at least one perceived false direction, so the candidate now prioritizes fewer false positives.",
+    "thresholds_inspected": [
+      0.49,
+      0.55,
+      0.59,
+      0.61,
+      0.63,
+      0.65,
+      0.67
+    ],
+    "selected_confidence": 0.67,
+    "reviewed_video13_metrics": {
+      "images": 121,
+      "truth_boxes": 211,
+      "tp": 192,
+      "fp": 16,
+      "fn": 19,
+      "precision": 0.923077,
+      "recall": 0.909953,
+      "f1": 0.916468
+    },
+    "interpretation": "video13 was inspected across thresholds after the device smoke and is now development data, not an independent or blind holdout"
   },
   "parity": {
     "pytorch_vs_onnx": {
@@ -71,7 +95,7 @@
       "maximum_raw_error_allowed": 0.0005,
       "raw_failed_images": 1,
       "all_final_detection_arrays_match": true,
-      "report_sha256": "1392a8a9778b1ac368a04bcc5f99bc7ed7613c571122a77e97e098dd82ad3fca"
+      "report_sha256": "8db9f1689ec388787f6fe8618f2fa13e3b44d91a86fa295b5a9d285070fb3dda"
     },
     "torchscript_vs_ncnn_and_android_preprocess": {
       "overall_passed": false,
@@ -83,15 +107,15 @@
       "maximum_input_pixel_error": 1.0,
       "all_final_detection_counts_match": true,
       "images_with_matching_final_detection_counts": 230,
-      "reference_detections": 401,
-      "runtime_detections": 401,
+      "reference_detections": 368,
+      "runtime_detections": 368,
       "maximum_detection_value_error": 0.4334869384765625,
       "maximum_detection_value_error_allowed": 0.01,
       "detection_gate_passed": false,
-      "report_sha256": "ce69bbfe922d7b45a3d6cfbef8b60b1b9c9a74d920f4d425f380c2ca4b5d5769"
+      "report_sha256": "336224dc168fde4254e06326c996795f30d3da717b9b2b18decea2ebe73c4656"
     }
   },
-  "release_status": "experimental; development only; strict ONNX/ncnn raw-output and Android-equivalent detection parity failed; no independent test split or physical-device validation; not promoted",
+  "release_status": "experimental; development only; strict ONNX/ncnn raw-output and Android-equivalent detection parity failed; the first physical-device smoke exposed excessive legacy cue repetition and a perceived false direction, and the routing/threshold changes require a fresh device retest; not promoted",
   "provenance": {
     "training_checkpoint": {
       "path": "build/training/yolox-nano-hd-bootstrap-video10-video11-v2-320/best_ckpt.pth",
@@ -118,16 +142,16 @@
       "sha256": "5553b5183d01f8abbc3bc90fc35e84449f8fda04d7a3700f30107de23eed51c6"
     },
     "onnx_parity_report": {
-      "path": "build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/onnx-parity-val230-c049.json",
-      "sha256": "1392a8a9778b1ac368a04bcc5f99bc7ed7613c571122a77e97e098dd82ad3fca"
+      "path": "build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/onnx-parity-val230-c067.json",
+      "sha256": "8db9f1689ec388787f6fe8618f2fa13e3b44d91a86fa295b5a9d285070fb3dda"
     },
     "ncnn_parity_report": {
-      "path": "build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/ncnn-parity-val230-c049.json",
-      "sha256": "ce69bbfe922d7b45a3d6cfbef8b60b1b9c9a74d920f4d425f380c2ca4b5d5769"
+      "path": "build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/ncnn-parity-val230-c067.json",
+      "sha256": "336224dc168fde4254e06326c996795f30d3da717b9b2b18decea2ebe73c4656"
     },
     "ncnn_development_evaluation": {
-      "path": "build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/ncnn-development-evaluation-val230-c049-iou050.json",
-      "sha256": "2fd3a97cd8388c21bb10ace8a7efe6c8205a681ac742b404b3353fc9fb61e09b"
+      "path": "build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/ncnn-development-evaluation-val230-c067-iou050.json",
+      "sha256": "ba5cf90c9a53d573b25d1c135630b63a69ccbbacda0eb7312cd0f586bbfe5e46"
     }
   },
   "historical_candidate": {

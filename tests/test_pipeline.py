@@ -1532,8 +1532,10 @@ def test_hd_bootstrap_android_profile_matches_candidate_metadata() -> None:
     assert bundled["rois"]["minimap_direction"] == pytest.approx(
         [96 / 1920, 0, (372 - 96) / 1920, 277 / 860]
     )
-    assert bundled["profile_version"] == "0.8.0-yolox-nano-hd-bootstrap-video10-video11-v2"
-    assert bundled["thresholds"]["minimap_yolox_confidence"] == pytest.approx(0.49)
+    assert bundled["profile_version"] == (
+        "0.8.1-yolox-nano-hd-bootstrap-video10-video11-v2-c067"
+    )
+    assert bundled["thresholds"]["minimap_yolox_confidence"] == pytest.approx(0.67)
     assert bundled["thresholds"]["minimap_yolox_nms"] == pytest.approx(0.5)
     assert bundled["models"]["minimap_yolox_bin_sha256"] == (
         "d5b4b5dcee290122ae823750d247dd7336f656ab2430f86f68ba87f6ad1e4bd3"
@@ -1546,7 +1548,7 @@ def test_hd_bootstrap_android_profile_matches_candidate_metadata() -> None:
     )
     assert metadata["candidate"]["development_profile_android_sha256"] == profile_sha256
     assert metadata["candidate"]["id"] == (
-        "yolox-nano-hd-bootstrap-video10-video11-v2-dev-candidate"
+        "yolox-nano-hd-bootstrap-video10-video11-v2-c067-dev-candidate"
     )
     assert metadata["candidate"]["profile_version"] == bundled["profile_version"]
     assert metadata["source"]["checkpoint_sha256"] == (
@@ -1565,12 +1567,12 @@ def test_hd_bootstrap_android_profile_matches_candidate_metadata() -> None:
     )
     assert metadata["development_validation"]["images"] == 230
     assert metadata["development_validation"]["ncnn_runtime_box_detection_metrics"] == {
-        "tp": 366,
-        "fp": 35,
-        "fn": 34,
-        "precision": 0.912718,
-        "recall": 0.915,
-        "f1": 0.913858,
+        "tp": 353,
+        "fp": 15,
+        "fn": 47,
+        "precision": 0.959239,
+        "recall": 0.8825,
+        "f1": 0.919271,
     }
     assert metadata["parity"]["pytorch_vs_onnx"]["passed"] is False
     assert metadata["parity"]["pytorch_vs_onnx"]["maximum_raw_error"] == pytest.approx(
@@ -1583,8 +1585,8 @@ def test_hd_bootstrap_android_profile_matches_candidate_metadata() -> None:
     assert ncnn_parity["raw_max_error"] == pytest.approx(0.0010589361190795898)
     assert ncnn_parity["raw_failed_images"] == 12
     assert ncnn_parity["images_with_matching_final_detection_counts"] == 230
-    assert ncnn_parity["reference_detections"] == 401
-    assert ncnn_parity["runtime_detections"] == 401
+    assert ncnn_parity["reference_detections"] == 368
+    assert ncnn_parity["runtime_detections"] == 368
     assert ncnn_parity["all_final_detection_counts_match"] is True
     assert ncnn_parity["maximum_detection_value_error"] == pytest.approx(0.4334869384765625)
     bundled_default = json.loads(

@@ -61,7 +61,7 @@ public final class GameTuningActivity extends Activity {
 
         LinearLayout recognition = UiKit.card(this);
         UiKit.add(recognition, UiKit.heading(this, "识别功能"), 8);
-        CheckBox experimental = checkBox("启用实验识别器");
+        CheckBox experimental = checkBox("启用小地图识别（实验）");
         experimental.setChecked(GameProfile.settings(this)
                 .getBoolean("allow_experimental", false));
         experimental.setOnCheckedChangeListener((button, checked) ->
@@ -69,7 +69,7 @@ public final class GameTuningActivity extends Activity {
                         .putBoolean("allow_experimental", checked).apply());
         UiKit.add(recognition, experimental, 4);
 
-        minimapOverlay = checkBox("启用视野记忆");
+        minimapOverlay = checkBox("提醒新出现的敌方头像");
         minimapOverlay.setChecked(GameProfile.settings(this)
                 .getBoolean("vision_memory", false));
         minimapOverlay.setOnClickListener(view -> {

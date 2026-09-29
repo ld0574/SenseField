@@ -62,14 +62,16 @@ def _dispatch(
     created: int = 1050,
     expires: int = 1850,
     category: str = "VISION_MEMORY",
+    kind: str = "VISION_APPEAR",
+    drop_reason: str = "none",
 ) -> str:
     return (
         "I/MapAssistCapture: CueDispatch "
         f"sessionId={SESSION_ID} cueId={cue_id} eventKey=event:1 "
-        "kind=VISION_APPEAR "
+        f"kind={kind} "
         f"category={category} priority=40 createdAtMs={created} "
         f"expiresAtMs={expires} requestedMask={requested} "
-        f"acceptedMask={accepted} outcome={outcome} dropReason=none"
+        f"acceptedMask={accepted} outcome={outcome} dropReason={drop_reason}"
     )
 
 
@@ -88,6 +90,7 @@ def _schema2_log(
     dispatch: str,
     *playbacks: str,
     summary_overrides: str = "",
+    fill_unmatched_cue_dispatches: bool = True,
 ) -> str:
     content = _session_log(
         _cue("session-42:1"),
@@ -95,7 +98,23 @@ def _schema2_log(
         _cue("session-42:3", kind=3, stale=True, audio_queued=False),
         summary_overrides=summary_overrides,
     )
-    records = "\n".join((dispatch, *playbacks))
+    dispatches = [dispatch]
+    if fill_unmatched_cue_dispatches:
+        dispatch_id = dispatch.split(" cueId=", 1)[1].split(" ", 1)[0]
+        defaults = [
+            _dispatch(cue_id="session-42:1"),
+            _dispatch(cue_id="session-42:2"),
+            _dispatch(
+                cue_id="session-42:3", accepted=0, outcome="DROPPED",
+                created=1100, expires=1100, category="DANGER",
+                kind="DANGER_PING", drop_reason="expired",
+            ),
+        ]
+        dispatches.extend(
+            record for record in defaults
+            if record.split(" cueId=", 1)[1].split(" ", 1)[0] != dispatch_id
+        )
+    records = "\n".join((*dispatches, *playbacks))
     return content.replace(
         "I/MapAssistCapture: SessionSummary",
         records + "\nI/MapAssistCapture: SessionSummary",
@@ -223,22 +242,33 @@ def test_ignores_records_from_other_logcat_tags(tmp_path: Path) -> None:
 
 
 def test_parses_enhanced_dispatch_playback_and_capture_health(tmp_path: Path) -> None:
-    content = _session_log(
-        _cue("session-42:2", kind=4),
-        _cue("session-42:3", kind=5),
-        _cue("session-42:4", kind=3, stale=True, audio_queued=False),
-    ).replace(
-        "I/MapAssistCapture: SessionSummary",
-        "I/MapAssistCapture: CueDispatch sessionId=session-42 cueId=session-42:1 "
-        "eventKey=vision:7:1 kind=VISION_APPEAR category=VISION_MEMORY priority=40 "
-        "createdAtMs=1050 expiresAtMs=1850 requestedMask=13 acceptedMask=13 "
-        "outcome=ACCEPTED dropReason=none\n"
+    records = "\n".join((
+        _dispatch(
+            cue_id="session-42:1", requested=6, accepted=6,
+            category="PLAYER_STATE", kind="PLAYER_DEAD",
+        ),
+        _dispatch(
+            cue_id="session-42:2", requested=6, accepted=6,
+            category="PLAYER_STATE", kind="PLAYER_ALIVE",
+        ),
+        _dispatch(
+            cue_id="session-42:3", requested=1, accepted=0, outcome="DROPPED",
+            created=1100, expires=1100, category="DANGER", kind="DANGER_PING",
+            drop_reason="expired",
+        ),
         "I/MapAssistCapture: CuePlayback sessionId=session-42 cueId=session-42:1 "
-        "channel=TONE atMs=1060 result=STARTED\n"
+        "channel=SPEECH atMs=1060 result=STARTED",
         "I/MapAssistCapture: CaptureHealth sessionId=session-42 state=RECOVERING "
         "reason=frame_starvation attempt=1 readerGeneration=2 elapsedSinceFrameMs=1100 "
-        "elapsedSinceProcessedMs=1180\n"
+        "elapsedSinceProcessedMs=1180",
+    ))
+    content = _session_log(
+        _cue("session-42:1", kind=4),
+        _cue("session-42:2", kind=5),
+        _cue("session-42:3", kind=3, stale=True, audio_queued=False),
+    ).replace(
         "I/MapAssistCapture: SessionSummary",
+        records + "\nI/MapAssistCapture: SessionSummary",
     ).replace("reason=stopped ",
               "reason=stopped starvationCount=1 recoveryAttempts=1 recoverySuccesses=0 ")
     path = _write_log(tmp_path, content)
@@ -247,9 +277,21 @@ def test_parses_enhanced_dispatch_playback_and_capture_health(tmp_path: Path) ->
 
     assert parsed["schema_version"] == 2
     assert parsed["non_stale_cue_ids"] == ["session-42:1"]
-    assert parsed["dispatches"][0]["category"] == "VISION_MEMORY"
+    assert parsed["dispatches"][0]["category"] == "PLAYER_STATE"
     assert parsed["capture_health"][0]["state"] == "RECOVERING"
     assert parsed["capture_health"][0]["elapsed_since_processed_ms"] == 1180
+
+
+def test_rejects_schema2_session_with_missing_cue_dispatch(tmp_path: Path) -> None:
+    path = _write_log(
+        tmp_path,
+        _schema2_log(_dispatch(), fill_unmatched_cue_dispatches=False),
+    )
+
+    with pytest.raises(
+        ValueError, match="CueEvent 'session-42:2' is missing its CueDispatch record"
+    ):
+        parse_session_log(path, SESSION_ID)
 
 
 @pytest.mark.parametrize(

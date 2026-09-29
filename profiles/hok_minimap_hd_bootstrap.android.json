@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "name": "hok_minimap_hd_bootstrap_dev",
-  "profile_version": "0.8.0-yolox-nano-hd-bootstrap-video10-video11-v2",
+  "profile_version": "0.8.1-yolox-nano-hd-bootstrap-video10-video11-v2-c067",
   "game": "王者荣耀",
   "verified": false,
-  "notes": "Local experimental-only HD bootstrap v2 candidate. Train: video1+8+3+4+5+10 (664 images/1211 boxes); development val: video2-HD+11 (230 images/400 boxes), used for model and confidence selection; test is empty, so these are not independent results. Threshold confidence=0.49, NMS=0.5. Safe crop from the reviewed video10/11 record is [44,0,408,334) on 1920x860 frames; widget/direction ROI is [96,0,372,277). Strict PyTorch-to-ONNX raw parity failed (max 0.000595391 > 0.0005). Strict TorchScript-to-ncnn raw parity failed (max 0.001058936 > 0.0005); Android-equivalent detection coordinate parity also failed (max value error 0.433487 > 0.01) despite matching detection counts on all 230 images. Keep verified=false and public defaults off. Runtime remains behind the explicit allow_experimental toggle; no physical-device validation has been run.",
+  "notes": "Local experimental-only HD bootstrap v2 candidate with the post-smoke conservative threshold. Train: video1+8+3+4+5+10 (664 images/1211 boxes); development val: video2-HD+11 (230 images/400 boxes), used for model and confidence selection. Threshold confidence=0.67, NMS=0.5: development val P/R/F1=95.92/88.25/91.93%; reviewed cross-source video13 diagnostic P/R/F1=92.31/91.00/91.65%. These are not independent release results. The first Android device smoke exposed a legacy five-second direct-cue loop and one perceived false direction; direct minimap cues are now blocked in favor of tracked transitions and require a fresh device retest. Strict PyTorch-to-ONNX and TorchScript-to-ncnn parity gates remain failed. Keep verified=false and public defaults off.",
   "rois": {
     "minimap": [
       0.022916666666666665,
@@ -53,14 +53,14 @@
     "main_min_aspect": 3.5,
     "template_match": 0.94,
     "minimap_yolox_input_size": 320,
-    "minimap_yolox_confidence": 0.49,
+    "minimap_yolox_confidence": 0.67,
     "minimap_yolox_nms": 0.5
   },
   "events": {
-    "min_confidence": 0.49,
+    "min_confidence": 0.67,
     "max_observation_age_ms": 250,
     "min_global_gap_ms": 1000,
-    "minimap_min_gap_ms": 5000,
+    "minimap_min_gap_ms": 15000,
     "min_hits_in_three_frames": 2,
     "reset_after_missing_frames": 3
   },

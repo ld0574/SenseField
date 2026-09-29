@@ -1,6 +1,6 @@
 # video10/11 HD 人工复核与开发训练记录
 
-更新时间：2026-09-29
+更新时间：2026-09-30
 
 这两场录像用于 HD 检测器的开发数据。所有统计均按完整录像分组，不能把相邻帧随机拆到不同 split，也不能把下面的开发指标当作最终比赛成绩。
 
@@ -45,7 +45,7 @@ COCO train/val 均通过 provenance 审计，跨 split 没有精确重复；空 
 
 ## 新训练候选
 
-从 video4/5 扩充候选初始化，使用 YOLOX-Nano、320 输入、batch 16、Apple MPS、seed `20260930`、`lr_scale=0.25`，最多 12 个 epoch；best epoch 为 8，实际训练约 337 秒。开发 val 选择 confidence `0.49` 时：
+从 video4/5 扩充候选初始化，使用 YOLOX-Nano、320 输入、batch 16、Apple MPS、seed `20260930`、`lr_scale=0.25`，最多 12 个 epoch；best epoch 为 8，实际训练约 337 秒。以下 `confidence=0.49` 是首轮真机反馈前的训练阶段历史阈值和结果；当前部署候选使用 `confidence=0.67`：
 
 ```text
 TP/FP/FN: 366/35/34
@@ -54,7 +54,7 @@ recall:    91.5000%
 F1:        91.3858%
 ```
 
-这些结果来自 video2-HD+video11 开发 val，且 video11 参与了选模或阈值选择，因此只是开发诊断，不能称为独立留出成绩。新候选已经导出 ONNX/TorchScript/ncnn 并绑定本机 Android 实验 assets，但严格 raw／坐标 parity 未通过，仍为 `verified=false`、`release_ready=false`；公共默认 profile 继续关闭 detector，实体 Android 也尚未验收。
+这些历史结果来自 video2-HD+video11 开发 val，且 video11 参与了选模或阈值选择，因此只是开发诊断，不能称为独立留出成绩。首轮真机反馈后当前部署阈值改为 `0.67`；Android 同款 ncnn 开发 val 为 TP/FP/FN `353/15/47`，P/R/F1 `95.9239% / 88.2500% / 91.9271%`。新候选已导出 ONNX/TorchScript/ncnn 并绑定本机 Android 实验 assets，但严格 ONNX/ncnn raw 与 Android 检测 parity 未通过，仍为 `verified=false`、`release_ready=false`；公共默认 profile 继续关闭 detector。Android 14 首轮真机冒烟使用 0.2.1 debug，当前开发构建为 0.2.2（versionCode 6），修复版仍待真机复测。
 
 ## 证据边界
 

@@ -78,6 +78,8 @@ public final class CaptureService extends Service {
     private int latestLocatorScoreMilli;
     private int lastLoggedLocatorState = Integer.MIN_VALUE;
     private int maxObservationAgeMs;
+    private long minimapAppearMinGapMs;
+    private long lastMinimapAppearCueAtMs = CueRouting.NO_MINIMAP_CUE;
     private int frameWidth;
     private int frameHeight;
     private int frameRotation = -1;
@@ -215,6 +217,11 @@ public final class CaptureService extends Service {
                 GameProfile profile = GameProfile.load(this);
                 profileName = profile.name + " · " + profile.version;
                 maxObservationAgeMs = profile.eventInts[0];
+                // A development profile may carry an older, shorter native
+                // cooldown. The accessible marker path has a hard floor so an
+                // imported legacy profile cannot restore five-second chatter.
+                minimapAppearMinGapMs = CueRouting.effectiveMinimapAppearanceGap(
+                        profile.eventInts[2]);
                 visionMemoryEnabled = GameProfile.settings(this)
                         .getBoolean("vision_memory", false);
                 if (visionMemoryEnabled &&
@@ -249,6 +256,23 @@ public final class CaptureService extends Service {
                         playerLife == null ? null : playerLife.luma,
                         playerLife == null ? null : playerLife.chroma);
                 if (nativeSession == 0) throw new IllegalStateException("Native recognizer rejected profile");
+                Log.i(TAG, "SessionConfig sessionId=" + auditSessionId
+                        + " profileName=" + profile.name
+                        + " profileVersion=" + profile.version
+                        + " verified=" + profile.verified
+                        + " minimapYolox=" + profile.minimapYolox
+                        + " confidence=" + profile.yoloxConfidence
+                        + " nms=" + profile.yoloxNms
+                        + " minimapMinGapMs=" + minimapAppearMinGapMs
+                        + " visionMemoryEnabled=" + visionMemoryEnabled
+                        + " visionCategoryEnabled=" + cueSettings.categoryEnabled(
+                                CueRequest.Category.VISION_MEMORY)
+                        + " cuePreset=" + GameProfile.settings(this).getString(
+                                "cue_preset", CueSettings.PRESET_STANDARD)
+                        + " cueChannels=" + cueSettings.enabledChannels()
+                        + " visionChannels=" + cueSettings.enabledChannels(
+                                CueRequest.Category.VISION_MEMORY)
+                        + " speakAppear=" + cueSettings.speakAppear());
 
                 // Android 14+ requires the mediaProjection foreground type before
                 // obtaining the one-use token from the consent result.
@@ -466,8 +490,10 @@ public final class CaptureService extends Service {
                         previous == CaptureHealthMonitor.State.STARVED) {
                     recoverySuccesses++;
                     logCaptureHealth("HEALTHY", "frame_resumed");
-                    dispatchSystemCue("CAPTURE_RECOVERED", "截屏已恢复",
-                            20, 3000, CueRequest.CHANNEL_SPEECH);
+                    // Brief ImageReader stalls recover automatically and are
+                    // common around game and orientation transitions. Keep the
+                    // recovery in diagnostics and the notification instead of
+                    // interrupting play with a spoken status message.
                     refreshNotification();
                 }
                 if (now - lastProcessedAtMs < FRAME_PERIOD_MS) return;
@@ -564,9 +590,11 @@ public final class CaptureService extends Service {
                         }
                         if (visionMemoryEnabled)
                             playVisionMemoryTransitions(result, observedAtMs);
-                        // Minimap APPEAR is dispatched by the marker path, which
-                        // carries the stable track id needed for exact deduplication.
-                        if (result[0] > 0 && (result[0] != 2 || !visionMemoryEnabled))
+                        // A raw minimap hit is state input. Only the marker path
+                        // may turn it into an APPEAR/DISAPPEAR cue with a stable
+                        // track id. This also keeps the feature silent when the
+                        // user has not enabled vision memory.
+                        if (CueRouting.shouldDispatchDirectNativeCue(result[0]))
                             dispatchNativeCue(result[0], result[1], result[2], observedAtMs);
                     }
                 }
@@ -623,6 +651,9 @@ public final class CaptureService extends Service {
                         cueSettings != null && cueSettings.categoryEnabled(
                                 CueRequest.Category.VISION_MEMORY)) ||
                 result.length < MARKER_OFFSET || result[11] <= 0) return;
+        // Use one monotonic routing timestamp for the whole processed frame.
+        // Frame timestamps can move slightly backwards after ImageReader recovery.
+        long routingAtMs = SystemClock.elapsedRealtime();
         int count = Math.min(8, result[11]);
         for (int index = 0; index < count; index++) {
             int base = MARKER_OFFSET + index * MARKER_STRIDE;
@@ -634,41 +665,50 @@ public final class CaptureService extends Service {
                     result[base + 3] + result[base + 5] / 2,
                     result[7], result[8], result[9], result[10]);
             int movement = result[base + 1];
-            int direction = movement != 0 ? movement : cardinalForPosition(position);
             int trackId = result[base + 8];
+            if (!CueRouting.shouldCueMinimapAppearance(event, routingAtMs,
+                    lastMinimapAppearCueAtMs, minimapAppearMinGapMs)) {
+                Log.i(TAG, "VisionMemoryEvent sessionId=" + auditSessionId
+                        + " event=" + (event == 1 ? "APPEAR" :
+                        event == 2 ? "DISAPPEAR" : "UNKNOWN_" + event)
+                        + " trackId=" + trackId
+                        + " mapPosition=" + position
+                        + " movement=" + movement
+                        + " cueSuppressed=true"
+                        + (event == 1 ? " suppression=minimap_min_gap" : ""));
+                continue;
+            }
+            lastMinimapAppearCueAtMs = routingAtMs;
             int channels = minimapOverlay == null ? 0 : CueRequest.CHANNEL_VISUAL;
+            channels |= CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_HAPTIC;
             String speech = null;
-            int priority;
-            long ttl;
-            if (event == 1) {
-                channels |= CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_HAPTIC;
-                if (cueSettings != null && cueSettings.speakAppear()) {
-                    channels |= CueRequest.CHANNEL_SPEECH;
-                    speech = positionText(position) + "敌人出现";
-                }
-                priority = 40;
-                ttl = 800;
-            } else {
-                channels |= CueRequest.CHANNEL_HAPTIC;
-                if (movement != 0) {
-                    channels |= CueRequest.CHANNEL_SPEECH;
-                    speech = positionText(position) + "敌人消失，"
-                            + movementText(movement) + "移动";
-                }
-                priority = 60;
-                ttl = 1500;
+            if (cueSettings != null && cueSettings.speakAppear()) {
+                channels |= CueRequest.CHANNEL_SPEECH;
+                speech = CueRouting.unlocatedMinimapEnemySpeech();
             }
             String cueId = auditSessionId + ":" + nextCueId++;
             CueRequest request = new CueRequest(auditSessionId, cueId,
                     CueEventKeys.visionMemory(nativeResetGeneration, trackId, event),
-                    event == 1 ? "VISION_APPEAR" : "VISION_DISAPPEAR",
-                    CueRequest.Category.VISION_MEMORY, priority, observedAtMs,
-                    observedAtMs + ttl, channels, 2, direction, direction, speech);
+                    "VISION_APPEAR", CueRequest.Category.VISION_MEMORY, 40,
+                    observedAtMs, observedAtMs + 800, channels, 2,
+                    CueRouting.unlocatedMinimapEnemyDirection(),
+                    CueRouting.unlocatedMinimapEnemyDirection(), speech);
+            long frameAgeMs = Math.max(0, SystemClock.elapsedRealtime() - observedAtMs);
             CueDispatcher.DispatchResult dispatched = cueDispatcher.submit(request);
+            boolean stale = recordCueDispatch(dispatched);
+            Log.i(TAG, "CueEvent sessionId=" + auditSessionId
+                    + " cueId=" + cueId
+                    + " kind=2"
+                    + " direction=" + CueRouting.unlocatedMinimapEnemyDirection()
+                    + " observedAtMs=" + observedAtMs
+                    + " frameAgeMs=" + frameAgeMs
+                    + " nativeMicros=" + latestNativeMicros
+                    + " stale=" + stale
+                    + " audioQueued=" + dispatched.audioQueued());
             Log.i(TAG, "VisionMemoryEvent sessionId=" + auditSessionId
-                    + " event=" + (event == 1 ? "APPEAR" : "DISAPPEAR")
-                    + " position=" + position
+                    + " event=APPEAR"
                     + " trackId=" + trackId
+                    + " mapPosition=" + position
                     + " movement=" + movement
                     + " ageMs=" + result[base + 6]
                     + " feedbackQueued=" + dispatched.audioQueued());
@@ -677,7 +717,7 @@ public final class CaptureService extends Service {
 
     private void dispatchNativeCue(int kind, int direction, int nativePriority,
                                    long observedAtMs) {
-        if (cueDispatcher == null) return;
+        if (cueDispatcher == null || !CueRouting.shouldDispatchDirectNativeCue(kind)) return;
         CueRequest.Category category = kind == 3
                 ? CueRequest.Category.DANGER
                 : kind >= 4 ? CueRequest.Category.PLAYER_STATE
@@ -710,12 +750,8 @@ public final class CaptureService extends Service {
                 kindName(kind), category, priority, observedAtMs, observedAtMs + ttl,
                 channels, kind, direction, direction, speech);
         long frameAgeMs = Math.max(0, SystemClock.elapsedRealtime() - observedAtMs);
-        boolean stale = SystemClock.elapsedRealtime() > request.expiresAtMs;
         CueDispatcher.DispatchResult dispatched = cueDispatcher.submit(request);
-        detectedCues++;
-        if (stale) staleCues++;
-        else if (dispatched.audioQueued()) queuedCues++;
-        else audioQueueFailures++;
+        boolean stale = recordCueDispatch(dispatched);
         Log.i(TAG, "CueEvent sessionId=" + auditSessionId
                 + " cueId=" + cueId
                 + " kind=" + kind
@@ -725,6 +761,16 @@ public final class CaptureService extends Service {
                 + " nativeMicros=" + latestNativeMicros
                 + " stale=" + stale
                 + " audioQueued=" + dispatched.audioQueued());
+    }
+
+    private boolean recordCueDispatch(CueDispatcher.DispatchResult dispatched) {
+        detectedCues++;
+        CueRouting.CueAccounting accounting = CueRouting.cueAccounting(
+                dispatched.reason, dispatched.audioQueued());
+        if (accounting == CueRouting.CueAccounting.STALE) staleCues++;
+        else if (accounting == CueRouting.CueAccounting.QUEUED) queuedCues++;
+        else audioQueueFailures++;
+        return accounting == CueRouting.CueAccounting.STALE;
     }
 
     private void dispatchSystemCue(String kind, String speech, int priority,
@@ -773,34 +819,7 @@ public final class CaptureService extends Service {
         return "UNKNOWN";
     }
 
-    private static int cardinalForPosition(int position) {
-        if (position == 1 || position == 5 || position == 7) return 1;
-        if (position == 2 || position == 6 || position == 8) return 2;
-        if (position == 3) return 3;
-        if (position == 4) return 4;
-        return 0;
-    }
-
-    private static String positionText(int position) {
-        if (position == 1) return "左侧";
-        if (position == 2) return "右侧";
-        if (position == 3) return "上方";
-        if (position == 4) return "下方";
-        if (position == 5) return "左上";
-        if (position == 6) return "右上";
-        if (position == 7) return "左下";
-        if (position == 8) return "右下";
-        return "附近";
-    }
-
-    private static String movementText(int direction) {
-        if (direction == 1) return "向左";
-        if (direction == 2) return "向右";
-        if (direction == 3) return "向上";
-        if (direction == 4) return "向下";
-        return "";
-    }
-
+    /** Diagnostic map-center bucket; never use as a player-relative cue. */
     private static int minimapPosition(int x, int y, int roiX, int roiY,
                                        int roiWidth, int roiHeight) {
         if (roiWidth <= 0 || roiHeight <= 0) return 0;
@@ -888,6 +907,7 @@ public final class CaptureService extends Service {
             recoverySuccesses = 0;
             readerGeneration = 0;
             nativeResetGeneration = 0;
+            lastMinimapAppearCueAtMs = CueRouting.NO_MINIMAP_CUE;
             latestNativeMicros = 0;
             latestLocatorState = -1;
             latestLocatorScoreMilli = 0;

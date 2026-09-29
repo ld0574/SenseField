@@ -1,8 +1,8 @@
 # 小地图 YOLOX-Nano 开发训练
 
-> **当前 HD-only 规则（2026-09-29）**：后续训练、验证、阈值和模型评估只使用 HD。train/dev 来源为已替换成高清内容的 `video/video1hd.mp4`、`video2hd`、`video3hd`、`video4hd`、`video5hd`、`video7`、`video8`、`video10`；`video11` 是 HD dev-val。`video13` 已完成模型辅助人工复核和 Codex temporal audit，形成 test-only COCO 诊断；它不属于 blind independent holdout，不能用于调参、选模、修改 ROI 或后处理。`video12` 为 primary sealed holdout，`video9` 为 cross-source sealed holdout；不得对这两场运行模型或查看预测。Hero 仅用于 UX／事件故事。低清 video2–6 及其队列、模型和指标全部退役为历史；`video6hd.mp4` 不属于当前数据集。
+> **当前 HD-only 规则（2026-09-30）**：后续训练、验证、阈值和模型评估只使用 HD。train/dev 来源为已替换成高清内容的 `video/video1hd.mp4`、`video2hd`、`video3hd`、`video4hd`、`video5hd`、`video7`、`video8`、`video10`；`video11` 是 HD dev-val。`video13` 已完成模型辅助人工复核和 Codex temporal audit；它最初形成 test-only COCO 诊断，但首轮真机反馈后查看了多档 confidence（包括当前部署值 `0.67`），现为跨来源开发诊断，不能再称独立 test 或用于最终门禁。训练阶段 confidence `0.49` 的结果仅保留为历史。`video12` 为 primary sealed holdout，`video9` 为 cross-source sealed holdout；不得对这两场运行模型或查看预测。Hero 仅用于 UX／事件故事。低清 video2–6 及其队列、模型和指标全部退役为历史；`video6hd.mp4` 不属于当前数据集。
 >
-> 当前 bootstrap v2 split 使用 video1+8+3+4+5+10 train（664 图／1211 框）与 video2-HD+11 val（230 图／400 框）；bootstrap test 仍为空，不能产生 bootstrap 最终成绩。video4-HD、video5-HD、video10/11 已完成人工复核，队列的 SQLite／manifest、source hash、显示尺寸、三层 ROI 和 crop-edge 审计均通过；video10 已纳入 train，video11 作为 HD dev-val。video13 的 130/130 个任务已人工复核（110 `corrected`、11 `negative`、9 `excluded`、0 pending/lease），并经 temporal audit 与 test-only COCO audit 收口为 121 图／211 框。冻结 v2 在 CPU、320、confidence `0.49`、NMS `0.5`、IoU `0.5` 下为 `204/28/7`，P/R/F1 `87.9310% / 96.6825% / 92.0993%`，方向 `171/171=100%`；准确率门槛未过，召回与方向已过。它是模型辅助跨来源 test 诊断，不能用于调参、选模或修改 ROI；video7-edge 仍待复核，video9/12 继续封存。
+> 当前 bootstrap v2 split 使用 video1+8+3+4+5+10 train（664 图／1211 框）与 video2-HD+11 val（230 图／400 框）；bootstrap test 仍为空，不能产生 bootstrap 最终成绩。video4-HD、video5-HD、video10/11 已完成人工复核，队列的 SQLite／manifest、source hash、显示尺寸、三层 ROI 和 crop-edge 审计均通过；video10 已纳入 train，video11 作为 HD dev-val。video13 的 130/130 个任务已人工复核（110 `corrected`、11 `negative`、9 `excluded`、0 pending/lease），并经 temporal audit。训练阶段 confidence `0.49` 的历史诊断为 `204/28/7`、P/R/F1 `87.9310% / 96.6825% / 92.0993%`，方向 `171/171=100%`；准确率门槛未过，召回与方向已过。首轮真机反馈后对 video13 检查多档阈值，当前 confidence `0.67` 下为 `192/16/19`、P/R/F1 `92.3077% / 90.9953% / 91.6468%`。因此 video13 是模型辅助的跨来源开发诊断，不能再作为独立 test 或最终门禁成绩。video7-edge 仍待复核，video9/12 继续封存。
 
 ### 低清数据与模型的历史记录（只读）
 
@@ -114,7 +114,7 @@ shasum -a 256 build/models/yolox_nano.pth
 
 ## 当前数据状态：只接受人工复核后的 HD
 
-当前 HD bootstrap v2 train 为人工复核后的 video1+8+3+4+5+10（664 图／1211 框），val 为 video2-HD+11（230 图／400 框）；bootstrap test 仍为空，不能作为 bootstrap 最终成绩。video3-HD 120/120 帧、video4-HD 100/100 帧、video5-HD 100/100 帧、video10/11 各 130/130 帧均已复核完成并通过三层 ROI、尺寸、框合法性和 crop-edge audit。video10 已进入 train，video11 保持 HD dev-val；video7-edge 仍待复核，未复核前不得将其加入当前 COCO、训练或验证。video13 已完成 130/130 个任务人工复核（110 `corrected`、11 `negative`、9 `excluded`、0 pending/lease），并完成 Codex temporal audit；test-only COCO audit 无 blocker，121 个可评测 test 图含 211 框。冻结 v2 test 诊断的检测框 TP/FP/FN 为 `204/28/7`，P/R/F1 `87.9310% / 96.6825% / 92.0993%`，方向 `171/171=100%`；准确率门槛未过，召回与方向已过。video13 不是 blind independent holdout，不能用于调参、选模、修改 ROI 或后处理；video9/12 保持 sealed 且未读取。低清 video2–6 及其旧 checkpoint、指标均已退役。
+当前 HD bootstrap v2 train 为人工复核后的 video1+8+3+4+5+10（664 图／1211 框），val 为 video2-HD+11（230 图／400 框）；bootstrap test 仍为空，不能作为 bootstrap 最终成绩。video3-HD 120/120 帧、video4-HD 100/100 帧、video5-HD 100/100 帧、video10/11 各 130/130 帧均已复核完成并通过三层 ROI、尺寸、框合法性和 crop-edge audit。video10 已进入 train，video11 保持 HD dev-val；video7-edge 仍待复核，未复核前不得将其加入当前 COCO、训练或验证。video13 已完成 130/130 个任务人工复核（110 `corrected`、11 `negative`、9 `excluded`、0 pending/lease），并完成 Codex temporal audit；此前的 test-only COCO audit 无 blocker，121 张可评测图含 211 框。训练阶段 confidence `0.49` 的历史诊断 TP/FP/FN 为 `204/28/7`，P/R/F1 `87.9310% / 96.6825% / 92.0993%`，方向 `171/171=100%`；准确率门槛未过，召回与方向已过。首轮真机反馈后又检查多档阈值，当前部署 confidence `0.67` 下为 `192/16/19`、P/R/F1 `92.3077% / 90.9953% / 91.6468%`。video13 因此是开发诊断，不能再作为独立 test 或最终门禁成绩；video9/12 保持 sealed 且未读取。低清 video2–6 及其旧 checkpoint、指标均已退役。
 
 ### HD bootstrap 训练与标注辅助（2026-09-28）
 
@@ -205,15 +205,15 @@ PYTHONPATH=python .venv/bin/python training/evaluate_yolox_ncnn_report.py \
 
 ### video10/11 人工复核后的 v2 开发候选（2026-09-29）
 
-video10 和 video11 已完成全部人工复核并通过队列、ROI、尺寸、框合法性和来源审计。video10 的 130/130 帧（110 `corrected`、20 `negative`、230 框）进入 train；video11 的 130/130 帧（107 `corrected`、23 `negative`、203 框）进入 HD dev-val。合并后的 v2 COCO split 为 train 664 图／1211 框、val 230 图／400 框，bootstrap test 为空；video13 的 test-only 诊断单独保存，不进入该 split。完整审计和来源哈希见 [video10/11 记录](../validation/VIDEO10_11.md)与 [video13 记录](../validation/VIDEO13.md)。
+video10 和 video11 已完成全部人工复核并通过队列、ROI、尺寸、框合法性和来源审计。video10 的 130/130 帧（110 `corrected`、20 `negative`、230 框）进入 train；video11 的 130/130 帧（107 `corrected`、23 `negative`、203 框）进入 HD dev-val。合并后的 v2 COCO split 为 train 664 图／1211 框、val 230 图／400 框，bootstrap test 为空。video13 单独保存且不进入该 split；Android 14 首轮真机反馈后已查看其多档阈值，因此它现在属于跨来源开发诊断。完整审计和来源哈希见 [video10/11 记录](../validation/VIDEO10_11.md)与 [video13 记录](../validation/VIDEO13.md)。
 
-从 video4/5 扩充候选初始化，在 Apple MPS 上以 seed `20260930`、输入 320、batch 16、`lr_scale=0.25` 训练最多 12 轮；best epoch 为 8，实际用时约 337 秒。开发 val 选择 confidence `0.49` 时，TP/FP/FN 为 `366/35/34`，precision / recall / F1 为 `91.2718% / 91.5000% / 91.3858%`。video2-HD 和 video11 都参与了选模或阈值选择，因此这只是开发诊断，不能作为独立留出成绩；video10 已在 train 中，也不能把其回放结果称为独立评估。
+从 video4/5 扩充候选初始化，在 Apple MPS 上以 seed `20260930`、输入 320、batch 16、`lr_scale=0.25` 训练最多 12 轮；best epoch 为 8，实际用时约 337 秒。训练阶段开发 val 原选 confidence `0.49`。首轮 Android 14 真机反馈出现过密提示和至少一次方向误报后，部署候选改为优先降低误报的 `0.67`：Android 同款 ncnn 在固定开发 val 上 TP/FP/FN 为 `353/15/47`，precision / recall / F1 为 `95.9239% / 88.2500% / 91.9271%`；video13 为 `192/16/19` 和 `92.3077% / 90.9953% / 91.6468%`。video2-HD、video11 和 video13 都参与了开发判断，因此这些都不是独立留出成绩。
 
 该 checkpoint 已作为桌面与 Android 本机实验候选。ONNX、TorchScript、ncnn 导出已经完成；ONNX 最终 detection 数组在 230 张固定开发图上相同，但 raw 门限超 1 张。ncnn raw 门限超 12 张，Android 等价预处理后的 detection values 超限 187 张，严格 parity 未通过。本机 ignored param/bin、tracked metadata 与两份 `hok_minimap_hd_bootstrap` profile 已绑定 v2，构建哈希门禁通过；候选保持 `verified=false`、`release_ready=false`，公共默认 profile 继续关闭 detector。完整数值与 artifact 哈希见[模型接入记录](../validation/MODEL_PIPELINE.md#v2-onnxtorchscriptncnn-导出与-parity2026-09-29)。
 
 ### v2 候选导出与 parity 复现
 
-以下命令只使用 `data/private/hd-bootstrap-assistance-video4-video5-video10-video11-v2/coco` 的固定 230 张 COCO val 开发图（video2-HD + video11），输入 320、confidence `0.49`、NMS `0.5`。这些图已经参与选模或阈值选择，不是独立 test。两个 parity verifier 会先写完整 JSON，再在严格门禁失败时返回退出码 1；每条命令单独运行，以便随后查看失败报告。所有输出放在 Git 忽略的 `build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/`。
+以下命令只使用 `data/private/hd-bootstrap-assistance-video4-video5-video10-video11-v2/coco` 的固定 230 张 COCO val 开发图（video2-HD + video11），输入 320、confidence `0.67`、NMS `0.5`。这些图已经参与选模或阈值选择，不是独立 test。两个 parity verifier 会先写完整 JSON，再在严格门禁失败时返回退出码 1；每条命令单独运行，以便随后查看失败报告。所有输出放在 Git 忽略的 `build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/`。
 
 ```sh
 PYTHONPATH=build/third_party/YOLOX:python \
@@ -229,8 +229,8 @@ PYTHONPATH=build/third_party/YOLOX:python \
   --data-dir data/private/hd-bootstrap-assistance-video4-video5-video10-video11-v2/coco \
   --checkpoint build/training/yolox-nano-hd-bootstrap-video10-video11-v2-320/best_ckpt.pth \
   --onnx build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/model.onnx \
-  --input-size 320 --confidence 0.49 --images 230 --max-raw-error 0.0005 \
-  --output build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/onnx-parity-val230-c049.json
+  --input-size 320 --confidence 0.67 --images 230 --max-raw-error 0.0005 \
+  --output build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/onnx-parity-val230-c067.json
 
 PYTHONPATH=build/third_party/YOLOX:python \
   .venv/bin/python build/third_party/YOLOX/tools/export_torchscript.py \
@@ -252,15 +252,15 @@ PYTHONPATH=build/third_party/YOLOX:python \
   --bin build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/model.ncnn.bin \
   --data-dir data/private/hd-bootstrap-assistance-video4-video5-video10-video11-v2/coco \
   --split val --image-count 230 --input-size 320 --threads 1 \
-  --max-raw-error 0.0005 --confidence 0.49 --nms-threshold 0.5 \
+  --max-raw-error 0.0005 --confidence 0.67 --nms-threshold 0.5 \
   --max-runtime-input-error 1.0 --max-detection-error 0.01 \
-  --output build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/ncnn-parity-val230-c049.json
+  --output build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/ncnn-parity-val230-c067.json
 
 PYTHONPATH=python .venv/bin/python training/evaluate_yolox_ncnn_report.py \
   --data-dir data/private/hd-bootstrap-assistance-video4-video5-video10-video11-v2/coco \
-  --parity-report build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/ncnn-parity-val230-c049.json \
+  --parity-report build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/ncnn-parity-val230-c067.json \
   --iou-threshold 0.5 \
-  --output build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/ncnn-development-evaluation-val230-c049-iou050.json
+  --output build/models/yolox-nano-hd-bootstrap-video10-video11-v2-320/ncnn-development-evaluation-val230-c067-iou050.json
 ```
 
 ### 首轮 video1+8+3 checkpoint TorchScript/ONNX/ncnn parity（2026-09-29，历史）

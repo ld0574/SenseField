@@ -1,6 +1,6 @@
-# 原型验证状态（更新于 2026-09-29）
+# 原型验证状态（更新于 2026-09-30）
 
-> **当前权威规则（HD-only）**：只使用人工复核后的 HD 框作为真值。当前 bootstrap v2 split 为 video1+8+3+4+5+10 train（664 图／1211 框）、video2-HD+11 val（230 图／400 框）；bootstrap test 仍为空，不能作为 bootstrap 最终成绩。video13 的 130/130 个任务已人工复核（110 `corrected`、11 `negative`、9 `excluded`、0 pending/lease），并完成 Codex temporal audit；test-only COCO audit 无 blocker，形成 121 个可评测 test 图／211 框。它是模型辅助的跨来源 test 诊断，不是 blind independent holdout，不能用于调参、选模、修改 ROI 或后处理。video13 冻结 v2 诊断的准确率门槛未过，召回与方向已过。video4-HD、video5-HD、video10/11 已完成复核并通过 ROI/provenance 审计；video7-edge 仍待复核。`video11` 是 HD dev-val，`video10` 已进入 train；`video12` primary sealed holdout、`video9` cross-source sealed holdout，继续封存且未读取。Hero 只用于 UX／事件故事。低清 video2–6 及其队列、模型、指标和旧 checkpoint 均已退役；未审核机器框不得作为真值。
+> **当前权威规则（HD-only）**：只使用人工复核后的 HD 框作为真值。当前 bootstrap v2 split 为 video1+8+3+4+5+10 train（664 图／1211 框）、video2-HD+11 val（230 图／400 框）；bootstrap test 仍为空，不能作为 bootstrap 最终成绩。当前部署 confidence 为 `0.67`；训练阶段使用的 `0.49` 只保留为历史结果。video13 的 130/130 个任务已人工复核（110 `corrected`、11 `negative`、9 `excluded`、0 pending/lease），并完成 Codex temporal audit；此前的 COCO audit 无 blocker，形成 121 个可评测图／211 框。Android 14 首轮真机反馈后查看了 video13 的多档 confidence，因此它现在属于模型辅助的跨来源开发诊断，不能再称为独立 test 或进入最终门禁。video4-HD、video5-HD、video10/11 已完成复核并通过 ROI/provenance 审计；video7-edge 仍待复核。`video11` 是 HD dev-val，`video10` 已进入 train；`video12` primary sealed holdout、`video9` cross-source sealed holdout，继续封存且未读取。Hero 只用于 UX／事件故事。低清 video2–6 及其队列、模型、指标和旧 checkpoint 均已退役；未审核机器框不得作为真值。
 
 下表保留旧实验结果供审计；凡依赖低清 video2–6 的队列、模型和指标均已退役。下列 video6 检测 P/R/F1 与方向事件数值来自 legacy fixed-ROI crop，只是历史内部开发对照；已发现的边界缺口意味着它们不代表完整小地图覆盖或召回。
 
@@ -8,21 +8,22 @@
 
 | 项目 | 结果 |
 | --- | --- |
-| 桌面共享 C++ 引擎与录像回放 | 2026-09-29 全量 `.venv/bin/python -m pytest -q`：297 项通过、1 项条件跳过；标注网页 Node 测试 5 项通过。覆盖完整 GameProfile 定位读取、小地图自动定位、显示方向抽帧、三层 ROI 传递与门禁、标注站、数据导出、红环几何过滤、空间跟踪、冷却与抢占、冻结模型与 Android 资产哈希、会话日志、最终门禁及 ncnn 回放约束。跳过项需要专用合成 YOLOX profile。 |
-| 主画面检测数据准备 | 当前 HD bootstrap v2 split 为人工复核 train 664 图／1211 框（video1+8+3+4+5+10）和 val 230 图／400 框（video2-HD+11）；bootstrap test 仍为空，不能报告 bootstrap 最终成绩。video13 已完成 130/130 个任务人工复核和 Codex temporal audit，状态为 110 `corrected`、11 `negative`、9 `excluded`、0 pending/lease；test-only COCO audit 无 blocker，121 图／211 框已单独保留为跨来源诊断。冻结 v2（c=0.49、NMS=0.5、IoU=0.5、320、CPU）检测 TP/FP/FN `204/28/7`，P/R/F1 `87.9310% / 96.6825% / 92.0993%`，方向 `171/171=100%`；准确率门槛未过，召回与方向已过。video13 不能用于调参、选模、修改 ROI 或后处理，且不是 blind independent holdout。video10/11 已完成复核和 ROI/provenance 检查并纳入对应 split；video7-edge 尚未完成，不能纳入。video9/12 继续封存且未读取；低清旧数据、checkpoint 与指标均已退役。 |
-| HD bootstrap v2 训练候选（仅开发） | 从 video4/5 扩充候选初始化，在 MPS、320 输入、batch 16、seed `20260930`、`lr_scale=0.25` 下最多训练 12 轮；best epoch 8，约 337 秒。开发 val 以 confidence `0.49` 选择：TP/FP/FN `366/35/34`，P/R/F1 `91.2718% / 91.5000% / 91.3858%`。video2-HD 和 video11 参与了选模或阈值选择，video10 已在 train，因此不是独立成绩。ONNX/TorchScript/ncnn 已导出；ncnn 在 230/230 张图上的检测数量一致，但严格 raw／坐标 parity 失败。本机实验 Android assets/profiles 已绑定 v2，候选保持 `verified=false`、`release_ready=false`，公共默认 detector 关闭；无实体 Android 验收。详见[训练记录](../training/README.md)与[video10/11 记录](VIDEO10_11.md)。 |
-| 端到端延迟统计工具 | 已能从外部记录的证据／实际发声配对时间计算逐类及总体 P95，并单列漏提示；尚无真机样本 |
-| Android debug 构建 | v2 绑定后执行 `./gradlew testDebugUnitTest assembleDebug lintDebug`：成功，lint 通过；APK SHA-256 `f75d8dcd45357ae079f7a6bbbbd0c5391a4eb79d53debb6625a96a1c4a0227f0`，仅 arm64、minSdk 29、targetSdk 35、debug 签名。构建按 tracked metadata 校验本机 ignored param／bin 哈希；CMake 同时校验 ncnn 下载包和缓存包哈希。 |
+| 桌面共享 C++ 引擎与录像回放 | 2026-09-30 全量 `.venv/bin/python -m pytest -q`：298 项通过、1 项条件跳过；标注网页 Node 测试 5 项通过。覆盖完整 GameProfile 定位读取、小地图自动定位、显示方向抽帧、三层 ROI 传递与门禁、标注站、数据导出、红环几何过滤、空间跟踪、冷却与抢占、冻结模型与 Android 资产哈希、会话日志、最终门禁及 ncnn 回放约束。跳过项需要专用合成 YOLOX profile。 |
+| 小地图检测数据准备 | 当前 HD bootstrap v2 split 为人工复核 train 664 图／1211 框（video1+8+3+4+5+10）和 val 230 图／400 框（video2-HD+11）；bootstrap test 仍为空，不能报告 bootstrap 最终成绩。video13 已完成 130/130 个任务人工复核和 Codex temporal audit，121 图／211 框保留为跨来源开发诊断。首轮真机反馈后查看多档阈值，c=`0.67` 为 TP/FP/FN `192/16/19`、P/R/F1 `92.3077% / 90.9953% / 91.6468%`；因此 video13 已被开发使用，不能进入独立门禁。video9/12 继续封存且未读取。 |
+| HD bootstrap v2 训练候选（仅开发） | 从 video4/5 扩充候选初始化，在 MPS、320 输入、batch 16、seed `20260930`、`lr_scale=0.25` 下最多训练 12 轮；best epoch 8，约 337 秒。首轮真机反馈后改用 confidence `0.67`；Android 同款 ncnn 开发 val 的 TP/FP/FN 为 `353/15/47`，P/R/F1 为 `95.9239% / 88.2500% / 91.9271%`。video2-HD、video11 和 video13 均已参与开发判断，不是独立成绩。ONNX/TorchScript/ncnn 已导出；230/230 张图的检测数量一致，但严格 raw／坐标 parity 仍失败。实验 Android assets/profiles 已绑定 c067，候选保持 `verified=false`、`release_ready=false`，公共默认 detector 关闭。 |
+| 端到端延迟统计工具 | 已能从外部记录的证据／实际发声配对时间计算逐类及总体 P95，并单列漏提示；首轮真机冒烟有帧处理和播放日志，但尚无外部屏幕／实际声音配对的延迟样本 |
+| Android debug 构建 | 当前版本 `0.2.2`（versionCode 6）；执行 `./gradlew testDebugUnitTest assembleDebug lintDebug`：成功，lint 通过；仅 arm64、minSdk 29、targetSdk 35、debug 签名。APK 为 12,099,638 bytes，SHA-256 `2b296d8b75619315e84275689bb2c7b184f4b4a31692cf52d8e814cde5667e07`。构建按 tracked metadata 校验本机 ignored param／bin 哈希；CMake 同时校验 ncnn 下载包和缓存包哈希。 |
 | APK 结构 | Android 29 起、目标 35；只包含 arm64 ABI。APK 已打包 ncnn 静态运行时、3.4 MiB YOLOX 权重、Focus 修复后的 param、哈希元数据、完整第三方许可文本和未验证开发配置；实验开关默认关闭 |
 | APK 签名 | debug APK 的 v2 签名通过 `apksigner verify` |
-| Android 会话健壮性 | 当前 `0.2.0` 在加载模型前先进入前台服务状态；SoundPool 尚未完成异步加载时会暂存仍在证据有效期内的最近提示。每次启动生成 UUID，并输出可解析的 `SessionStart`、逐事件 `CueEvent` 和唯一 `SessionSummary`；汇总横屏处理跨度、平均采样所需帧数、最大帧间隔、过期和音频排队失败。旧 ImageReader 回调不会污染新会话。黑屏停止按连续时长判断；VirtualDisplay 在 ImageReader 前释放；系统或投屏授权结束时显式移除前台通知。 |
-| 视野记忆提示 | `APPEAR`、`TRACK`、`DISAPPEAR`、`LAST_DIRECTION` 已实现；实体机运行、`FLAG_SECURE` 画面、坐标映射、TTS 和震动尚未验证。 |
+| Android 会话健壮性 | Android 14 首轮实体机（应用 0.2.1 debug）已跑通 MediaProjection、2712×1220 横屏、ncnn 与真实播放。观测到 8 次 35–1084 ms 的短暂断流且均自动恢复；恢复语音造成额外干扰，现已改为仅日志与通知。该日志缺少最终 `SessionSummary`，不能作为正式会话验收。当前开发构建为 0.2.2（versionCode 6）。 |
+| 小地图新目标提示 | 首轮实体机暴露 `vision_memory=false` 时 kind 2 仍走旧直通路径的错误：44 条提示在约 234.6 秒内播放，P50 间隔 5.058 秒，用户确认过密且至少一次方向误报。测试后 shared preferences 显示 `vision_memory=false`、`cue_preset=standard`、`allow_experimental=true`，与日志中的旧直通路径一致。修复版禁止 kind 2 绕过轨迹层；关闭时完全静默，开启后仅对稳定 `APPEAR` 事件使用中性短提示，会话级最短间隔为 15 秒，不再播报地图中心方位或 `DISAPPEAR`。修复版待真机复测。详见 [首轮真机冒烟](ANDROID_LIVE_SMOKE_2026-09-29.md)。 |
+| 玩家自身小地图标记探索 | 10 个获准高清来源各抽 2 帧，20 帧中有 17 帧可目视看到完整或局部绿色头像外圈；另外 2 帧处于死亡倒计时，1 帧被大型信号遮挡。该 `17/20` 只是稀疏抽样可见率，不是检测 recall，也没有候选真值可计算 precision。纯 HSV 绿色圆环会被地图纹理和特效干扰，只适合预筛；下一步需标注并训练独立 `minimap_player` 类。详见[绿色外圈抽样](MINIMAP_PLAYER_GREEN_RING.md)。 |
 | 合成录像演示 | 重新构建桌面共享库并按 README 回放：84 帧、3 条提示、3/3 合成事件匹配；`build/synthetic/fixture.mkv`、`predictions.jsonl`、`report.json` 已更新，可用相同命令重现 |
 | Android 13/14 模拟器 | 0.2.0 固定 ROI 回归中，两种 API 均以同一 APK 全新安装，完成 `1/5` YOLOX、整屏授权、2400×1080 横屏采集，以及暂停／恢复／停止；均观察到实际 ncnn `CueEvent`，统计 `queued=4`、`audioFailures=0`，无崩溃。可导入的自适应 profile 尚未在模拟器复测；模拟器也无实际扬声器音频。详情见 [模拟器验证](EMULATOR.md) |
 | video1 低清历史开发回放（只读） | 旧低清版（720×324、约 15 分 28 秒）仅开启从同场截取的“撤退”模板，以 12 帧／秒处理 11,134 帧，得到 3 条提示，对应肉眼核对的 3 段“撤退”横幅；见 [video1 开发记录](VIDEO1.md)。旧完整 MP4 已由高清重导出版替换，不能用当前同名文件重放此历史实验；这是同场调参结果，不是留出准确率。 |
 | video1 高清复核与训练纳入（开发数据） | 高清重导出 SHA-256 `bab46071fae13f9f4d63424f5492cdb931d5bc1da1384c8ed7558791200a39f8`；100 个任务已完成复核：83 `corrected`／163 框、12 `negative`、5 `excluded`、0 `pending`。95 张 trainable 帧／163 框已纳入当前 HD bootstrap train。视频参与过开发，只用于训练和回归诊断，不能作为独立留出成绩；详见 [video1 高清记录](VIDEO1_HD.md)。 |
-| HD bootstrap v2 标签与 split | train 为 video1（95 帧／163 框）+video8（119／211）+video3-HD（120／268）+video4-HD（100／150）+video5-HD（100／189）+video10（130／230），合计 664 图／1211 框；val 为 video2-HD（100／197）+video11（130／203），合计 230 图／400 框。bootstrap test 为空，只能作开发辅助；video13 的 test-only 诊断单独保存，不进入该 split。video10 为 110 `corrected`／20 `negative`，video11 为 107 `corrected`／23 `negative`；详情见[训练记录](../training/README.md)。 |
-| HD 复核队列状态 | video3-HD、video4-HD、video5-HD、video10/11 均已完成复核；video10/11 共 260/260 帧、217 `corrected`、43 `negative`、433 框，SQLite 与导出 manifest 一致，没有 pending 或活动 lease，ROI／尺寸／来源录像 hash 审计通过且无可扩展 crop-edge contact，已纳入 v2 split。video7-edge 仍待复核。video13 已完成 130/130：110 `corrected`、11 `negative`、9 `excluded`、0 pending/活动 lease，121 个可评测 test 图／211 框；review manifest、detection manifest、annotations 和 audit 哈希已冻结，test-only COCO audit 无 blocker。它不是 blind independent holdout，也不能用于调参、选模、修改 ROI 或后处理。video9/12 继续封存且未读取。 |
+| HD bootstrap v2 标签与 split | train 为 video1（95 帧／163 框）+video8（119／211）+video3-HD（120／268）+video4-HD（100／150）+video5-HD（100／189）+video10（130／230），合计 664 图／1211 框；val 为 video2-HD（100／197）+video11（130／203），合计 230 图／400 框。bootstrap test 为空，只能作开发辅助；video13 不进入该 split，此前的 test-only 诊断已因多档阈值检查改归开发数据。video10 为 110 `corrected`／20 `negative`，video11 为 107 `corrected`／23 `negative`；详情见[训练记录](../training/README.md)。 |
+| HD 复核队列状态 | video3-HD、video4-HD、video5-HD、video10/11 均已完成复核；video10/11 共 260/260 帧、217 `corrected`、43 `negative`、433 框，SQLite 与导出 manifest 一致，没有 pending 或活动 lease，ROI／尺寸／来源录像 hash 审计通过且无可扩展 crop-edge contact，已纳入 v2 split。video7-edge 仍待复核。video13 已完成 130/130：110 `corrected`、11 `negative`、9 `excluded`、0 pending/活动 lease，121 个可评测图／211 框；review manifest、detection manifest、annotations 和 audit 哈希已冻结，最初的 test-only COCO audit 无 blocker。其后因多档阈值检查成为跨来源开发诊断，不能再作为独立 test 或进入最终门禁。video9/12 继续封存且未读取。 |
 | 小地图红方头像环 | 新增不依赖具体英雄头像的 `minimap_red_ring` 检测和空间跟踪。最初 video1/video2 基线及抽查见 [video2 小地图记录](VIDEO2.md)；加入新录像后的当前结果见 [五场录像记录](VIDEO3_5.md)。所有结果都是开发数据，不是留出准确率。 |
 | 组合配置 | `android-combined-development.json` 同时启用小地图红环和“撤退”模板；最新回放中 video1 为 102＋3、video2 为 141＋3 条提示。危险信号可抢占较低优先级提示，video1 三次撤退时间保持不变，主画面检测保持关闭。 |
 | 五场录像扩充（低清历史数据） | 五场共处理 56,978 帧；地图结构门控移除了已确认的英雄选择／加载界面误报，最终分别输出 102/141/105/126/123 条小地图提示。150 张抽样帧已全部复核；排除 29 张非对局画面后，121 张有效帧含 190 个敌方头像框。COCO 已按整场对局导出为 train 76 张／111 框、val 45 张／79 框。所有五场均参与过规则复核，不再算独立留出数据。见 [五场录像记录](VIDEO3_5.md)。 |
@@ -47,8 +48,8 @@
 | 最终验收门禁 | `mapassist.validation_gate` 从独立留出预测／标签和真机延迟 CSV 重算指标，验证逐帧 CFR 时间轴、回放 provenance、冻结 ncnn param/bin/native library 与所有证据文件 SHA-256；门禁还解包实际安装 APK，要求其中 profile 和模型与离线预测完全一致。`ffprobe` 验证外部真机录像的音视频流各自连续至少 15 分钟。另强制 test 分组、未参与调参、逐类事件支持、90%/80%/90% 指标、实体 Android 13/14 声明、实际发声样本及 P95 ≤250 ms。通过、语义失败、模型错配、时间轴错配和哈希篡改测试均已覆盖。 |
 
 APK：`android/app/build/outputs/apk/debug/app-debug.apk`
-版本：`0.2.0`（versionCode 4）
-SHA-256：`f75d8dcd45357ae079f7a6bbbbd0c5391a4eb79d53debb6625a96a1c4a0227f0`
+当前版本：`0.2.2`（versionCode 6）
+SHA-256：`2b296d8b75619315e84275689bb2c7b184f4b4a31692cf52d8e814cde5667e07`
 
 公开仓库检查通过；当前公开版本不再跟踪模型文件，默认 profile 已关闭 `minimap_yolox`。旧 Git 历史仍含模型文件；历史清理的 force-push 尚未执行，仍待明确授权。
 
@@ -73,9 +74,10 @@ SHA-256：`f75d8dcd45357ae079f7a6bbbbd0c5391a4eb79d53debb6625a96a1c4a0227f0`
 ## 当前待办
 
 1. 完成 video7-edge 的人工复核，并核对队列 ROI 与 provenance；尚未复核的数据不得加入训练或验证。video10/11 已完成并纳入 v2 split。
-2. 当前 HD bootstrap v2 仅供开发辅助：train 为 video1+8+3+4+5+10 的 664 图／1211 框，val 为 video2-HD+11 的 230 图／400 框，bootstrap test 仍为空，不能报告 bootstrap 最终成绩。video13 已作为 test-only 跨来源诊断单独收口（121 图／211 框）；冻结 v2 检测准确率门槛未过，召回与方向已过。它不是 blind independent holdout，不能用于调参、选模、修改 ROI 或后处理。低清 video2–6 与其旧模型、checkpoint、指标均已退役。
+2. 当前 HD bootstrap v2 仅供开发辅助：train 为 video1+8+3+4+5+10 的 664 图／1211 框，val 为 video2-HD+11 的 230 图／400 框，bootstrap test 仍为空，不能报告 bootstrap 最终成绩。video13 已作为跨来源开发诊断（121 图／211 框）；此前训练阶段 confidence `0.49` 的准确率门槛未过、召回与方向已过。首轮真机反馈后曾检查多档阈值，当前部署 confidence 为 `0.67`，video13 不能用于独立门禁。低清 video2–6 与其旧模型、checkpoint、指标均已退役。
 3. video12 primary holdout 与 video9 cross-source holdout 继续封存；当前不得运行模型、预标注或查看预测。任何未来正式盲评需另行遵循冻结门禁。
-4. **Android 13/14 测试手机**：目前没有实体手机连接。安装 APK 后仍需在目标手机上验证整屏授权、横屏切换、持续截屏、`FLAG_SECURE` 场景、坐标映射、实际 TTS／震动与游戏音频关系，以及黑屏／授权终止处理。
-5. **端到端验收**：需要至少 15 分钟真机运行，并用同时拍到屏幕、录到声音的外部录像对齐证据首次可见与提示发声时间，测量 P95、帧率及发热。桌面回放时间轴不能替代该测量。
+4. 为现有高清帧建立 `minimap_player` 人工真值并训练双类别模型；在玩家位置可靠时才计算敌人相对距离和接近事件，玩家位置缺失、死亡或遮挡时保持静默。绿色外圈只用于生成待复核候选，不能直接驱动提示。
+5. **Android 13/14 测试手机**：Android 14 首轮 0.2.1 实体机冒烟已跑通整屏授权、横屏采集、ncnn 和实际播放；Android 14 设备现已通过无线 ADB 连接。0.2.2（versionCode 6）含有 kind 2 路由修复，待在该设备上复测。`FLAG_SECURE` 场景、坐标映射、震动、提示与游戏音频关系，以及黑屏／授权终止处理仍需验证。
+6. **端到端验收**：需要至少 15 分钟真机运行，并用同时拍到屏幕、录到声音的外部录像对齐证据首次可见与提示发声时间，测量 P95、帧率及发热。桌面回放时间轴不能替代该测量。
 
 后续流程按 [HD-only 训练记录](../training/README.md)和[团队运行文档](../docs/团队协作与本地运行.md)执行；未达标的识别器保持关闭。

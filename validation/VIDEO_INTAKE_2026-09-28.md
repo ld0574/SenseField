@@ -37,7 +37,7 @@ HD 文件使用 Display Matrix 旋转 90°，编码尺寸为 1080×2400，显示
 | `video10.mp4` | H.264，1920×860，30 FPS，1001.04 s，3.34 Mbps | 0–990 s | 小地图完整；短时商店／快捷交流帧需排除。 | train 开发来源；已完成复核。 |
 | `video11.mp4` | AV1，1920×860，22.47 FPS，1010.08 s，1.86 Mbps | 18.753–999 s | 排除开局商店 `[0,15000)` ms，以及 719–724 s、725–728 s 战绩面板遮挡；帧率低。 | HD dev-val。 |
 | `video12.mp4` | H.264，1920×860，30 FPS，1008.40 s，3.53 Mbps | 0–1001 s | 开头约 5 s 中央隐私提示，不遮小地图；之后未见长期遮挡。 | primary sealed holdout；不得运行模型或查看预测。 |
-| `video13.mp4` | H.264 + Opus，1920×1080，30 FPS，1478.934 s，约 4.28 Mbps | 15–1439 s | YouTube 玩家 POV；上下黑边使 HUD 整体下移，底部双语字幕不遮小地图；短时商店／战绩面板由人工标为 `excluded`。 | 130/130 已人工复核；121 图／211 框 test-only 诊断。不是 blind independent holdout，不得用于调参。 |
+| `video13.mp4` | H.264 + Opus，1920×1080，30 FPS，1478.934 s，约 4.28 Mbps | 15–1439 s | YouTube 玩家 POV；上下黑边使 HUD 整体下移，底部双语字幕不遮小地图；短时商店／战绩面板由人工标为 `excluded`。 | 130/130 已人工复核；121 图／211 框此前通过 test-only COCO audit。首轮真机反馈后查看多档 confidence，现作为跨来源开发诊断，不能称为独立 test。 |
 
 `video9` 至 `video12` 没有音频流；`video13` 含 Opus 音频。`video10` 至 `video12` 主控英雄和画面布局一致，可能来自同一玩家和
 录屏源，因此必须按完整录像分组，不能按帧随机拆分。video12 固定为 primary sealed holdout，
@@ -64,7 +64,7 @@ Hero 只用于 UX／事件故事，不运行检测模型，也不进入训练、
 
 ## HD-only 数据划分与当前队列
 
-未来训练／开发数据仅允许：`video/video1hd.mp4`、`video2hd`、`video3hd`、`video4hd`、`video5hd`、`video7`、`video8`、`video10`。video11 是单独 HD dev-val。video13 已完成模型辅助人工复核和审计，只作 test-only 诊断；它不进入 train/dev，也不能用于调参、选模、修改 ROI 或后处理，不能替代 blind independent holdout。`video12` 是 primary sealed holdout，`video9` 是 cross-source sealed holdout；两场继续封存且未读取。Hero 只用于 UX／事件故事。
+未来训练／开发数据仅允许：`video/video1hd.mp4`、`video2hd`、`video3hd`、`video4hd`、`video5hd`、`video7`、`video8`、`video10`。video11 是单独 HD dev-val。video13 已完成模型辅助人工复核和审计；它不属于 bootstrap train/val split，但首轮真机反馈后曾检查多档阈值（包括当前部署阈值 `0.67`），因此现为跨来源开发诊断，不能再称为独立 test 或用于最终门禁。当前部署 confidence 为 `0.67`；训练阶段原用的 `0.49` 只作为历史参数和结果保留。`video12` 是 primary sealed holdout，`video9` 是 cross-source sealed holdout；两场继续封存且未读取。Hero 只用于 UX／事件故事。
 
 低清 video2–6 及其旧模型、指标、队列，只保留作历史记录，不得进入当前导出、训练、验证或阈值选择。
 
@@ -78,6 +78,6 @@ Hero 只用于 UX／事件故事，不运行检测模型，也不进入训练、
 | `data/private/minimap-review-video7-edge-recheck-v1` | 240 pending，333 个起始框仅来自 HD 人工结果 | safe/label/widget `[55,0,600,470)` / `[90,0,550,420)` / `[143,0,524,378)` |
 | `data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi` | 120 已复核，119 可训练／211 框（102 `corrected`、17 `negative`、1 `excluded`） | safe/label/widget `[65,0,500,400)` / `[90,0,470,365)` / `[106,0,454,344)` |
 | `data/private/minimap-video10-11-hd-development-v1/queue` | 260/260 张已完成复核：video10 为 130 帧／230 框（110 `corrected`、20 `negative`），video11 为 130 帧／203 框（107 `corrected`、23 `negative`）；0 pending／活动 lease，ROI/provenance 审计通过 | safe/label/widget `[44,0,408,334)` / `[64,0,373,303)` / `[96,0,372,277)` |
-| `data/private/minimap-video13-holdout-v1/queue` | 130/130 已复核：110 `corrected`、11 `negative`、9 `excluded`，0 pending／活动 lease；121 个可评测 test 图／211 框，test-only COCO audit 无 blocker | safe/label/widget `[55,55,365,335]` / `[72,65,325,300]` / `[80,70,310,280]` |
+| `data/private/minimap-video13-holdout-v1/queue` | 130/130 已复核：110 `corrected`、11 `negative`、9 `excluded`，0 pending／活动 lease；121 个可评测图／211 框，此前的 test-only COCO audit 无 blocker；多档阈值检查后现为跨来源开发诊断 | safe/label/widget `[55,55,365,335]` / `[72,65,325,300]` / `[80,70,310,280]` |
 
-video11 排除开局商店 `[0,15000)` ms 和 719–724 s、725–728 s 遮挡，最早有效任务为 18.753 s。`safe` 限制完整框，`label` 限制目标中心，`widget` 只用于地图主体与方向。当前 HD bootstrap v2 split 为 video1+8+3+4+5+10 train（664 图／1211 框）和 video2-HD+11 val（230 图／400 框），bootstrap test 为空。video13 已单独收口为 121 图／211 框的 test-only 诊断，不进入该 split；冻结 v2 在 `c=0.49`、NMS `0.5`、IoU `0.5`、320、CPU 下的 TP/FP/FN 为 `204/28/7`，P/R/F1 为 `87.9310% / 96.6825% / 92.0993%`，方向为 `171/171=100%`。框级 precision 未过 90% 门槛，召回与方向已过；该结果不能用于调参、选模、修改 ROI 或后处理。video7-edge 仍待复核；video9/12 继续封存且未读取。详细见[video10/11 记录](VIDEO10_11.md)、[video13 记录](VIDEO13.md)和[团队协作与本地运行](../docs/团队协作与本地运行.md)。
+video11 排除开局商店 `[0,15000)` ms 和 719–724 s、725–728 s 遮挡，最早有效任务为 18.753 s。`safe` 限制完整框，`label` 限制目标中心，`widget` 只用于地图主体与方向。当前 HD bootstrap v2 split 为 video1+8+3+4+5+10 train（664 图／1211 框）和 video2-HD+11 val（230 图／400 框），bootstrap test 为空。video13 不属于该 split；此前的 test-only COCO 诊断记录保留作历史：训练阶段 confidence `0.49`、NMS `0.5`、IoU `0.5`、320、CPU 下 TP/FP/FN 为 `204/28/7`，P/R/F1 为 `87.9310% / 96.6825% / 92.0993%`，方向为 `171/171=100%`。该准确率门槛未过，召回与方向已过。首轮真机反馈后又查看多档 confidence，video13 因此已成为开发数据；当前部署 confidence 为 `0.67`，这些历史 `0.49` 结果不能作为独立成绩或最终门禁。video7-edge 仍待复核；video9/12 继续封存且未读取。详细见[video10/11 记录](VIDEO10_11.md)、[video13 记录](VIDEO13.md)和[团队协作与本地运行](../docs/团队协作与本地运行.md)。
