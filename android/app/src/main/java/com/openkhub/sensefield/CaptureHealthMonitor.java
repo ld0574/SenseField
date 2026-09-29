@@ -1,4 +1,4 @@
-package org.openrd.mapassist;
+package com.openkhub.sensefield;
 
 /** Pure state machine for MediaProjection frame starvation and bounded recovery. */
 final class CaptureHealthMonitor {

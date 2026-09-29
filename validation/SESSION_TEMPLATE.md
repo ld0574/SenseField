@@ -1,5 +1,9 @@
 # 真机与玩家测试记录
 
+> **当前只用于开发试装记录。** 当前 debug APK 内置 profile 默认关闭检测器；开发试装脚本会把 `hok_minimap_hd_bootstrap.android.json` 推送到 Download，供测试者手动导入并开启实验识别器。候选仍未通过严格 parity，也未达到 `release_ready`，因此使用导入 profile 的会话不能作为最终门禁证据。
+>
+> **最终门禁暂不执行。** 只有未来构建并冻结一个将已验证 profile、匹配模型和 native library 内置的 APK，且其候选 metadata 标记可发布、parity 门禁通过后，才按本页最终采集流程操作。该最终会话必须使用 APK 内置 profile，不导入外部配置；当前开发安装脚本不适用于最终门禁。
+
 - 日期／测试人：
 - 手机型号／Android 版本：
 - 游戏版本／界面缩放／屏幕分辨率：
@@ -39,9 +43,9 @@
 
 记录只存本地。分享演示前取得录像和反馈当事人的授权。
 
-## 采集可核对的真机证据
+## 最终门禁采集（仅冻结 APK 准备完成后）
 
-先复制并固定待测 APK，再安装这一个文件。测试结束前不要重新构建或覆盖它：
+开始前确认已有通过模型和 parity 门禁的发布候选，并确认它把本轮冻结 profile、param/bin 与 native library 一并打包。当前开发 APK 不满足这些条件；不要用开发 APK、导入 profile 或开发安装脚本提交最终门禁。准备好最终 APK 后，先复制并固定待测文件，再安装这一个文件；测试结束前不要重新构建或覆盖它：
 
 ```sh
 mkdir -p validation/private
@@ -51,7 +55,7 @@ shasum -a 256 validation/private/mapassist-tested.apk
 adb install -r validation/private/mapassist-tested.apk
 ```
 
-最终门禁要求本次会话使用该 APK 内置的 `profile.json`；测试前若曾导入其他配置，请清除应用数据后重新安装，再只启用实验识别器开关。这样离线留出预测、APK 内模型和真机运行配置才是同一套冻结输入。
+最终门禁要求本次会话使用该 APK 内置的 `profile.json`，并确认实际安装 APK、profile、param/bin 和离线留出预测的哈希完全一致。若手机曾导入过开发配置，先清除应用数据，再安装冻结 APK；不要再导入其他 profile。当前 APK 的内置 profile 默认关闭检测器，单独勾选实验开关不能替代未来的冻结 APK 构建。
 
 连接手机后，先清空旧日志，再在电脑上持续保存本次会话的 logcat：
 
@@ -61,7 +65,7 @@ adb logcat -v time 'MapAssistCapture:I' '*:S' \
   > validation/private/physical-device-logcat.txt
 ```
 
-同时用另一台设备录制手机屏幕和实际听到的声音。录像保持原始连续时间轴，至少运行 15 分钟，并在结束前从通知栏停止助手。然后停止上述 `adb logcat` 命令。日志应恰好包含目标 UUID 的一条 `SessionStart`、若干 `CueEvent` 和一条 `SessionSummary`。
+同时用另一台设备录制手机屏幕和实际听到的声音。录像保持原始连续时间轴，至少运行 15 分钟，并在结束前下拉通知栏、点“停止”结束助手；确认持续通知消失。之后在保存 logcat 的终端按 Ctrl+C。日志应恰好包含目标 UUID 的一条 `SessionStart`、若干 `CueEvent` 和一条 `SessionSummary`。不要在计入 15 分钟处理时长的会话中暂停；需要验证暂停／恢复时另开开发会话。
 
 先解析该 UUID，检查横屏处理区间、平均采样率、最大帧间隔和音频排队结果：
 

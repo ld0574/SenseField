@@ -1,4 +1,4 @@
-package org.openrd.mapassist;
+package com.openkhub.sensefield;
 
 import android.content.res.AssetManager;
 

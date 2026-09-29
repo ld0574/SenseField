@@ -42,4 +42,4 @@ mapassist-safe-roi-manifest = "mapassist.safe_roi_manifest:main"
 where = ["python"]
 
 [tool.setuptools.package-data]
-mapassist = ["annotation_web/*.html", "annotation_web/*.css", "annotation_web/*.js"]
+mapassist = ["annotation_web/*.html", "annotation_web/*.css", "annotation_web/*.js", "annotation_web/*.png"]

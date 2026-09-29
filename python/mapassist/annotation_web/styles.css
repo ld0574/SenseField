@@ -32,7 +32,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, canvas:focus-vi
   position: sticky; top: 0; z-index: 20;
 }
 .brand { display: flex; align-items: center; gap: 12px; }
-.brand-mark { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 11px; background: var(--accent); color: #042217; font-weight: 900; }
+.brand-mark { width: 38px; height: 38px; display: grid; place-items: center; overflow: hidden; border-radius: 11px; background: #F0C6B2; }
+.brand-mark img { display: block; width: 34px; height: 34px; object-fit: contain; }
 .brand strong { display: block; font-size: 15px; letter-spacing: .02em; }
 .brand span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
 .dataset-switcher { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; }

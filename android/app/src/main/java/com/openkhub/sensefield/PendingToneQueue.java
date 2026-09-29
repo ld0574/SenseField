@@ -1,4 +1,4 @@
-package org.openrd.mapassist;
+package com.openkhub.sensefield;
 
 /** Single-slot queue for a tone whose SoundPool sample has not loaded yet. */
 final class PendingToneQueue {

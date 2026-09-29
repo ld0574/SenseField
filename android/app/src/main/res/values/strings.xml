@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">听野</string>
+    <string name="capture_notification_title">听野 · %1$s</string>
+    <string name="tuning_volume_value">提示音量：%1$d%%</string>
+    <string name="tuning_interval_value">最短提示间隔：%1$.1f 秒</string>
+    <string name="tuning_center_value">中央免提示区：%1$d%%</string>
 </resources>

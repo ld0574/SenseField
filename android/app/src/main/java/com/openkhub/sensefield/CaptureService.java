@@ -1,4 +1,4 @@
-package org.openrd.mapassist;
+package com.openkhub.sensefield;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -30,9 +30,9 @@ import java.nio.ByteBuffer;
 import java.util.UUID;
 
 public final class CaptureService extends Service {
-    static final String ACTION_START = "org.openrd.mapassist.START";
-    static final String ACTION_TOGGLE_PAUSE = "org.openrd.mapassist.TOGGLE_PAUSE";
-    static final String ACTION_STOP = "org.openrd.mapassist.STOP";
+    static final String ACTION_START = "com.openkhub.sensefield.START";
+    static final String ACTION_TOGGLE_PAUSE = "com.openkhub.sensefield.TOGGLE_PAUSE";
+    static final String ACTION_STOP = "com.openkhub.sensefield.STOP";
     static final String EXTRA_RESULT_CODE = "result_code";
     static final String EXTRA_RESULT_DATA = "result_data";
 
@@ -177,6 +177,7 @@ public final class CaptureService extends Service {
                     return START_NOT_STICKY;
                 }
                 paused = !paused;
+                GameProfile.settings(this).edit().putBoolean("capture_paused", paused).apply();
                 resetNativeLocked();
                 captureHealth.pause(paused, SystemClock.elapsedRealtime());
                 if (paused && minimapOverlay != null) minimapOverlay.clear();
@@ -272,6 +273,8 @@ public final class CaptureService extends Service {
                         }
                         Log.i(TAG, "MediaProjection ended by Android or the user");
                         GameProfile.settings(CaptureService.this).edit()
+                                .putBoolean("capture_active", false)
+                                .putBoolean("capture_paused", false)
                                 .putString("last_capture_status", "系统截屏授权已结束").apply();
                         // Do not let a delayed callback from an older capture
                         // session stop a newer start command.
@@ -286,6 +289,10 @@ public final class CaptureService extends Service {
                         getResources().getDisplayMetrics().densityDpi,
                         DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                         reader.getSurface(), null, worker);
+                GameProfile.settings(this).edit()
+                        .putBoolean("capture_active", true)
+                        .putBoolean("capture_paused", false)
+                        .apply();
                 captureHealth.start(SystemClock.elapsedRealtime());
                 scheduleDisplayWatchdogLocked(sessionGeneration);
                 refreshNotification();
@@ -815,7 +822,7 @@ public final class CaptureService extends Service {
                 new Intent(this, MainActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         return new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle("地图感知助手 · " + state)
+                .setContentTitle(getString(R.string.capture_notification_title, state))
                 .setContentText(profileName + " · 已采样 " + processedFrames
                         + " 帧 · 音频排队 " + queuedCues + "/检测 " + detectedCues
                         + (staleCues == 0 ? "" : " · 过期 " + staleCues)
@@ -862,6 +869,11 @@ public final class CaptureService extends Service {
             }
             stopping = false;
             paused = false;
+            GameProfile.settings(this).edit()
+                    .putBoolean("capture_active", false)
+                    .putBoolean("capture_paused", false)
+                    .remove("last_capture_status")
+                    .apply();
             startedAtMs = SystemClock.elapsedRealtime();
             lastProcessedAtMs = 0;
             lastNotificationAtMs = 0;
@@ -891,7 +903,6 @@ public final class CaptureService extends Service {
             lastLandscapeProcessedAtMs = -1;
             maxLandscapeProcessedGapMs = 0;
             auditSessionActive = true;
-            GameProfile.settings(this).edit().remove("last_capture_status").apply();
             Log.i(TAG, "SessionStart sessionId=" + auditSessionId
                     + " startId=" + startId
                     + " startedElapsedRealtimeMs=" + auditSessionStartedAtMs);
@@ -954,6 +965,8 @@ public final class CaptureService extends Service {
                 // Keep the first reason, but never let it prevent a later
                 // service command from completing shutdown.
                 GameProfile.settings(this).edit()
+                        .putBoolean("capture_active", false)
+                        .putBoolean("capture_paused", false)
                         .putString("last_capture_status", status).apply();
             }
             stopThroughStartId = latestServiceStartId;
@@ -1010,6 +1023,10 @@ public final class CaptureService extends Service {
             finishAuditSessionLocked("destroyed");
             releaseCapture();
         }
+        GameProfile.settings(this).edit()
+                .putBoolean("capture_active", false)
+                .putBoolean("capture_paused", false)
+                .apply();
         // stopSelf() normally removes the notification with the service, but
         // make the foreground-service lifecycle explicit for projection and
         // system initiated stops as well.

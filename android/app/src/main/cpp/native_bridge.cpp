@@ -341,7 +341,7 @@ void append_yolox_observations(Session &session, const uint8_t *rgba,
 }  // namespace
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_org_openrd_mapassist_NativeBridge_nativeCreate(
+Java_com_openkhub_sensefield_NativeBridge_nativeCreate(
         JNIEnv *env, jclass, jobject asset_manager, jfloatArray rois, jintArray flags,
         jfloatArray tuning, jintArray event_ints, jfloat min_confidence,
         jbyteArray enemy_rgba, jint enemy_width, jint enemy_height,
@@ -481,7 +481,7 @@ Java_org_openrd_mapassist_NativeBridge_nativeCreate(
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
-Java_org_openrd_mapassist_NativeBridge_nativeProcess(
+Java_com_openkhub_sensefield_NativeBridge_nativeProcess(
         JNIEnv *env, jclass, jlong handle, jobject frame,
         jint width, jint height, jint row_stride,
         jlong frame_timestamp_ms, jlong processing_now_ms) {
@@ -610,7 +610,7 @@ Java_org_openrd_mapassist_NativeBridge_nativeProcess(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_org_openrd_mapassist_NativeBridge_nativeReset(JNIEnv *, jclass, jlong handle) {
+Java_com_openkhub_sensefield_NativeBridge_nativeReset(JNIEnv *, jclass, jlong handle) {
     auto *session = reinterpret_cast<Session *>(handle);
     if (session) {
         ma_engine_reset(session->engine);
@@ -619,6 +619,6 @@ Java_org_openrd_mapassist_NativeBridge_nativeReset(JNIEnv *, jclass, jlong handl
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_org_openrd_mapassist_NativeBridge_nativeDestroy(JNIEnv *, jclass, jlong handle) {
+Java_com_openkhub_sensefield_NativeBridge_nativeDestroy(JNIEnv *, jclass, jlong handle) {
     delete reinterpret_cast<Session *>(handle);
 }

@@ -1,4 +1,4 @@
-package org.openrd.mapassist;
+package com.openkhub.sensefield;
 
 /** Pure display-geometry checks used by capture before processing a frame. */
 final class CaptureGeometry {

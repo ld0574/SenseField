@@ -16,5 +16,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = 'MapAssist'
+rootProject.name = 'SenseField'
 include ':app'

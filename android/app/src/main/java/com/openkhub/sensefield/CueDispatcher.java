@@ -1,4 +1,4 @@
-package org.openrd.mapassist;
+package com.openkhub.sensefield;
 
 import java.util.ArrayList;
 import java.util.Comparator;

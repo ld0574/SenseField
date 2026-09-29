@@ -1,4 +1,4 @@
-package org.openrd.mapassist;
+package com.openkhub.sensefield;
 
 /** Stable event-key formatting shared by capture dispatch and pure tests. */
 final class CueEventKeys {
