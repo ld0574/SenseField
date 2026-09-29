@@ -77,4 +77,12 @@ test("player minimap review explains the green-ring target and weak suggestions"
   assert.match(app, /机器空框不等于负样本/);
   assert.match(app, /green_ring_suggestion: "绿色外圈建议"/);
   assert.match(app, /empty: "机器空框"/);
+  assert.match(app, /"没有自己头像"/);
+  assert.match(app, /"确认本帧没有玩家头像"/);
+});
+
+test("dataset query links override stale local selection and remain shareable", () => {
+  assert.match(app, /new URLSearchParams\(window\.location\.search\)\.get\("dataset"\)/);
+  assert.match(app, /window\.history\.replaceState/);
+  assert.match(app, /currentUrl\.searchParams\.set\("dataset", state\.dataset\)/);
 });

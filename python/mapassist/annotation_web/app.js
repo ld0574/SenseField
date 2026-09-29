@@ -3,7 +3,8 @@
 const $ = (selector) => document.querySelector(selector);
 const state = {
   annotator: localStorage.getItem("mapassist.annotator") || "",
-  dataset: localStorage.getItem("mapassist.dataset") || "",
+  dataset: new URLSearchParams(window.location.search).get("dataset") ||
+    localStorage.getItem("mapassist.dataset") || "",
   bootstrap: null,
   task: null,
   image: null,
@@ -146,12 +147,20 @@ function configureWorkbenchCopy(kind, multiclass) {
   $("#contextAfterCanvas").setAttribute(
     "aria-label", isMainEnemy ? "当前帧之后 0.5 秒的主画面" : "当前帧之后 0.5 秒的小地图",
   );
+  const negative = $("#negativeButton");
+  negative.querySelector("strong").textContent = isMinimapPlayer ?
+    "没有自己头像" : isMainEnemy ? "没有边缘敌人" : "没有敌人";
+  negative.querySelector("small").textContent = isMinimapPlayer ?
+    "确认本帧没有玩家头像" : isMainEnemy ? "确认左右边缘无敌人" : "标记为负样本";
 }
 
 async function bootstrap() {
   state.bootstrap = await api("/api/bootstrap");
   state.dataset = state.bootstrap.current_dataset;
   localStorage.setItem("mapassist.dataset", state.dataset);
+  const currentUrl = new URL(window.location.href);
+  currentUrl.searchParams.set("dataset", state.dataset);
+  window.history.replaceState(null, "", `${currentUrl.pathname}${currentUrl.search}`);
   const datasetSelect = $("#datasetSelect");
   datasetSelect.innerHTML = "";
   state.bootstrap.datasets.forEach((dataset) => {
@@ -843,7 +852,10 @@ async function save(status) {
   if (!state.task || !requireAnnotator()) return;
   if (state.busy) return;
   if (status === "corrected" && !state.boxes.length) {
-    toast("没有框时请使用“没有敌人”", true);
+    const negativeLabel = state.bootstrap?.kind === "minimap_player" ?
+      "没有自己头像" : state.bootstrap?.kind === "main_enemy" ?
+      "没有边缘敌人" : "没有敌人";
+    toast(`没有框时请使用“${negativeLabel}”`, true);
     return;
   }
   const boxesToCheck = status === "accepted" ?
