@@ -16,7 +16,7 @@
 
 | 项目 | 结果 |
 | --- | --- |
-| 桌面共享 C++ 引擎与录像回放 | 2026-09-30 全量 `.venv/bin/python -m pytest -q`：325 项通过、1 项条件跳过；标注网页 Node 测试 8 项通过。覆盖完整 GameProfile 定位读取、小地图自动定位、显示方向抽帧、三层 ROI 传递与门禁、多类别标注与数据导出、YOLOX 多类别解码与 metadata contract、红环几何过滤、空间跟踪、冷却与抢占、冻结模型与 Android 资产哈希、会话日志、最终门禁及 ncnn 回放约束。跳过项需要专用合成 YOLOX profile。 |
+| 桌面共享 C++ 引擎与录像回放 | 2026-09-30 全量 `.venv/bin/python -m pytest -q`：325 项通过、1 项条件跳过；标注网页 Node 测试 9 项通过。覆盖完整 GameProfile 定位读取、小地图自动定位、显示方向抽帧、三层 ROI 传递与门禁、多类别标注与数据导出、YOLOX 多类别解码与 metadata contract、红环几何过滤、空间跟踪、冷却与抢占、冻结模型与 Android 资产哈希、会话日志、最终门禁及 ncnn 回放约束。跳过项需要专用合成 YOLOX profile。 |
 | 小地图检测数据准备 | 当前 HD bootstrap v2 split 为人工复核 train 664 图／1211 框（video1+8+3+4+5+10）和 val 230 图／400 框（video2-HD+11）；bootstrap test 仍为空，不能报告 bootstrap 最终成绩。video13 已完成 130/130 个任务人工复核和 Codex temporal audit，121 图／211 框保留为跨来源开发诊断。首轮真机反馈后查看多档阈值，c=`0.67` 为 TP/FP/FN `192/16/19`、P/R/F1 `92.3077% / 90.9953% / 91.6468%`；因此 video13 已被开发使用，不能进入独立门禁。video9/12 继续封存且未读取。 |
 | HD bootstrap v2 训练候选（仅开发） | 从 video4/5 扩充候选初始化，在 MPS、320 输入、batch 16、seed `20260930`、`lr_scale=0.25` 下最多训练 12 轮；best epoch 8，约 337 秒。首轮真机反馈后改用 confidence `0.67`；Android 同款 ncnn 开发 val 的 TP/FP/FN 为 `353/15/47`，P/R/F1 为 `95.9239% / 88.2500% / 91.9271%`。video2-HD、video11 和 video13 均已参与开发判断，不是独立成绩。ONNX/TorchScript/ncnn 已导出；230/230 张图的检测数量一致，但严格 raw／坐标 parity 仍失败。实验 Android assets/profiles 已绑定 c067，候选保持 `verified=false`、`release_ready=false`；内置 HD profile 在首装默认启用识别与新头像提醒，用户可关闭。 |
 | 端到端延迟统计工具 | 已能从外部记录的证据／实际发声配对时间计算逐类及总体 P95，并单列漏提示；首轮真机冒烟有帧处理和播放日志，但尚无外部屏幕／实际声音配对的延迟样本 |
