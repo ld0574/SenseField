@@ -527,6 +527,7 @@ struct Track {
     uint8_t recent = 0;
     int missing = 0;
     bool announced = false;
+    int64_t cleared_at_ms = 0;
 };
 
 struct SpatialTrack {
@@ -538,6 +539,7 @@ struct SpatialTrack {
     float h = 0.0f;
     float velocity_x = 0.0f;
     float velocity_y = 0.0f;
+    float confidence = 0.0f;
     uint8_t recent = 0;
     int missing = 0;
     bool announced = false;
@@ -548,6 +550,18 @@ struct SpatialTrack {
     int64_t disappeared_at_ms = 0;
     int track_id = 0;
 };
+
+constexpr int kMinimapTrackCount = MA_MAX_MINIMAP_TRACKS;
+constexpr int kVisionMemoryRetentionMs = 4000;
+constexpr int kMinimapReappearanceGraceMs = 2000;
+constexpr int kMainEdgeRearmMs = 2000;
+
+bool valid_normalized_rect(ma_rect rect) {
+    return std::isfinite(rect.x) && std::isfinite(rect.y) &&
+           std::isfinite(rect.w) && std::isfinite(rect.h) &&
+           rect.x >= 0.0f && rect.y >= 0.0f && rect.w > 0.0f && rect.h > 0.0f &&
+           rect.x + rect.w <= 1.001f && rect.y + rect.h <= 1.001f;
+}
 
 int track_index(int kind, int direction) {
     return (kind - 1) * 5 + direction;
@@ -583,7 +597,8 @@ int priority(int kind) {
 struct ma_engine {
     ma_engine_config config;
     Track tracks[15];
-    SpatialTrack minimap_tracks[8];
+    SpatialTrack minimap_tracks[kMinimapTrackCount];
+    SpatialTrack minimap_player;
     int64_t last_emitted_ms = std::numeric_limits<int64_t>::min() / 2;
     int64_t last_minimap_emitted_ms = std::numeric_limits<int64_t>::min() / 2;
     int64_t last_step_ms = std::numeric_limits<int64_t>::min() / 2;
@@ -661,6 +676,7 @@ extern "C" void ma_engine_reset(ma_engine *engine) {
     if (!engine) return;
     for (Track &track : engine->tracks) track = Track{};
     for (SpatialTrack &track : engine->minimap_tracks) track = SpatialTrack{};
+    engine->minimap_player = SpatialTrack{};
     engine->last_emitted_ms = std::numeric_limits<int64_t>::min() / 2;
     engine->last_minimap_emitted_ms = std::numeric_limits<int64_t>::min() / 2;
     engine->last_step_ms = std::numeric_limits<int64_t>::min() / 2;
@@ -678,6 +694,7 @@ extern "C" int ma_engine_step(ma_engine *engine,
                                int observation_count, int64_t now_ms,
                                ma_cue *out, int capacity) {
     if (!engine || !out || capacity <= 0 || observation_count < 0 ||
+        observation_count > MA_MAX_OBSERVATIONS ||
         (observation_count && !observations)) return 0;
     if (now_ms < engine->last_step_ms) {
         engine->last_emitted_ms = std::numeric_limits<int64_t>::min() / 2;
@@ -688,6 +705,7 @@ extern "C" int ma_engine_step(ma_engine *engine,
         now_ms - engine->last_step_ms > std::max<int64_t>(500, engine->config.max_observation_age_ms * 3)) {
         for (Track &track : engine->tracks) track = Track{};
         for (SpatialTrack &track : engine->minimap_tracks) track = SpatialTrack{};
+        engine->minimap_player = SpatialTrack{};
         engine->player_dead_recent = 0;
         engine->player_alive_recent = 0;
         engine->player_state = MA_PLAYER_STATE_UNKNOWN;
@@ -700,10 +718,13 @@ extern "C" int ma_engine_step(ma_engine *engine,
         track.matched = false;
         track.event = MA_VISION_EVENT_NONE;
     }
+    engine->minimap_player.matched = false;
+    engine->minimap_player.event = MA_VISION_EVENT_NONE;
     for (int i = 0; i < observation_count; ++i) {
         const ma_observation &obs = observations[i];
-        if (obs.kind < MA_MAIN_ENEMY || obs.kind > MA_PLAYER_ALIVE ||
+        if (obs.kind < MA_MAIN_ENEMY || obs.kind > MA_MINIMAP_PLAYER ||
             obs.direction < MA_DIR_NONE || obs.direction > MA_DIR_DOWN ||
+            !std::isfinite(obs.confidence) ||
             obs.confidence < engine->config.min_confidence ||
             obs.timestamp_ms > now_ms ||
             now_ms - obs.timestamp_ms > engine->config.max_observation_age_ms) continue;
@@ -712,13 +733,29 @@ extern "C" int ma_engine_step(ma_engine *engine,
             player_alive_seen = player_alive_seen || obs.kind == MA_PLAYER_ALIVE;
             continue;
         }
-        if (obs.kind == MA_MINIMAP_ENEMY) {
+        if (obs.kind == MA_MINIMAP_ENEMY || obs.kind == MA_MINIMAP_PLAYER) {
+            if (!valid_normalized_rect(obs.bbox)) continue;
             const float x = obs.bbox.x + obs.bbox.w * 0.5f;
             const float y = obs.bbox.y + obs.bbox.h * 0.5f;
+            SpatialTrack *track_array = obs.kind == MA_MINIMAP_ENEMY
+                    ? engine->minimap_tracks : &engine->minimap_player;
+            const int track_count = obs.kind == MA_MINIMAP_ENEMY
+                    ? kMinimapTrackCount : 1;
+            // Reclaim all expired slots before matching. Otherwise a full set
+            // of eight distant LOST tracks could drop the first observation
+            // of a new enemy and delay its 2/3 confirmation by one frame.
+            for (int index = 0; index < track_count; ++index) {
+                SpatialTrack &candidate = track_array[index];
+                const bool candidate_lost = candidate.active && candidate.confirmed &&
+                        candidate.missing >= engine->config.reset_after_missing_frames;
+                if (candidate_lost &&
+                    now_ms - candidate.disappeared_at_ms >= kVisionMemoryRetentionMs)
+                    candidate = SpatialTrack{};
+            }
             int nearest = -1;
             float nearest_distance = 0.05f * 0.05f;
-            for (int index = 0; index < 8; ++index) {
-                SpatialTrack &candidate = engine->minimap_tracks[index];
+            for (int index = 0; index < track_count; ++index) {
+                SpatialTrack &candidate = track_array[index];
                 if (!candidate.active || candidate.matched) continue;
                 const float dx = x - candidate.x;
                 const float dy = y - candidate.y;
@@ -729,21 +766,34 @@ extern "C" int ma_engine_step(ma_engine *engine,
                 }
             }
             if (nearest < 0) {
-                for (int index = 0; index < 8; ++index) {
-                    if (!engine->minimap_tracks[index].active) {
+                for (int index = 0; index < track_count; ++index) {
+                    if (!track_array[index].active) {
                         nearest = index;
                         break;
                     }
                 }
             }
             if (nearest < 0) continue;
-            SpatialTrack &track = engine->minimap_tracks[nearest];
-            const bool reappeared_after_loss = track.active && track.confirmed &&
+            SpatialTrack &track = track_array[nearest];
+            const bool lost = track.active && track.confirmed &&
                     track.missing >= engine->config.reset_after_missing_frames;
-            if (reappeared_after_loss) {
-                // A track that crossed the LOST transition starts a fresh
-                // confirmation cycle. Old motion and announcement state must
-                // not suppress or misdescribe its next APPEAR transition.
+            const bool expired = lost &&
+                    now_ms - track.disappeared_at_ms >= kVisionMemoryRetentionMs;
+            if (expired) {
+                // Do not let a detector hit at or after the retention boundary
+                // revive stale memory. It claims a fresh bounded slot below.
+                track = SpatialTrack{};
+            }
+            const bool reappeared_after_grace = track.active && track.confirmed &&
+                    track.missing >= engine->config.reset_after_missing_frames &&
+                    now_ms - track.disappeared_at_ms >= kMinimapReappearanceGraceMs;
+            const bool resumed_after_loss = track.active && track.confirmed &&
+                    track.missing >= engine->config.reset_after_missing_frames &&
+                    now_ms - track.disappeared_at_ms < kMinimapReappearanceGraceMs;
+            if (reappeared_after_grace) {
+                // A target that was absent for at least two seconds becomes a
+                // new logical appearance. Keep the slot bounded but allocate
+                // a new id so consumers cannot merge the two appearances.
                 track.confirmed = false;
                 track.announced = false;
                 track.recent = 0;
@@ -754,6 +804,7 @@ extern "C" int ma_engine_step(ma_engine *engine,
                 track.w = obs.bbox.w;
                 track.h = obs.bbox.h;
                 track.track_id = engine->next_minimap_track_id++;
+                track.disappeared_at_ms = 0;
             }
             if (!track.active) {
                 track = SpatialTrack{};
@@ -763,7 +814,7 @@ extern "C" int ma_engine_step(ma_engine *engine,
                 track.w = obs.bbox.w;
                 track.h = obs.bbox.h;
                 track.track_id = engine->next_minimap_track_id++;
-            } else if (!reappeared_after_loss) {
+            } else if (!reappeared_after_grace && !resumed_after_loss) {
                 const float delta_x = x - track.x;
                 const float delta_y = y - track.y;
                 track.velocity_x = track.velocity_x * 0.55f + delta_x * 0.45f;
@@ -772,11 +823,26 @@ extern "C" int ma_engine_step(ma_engine *engine,
                 track.y = track.y * 0.65f + y * 0.35f;
                 track.w = track.w * 0.65f + obs.bbox.w * 0.35f;
                 track.h = track.h * 0.65f + obs.bbox.h * 0.35f;
+            } else if (resumed_after_loss) {
+                // A short LOST interval preserves identity but does not turn
+                // the occlusion gap into a large false movement vector.
+                track.velocity_x = 0.0f;
+                track.velocity_y = 0.0f;
+                track.x = x;
+                track.y = y;
+                track.w = obs.bbox.w;
+                track.h = obs.bbox.h;
             }
             track.direction = obs.direction;
+            track.confidence = track.confidence <= 0.0f
+                    ? obs.confidence
+                    : track.confidence * 0.65f + obs.confidence * 0.35f;
             track.matched = true;
             track.missing = 0;
-            track.last_seen_ms = now_ms;
+            // Preserve detector time for freshness. A frame that arrives
+            // within the accepted observation-age window is still stale by
+            // that amount and must not make a player coordinate look current.
+            track.last_seen_ms = obs.timestamp_ms;
             track.disappeared_at_ms = 0;
             track.recent = static_cast<uint8_t>(((track.recent << 1) | 1) & 7);
             if (!track.confirmed &&
@@ -806,9 +872,8 @@ extern "C" int ma_engine_step(ma_engine *engine,
         engine->player_state = MA_PLAYER_STATE_ALIVE;
         engine->player_dead_recent = 0;
     }
-    constexpr int64_t vision_memory_retention_ms = 4000;
-    for (SpatialTrack &track : engine->minimap_tracks) {
-        if (!track.active || track.matched) continue;
+    auto advance_spatial_track = [&](SpatialTrack &track) {
+        if (!track.active || track.matched) return;
         track.recent = static_cast<uint8_t>((track.recent << 1) & 7);
         ++track.missing;
         if (track.confirmed &&
@@ -825,10 +890,12 @@ extern "C" int ma_engine_step(ma_engine *engine,
             // its bounded spatial slot without waiting on a larger reset gap.
             track = SpatialTrack{};
         } else if (lost &&
-                   now_ms - track.disappeared_at_ms >= vision_memory_retention_ms) {
+                   now_ms - track.disappeared_at_ms >= kVisionMemoryRetentionMs) {
             track = SpatialTrack{};
         }
-    }
+    };
+    for (SpatialTrack &track : engine->minimap_tracks) advance_spatial_track(track);
+    advance_spatial_track(engine->minimap_player);
     if (player_transition != 0) {
         const int ttl = player_transition == MA_PLAYER_DEAD ? 2000 : 2500;
         engine->last_emitted_ms = now_ms;
@@ -842,14 +909,21 @@ extern "C" int ma_engine_step(ma_engine *engine,
     for (int i = 0; i < 15; ++i) {
         if (i / 5 + 1 == MA_MINIMAP_ENEMY) continue;
         Track &track = engine->tracks[i];
+        const int kind = i / 5 + 1;
         track.recent = static_cast<uint8_t>(((track.recent << 1) | (seen[i] ? 1 : 0)) & 7);
         if (seen[i]) {
             track.missing = 0;
+            track.cleared_at_ms = 0;
         } else if (++track.missing >= engine->config.reset_after_missing_frames) {
-            track.announced = false;
             track.recent = 0;
+            if (kind == MA_MAIN_ENEMY) {
+                if (track.cleared_at_ms == 0) track.cleared_at_ms = now_ms;
+                if (now_ms - track.cleared_at_ms >= kMainEdgeRearmMs)
+                    track.announced = false;
+            } else {
+                track.announced = false;
+            }
         }
-        const int kind = i / 5 + 1;
         if (seen[i] && !track.announced &&
             hit_count(track.recent) >= engine->config.min_hits_in_three_frames &&
             priority(kind) > best_priority) {
@@ -859,7 +933,7 @@ extern "C" int ma_engine_step(ma_engine *engine,
     }
     int best_minimap = -1;
     if (best_priority < priority(MA_MINIMAP_ENEMY)) {
-        for (int index = 0; index < 8; ++index) {
+        for (int index = 0; index < kMinimapTrackCount; ++index) {
             const SpatialTrack &track = engine->minimap_tracks[index];
             if (track.active && track.matched && !track.announced &&
                 hit_count(track.recent) >= engine->config.min_hits_in_three_frames) {
@@ -918,7 +992,39 @@ extern "C" int ma_engine_read_minimap_markers(
     return count;
 }
 
+extern "C" int ma_engine_read_tracked_entities(
+        const ma_engine *engine, ma_tracked_entity *out, int capacity) {
+    if (!engine || !out || capacity <= 0) return 0;
+    int count = 0;
+    auto append = [&](const SpatialTrack &track, int kind) {
+        if (!track.active || !track.confirmed || count >= capacity) return;
+        const bool lost = !track.matched &&
+                track.missing >= engine->config.reset_after_missing_frames;
+        const int64_t raw_freshness = engine->last_step_ms - track.last_seen_ms;
+        const int freshness = static_cast<int>(std::clamp<int64_t>(
+                raw_freshness, 0, std::numeric_limits<int>::max()));
+        out[count++] = {
+            kind,
+            track.track_id,
+            lost ? MA_TRACK_STATE_LOST : MA_TRACK_STATE_VISIBLE,
+            {track.x - track.w * 0.5f, track.y - track.h * 0.5f,
+             track.w, track.h},
+            track.confidence,
+            track.last_seen_ms,
+            freshness,
+            track.velocity_x,
+            track.velocity_y,
+            track.event,
+        };
+    };
+    for (const SpatialTrack &track : engine->minimap_tracks)
+        append(track, MA_MINIMAP_ENEMY);
+    append(engine->minimap_player, MA_MINIMAP_PLAYER);
+    return count;
+}
+
 extern "C" void ma_engine_clear_minimap_tracks(ma_engine *engine) {
     if (!engine) return;
     for (SpatialTrack &track : engine->minimap_tracks) track = SpatialTrack{};
+    engine->minimap_player = SpatialTrack{};
 }

@@ -39,10 +39,19 @@ from mapassist.minimap_layout_review_dataset import build as build_minimap_layou
 from mapassist.native import (
     Cue,
     EngineConfig,
+    MA_MINIMAP_ENEMY,
+    MA_MINIMAP_PLAYER,
+    MA_PLAYER_RELEVANCE_MAX_AGE_MS,
+    MA_TRACK_STATE_LOST,
+    MA_TRACK_STATE_VISIBLE,
+    MA_VISION_EVENT_APPEAR,
+    MA_VISION_EVENT_DISAPPEAR,
+    MA_VISION_EVENT_NONE,
     MinimapMarker,
     Observation,
     Pipeline,
     Rect,
+    TrackedEntity,
     load_library,
 )
 from mapassist.replay import run
@@ -1593,7 +1602,8 @@ def test_hd_bootstrap_android_profile_matches_candidate_metadata() -> None:
         (root / "android/app/src/main/assets/profile.json").read_text(encoding="utf-8")
     )
     assert bundled_default["verified"] is False
-    assert bundled_default["detectors"]["minimap_yolox"] is False
+    assert bundled_default == bundled
+    assert bundled_default["detectors"]["minimap_yolox"] is True
 
 
 def test_android_metadata_records_video7_development_replay_smokes() -> None:
@@ -1649,7 +1659,7 @@ def test_android_metadata_records_video7_development_replay_smokes() -> None:
     }
 
 
-def test_bundled_android_public_default_disables_all_recognizers() -> None:
+def test_bundled_android_default_enables_only_hd_minimap_recognizer() -> None:
     root = Path(__file__).resolve().parents[1]
     profile = json.loads((root / "android/app/src/main/assets/profile.json").read_text())
     assert profile["verified"] is False
@@ -1658,14 +1668,14 @@ def test_bundled_android_public_default_disables_all_recognizers() -> None:
         "minimap_template": False,
         "minimap_red_ring": False,
         "danger_ping_template": False,
-        "minimap_yolox": False,
+        "minimap_yolox": True,
     }
     assert profile["thresholds"]["minimap_yolox_input_size"] == 320
-    assert profile["thresholds"]["minimap_yolox_confidence"] == pytest.approx(0.19)
+    assert profile["thresholds"]["minimap_yolox_confidence"] == pytest.approx(0.67)
     assert profile["thresholds"]["minimap_yolox_nms"] == pytest.approx(0.5)
-    assert profile["events"]["min_confidence"] == pytest.approx(0.19)
+    assert profile["events"]["min_confidence"] == pytest.approx(0.67)
     assert profile["models"]["minimap_yolox_bin_sha256"] == (
-        "34b2cc80e47bd197e52a40ff69e39d60aea363de2071c8a89510c6398bbfbc56"
+        "d5b4b5dcee290122ae823750d247dd7336f656ab2430f86f68ba87f6ad1e4bd3"
     )
 
 
@@ -1702,9 +1712,8 @@ def test_adaptive_minimap_profile_is_importable_and_keeps_frozen_default() -> No
         (root / "profiles/hok_minimap_adaptive.experimental.android.json").read_text()
     )
     expected_default = copy.deepcopy(json.loads(
-        (root / "profiles/hok_minimap_development.android.json").read_text()
+        (root / "profiles/hok_minimap_hd_bootstrap.android.json").read_text()
     ))
-    expected_default["detectors"]["minimap_yolox"] = False
     frozen_default = json.loads(
         (root / "android/app/src/main/assets/profile.json").read_text()
     )
@@ -1718,11 +1727,12 @@ def test_adaptive_minimap_profile_is_importable_and_keeps_frozen_default() -> No
     assert hashlib.sha256(descriptor).hexdigest() == locator["descriptor_sha256"]
     assert locator["training_match_count"] == 6
     assert locator["training_frame_count"] == 573
-    # The locator is stable, but the enlarged crop changes the detector input
-    # distribution. Keep the fixed profile as the APK default until a detector
-    # trained on adaptive crops passes a new independent evaluation.
+    # The adaptive locator remains import-only; the reviewed fixed HD profile
+    # is the APK default until an adaptive-crop detector passes evaluation.
     assert "layout" not in frozen_default
-    assert frozen_default["profile_version"] == "0.5.1-yolox-nano-hardfp-320-candidate-dev"
+    assert frozen_default["profile_version"] == (
+        "0.8.1-yolox-nano-hd-bootstrap-video10-video11-v2-c067"
+    )
 
 
 def test_android_ncnn_assets_match_metadata_and_patched_focus() -> None:
@@ -2336,17 +2346,19 @@ def test_clearing_minimap_tracks_does_not_emit_disappear(
         library.ma_engine_destroy(engine)
 
 
-def test_reappearing_after_lost_starts_new_confirmation_and_appear_event(
+def test_minimap_memory_reuses_short_loss_and_reconfirms_after_two_seconds(
     native_library: Path,
 ) -> None:
     library = load_library(native_library)
+    # Keep every empty-frame interval below the engine's session-gap reset so
+    # the test exercises LOST retention rather than a new capture session.
     config = EngineConfig(0.75, 250, 0, 0, 2, 3)
     engine = library.ma_engine_create(ctypes.byref(config))
     assert engine
     cue = (Cue * 1)()
-    markers = (MinimapMarker * 8)()
+    entities = (TrackedEntity * 9)()
     observation = (Observation * 1)(
-        Observation(2, 2, Rect(0.10, 0.10, 0.02, 0.04), 0.95, 0)
+        Observation(MA_MINIMAP_ENEMY, 2, Rect(0.10, 0.10, 0.02, 0.04), 0.95, 0)
     )
 
     def observe(at_ms: int, visible: bool) -> int:
@@ -2355,28 +2367,109 @@ def test_reappearing_after_lost_starts_new_confirmation_and_appear_event(
             return library.ma_engine_step(engine, observation, 1, at_ms, cue, 1)
         return library.ma_engine_step(engine, None, 0, at_ms, cue, 1)
 
+    def read_entities() -> list[TrackedEntity]:
+        count = library.ma_engine_read_tracked_entities(engine, entities, 9)
+        return [entities[index] for index in range(count)]
+
     try:
         observe(0, True)
         observe(83, True)
-        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
-        assert markers[0].event == 1
+        visible = read_entities()
+        assert len(visible) == 1
+        first_id = visible[0].track_id
+        assert visible[0].entity_kind == MA_MINIMAP_ENEMY
+        assert visible[0].state == MA_TRACK_STATE_VISIBLE
+        assert visible[0].transition == MA_VISION_EVENT_APPEAR
+        assert visible[0].confidence == pytest.approx(0.95, abs=1e-5)
 
         observe(166, False)
         observe(249, False)
         observe(332, False)
-        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
-        assert markers[0].state == 2
-        assert markers[0].event == 2
+        lost = read_entities()
+        assert len(lost) == 1
+        assert lost[0].state == MA_TRACK_STATE_LOST
+        assert lost[0].transition == MA_VISION_EVENT_DISAPPEAR
+        assert lost[0].track_id == first_id
 
-        # One detection is not enough to announce a fresh target after LOST.
+        # A short LOST interval resumes the same track and stays silent.
         observe(415, True)
-        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 0
-        cue_count = observe(498, True)
-        assert library.ma_engine_read_minimap_markers(engine, markers, 8) == 1
-        assert markers[0].state == 1
-        assert markers[0].event == 1
-        assert cue_count == 1
-        assert cue[0].kind == 2
+        resumed = read_entities()
+        assert len(resumed) == 1
+        assert resumed[0].state == MA_TRACK_STATE_VISIBLE
+        assert resumed[0].transition == MA_VISION_EVENT_NONE
+        assert resumed[0].track_id == first_id
+        assert observe(498, False) == 0
+
+        # Lose it again, then walk forward in <=400ms steps.  The first hit
+        # after the two-second grace boundary is only a candidate; the second
+        # hit confirms a new appearance and emits the one cue.
+        observe(581, False)
+        observe(664, False)
+        observe(1064, False)
+        observe(1464, False)
+        observe(1864, False)
+        observe(2264, False)
+        observe(2664, False)
+        assert read_entities()[0].state == MA_TRACK_STATE_LOST
+        assert observe(2747, True) == 0
+        assert read_entities() == []
+        assert observe(2830, True) == 1
+        reappeared = read_entities()
+        assert len(reappeared) == 1
+        assert reappeared[0].state == MA_TRACK_STATE_VISIBLE
+        assert reappeared[0].transition == MA_VISION_EVENT_APPEAR
+        assert reappeared[0].track_id != first_id
+        assert cue[0].kind == MA_MINIMAP_ENEMY
+
+        # A confirmed track is retained through the four-second LOST window,
+        # then expires on the boundary.
+        observe(2913, False)
+        observe(2996, False)
+        observe(3079, False)
+        for at_ms in range(3479, 7079, 400):
+            observe(at_ms, False)
+        observe(7079, False)
+        assert read_entities() == []
+    finally:
+        library.ma_engine_destroy(engine)
+
+
+def test_minimap_player_snapshot_is_silent_and_exposes_freshness(
+    native_library: Path,
+) -> None:
+    library = load_library(native_library)
+    config = EngineConfig(0.10, 1000, 0, 0, 2, 3)
+    engine = library.ma_engine_create(ctypes.byref(config))
+    assert engine
+    cue = (Cue * 1)()
+    entities = (TrackedEntity * 9)()
+    player = (Observation * 1)(
+        Observation(MA_MINIMAP_PLAYER, 0, Rect(0.50, 0.40, 0.02, 0.04), 0.88, 0)
+    )
+
+    def read_entities() -> list[TrackedEntity]:
+        count = library.ma_engine_read_tracked_entities(engine, entities, 9)
+        return [entities[index] for index in range(count)]
+
+    try:
+        assert library.ma_engine_step(engine, player, 1, 0, cue, 1) == 0
+        player[0].timestamp_ms = 83
+        assert library.ma_engine_step(engine, player, 1, 83, cue, 1) == 0
+        snapshot = read_entities()
+        assert len(snapshot) == 1
+        assert snapshot[0].entity_kind == MA_MINIMAP_PLAYER
+        assert snapshot[0].state == MA_TRACK_STATE_VISIBLE
+        assert snapshot[0].transition == MA_VISION_EVENT_APPEAR
+        assert snapshot[0].freshness_ms == 0
+        assert snapshot[0].freshness_ms <= MA_PLAYER_RELEVANCE_MAX_AGE_MS
+        # The player icon is a coordinate origin only and never a cue.
+        assert cue[0].kind != MA_MINIMAP_PLAYER
+
+        assert library.ma_engine_step(engine, None, 0, 584, cue, 1) == 0
+        stale = read_entities()
+        assert len(stale) == 1
+        assert stale[0].freshness_ms == 501
+        assert stale[0].freshness_ms > MA_PLAYER_RELEVANCE_MAX_AGE_MS
     finally:
         library.ma_engine_destroy(engine)
 

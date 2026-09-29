@@ -13,6 +13,20 @@ from typing import Any
 from PIL import Image
 
 
+# Values shared with the C header. Keeping these names in the ctypes module
+# avoids making tests and offline replayers depend on magic integers.
+MA_MINIMAP_ENEMY = 2
+MA_MINIMAP_PLAYER = 6
+MA_TRACK_STATE_CANDIDATE = 0
+MA_TRACK_STATE_VISIBLE = 1
+MA_TRACK_STATE_LOST = 2
+MA_TRACK_STATE_EXPIRED = 3
+MA_VISION_EVENT_NONE = 0
+MA_VISION_EVENT_APPEAR = 1
+MA_VISION_EVENT_DISAPPEAR = 2
+MA_PLAYER_RELEVANCE_MAX_AGE_MS = 500
+
+
 class Rect(C.Structure):
     _fields_ = [(name, C.c_float) for name in ("x", "y", "w", "h")]
 
@@ -73,6 +87,28 @@ class MinimapMarker(C.Structure):
         ("age_ms", C.c_int),
         ("event", C.c_int),
         ("track_id", C.c_int),
+    ]
+
+
+class TrackedEntity(C.Structure):
+    """Category-aware visual-memory snapshot from ``ma_engine``.
+
+    The native struct is append-only relative to the legacy marker ABI.  Keep
+    this layout in lockstep with ``native/include/mapassist.h`` so callers can
+    inspect player freshness without decoding the packed Android result.
+    """
+
+    _fields_ = [
+        ("entity_kind", C.c_int),
+        ("track_id", C.c_int),
+        ("state", C.c_int),
+        ("bbox", Rect),
+        ("confidence", C.c_float),
+        ("last_seen_ms", C.c_int64),
+        ("freshness_ms", C.c_int),
+        ("velocity_x", C.c_float),
+        ("velocity_y", C.c_float),
+        ("transition", C.c_int),
     ]
 
 
@@ -158,6 +194,10 @@ def load_library(path: Path | None = None) -> C.CDLL:
         C.c_void_p, C.POINTER(MinimapMarker), C.c_int,
     ]
     lib.ma_engine_read_minimap_markers.restype = C.c_int
+    lib.ma_engine_read_tracked_entities.argtypes = [
+        C.c_void_p, C.POINTER(TrackedEntity), C.c_int,
+    ]
+    lib.ma_engine_read_tracked_entities.restype = C.c_int
     lib.ma_engine_clear_minimap_tracks.argtypes = [C.c_void_p]
     lib.ma_engine_clear_minimap_tracks.restype = None
     lib.ma_engine_destroy.argtypes = [C.c_void_p]

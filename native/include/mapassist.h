@@ -7,14 +7,38 @@
 extern "C" {
 #endif
 
-#define MA_API_VERSION 7
+/*
+ * The original engine ABI remains source and binary compatible: existing
+ * structures and entry points are kept in place and the memory snapshot API
+ * is appended below.  Bump the header contract when consumers want to use the
+ * appended entity kind and snapshot fields.
+ */
+#define MA_API_VERSION 8
+
+/* Hard bounds shared by native producers and platform consumers. */
+#define MA_MAX_MINIMAP_TRACKS 8
+#define MA_MAX_TRACKED_ENTITIES (MA_MAX_MINIMAP_TRACKS + 1)
+#define MA_MAX_OBSERVATIONS 64
+#define MA_PLAYER_RELEVANCE_MAX_AGE_MS 500
 
 enum ma_kind {
     MA_MAIN_ENEMY = 1,
     MA_MINIMAP_ENEMY = 2,
     MA_DANGER_PING = 3,
     MA_PLAYER_DEAD = 4,
-    MA_PLAYER_ALIVE = 5
+    MA_PLAYER_ALIVE = 5,
+    /* Reserved for the local player's minimap icon. It is state-only. */
+    MA_MINIMAP_PLAYER = 6
+};
+
+/* Stable names for consumers that use entity terminology. */
+enum ma_entity_kind {
+    MA_ENTITY_MAIN_ENEMY = MA_MAIN_ENEMY,
+    MA_ENTITY_MINIMAP_ENEMY = MA_MINIMAP_ENEMY,
+    MA_ENTITY_DANGER_PING = MA_DANGER_PING,
+    MA_ENTITY_PLAYER_DEAD = MA_PLAYER_DEAD,
+    MA_ENTITY_PLAYER_ALIVE = MA_PLAYER_ALIVE,
+    MA_ENTITY_MINIMAP_PLAYER = MA_MINIMAP_PLAYER
 };
 
 enum ma_direction {
@@ -85,6 +109,20 @@ enum ma_vision_event {
 };
 
 /*
+ * State of a tracked visual entity. Candidate tracks are retained internally
+ * while the three-frame confirmation window is being filled. Public snapshots
+ * contain confirmed entities (VISIBLE or LOST); EXPIRED is included so a
+ * future streaming API can report terminal transitions without changing the
+ * integer contract.
+ */
+enum ma_tracked_entity_state {
+    MA_TRACK_STATE_CANDIDATE = 0,
+    MA_TRACK_STATE_VISIBLE = 1,
+    MA_TRACK_STATE_LOST = 2,
+    MA_TRACK_STATE_EXPIRED = 3
+};
+
+/*
  * A confirmed minimap enemy track for optional visual presentation.  A lost
  * marker keeps the last reliable box and movement direction for a short
  * period after the detector stops seeing the portrait.  Coordinates stay
@@ -98,6 +136,30 @@ typedef struct ma_minimap_marker {
     int event;
     int track_id;
 } ma_minimap_marker;
+
+/*
+ * Versioned, category-aware snapshot consumed by visual memory/overlay code.
+ * Coordinates and velocity are normalized to the full capture frame. A LOST
+ * entity keeps its last reliable box for the four-second retention period;
+ * freshness_ms is measured from last_seen_ms to the most recent engine step.
+ * For MA_MINIMAP_PLAYER, callers must require freshness_ms <=
+ * MA_PLAYER_RELEVANCE_MAX_AGE_MS before using it as a coordinate origin.
+ */
+typedef struct ma_tracked_entity {
+    int entity_kind;
+    int track_id;
+    int state;
+    ma_rect bbox;
+    float confidence;
+    int64_t last_seen_ms;
+    int freshness_ms;
+    float velocity_x;
+    float velocity_y;
+    int transition;
+} ma_tracked_entity;
+
+/* Alternate spelling for bindings that call the value an entity snapshot. */
+typedef ma_tracked_entity ma_entity_snapshot;
 
 enum ma_player_state {
     MA_PLAYER_STATE_UNKNOWN = 0,
@@ -214,6 +276,14 @@ int ma_engine_step(ma_engine *engine, const ma_observation *observations,
 /* Snapshot confirmed tracks after ma_engine_step; does not mutate the engine. */
 int ma_engine_read_minimap_markers(const ma_engine *engine,
                                    ma_minimap_marker *out, int capacity);
+/*
+ * Read the bounded category-aware memory snapshot. The result contains up to
+ * MA_MAX_MINIMAP_TRACKS confirmed enemies followed by the confirmed local
+ * player (when a player model is active). `capacity` is always honoured; the
+ * function never writes beyond the caller's buffer. This does not emit cues.
+ */
+int ma_engine_read_tracked_entities(const ma_engine *engine,
+                                    ma_tracked_entity *out, int capacity);
 /* Clear minimap tracking without disturbing other event tracks or cooldowns. */
 void ma_engine_clear_minimap_tracks(ma_engine *engine);
 
