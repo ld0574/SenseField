@@ -54,13 +54,13 @@
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
 | Android 13/14 截屏与横屏取帧 | 已实现 | 已完成模拟器链路验证 |
-| 小地图敌方头像识别 | HD-only bootstrap v2 本机开发候选，默认关闭 | video10 已纳入 train，video11 已纳入 HD dev-val；当前人工复核 train 为 664 图／1211 框，val 为 230 图／400 框，test 为空。v2 在该开发 val 上选得 `c=0.49`，TP/FP/FN `366/35/34`，P/R/F1 `91.2718% / 91.5000% / 91.3858%`。ONNX/TorchScript/ncnn 已导出并绑定本机实验 APK，但严格 parity 未通过；这不是独立成绩，候选仍 `verified=false`，APK 默认关闭检测器 |
+| 小地图敌方头像识别 | HD-only bootstrap v2 本机开发候选，默认关闭 | 开发 val 的 P/R/F1 为 `91.27% / 91.50% / 91.39%`；video13 跨来源诊断为 `87.93% / 96.68% / 92.10%`，方向 `171/171`。召回与方向已过本轮诊断目标，框级 precision 未过 90% 门槛；严格 ncnn parity 与真机验收仍未完成 |
 | 小地图自适应定位 | 旧版定位器实验留档，尚未接入 Android | v2 使用旧低清 video6 val；其定位指标仅作历史，不属于当前 HD-only 验证，也不代表独立发布门禁通过。video8 布局帧为同场诊断；见[定位器记录](validation/MINIMAP_LOCATOR.md) |
 | 简短声音提示 | 已实现 | 事件合并、冷却与优先级规则可用 |
 | 视野记忆 | 已实现实验版 | APPEAR / TRACK / DISAPPEAR / LAST_DIRECTION；连续命中后才显示，消失需多帧确认，DISAPPEAR 后最后位置与移动方向保留 4 秒 |
 | 空间音频与触觉编码 | 已接入实验版 | 左右声道增益和方向震动已实现；尚未完成真实玩家验收 |
 | 录像回放、多人标注与离线评测 | 已实现 | 支持 COCO 数据导出 |
-| 独立留出对局与实体机验收 | 待测 | video12 与 video9 已封存，当前不得运行模型或查看预测；Android 13/14 实体机仍待验收 |
+| 独立留出对局与实体机验收 | 待测 | video13 是模型辅助的 test-only 诊断，不能代替盲测；video12 与 video9 继续封存且未读取。Android 13/14 实体机仍待验收 |
 
 完整指标、证据边界与待验证项见 [当前验证状态](validation/STATUS.md)。
 
@@ -87,10 +87,15 @@ PYTHONPATH=python python3 -m mapassist.annotation_server \
   --dataset video7-edge=data/private/minimap-review-video7-edge-recheck-v1 \
   --dataset video8-hd=data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi \
   --dataset video10-11-hd=data/private/minimap-video10-11-hd-development-v1/queue \
+  --dataset video13-hd=data/private/minimap-video13-holdout-v1/queue \
   --host 127.0.0.1 --port 8765 --open
 ```
 
-当前 HD bootstrap v2 使用 video1+8+3+4+5+10 train（664 图／1211 框）和 video2-HD+11 val（230 图／400 框）；test 为空，不能报告最终成绩。video10/11 已完成逐帧人工复核和 ROI/provenance 审计；v2 在同一开发 val 上以 `c=0.49` 得到 TP/FP/FN `366/35/34`（P/R/F1 `91.2718% / 91.5000% / 91.3858%`），这些指标用于开发比较，不是独立留出成绩。ONNX、TorchScript 和 ncnn 已导出，230/230 张开发图的 ncnn 检测数量一致，但 raw 与坐标严格 parity 仍失败；本机实验 APK 已绑定该权重，候选继续 `verified=false`，公共默认 detector 关闭。video9/12 没有读取或运行模型，继续封存；队列状态见[验证状态](validation/STATUS.md)、[video10/11 审计](validation/VIDEO10_11.md)与[录像接收记录](validation/VIDEO_INTAKE_2026-09-28.md)。
+当前 HD bootstrap v2 使用 video1+8+3+4+5+10 train（664 图／1211 框）和 video2-HD+11 val（230 图／400 框）；bootstrap test 仍为空。开发 val 在 `c=0.49` 下的 P/R/F1 为 `91.2718% / 91.5000% / 91.3858%`。
+
+video13 已完成 130/130 任务人工复核与审计，得到 121 个可评测 test 图／211 框。冻结 v2 的 TP/FP/FN 为 `204/28/7`，P/R/F1 为 `87.9310% / 96.6825% / 92.0993%`，方向为 `171/171=100%`。召回与方向已过本轮诊断目标，框级 precision 未过 90% 门槛；这组模型辅助诊断不能用于调参，也不能代替 blind independent holdout。video9/12 继续封存且未读取。
+
+ONNX、TorchScript 和 ncnn 已导出；严格 parity 仍失败，实验 APK 的检测器默认关闭。完整边界见[验证状态](validation/STATUS.md)、[video13 记录](validation/VIDEO13.md)与[录像接收记录](validation/VIDEO_INTAKE_2026-09-28.md)。
 
 Android Studio 直接打开 `android/`。首次原生构建会下载并校验固定版本的 ncnn Android 依赖；调试 APK 的命令行构建方式记录在[团队协作文档](docs/团队协作与本地运行.md)。
 
@@ -123,6 +128,7 @@ Android Studio 直接打开 `android/`。首次原生构建会下载并校验固
 - [困难误报加权实验](validation/HARD_NEGATIVES.md)
 - [video8 真人排位冻结盲测](validation/VIDEO8.md)
 - [video10/11 HD 人工复核与开发训练](validation/VIDEO10_11.md)
+- [video13 高清对局模型辅助人工复核](validation/VIDEO13.md)
 - [GitHub 发布检查清单](docs/GITHUB发布检查清单.md)
 - [参与开发](CONTRIBUTING.md)
 

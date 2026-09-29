@@ -56,7 +56,7 @@ git diff --cached
 抽查关键私有路径确实被忽略：
 
 ```sh
-git check-ignore -v video/video1.mp4
+git check-ignore -v video/video1hd.mp4
 git check-ignore -v data/private/minimap-review-v3/annotations.sqlite3
 git check-ignore -v android/local.properties
 ```

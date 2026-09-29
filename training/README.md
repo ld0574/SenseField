@@ -1,8 +1,8 @@
 # 小地图 YOLOX-Nano 开发训练
 
-> **当前 HD-only 规则（2026-09-28）**：后续训练、验证、阈值和模型评估只使用 HD。train/dev 来源为已替换成高清内容的 `video/video1.mp4`、`video2hd`、`video3hd`、`video4hd`、`video5hd`、`video7`、`video8`、`video10`；`video11` 是 HD dev-val。`video12` 为 primary sealed holdout，`video9` 为 cross-source sealed holdout；不得对这两场运行模型或查看预测。Hero 仅用于 UX／事件故事。低清 video2–6 及其队列、模型和指标全部退役为历史；不存在 `video1hd.mp4` 或 `video6hd.mp4`。
+> **当前 HD-only 规则（2026-09-29）**：后续训练、验证、阈值和模型评估只使用 HD。train/dev 来源为已替换成高清内容的 `video/video1hd.mp4`、`video2hd`、`video3hd`、`video4hd`、`video5hd`、`video7`、`video8`、`video10`；`video11` 是 HD dev-val。`video13` 已完成模型辅助人工复核和 Codex temporal audit，形成 test-only COCO 诊断；它不属于 blind independent holdout，不能用于调参、选模、修改 ROI 或后处理。`video12` 为 primary sealed holdout，`video9` 为 cross-source sealed holdout；不得对这两场运行模型或查看预测。Hero 仅用于 UX／事件故事。低清 video2–6 及其队列、模型和指标全部退役为历史；`video6hd.mp4` 不属于当前数据集。
 >
-> 当前 bootstrap v2 split 使用 video1+8+3+4+5+10 train（664 图／1211 框）与 video2-HD+11 val（230 图／400 框）；test 为空，不能产生最终成绩。video4-HD、video5-HD、video10/11 已完成人工复核，队列的 SQLite／manifest、source hash、显示尺寸、三层 ROI 和 crop-edge 审计均通过；video10 已纳入 train，video11 作为 HD dev-val。video7-edge 仍待复核；未审核机器框不能当真值，也不得提前加入训练、验证或 COCO。video9/12 继续封存。
+> 当前 bootstrap v2 split 使用 video1+8+3+4+5+10 train（664 图／1211 框）与 video2-HD+11 val（230 图／400 框）；bootstrap test 仍为空，不能产生 bootstrap 最终成绩。video4-HD、video5-HD、video10/11 已完成人工复核，队列的 SQLite／manifest、source hash、显示尺寸、三层 ROI 和 crop-edge 审计均通过；video10 已纳入 train，video11 作为 HD dev-val。video13 的 130/130 个任务已人工复核（110 `corrected`、11 `negative`、9 `excluded`、0 pending/lease），并经 temporal audit 与 test-only COCO audit 收口为 121 图／211 框。冻结 v2 在 CPU、320、confidence `0.49`、NMS `0.5`、IoU `0.5` 下为 `204/28/7`，P/R/F1 `87.9310% / 96.6825% / 92.0993%`，方向 `171/171=100%`；准确率门槛未过，召回与方向已过。它是模型辅助跨来源 test 诊断，不能用于调参、选模或修改 ROI；video7-edge 仍待复核，video9/12 继续封存。
 
 ### 低清数据与模型的历史记录（只读）
 
@@ -114,7 +114,7 @@ shasum -a 256 build/models/yolox_nano.pth
 
 ## 当前数据状态：只接受人工复核后的 HD
 
-当前 HD bootstrap v2 train 为人工复核后的 video1+8+3+4+5+10（664 图／1211 框），val 为 video2-HD+11（230 图／400 框）；test 为空，不能作为最终成绩。video3-HD 120/120 帧、video4-HD 100/100 帧、video5-HD 100/100 帧、video10/11 各 130/130 帧均已复核完成并通过三层 ROI、尺寸、框合法性和 crop-edge audit。video10 已进入 train，video11 保持 HD dev-val；video7-edge 仍待复核，未复核前不得将其加入当前 COCO、训练或验证。任何未审核机器框都不能作为真值。video9/12 保持 sealed，Hero 仅用于 UX／事件故事。低清 video2–6 及其旧 checkpoint、指标均已退役。
+当前 HD bootstrap v2 train 为人工复核后的 video1+8+3+4+5+10（664 图／1211 框），val 为 video2-HD+11（230 图／400 框）；bootstrap test 仍为空，不能作为 bootstrap 最终成绩。video3-HD 120/120 帧、video4-HD 100/100 帧、video5-HD 100/100 帧、video10/11 各 130/130 帧均已复核完成并通过三层 ROI、尺寸、框合法性和 crop-edge audit。video10 已进入 train，video11 保持 HD dev-val；video7-edge 仍待复核，未复核前不得将其加入当前 COCO、训练或验证。video13 已完成 130/130 个任务人工复核（110 `corrected`、11 `negative`、9 `excluded`、0 pending/lease），并完成 Codex temporal audit；test-only COCO audit 无 blocker，121 个可评测 test 图含 211 框。冻结 v2 test 诊断的检测框 TP/FP/FN 为 `204/28/7`，P/R/F1 `87.9310% / 96.6825% / 92.0993%`，方向 `171/171=100%`；准确率门槛未过，召回与方向已过。video13 不是 blind independent holdout，不能用于调参、选模、修改 ROI 或后处理；video9/12 保持 sealed 且未读取。低清 video2–6 及其旧 checkpoint、指标均已退役。
 
 ### HD bootstrap 训练与标注辅助（2026-09-28）
 
@@ -205,7 +205,7 @@ PYTHONPATH=python .venv/bin/python training/evaluate_yolox_ncnn_report.py \
 
 ### video10/11 人工复核后的 v2 开发候选（2026-09-29）
 
-video10 和 video11 已完成全部人工复核并通过队列、ROI、尺寸、框合法性和来源审计。video10 的 130/130 帧（110 `corrected`、20 `negative`、230 框）进入 train；video11 的 130/130 帧（107 `corrected`、23 `negative`、203 框）进入 HD dev-val。合并后的 v2 COCO split 为 train 664 图／1211 框、val 230 图／400 框，test 为空；完整审计和来源哈希见 [video10/11 记录](../validation/VIDEO10_11.md)。
+video10 和 video11 已完成全部人工复核并通过队列、ROI、尺寸、框合法性和来源审计。video10 的 130/130 帧（110 `corrected`、20 `negative`、230 框）进入 train；video11 的 130/130 帧（107 `corrected`、23 `negative`、203 框）进入 HD dev-val。合并后的 v2 COCO split 为 train 664 图／1211 框、val 230 图／400 框，bootstrap test 为空；video13 的 test-only 诊断单独保存，不进入该 split。完整审计和来源哈希见 [video10/11 记录](../validation/VIDEO10_11.md)与 [video13 记录](../validation/VIDEO13.md)。
 
 从 video4/5 扩充候选初始化，在 Apple MPS 上以 seed `20260930`、输入 320、batch 16、`lr_scale=0.25` 训练最多 12 轮；best epoch 为 8，实际用时约 337 秒。开发 val 选择 confidence `0.49` 时，TP/FP/FN 为 `366/35/34`，precision / recall / F1 为 `91.2718% / 91.5000% / 91.3858%`。video2-HD 和 video11 都参与了选模或阈值选择，因此这只是开发诊断，不能作为独立留出成绩；video10 已在 train 中，也不能把其回放结果称为独立评估。
 
