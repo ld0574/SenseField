@@ -27,6 +27,8 @@
 
 本项目由参赛团队独立开发，是非官方作品，与腾讯、天美工作室群及《王者荣耀》官方无隶属、合作或认可关系。相关名称、商标和游戏内容归各自权利人所有。
 
+当前预发布目标为 `0.3.0-alpha.1`（Android `versionCode 7`），定位为 GitHub pre-release developer preview。它用于审阅端侧链路和实验交互，不代表最终验收或稳定发布。
+
 ## 为什么做听野
 
 对管状视野、低视力等玩家来说，放大屏幕会让同一时刻可见的范围更小，通用读屏软件又难以跟上实时对局。玩家需要的是在不遮挡仅存视野的前提下，及时感知屏幕边缘和小地图上已经出现的信息。
@@ -53,14 +55,22 @@
 - 私有录像、抽帧、标注数据和实验产物不纳入公开仓库。
 - 这是尚未完成最终实体机与玩家验收的研究原型；实际使用前请核实游戏条款和赛事规则。
 
+## 0.3.0-alpha.1 Developer Preview 边界
+
+- 当前 HD 小地图模型是实验候选，尚未通过独立留出对局验收；开发集指标和跨运行时差异不能当作最终准确率。主画面边缘分类器在公共默认 profile 中关闭，不属于本预发布的支持能力。
+- Android APK 当前只构建 `arm64-v8a`，最低 Android API 为 29，目标 API 为 35。没有 arm64-v8a 的设备不在本候选支持范围内。
+- `MediaProjection` 用于在用户每次明确授权后取得整屏帧；悬浮窗权限（`SYSTEM_ALERT_WINDOW`）只用于显示可选的非交互提示层；通知权限用于前台截屏服务的运行状态和健康提示。识别、事件筛选和模型推理在设备本地完成，不上传屏幕画面。
+- 没有完整签名环境变量时，发布脚本只生成名称含 `debug-candidate` 的 Debug APK，并沿用 Android Gradle 的标准 debug signing；签名材料必须由发布者通过环境变量提供，脚本不会生成或上传发布 keystore。候选构建和 GitHub Release 发布仍需按[发布说明草稿](docs/RELEASE_NOTES_0.3.0-alpha.1.md)与[检查清单](docs/RELEASE_CHECKLIST_0.3.0-alpha.1.md)复核。
+
 ## 当前进度
 
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
-| Android 屏幕采集 | 已实现实验链路 | Android 13/14 模拟器流程已验证；Android 14 首轮真机已跑通授权、横屏采集和提示播放，长时会话验收仍待完成。 |
-| 小地图识别 | 首装默认启用 HD 实验模型与新头像提醒 | 本机 APK 内置启用检测器的匹配 profile；模型权重仍不纳入 Git，干净克隆需提供匹配权重才能运行。候选尚未通过严格跨运行时一致性和独立留出验证，可在设置中关闭。 |
+| Android 屏幕采集 | 已实现实验链路 | Android 13/14 模拟器流程已验证；Android 14 首轮真机已跑通授权、横屏采集和提示播放，长时会话验收仍待完成。截屏服务以前台通知运行，画面只在本地处理。 |
+| 小地图识别 | 首装默认启用 HD 实验模型与新头像提醒 | 本机 APK 内置启用检测器的匹配 profile；模型权重仍不纳入 Git，干净克隆需提供匹配权重才能运行。实验候选尚未通过严格跨运行时一致性和独立留出验证，可在设置中关闭。 |
+| 主画面边缘分类器 | 默认关闭 | 主画面边缘数据仍待人工复核，公共默认 profile 不启用，本预发布不提供该能力的支持承诺。 |
 | 视野记忆与提示 | 实验版，待复测 | 已接入事件跟踪和多通道提示。首轮真机反馈提示过频并出现方向误报，路由修复已完成，仍需真机复测和玩家体验验证。 |
-| 最终验收 | 进行中 | 仍需完成独立对局、Android 实体机长时运行、端到端延迟测量和目标玩家评估。 |
+| 最终验收 | 进行中 | 仍需完成独立对局、Android 实体机长时运行、端到端延迟测量和目标玩家评估；本预发布版本不宣称已完成。 |
 
 当前 HD 候选的开发评估如下。置信度为 `0.67`、NMS 为 `0.5`，框匹配 IoU 阈值为 `0.5`。
 
@@ -87,6 +97,8 @@ Android 应用可用 Android Studio 打开 `android/`，也可以运行：
 cd android
 ./gradlew assembleDebug
 ```
+
+预发布候选使用 `scripts/build_android_preview.sh`。不提供完整签名环境变量时，它只生成并核验名称含 `debug-candidate` 的 Debug APK，并沿用 Android Gradle 的标准 debug signing；签名构建需要同时设置 `SENSEFIELD_KEYSTORE_PATH`、`SENSEFIELD_KEY_ALIAS`、`SENSEFIELD_KEYSTORE_PASSWORD` 和 `SENSEFIELD_KEY_PASSWORD`。脚本只读取已有发布 keystore，不创建或提交签名材料。
 
 首次原生构建会下载并校验项目锁定版本的 ncnn Android 依赖。
 模型权重未纳入 Git；需要将与 `android/app/src/main/assets/minimap-yolox-nano-320.metadata.json` 匹配的 `.param` 和 `.bin` 放入 assets，才能运行默认开启的 HD 实验识别。没有本地权重时仍可构建 APK，但开始截屏识别会提示模型文件缺失。

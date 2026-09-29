@@ -37,6 +37,9 @@ FORBIDDEN_SUFFIXES = {
     ".jks",
     ".keystore",
     ".pem",
+    ".p12",
+    ".pfx",
+    ".pkcs12",
 }
 MODEL_WEIGHT_SUFFIXES = {
     ".pth",
@@ -146,6 +149,8 @@ def workspace_candidates(root: Path) -> list[str]:
     allowed_docs = {
         "docs/团队协作与本地运行.md",
         "docs/GITHUB发布检查清单.md",
+        "docs/RELEASE_NOTES_0.3.0-alpha.1.md",
+        "docs/RELEASE_CHECKLIST_0.3.0-alpha.1.md",
     }
     result: list[str] = []
     skip_dirs = {

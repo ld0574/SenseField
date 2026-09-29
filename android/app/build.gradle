@@ -5,6 +5,32 @@ plugins {
     id 'com.android.application'
 }
 
+def releaseSigningInputs = [
+    keystorePath: System.getenv('SENSEFIELD_KEYSTORE_PATH'),
+    keyAlias: System.getenv('SENSEFIELD_KEY_ALIAS'),
+    keystorePassword: System.getenv('SENSEFIELD_KEYSTORE_PASSWORD'),
+    keyPassword: System.getenv('SENSEFIELD_KEY_PASSWORD')
+]
+def providedReleaseSigningInputs = releaseSigningInputs.findAll { name, value ->
+    value != null && !value.trim().isEmpty()
+}
+if (!providedReleaseSigningInputs.isEmpty()
+        && providedReleaseSigningInputs.size() != releaseSigningInputs.size()) {
+    throw new GradleException(
+            'Incomplete release signing configuration. Set all of '
+                    + 'SENSEFIELD_KEYSTORE_PATH, SENSEFIELD_KEY_ALIAS, '
+                    + 'SENSEFIELD_KEYSTORE_PASSWORD, and SENSEFIELD_KEY_PASSWORD, '
+                    + 'or leave all four unset for a debug candidate.'
+    )
+}
+def releaseSigningConfigured = providedReleaseSigningInputs.size() == releaseSigningInputs.size()
+if (releaseSigningConfigured && !file(releaseSigningInputs.keystorePath).isFile()) {
+    throw new GradleException(
+            "SENSEFIELD_KEYSTORE_PATH does not point to a readable keystore: "
+                    + releaseSigningInputs.keystorePath
+    )
+}
+
 android {
     namespace 'com.openkhub.sensefield'
     compileSdk 36
@@ -14,8 +40,8 @@ android {
         applicationId 'com.openkhub.sensefield'
         minSdk 29
         targetSdk 35
-        versionCode 6
-        versionName '0.2.2'
+        versionCode 7
+        versionName '0.3.0-alpha.1'
         ndk {
             abiFilters 'arm64-v8a'
         }
@@ -26,9 +52,23 @@ android {
         }
     }
 
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            release {
+                storeFile file(releaseSigningInputs.keystorePath)
+                storePassword releaseSigningInputs.keystorePassword
+                keyAlias releaseSigningInputs.keyAlias
+                keyPassword releaseSigningInputs.keyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
+            if (releaseSigningConfigured) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from scripts.check_public_repo import git_candidates, scan
+from scripts.check_public_repo import git_candidates, scan, workspace_candidates
 
 
 def test_public_check_rejects_model_artifacts_but_allows_other_bin_files(
@@ -29,6 +29,17 @@ def test_public_check_rejects_model_artifacts_but_allows_other_bin_files(
     model_errors = [error for error in errors if error.startswith("model weight or graph")]
     assert len(model_errors) == len(model_files)
     assert not any(ordinary_bin in error for error in errors)
+
+
+def test_public_check_rejects_pkcs12_signing_material(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("Project", encoding="utf-8")
+    (tmp_path / "LICENSE").write_text("License", encoding="utf-8")
+    keystore = "release-signing.p12"
+    (tmp_path / keystore).write_bytes(b"private signing material")
+
+    errors, _ = scan(tmp_path, [keystore, "README.md", "LICENSE"])
+
+    assert any("private or binary artifact is public" in error for error in errors)
 
 
 def test_public_check_recognizes_bin_with_ncnn_param_companion(tmp_path: Path) -> None:
@@ -71,3 +82,18 @@ def test_git_scan_checks_tracked_ignored_and_unignored_model_files(tmp_path: Pat
     errors, _ = scan(tmp_path, candidates)
     assert any("weights/tracked.pt" in error for error in errors)
     assert any("weights/unignored.onnx" in error for error in errors)
+
+
+def test_workspace_fallback_includes_release_documents(tmp_path: Path) -> None:
+    release_docs = [
+        "docs/RELEASE_NOTES_0.3.0-alpha.1.md",
+        "docs/RELEASE_CHECKLIST_0.3.0-alpha.1.md",
+    ]
+    for name in release_docs:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("release document\n", encoding="utf-8")
+
+    candidates = workspace_candidates(tmp_path)
+
+    assert all(name in candidates for name in release_docs)

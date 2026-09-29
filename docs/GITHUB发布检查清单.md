@@ -2,6 +2,12 @@
 
 本清单用于公开仓库和比赛提交前的最后检查。自有代码已采用 Apache License 2.0；题方资料、录像、游戏画面、模型数据来源和第三方组件仍需分别核对授权边界。
 
+## 当前目标：0.3.0-alpha.1 developer preview
+
+版本目标为 Android `versionName 0.3.0-alpha.1`、`versionCode 7`。逐项发布草稿见 [0.3.0-alpha.1 Release notes](RELEASE_NOTES_0.3.0-alpha.1.md) 和 [版本检查清单](RELEASE_CHECKLIST_0.3.0-alpha.1.md)。本预发布只支持 `arm64-v8a`，实验小地图模型尚未通过独立留出验收，公共默认 profile 不启用主画面边缘分类器。README 和 Release body 必须说明 `MediaProjection`、悬浮窗、通知权限的用途，以及识别在本地处理。
+
+构建优先使用 `bash scripts/build_android_preview.sh`。四个 `SENSEFIELD_KEYSTORE_PATH`、`SENSEFIELD_KEY_ALIAS`、`SENSEFIELD_KEYSTORE_PASSWORD`、`SENSEFIELD_KEY_PASSWORD` 环境变量全部提供时才构建签名 candidate；缺少签名参数时只构建文件名含 `debug-candidate` 的 Debug APK，并沿用 Android Gradle 的标准 debug signing。脚本不生成或上传发布 keystore，不发布 GitHub Release。
+
 ## 1. 权利和隐私
 
 - [x] 团队已在根目录加入 Apache License 2.0，并填写 2026 年团队版权信息。
