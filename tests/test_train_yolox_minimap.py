@@ -12,10 +12,31 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "training"))
 from train_yolox_minimap import (
     _assert_roi_boundaries_clear,
     _is_better_validation_metric,
+    _load_checkpoint_audited,
+    _per_class_threshold_diagnostics,
     _select_validation_metric,
     _validate_range,
     _validate_training_args,
 )
+
+
+class _FakeTensor:
+    def __init__(self, shape: tuple[int, ...], marker: str) -> None:
+        self.shape = shape
+        self.marker = marker
+
+
+class _FakeModel:
+    def __init__(self, state: dict[str, _FakeTensor]) -> None:
+        self._state = state
+        self.loaded: dict[str, _FakeTensor] = {}
+
+    def state_dict(self) -> dict[str, _FakeTensor]:
+        return self._state
+
+    def load_state_dict(self, values: dict[str, _FakeTensor], strict: bool) -> None:
+        assert strict is False
+        self.loaded = values
 
 
 def _roi_audit(crop_contacts: list[dict] | None = None,
@@ -66,6 +87,61 @@ def test_checkpoint_comparison_keeps_precision_eligible_metric_first() -> None:
 
     assert _is_better_validation_metric(eligible, ineligible, 0.90)
     assert not _is_better_validation_metric(ineligible, eligible, 0.90)
+
+
+def test_checkpoint_loader_only_skips_classification_shape_mismatches() -> None:
+    model = _FakeModel({
+        "backbone.weight": _FakeTensor((2, 2), "model-backbone"),
+        "head.reg_preds.0.weight": _FakeTensor((4, 2, 1, 1), "model-reg"),
+        "head.obj_preds.0.weight": _FakeTensor((1, 2, 1, 1), "model-obj"),
+        "head.cls_preds.0.weight": _FakeTensor((2, 2, 1, 1), "model-cls"),
+    })
+    checkpoint = {
+        "backbone.weight": _FakeTensor((2, 2), "checkpoint-backbone"),
+        "head.reg_preds.0.weight": _FakeTensor((4, 2, 1, 1), "checkpoint-reg"),
+        "head.obj_preds.0.weight": _FakeTensor((1, 2, 1, 1), "checkpoint-obj"),
+        "head.cls_preds.0.weight": _FakeTensor((1, 2, 1, 1), "checkpoint-cls"),
+    }
+
+    _, audit = _load_checkpoint_audited(model, checkpoint)
+
+    assert set(audit["loaded_keys"]) == {
+        "backbone.weight", "head.reg_preds.0.weight", "head.obj_preds.0.weight",
+    }
+    assert audit["skipped_keys"] == ["head.cls_preds.0.weight"]
+    assert model.loaded["backbone.weight"].marker == "checkpoint-backbone"
+    assert model.loaded["head.reg_preds.0.weight"].marker == "checkpoint-reg"
+    assert model.loaded["head.obj_preds.0.weight"].marker == "checkpoint-obj"
+    assert audit["unsafe_mismatches"] == []
+
+
+def test_checkpoint_loader_rejects_non_classification_shape_mismatch() -> None:
+    model = _FakeModel({"backbone.weight": _FakeTensor((2, 2), "model")})
+    checkpoint = {"backbone.weight": _FakeTensor((3, 2), "checkpoint")}
+
+    with pytest.raises(ValueError, match="unsafe non-classification"):
+        _load_checkpoint_audited(model, checkpoint)
+
+
+def test_per_class_threshold_diagnostics_records_precision_gate() -> None:
+    predictions = {
+        1: [(0.8, [0.0, 0.0, 10.0, 10.0], 0),
+            (0.7, [20.0, 20.0, 10.0, 10.0], 1)],
+    }
+    truths = {
+        1: [(0, [0.0, 0.0, 10.0, 10.0]),
+            (1, [20.0, 20.0, 10.0, 10.0])],
+    }
+
+    diagnostics = _per_class_threshold_diagnostics(
+        predictions, truths, ("enemy", "player"), [0.5, 0.9], 0.9,
+    )
+
+    assert diagnostics["selected_confidence_by_class"] == {
+        "enemy": 0.5, "player": 0.5,
+    }
+    assert diagnostics["classes"]["enemy"]["selected"]["precision"] == 1.0
+    assert diagnostics["classes"]["player"]["selected"]["recall"] == 1.0
 
 
 @pytest.mark.parametrize("value", [-0.01, 1.01, float("nan"), float("inf")])

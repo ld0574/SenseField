@@ -103,6 +103,88 @@ def _selection_policy(minimum_precision: float) -> tuple[str, str]:
     )
 
 
+def _is_classification_head_key(key: str) -> bool:
+    """Return whether a state-dict key belongs to the class prediction head.
+
+    A one-class YOLOX checkpoint can be used to initialize a multi-class model:
+    the class prediction filters are the only tensors whose shape changes when
+    ``num_classes`` changes.  Backbone, box-regression, objectness, and feature
+    tower tensors must still match exactly.
+    """
+    return key.startswith("head.cls_preds.")
+
+
+def _load_checkpoint_audited(
+    model: Any,
+    checkpoint_state: Any,
+) -> tuple[Any, dict[str, Any]]:
+    """Load a checkpoint while recording every key and rejecting unsafe gaps.
+
+    YOLOX's upstream ``load_ckpt`` logs and skips every shape mismatch.  That
+    is too permissive for a class-count change because a malformed backbone or
+    box/objectness tensor could otherwise be silently left at random
+    initialization.  Only ``head.cls_preds.*`` shape mismatches are allowed;
+    all other mismatches and missing model keys fail loudly.
+    """
+    if not isinstance(checkpoint_state, dict):
+        raise ValueError("checkpoint model state must be a dictionary")
+    model_state = model.state_dict()
+    load_dict: dict[str, Any] = {}
+    loaded_keys: list[str] = []
+    skipped_shape_mismatches: list[dict[str, Any]] = []
+    missing_keys: list[str] = []
+    unexpected_keys = sorted(key for key in checkpoint_state if key not in model_state)
+    unsafe_mismatches: list[dict[str, Any]] = []
+
+    for key, expected in model_state.items():
+        if key not in checkpoint_state:
+            missing_keys.append(key)
+            continue
+        value = checkpoint_state[key]
+        expected_shape = tuple(expected.shape)
+        actual_shape = tuple(value.shape) if hasattr(value, "shape") else None
+        if actual_shape != expected_shape:
+            mismatch = {
+                "key": key,
+                "checkpoint_shape": list(actual_shape) if actual_shape is not None else None,
+                "model_shape": list(expected_shape),
+                "classification_head": _is_classification_head_key(key),
+            }
+            if _is_classification_head_key(key):
+                skipped_shape_mismatches.append(mismatch)
+            else:
+                unsafe_mismatches.append(mismatch)
+            continue
+        load_dict[key] = value
+        loaded_keys.append(key)
+
+    unsafe_missing = [key for key in missing_keys if not _is_classification_head_key(key)]
+    if unsafe_mismatches or unsafe_missing:
+        details = {
+            "shape_mismatches": unsafe_mismatches,
+            "missing_keys": unsafe_missing,
+        }
+        raise ValueError(
+            "checkpoint has unsafe non-classification model differences: "
+            f"{json.dumps(details, sort_keys=True)}"
+        )
+
+    # strict=False is safe here because the only omitted model keys are the
+    # deliberately reinitialized classification filters (and we record them).
+    model.load_state_dict(load_dict, strict=False)
+    audit = {
+        "loaded_keys": sorted(loaded_keys),
+        "loaded_count": len(loaded_keys),
+        "skipped_shape_mismatches": skipped_shape_mismatches,
+        "skipped_keys": sorted(item["key"] for item in skipped_shape_mismatches),
+        "skipped_count": len(skipped_shape_mismatches),
+        "missing_keys": sorted(missing_keys),
+        "unexpected_keys": unexpected_keys,
+        "unsafe_mismatches": unsafe_mismatches,
+    }
+    return model, audit
+
+
 def _select_validation_metric(
     results: list[dict[str, Any]], minimum_precision: float
 ) -> tuple[dict[str, Any], str, str]:
@@ -313,6 +395,66 @@ def _validation_predictions(model: Any, device: Any, data_dir: Path,
                               classes=classes)
 
 
+def _threshold_metric(
+    predictions: dict[int, list[tuple[float, list[float], int]]],
+    truths: dict[int, list[tuple[int, list[float]]]],
+    threshold: float,
+    class_id: int | None = None,
+) -> dict[str, Any]:
+    """Compute class-aware counts at one global or one-class threshold."""
+    tp = fp = fn = 0
+    for image_id, ground_truth in truths.items():
+        candidates = [
+            item for item in predictions[image_id]
+            if item[0] >= threshold and (class_id is None or item[2] == class_id)
+        ]
+        expected = (ground_truth if class_id is None else
+                    [item for item in ground_truth if item[0] == class_id])
+        matched = _match_class_aware(candidates, expected)
+        tp += matched
+        fp += len(candidates) - matched
+        fn += len(expected) - matched
+    return _finish(tp, fp, fn)
+
+
+def _per_class_threshold_diagnostics(
+    predictions: dict[int, list[tuple[float, list[float], int]]],
+    truths: dict[int, list[tuple[int, list[float]]]],
+    classes: tuple[str, ...],
+    thresholds: list[float],
+    minimum_precision: float,
+) -> dict[str, Any]:
+    """Select and report independent fixed thresholds for each class.
+
+    These are diagnostics over the same development validation split used for
+    checkpoint selection.  They are intentionally recorded alongside the
+    aggregate curve and are never presented as an independent test result.
+    """
+    per_class: dict[str, Any] = {}
+    selected_by_class: dict[str, float] = {}
+    for class_id, class_name in enumerate(classes):
+        curve = [
+            {"confidence": threshold,
+             **_threshold_metric(predictions, truths, threshold, class_id)}
+            for threshold in thresholds
+        ]
+        selected, policy, metric = _select_validation_metric(curve, minimum_precision)
+        selected_by_class[class_name] = float(selected["confidence"])
+        per_class[class_name] = {
+            "class_id": class_id,
+            "minimum_precision": minimum_precision,
+            "selection_policy": policy,
+            "selection_metric": metric,
+            "selected": selected,
+            "thresholds": curve,
+        }
+    return {
+        "minimum_precision": minimum_precision,
+        "selected_confidence_by_class": selected_by_class,
+        "classes": per_class,
+    }
+
+
 def evaluate(model: Any, device: Any, data_dir: Path,
              input_size: tuple[int, int], nms_threshold: float,
              minimum_precision: float = 0.9,
@@ -323,17 +465,22 @@ def evaluate(model: Any, device: Any, data_dir: Path,
     thresholds = [round(index / 100, 2) for index in range(1, 96, 2)]
     results = []
     for threshold in thresholds:
-        tp = fp = fn = 0
-        for image_id, ground_truth in truths.items():
-            candidates = [item for item in predictions[image_id] if item[0] >= threshold]
-            matched = _match_class_aware(candidates, ground_truth)
-            tp += matched
-            fp += len(candidates) - matched
-            fn += len(ground_truth) - matched
-        result = {"confidence": threshold, **_finish(tp, fp, fn)}
+        result = {"confidence": threshold,
+                  **_threshold_metric(predictions, truths, threshold)}
         results.append(result)
     _validate_range("minimum-precision", minimum_precision, 0.0, 1.0)
     selected, policy, metric = _select_validation_metric(results, minimum_precision)
+    class_names = tuple(classes) if classes is not None else tuple(
+        resolve_classes(coco=json.loads(
+            (data_dir / "annotations" / "instances_val2017.json").read_text(
+                encoding="utf-8"
+            )
+        ))
+    )
+    per_class = _per_class_threshold_diagnostics(
+        predictions, truths, class_names, thresholds, minimum_precision,
+    )
+    selected_confidence = float(selected["confidence"])
     return {
         "iou_threshold": 0.5,
         "minimum_precision": minimum_precision,
@@ -341,6 +488,14 @@ def evaluate(model: Any, device: Any, data_dir: Path,
         "selection_metric": metric,
         "selected": selected,
         "thresholds": results,
+        "selected_confidence_by_class": {
+            name: selected_confidence for name in class_names
+        },
+        "selected_per_class": {
+            name: _threshold_metric(predictions, truths, selected_confidence, class_id)
+            for class_id, name in enumerate(class_names)
+        },
+        "per_class_thresholds": per_class,
     }
 
 
@@ -403,7 +558,7 @@ def main() -> None:
     import numpy as np
     import torch
     from yolox.exp import get_exp
-    from yolox.utils import ModelEMA, load_ckpt
+    from yolox.utils import ModelEMA
 
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -452,9 +607,23 @@ def main() -> None:
     exp.warmup_epochs = min(exp.warmup_epochs, max(0, args.epochs // 10))
 
     model = exp.get_model()
+    checkpoint_load: dict[str, Any] = {
+        "source": None,
+        "loaded_keys": [],
+        "loaded_count": 0,
+        "skipped_shape_mismatches": [],
+        "skipped_keys": [],
+        "skipped_count": 0,
+        "missing_keys": [],
+        "unexpected_keys": [],
+        "unsafe_mismatches": [],
+    }
     if args.pretrained is not None:
         checkpoint = torch.load(args.pretrained, map_location="cpu", weights_only=False)
-        model = load_ckpt(model, checkpoint.get("model", checkpoint))
+        model, checkpoint_load = _load_checkpoint_audited(
+            model, checkpoint.get("model", checkpoint)
+        )
+        checkpoint_load["source"] = str(args.pretrained.resolve())
     model.to(device)
     optimizer = exp.get_optimizer(args.batch_size)
     cache_type = None
@@ -556,6 +725,7 @@ def main() -> None:
         "pretrained": ({"path": str(args.pretrained.resolve()),
                         "sha256": _sha256(args.pretrained.resolve())}
                        if args.pretrained is not None else None),
+        "checkpoint_load": checkpoint_load,
         "history": [],
     }
     best_selected: dict[str, Any] | None = None
@@ -650,6 +820,19 @@ def main() -> None:
     best_f1 = _metric_value(best_selected, "f1") if best_selected is not None else -1.0
     metadata["best_validation_f1"] = round(best_f1, 6)
     metadata["best_validation_metric"] = best_selected
+    best_validation = next(
+        (record.get("validation") for record in metadata["history"]
+         if record.get("epoch") == best_epoch and "validation" in record),
+        None,
+    )
+    metadata["best_validation_selected_per_class"] = (
+        best_validation.get("selected_per_class")
+        if isinstance(best_validation, dict) else None
+    )
+    metadata["best_validation_per_class_thresholds"] = (
+        best_validation.get("per_class_thresholds")
+        if isinstance(best_validation, dict) else None
+    )
     if best_selected is not None:
         selected_confidence = float(best_selected["confidence"])
         metadata["postprocess"]["confidence"] = selected_confidence

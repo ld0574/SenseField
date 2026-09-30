@@ -28,6 +28,7 @@ if __package__:
         _device,
         _finish,
         _git_revision,
+        _load_checkpoint_audited,
         _match_class_aware_pairs,
         _sha256,
         _split_predictions,
@@ -43,6 +44,7 @@ else:
         _device,
         _finish,
         _git_revision,
+        _load_checkpoint_audited,
         _match_class_aware_pairs,
         _sha256,
         _split_predictions,
@@ -119,6 +121,10 @@ def _fixed_metrics(predictions: dict[int, list[tuple[float, list[float], int]]],
     per_class_counts = {
         name: {"tp": 0, "fp": 0, "fn": 0} for name in class_names
     }
+    visible_frame_totals = {name: 0 for name in class_names}
+    visible_frame_hits = {name: 0 for name in class_names}
+    center_errors_px = {name: [] for name in class_names}
+    center_errors_relative_short_side = {name: [] for name in class_names}
     per_image = []
     for image_id, ground_truth in truths.items():
         normalized_predictions = [_prediction_entry(item)
@@ -150,6 +156,37 @@ def _fixed_metrics(predictions: dict[int, list[tuple[float, list[float], int]]],
             )
             per_class_counts[class_name]["fn"] += sum(
                 1 for index in class_truths if index not in matched_truths
+            )
+            if class_truths:
+                visible_frame_totals[class_name] += 1
+            if any(
+                truth in matched_truths and normalized_truths[truth][0] == class_id
+                for truth in class_truths
+            ):
+                visible_frame_hits[class_name] += 1
+        for prediction_index, truth_index, _ in pairs:
+            prediction = candidates[prediction_index][1]
+            truth_class_id, truth = normalized_truths[truth_index]
+            if (truth_class_id < 0 or truth_class_id >= len(class_names) or
+                    candidates[prediction_index][2] != truth_class_id):
+                continue
+            width, height = image_sizes[image_id]
+            prediction_center = (
+                prediction[0] + prediction[2] * 0.5,
+                prediction[1] + prediction[3] * 0.5,
+            )
+            truth_center = (
+                truth[0] + truth[2] * 0.5,
+                truth[1] + truth[3] * 0.5,
+            )
+            center_error = math.hypot(
+                prediction_center[0] - truth_center[0],
+                prediction_center[1] - truth_center[1],
+            )
+            class_name = class_names[truth_class_id]
+            center_errors_px[class_name].append(center_error)
+            center_errors_relative_short_side[class_name].append(
+                center_error / max(1, min(width, height))
             )
         width, height = image_sizes[image_id]
         roi = (direction_rois or {}).get(image_id, [0.0, 0.0, 1.0, 1.0])
@@ -191,9 +228,42 @@ def _fixed_metrics(predictions: dict[int, list[tuple[float, list[float], int]]],
         correct_directions += image_correct
         ambiguous_directions += image_ambiguous
     metrics = _finish(tp, fp, fn)
-    metrics["per_class"] = {
-        name: _finish(values["tp"], values["fp"], values["fn"])
-        for name, values in per_class_counts.items()
+    metrics["per_class"] = {}
+    all_center_errors_px: list[float] = []
+    all_center_errors_relative_short_side: list[float] = []
+    for name, values in per_class_counts.items():
+        class_metrics = _finish(values["tp"], values["fp"], values["fn"])
+        class_metrics.update({
+            "visible_frames": visible_frame_totals[name],
+            "visible_frame_hits": visible_frame_hits[name],
+            "visible_frame_recall": (
+                round(visible_frame_hits[name] / visible_frame_totals[name], 6)
+                if visible_frame_totals[name] else None
+            ),
+            "matched_center_boxes": len(center_errors_px[name]),
+            "center_error_p95_px": _p95(center_errors_px[name]),
+            "center_error_p95_relative_short_side": _p95(
+                center_errors_relative_short_side[name]
+            ),
+            "center_error_mean_px": (
+                round(sum(center_errors_px[name]) / len(center_errors_px[name]), 6)
+                if center_errors_px[name] else None
+            ),
+            "center_error_mean_relative_short_side": (
+                round(sum(center_errors_relative_short_side[name]) /
+                      len(center_errors_relative_short_side[name]), 6)
+                if center_errors_relative_short_side[name] else None
+            ),
+        })
+        metrics["per_class"][name] = class_metrics
+        all_center_errors_px.extend(center_errors_px[name])
+        all_center_errors_relative_short_side.extend(
+            center_errors_relative_short_side[name]
+        )
+    metrics["center_error"] = {
+        "matched_boxes": len(all_center_errors_px),
+        "p95_px": _p95(all_center_errors_px),
+        "p95_relative_short_side": _p95(all_center_errors_relative_short_side),
     }
     metrics.update({
         "directed_matches": directed_matches,
@@ -270,6 +340,67 @@ def _confidence_sweep_summary(curve: list[dict], minimum_precision: float = 0.90
         "max_f1": max_f1,
         "max_recall_tie_break": "higher f1, then precision; equal points keep the lowest confidence",
         "max_f1_tie_break": "higher recall, then precision; equal points keep the lowest confidence",
+    }
+
+
+def _p95(values: list[float]) -> float | None:
+    """Return the deterministic nearest-rank 95th percentile."""
+    if not values:
+        return None
+    ordered = sorted(float(value) for value in values)
+    index = max(0, math.ceil(0.95 * len(ordered)) - 1)
+    return round(ordered[index], 6)
+
+
+def _player_quality_gate(
+    metrics: dict[str, object] | None,
+    minimum_precision: float = 0.95,
+    minimum_visible_frame_recall: float = 0.90,
+    maximum_center_error_p95_relative_short_side: float = 0.03,
+) -> dict[str, object]:
+    """Check the fixed player quality gates without claiming an independent test.
+
+    ``visible_frame_recall`` counts a visible frame as recovered when at least
+    one same-class truth box in that frame has an IoU-matched prediction.  The
+    center error gate is relative to the shorter image dimension; pixel P95 is
+    still reported for operator review.
+    """
+    if metrics is None:
+        return {
+            "applicable": False,
+            "passed": False,
+            "reason": "COCO/model class list does not contain minimap_player",
+        }
+    tp = int(metrics.get("tp", 0))
+    fp = int(metrics.get("fp", 0))
+    visible_frames = int(metrics.get("visible_frames", 0))
+    visible_frame_hits = int(metrics.get("visible_frame_hits", 0))
+    precision = tp / (tp + fp) if tp + fp else None
+    visible_recall = (visible_frame_hits / visible_frames
+                      if visible_frames else None)
+    center_p95 = metrics.get("center_error_p95_relative_short_side")
+    observed = {
+        "precision": round(precision, 6) if precision is not None else None,
+        "visible_frame_recall": (round(visible_recall, 6)
+                                  if visible_recall is not None else None),
+        "center_error_p95_px": metrics.get("center_error_p95_px"),
+        "center_error_p95_relative_short_side": center_p95,
+    }
+    passed = (
+        precision is not None and precision >= minimum_precision and
+        visible_recall is not None and visible_recall >= minimum_visible_frame_recall and
+        isinstance(center_p95, (int, float)) and
+        float(center_p95) <= maximum_center_error_p95_relative_short_side
+    )
+    return {
+        "applicable": True,
+        "passed": passed,
+        "minimum_precision": minimum_precision,
+        "minimum_visible_frame_recall": minimum_visible_frame_recall,
+        "maximum_center_error_p95_relative_short_side": (
+            maximum_center_error_p95_relative_short_side
+        ),
+        "observed": observed,
     }
 
 
@@ -455,6 +586,11 @@ def main() -> None:
         "--confidence", type=float,
         help="Frozen confidence selected without inspecting this split; defaults to checkpoint",
     )
+    parser.add_argument(
+        "--confidence-by-class", type=json.loads, metavar="JSON",
+        help=("Frozen per-class confidence mapping as JSON, for example "
+              "'{\"minimap_enemy\":0.55,\"minimap_player\":0.67}'"),
+    )
     parser.add_argument("--classes", nargs="+", metavar="CLASS",
                         help="Explicit canonical class order; otherwise model metadata/COCO is used")
     sweep = parser.add_mutually_exclusive_group()
@@ -476,6 +612,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.input_size < 64 or args.input_size % 32:
         parser.error("--input-size must be a positive multiple of 32")
+    if args.confidence is not None and args.confidence_by_class is not None:
+        parser.error("--confidence and --confidence-by-class cannot be combined")
     if args.confidence is not None and not 0 <= args.confidence <= 1:
         parser.error("--confidence must be between 0 and 1")
     if not 0 < args.iou_threshold <= 1 or not 0 < args.nms_threshold <= 1:
@@ -501,7 +639,6 @@ def main() -> None:
 
     import torch
     from yolox.exp import get_exp
-    from yolox.utils import load_ckpt
 
     device = _device(torch, args.device)
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
@@ -530,6 +667,13 @@ def main() -> None:
     if args.confidence is not None:
         confidence = args.confidence
         confidence_source = "command_line"
+    elif args.confidence_by_class is not None:
+        try:
+            confidence_thresholds(args.confidence_by_class, class_names)
+        except ValueError as error:
+            parser.error(str(error))
+        confidence = args.confidence_by_class
+        confidence_source = "command_line_per_class"
     elif metadata_has_confidence:
         confidence = confidence_from_metadata(
             model_metadata, class_names,
@@ -549,7 +693,10 @@ def main() -> None:
     exp.num_classes = len(class_names)
     exp.input_size = (args.input_size, args.input_size)
     exp.test_size = exp.input_size
-    model = load_ckpt(exp.get_model(), checkpoint.get("model", checkpoint))
+    model, checkpoint_load = _load_checkpoint_audited(
+        exp.get_model(), checkpoint.get("model", checkpoint)
+    )
+    checkpoint_load["source"] = str(checkpoint_path)
     model.to(device)
     prefilter_confidence = min(confidence_thresholds(confidence, class_names).values())
     if sweep_thresholds is not None:
@@ -573,6 +720,9 @@ def main() -> None:
         predictions, truths, confidence, args.iou_threshold, image_sizes,
         direction_rois, class_names,
     )
+    player_quality_gates = _player_quality_gate(
+        metrics.get("per_class", {}).get("minimap_player")
+    )
     confidence_sweep = None
     if sweep_thresholds is not None:
         curve = _confidence_curve(
@@ -589,7 +739,7 @@ def main() -> None:
             "The checkpoint confidence was selected on this same validation split. "
             "These are development metrics, not an independent holdout result."
         )
-    elif args.confidence is not None:
+    elif args.confidence is not None or args.confidence_by_class is not None:
         threshold_relation = "caller_supplied"
         warning = (
             "The caller supplied the confidence threshold. This file alone cannot prove "
@@ -621,6 +771,7 @@ def main() -> None:
             "sha256": _sha256(checkpoint_path),
             "epoch": checkpoint.get("epoch") if isinstance(checkpoint, dict) else None,
         },
+        "checkpoint_load": checkpoint_load,
         "dataset": {
             "path": str(data_dir),
             "annotations": str(annotation_path),
@@ -632,6 +783,7 @@ def main() -> None:
         "yolox_revision": _git_revision(yolox_root),
         "metrics": metrics,
         "direction_events": direction_events,
+        "player_quality_gates": player_quality_gates,
         "per_image": per_image,
     }
     if confidence_sweep is not None:
@@ -645,6 +797,7 @@ def main() -> None:
         "confidence": confidence,
         **metrics,
         "direction_events": direction_events,
+        "player_quality_gates": player_quality_gates,
         **({"confidence_sweep": {
             "threshold_count": len(confidence_sweep["thresholds"]),
             "summary": confidence_sweep["summary"],

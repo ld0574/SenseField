@@ -14,6 +14,8 @@ from evaluate_yolox_minimap import (
     _confidence_curve,
     _confidence_sweep_summary,
     _direction_event_metrics,
+    _fixed_metrics,
+    _player_quality_gate,
     _read_evaluation_annotations,
     _read_image_direction_rois,
     _resolve_sweep_thresholds,
@@ -99,6 +101,59 @@ def test_confidence_sweep_reports_no_precision_eligible_point() -> None:
     assert summary["precision_eligible_thresholds"] == 0
     assert summary["max_recall_at_minimum_precision"] is None
     assert summary["max_f1"]["confidence"] == 0.87
+
+
+def test_fixed_metrics_report_player_visible_frame_recall_and_center_p95() -> None:
+    truths = {
+        1: [(1, [10.0, 10.0, 10.0, 10.0])],
+        2: [(1, [10.0, 10.0, 10.0, 10.0])],
+        3: [(1, [10.0, 10.0, 10.0, 10.0])],
+    }
+    predictions = {
+        1: [(0.99, [10.0, 10.0, 10.0, 10.0], 1)],
+        2: [(0.98, [12.0, 10.0, 10.0, 10.0], 1)],
+        3: [(0.97, [10.0, 10.0, 10.0, 10.0], 1)],
+    }
+
+    metrics, _ = _fixed_metrics(
+        predictions, truths, 0.5, 0.5,
+        {1: (100, 100), 2: (100, 100), 3: (100, 100)},
+        classes=("minimap_enemy", "minimap_player"),
+    )
+    player = metrics["per_class"]["minimap_player"]
+
+    assert player["precision"] == 1.0
+    assert player["visible_frames"] == 3
+    assert player["visible_frame_hits"] == 3
+    assert player["visible_frame_recall"] == 1.0
+    assert player["matched_center_boxes"] == 3
+    assert player["center_error_p95_px"] == 2.0
+    assert player["center_error_p95_relative_short_side"] == 0.02
+    assert metrics["center_error"]["p95_px"] == 2.0
+
+    gates = _player_quality_gate(player)
+    assert gates["applicable"] is True
+    assert gates["passed"] is True
+    assert gates["observed"]["visible_frame_recall"] == 1.0
+
+
+def test_player_quality_gate_fails_when_visible_frame_is_missed() -> None:
+    gates = _player_quality_gate({
+        "tp": 19,
+        "fp": 1,
+        "visible_frames": 20,
+        "visible_frame_hits": 17,
+        "center_error_p95_px": 4.0,
+        "center_error_p95_relative_short_side": 0.04,
+    })
+
+    assert gates["passed"] is False
+    assert gates["observed"] == {
+        "precision": 0.95,
+        "visible_frame_recall": 0.85,
+        "center_error_p95_px": 4.0,
+        "center_error_p95_relative_short_side": 0.04,
+    }
 
 
 @pytest.mark.parametrize("arguments", [
