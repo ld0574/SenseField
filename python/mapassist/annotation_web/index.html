@@ -64,7 +64,11 @@
         <label class="check-row"><input id="mineFilter" type="checkbox">只看我的结果</label>
       </div>
       <button id="nextButton" class="primary next-button" type="button">领取下一张 <kbd>Enter</kbd></button>
-      <div id="queueSummary" class="queue-summary"></div>
+      <div id="queueSummary" class="queue-summary" aria-live="polite">
+        <strong id="queuePendingCount">本批还需复核 0 张</strong>
+        <span id="queueCompletedCount">已处理 0 张</span>
+        <small id="queueShortcutHint">确认空图按 N，困难项按 S，保存后自动领取下一张。</small>
+      </div>
       <div id="taskList" class="task-list" aria-live="polite"></div>
     </aside>
 
@@ -150,7 +154,7 @@
           <span class="decision-key">E</span><strong>非对局界面</strong><small>准备、选人或结算画面</small>
         </button>
         <button id="skipButton" class="decision skip" type="button">
-          <span class="decision-key">S</span><strong>无法判断</strong><small>跳过模糊或遮挡画面</small>
+          <span class="decision-key">S</span><strong>标记困难 / 跳过</strong><small>跳过模糊、遮挡或暂时无法判断的画面</small>
         </button>
       </div>
     </section>

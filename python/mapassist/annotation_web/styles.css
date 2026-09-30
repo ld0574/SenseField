@@ -69,7 +69,9 @@ select, input { width: 100%; margin-top: 5px; padding: 9px 10px; color: var(--te
 .next-button { width: 100%; padding: 11px 12px; display: flex; justify-content: center; align-items: center; gap: 9px; }
 kbd { padding: 1px 5px; border: 1px solid #4a5968; border-bottom-width: 2px; border-radius: 4px; color: var(--muted); background: #101821; font-size: 10px; font-family: inherit; }
 .primary kbd { color: #174635; border-color: #279c72; background: rgba(255,255,255,.22); }
-.queue-summary { margin: 14px 0 8px; color: var(--muted); font-size: 11px; }
+.queue-summary { display: grid; gap: 4px; margin: 14px 0 8px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.queue-summary strong { color: var(--text); font-size: 12px; }
+.queue-summary small { color: #b9c4cc; font-size: 10px; line-height: 1.45; }
 .task-list { overflow-y: auto; padding-right: 3px; }
 .task-card { width: 100%; display: grid; grid-template-columns: 7px 1fr auto; gap: 10px; align-items: center; padding: 10px 7px; border: 0; border-bottom: 1px solid var(--line-soft); background: transparent; text-align: left; cursor: pointer; }
 .task-card:hover, .task-card.active { background: #17212b; }

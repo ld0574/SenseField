@@ -162,6 +162,33 @@ def test_annotation_store_coordinates_collaborators_and_exports(
     assert stats["contributors"] == [{"name": "Alice", "count": 1}]
 
 
+def test_minimap_player_review_requires_exactly_one_corrected_box(
+    annotation_dataset: Path,
+) -> None:
+    manifest_path = annotation_dataset / "review-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["kind"] = "minimap_player"
+    manifest["classes"] = ["minimap_player"]
+    manifest["review_mode"] = "manual"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    store = AnnotationStore(annotation_dataset, lease_seconds=60)
+    task = store.claim_next("Player reviewer")
+    assert task is not None
+    with pytest.raises(ValueError, match="exactly one player box"):
+        store.save(
+            task["id"], "Player reviewer", task["version"], "corrected",
+            [[0.05, 0.1, 0.04, 0.06], [0.12, 0.14, 0.04, 0.06]],
+            ["minimap_player", "minimap_player"],
+        )
+
+    saved = store.save(
+        task["id"], "Player reviewer", task["version"], "corrected",
+        [[0.05, 0.1, 0.04, 0.06]], ["minimap_player"],
+    )
+    assert saved["reviewed_boxes"] == [[0.05, 0.1, 0.04, 0.06]]
+
+
 def test_annotation_store_round_trips_multiclass_categories(
     annotation_dataset: Path,
 ) -> None:

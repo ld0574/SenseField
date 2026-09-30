@@ -47,6 +47,26 @@ test("queue shows suggestion box counts without presenting them as reviewed labe
   assert.equal(formatSuggestionHint([]), "无建议框");
   assert.equal(formatSuggestionHint(undefined), "无建议框");
   assert.match(app, /formatSuggestionHint\(task\.suggested_boxes\)/);
+  assert.match(app, /diagnostic_hard_case: "困难案例"/);
+  assert.match(app, /machine_empty_negative_coverage: "机器空框抽样"/);
+});
+
+test("queue makes the pending review batch and machine-only guidance explicit", () => {
+  assert.match(html, /id="queuePendingCount"/);
+  assert.match(html, /id="queueCompletedCount"/);
+  assert.match(html, /id="queueShortcutHint"/);
+  assert.match(app, /function queueScopeStats\(stats\)/);
+  assert.match(app, /本批还需复核 \$\{scoped\.counts\.pending \|\| 0\} 张/);
+  assert.match(app, /机器建议仅供参考；每张图片仍需人工确认/);
+});
+
+test("reviewer can mark difficult frames and use the existing save-next shortcuts", () => {
+  assert.match(html, /标记困难 \/ 跳过/);
+  assert.match(app, /parts\.push\("困难项按 S"/);
+  assert.match(app, /event\.key\.toLowerCase\(\) === "n"\) save\("negative"\)/);
+  assert.match(app, /event\.key\.toLowerCase\(\) === "s"\) save\("skip"\)/);
+  assert.match(app, /toast\(`\$\{statusLabel\(status\)\}已保存`\)/);
+  assert.match(app, /state\.busy = false;\s*await nextTask\(\)/);
 });
 
 test("multiclass review keeps one editable category beside every box", () => {
@@ -73,12 +93,20 @@ test("player minimap review explains the green-ring target and weak suggestions"
   assert.match(app, /kind === "minimap_player"/);
   assert.match(app, /玩家小地图数据标注台/);
   assert.match(app, /自己的绿色外圈头像/);
+  assert.match(app, /一帧最多一个自己头像/);
+  assert.match(app, /绿色方形标记/);
   assert.match(app, /机器框只是弱建议/);
   assert.match(app, /机器空框不等于负样本/);
   assert.match(app, /green_ring_suggestion: "绿色外圈建议"/);
   assert.match(app, /empty: "机器空框"/);
   assert.match(app, /"没有自己头像"/);
   assert.match(app, /"确认本帧没有玩家头像"/);
+});
+
+test("drawing a player correction replaces the weak proposal", () => {
+  assert.match(app, /state\.bootstrap\?\.kind === "minimap_player"/);
+  assert.match(app, /state\.boxes = \[newBox\]/);
+  assert.match(app, /state\.categories = \[defaultCategory\(\)\]/);
 });
 
 test("dataset query links override stale local selection and remain shareable", () => {

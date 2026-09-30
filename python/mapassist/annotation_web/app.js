@@ -15,6 +15,7 @@ const state = {
   view: "minimap",
   drag: null,
   tasks: [],
+  stats: null,
   busy: false,
 };
 
@@ -65,6 +66,15 @@ function selectionLabel(selection) {
     background: "背景候选",
     green_ring_suggestion: "绿色外圈建议",
     empty: "机器空框",
+    learned_high: "高分建议抽样",
+    learned_boundary: "临界建议抽样",
+    learned_low: "低分／空建议抽样",
+    diagnostic_hard_case: "困难案例",
+    stratum_shortfall_fill: "覆盖补样",
+    machine_empty_negative_coverage: "机器空框抽样",
+    left_edge_diversity: "左边缘抽样",
+    left_right_cooccurrence: "双侧抽样",
+    right_edge_coverage: "右边缘抽样",
     systematic_blind: "均匀盲测",
     systematic_development: "均匀开发抽样",
     minimap_layout_systematic: "小地图边界",
@@ -104,8 +114,8 @@ function configureWorkbenchCopy(kind, multiclass) {
     temporal: "自己的绿色外圈头像会随位置移动；固定地图图标通常保持不动",
     guides: [
       ["只框自己的绿色外圈头像", "只标小地图上带绿色外圈的自己头像，框住头像和完整绿色外圈，尽量贴边。"],
-      ["补齐自己的漏框", "发现自己的绿色外圈头像就逐个框出；机器已有框也要重新确认。"],
-      ["排除敌方和地图符号", "敌方红色头像、队友头像、防御塔、路径、基地、技能特效和信号圈都不标。"],
+      ["一帧最多一个自己头像", "发现自己的绿色外圈头像就框出；重新画框会自动替换机器旧框，不能保留两个玩家框。"],
+      ["排除敌方和地图符号", "敌方红色头像、队友头像、绿色方形标记、防御塔、路径、基地、技能特效和信号圈都不标。"],
       ["识别对局边界", "准备、选人、加载和结算画面选择“非对局界面”，不要当负样本。"],
       ["检查小地图裁剪边缘", "目标碰到裁剪框边缘时可能已被切掉；无法确认完整目标请选“无法判断”，不能当完整框或负样本。"],
       ["按图标中心判断范围", "只标中心位于标注范围内的自己头像；忽略安全边距里的队伍头像和地图外 HUD。紫红实线是中心范围，青色虚线是地图/方向参考；两者都不限制画框。"],
@@ -178,8 +188,12 @@ async function bootstrap() {
     ] || "建议框复核";
   $("#datasetLabel").textContent = `${state.bootstrap.kind} · ${mode} · ${state.bootstrap.stats.total} 张图片`;
   const assistanceNotice = $("#labelAssistanceNotice");
-  const noticeText = typeof state.bootstrap.label_assistance?.notice === "string" ?
+  const configuredNotice = typeof state.bootstrap.label_assistance?.notice === "string" ?
     state.bootstrap.label_assistance.notice.trim() : "";
+  const noticeText = [
+    state.bootstrap.suggestions_available ? "机器建议仅供参考；每张图片仍需人工确认。" : "",
+    configuredNotice,
+  ].filter(Boolean).join(" ");
   assistanceNotice.textContent = noticeText;
   assistanceNotice.classList.toggle("hidden", !noticeText);
   const hasLabelRoi = state.bootstrap.label_roi ||
@@ -257,13 +271,17 @@ async function switchDataset(dataset) {
 }
 
 function renderStats(stats) {
+  state.stats = stats;
   const total = stats.total || 0;
   const completed = stats.completed || 0;
   const percent = total ? Math.round(completed / total * 100) : 0;
   $("#progressText").textContent = `${completed} / ${total}`;
   $("#progressPercent").textContent = `${percent}%`;
   $("#progressBar").style.width = `${percent}%`;
-  $("#queueSummary").textContent = `待标注 ${stats.counts.pending || 0} · 已完成 ${completed}`;
+  const scoped = queueScopeStats(stats);
+  $("#queuePendingCount").textContent = `本批还需复核 ${scoped.counts.pending || 0} 张`;
+  $("#queueCompletedCount").textContent = `已处理 ${scoped.completed || 0} / ${scoped.total || 0} 张`;
+  updateQueueShortcutHint();
   const contributors = $("#contributors");
   contributors.innerHTML = "";
   if (!stats.contributors.length) {
@@ -276,6 +294,30 @@ function renderStats(stats) {
       contributors.appendChild(row);
     });
   }
+}
+
+function queueScopeStats(stats) {
+  const matchId = $("#matchFilter")?.value || "";
+  if (!matchId || !Array.isArray(stats.by_match)) return stats;
+  const counts = Object.fromEntries(
+    Object.keys(stats.counts || {}).map((status) => [status, 0]),
+  );
+  stats.by_match.filter((row) => row.match_id === matchId).forEach((row) => {
+    counts[row.review_status] = row.count;
+  });
+  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+  return {counts, total, completed: total - (counts.pending || 0)};
+}
+
+function updateQueueShortcutHint() {
+  const shortcutHint = $("#queueShortcutHint");
+  if (!shortcutHint) return;
+  const parts = [];
+  if (state.bootstrap?.kind !== "minimap_region") parts.push("确认空图按 N");
+  parts.push("困难项按 S", "保存后自动领取下一张");
+  const suggestionHint = state.bootstrap?.suggestions_available ?
+    "机器建议仅供参考；" : "";
+  shortcutHint.textContent = `${suggestionHint}${parts.join("，")}。`;
 }
 
 function escapeHtml(value) {
@@ -298,6 +340,7 @@ async function loadQueue() {
   try {
     const result = await api(`/api/tasks?${params}`);
     state.tasks = result.tasks;
+    if (state.stats) renderStats(state.stats);
     renderQueue();
   } catch (error) { toast(error.message, true); }
 }
@@ -791,9 +834,19 @@ canvas.addEventListener("pointerup", (event) => {
     const right = clamp(Math.max(state.drag.start.x, point.x), bounds.x, bounds.x + bounds.w);
     const bottom = clamp(Math.max(state.drag.start.y, point.y), bounds.y, bounds.y + bounds.h);
     if (right - x > .002 && bottom - y > .002) {
-      state.boxes.push([x, y, right - x, bottom - y]);
-      state.categories.push(defaultCategory());
-      state.selected = state.boxes.length - 1;
+      const newBox = [x, y, right - x, bottom - y];
+      if (state.bootstrap?.kind === "minimap_player") {
+        // There is at most one local-player icon. Drawing a correction should
+        // replace a stale machine proposal instead of silently retaining it as
+        // a second ground-truth object.
+        state.boxes = [newBox];
+        state.categories = [defaultCategory()];
+        state.selected = 0;
+      } else {
+        state.boxes.push(newBox);
+        state.categories.push(defaultCategory());
+        state.selected = state.boxes.length - 1;
+      }
       state.dirty = true;
     }
   }

@@ -752,6 +752,9 @@ class AnnotationStore:
                 raise ValueError("minimap region tasks use excluded for non-gameplay screens")
             if status == "corrected" and len(reviewed_boxes or []) != 1:
                 raise ValueError("minimap region tasks need exactly one boundary box")
+        if (self.kind == "minimap_player" and status == "corrected" and
+                len(reviewed_boxes or []) != 1):
+            raise ValueError("minimap player tasks need exactly one player box")
         now = time.time()
         reviewed_at = datetime.now(timezone.utc).isoformat()
         with self._connect() as connection:
