@@ -11,6 +11,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "training"))
 
 from train_yolox_minimap import (
     _assert_roi_boundaries_clear,
+    _balanced_selection_key,
+    _balanced_validation_summary,
+    _is_better_balanced_selection,
     _is_better_validation_metric,
     _load_checkpoint_audited,
     _per_class_threshold_diagnostics,
@@ -142,6 +145,95 @@ def test_per_class_threshold_diagnostics_records_precision_gate() -> None:
     }
     assert diagnostics["classes"]["enemy"]["selected"]["precision"] == 1.0
     assert diagnostics["classes"]["player"]["selected"]["recall"] == 1.0
+
+
+def _balanced_validation_fixture(
+    enemy: tuple[float, float, float],
+    player: tuple[float, float, float],
+) -> dict:
+    return {
+        "per_class_thresholds": {
+            "classes": {
+                name: {
+                    "selected": {
+                        "confidence": confidence,
+                        "precision": precision,
+                        "recall": recall,
+                        "f1": f1,
+                    }
+                }
+                for name, (confidence, precision, recall, f1) in {
+                    "enemy": enemy,
+                    "player": player,
+                }.items()
+            }
+        }
+    }
+
+
+def test_balanced_selection_counts_precision_eligible_classes_first() -> None:
+    one_eligible = _balanced_validation_summary(
+        _balanced_validation_fixture(
+            (0.47, 0.96, 0.85, 0.90),
+            (0.89, 0.94, 0.49, 0.65),
+        ),
+        0.95,
+        ("enemy", "player"),
+    )
+    two_eligible = _balanced_validation_summary(
+        _balanced_validation_fixture(
+            (0.51, 0.95, 0.60, 0.73),
+            (0.91, 0.96, 0.40, 0.57),
+        ),
+        0.95,
+        ("enemy", "player"),
+    )
+
+    assert one_eligible["eligible_class_count"] == 1
+    assert two_eligible["eligible_class_count"] == 2
+    assert _is_better_balanced_selection(two_eligible, one_eligible)
+    assert _balanced_selection_key(two_eligible)[0] == 2.0
+
+
+def test_balanced_selection_uses_min_recall_then_mean_recall_then_f1() -> None:
+    higher_minimum_recall = _balanced_validation_summary(
+        _balanced_validation_fixture(
+            (0.47, 0.96, 0.70, 0.81),
+            (0.89, 0.96, 0.60, 0.75),
+        ),
+        0.95,
+        ("enemy", "player"),
+    )
+    lower_minimum_recall = _balanced_validation_summary(
+        _balanced_validation_fixture(
+            (0.47, 0.96, 0.80, 0.87),
+            (0.89, 0.96, 0.50, 0.67),
+        ),
+        0.95,
+        ("enemy", "player"),
+    )
+
+    assert higher_minimum_recall["minimum_recall"] == 0.6
+    assert lower_minimum_recall["minimum_recall"] == 0.5
+    assert _is_better_balanced_selection(higher_minimum_recall, lower_minimum_recall)
+
+
+def test_balanced_summary_preserves_each_class_threshold_and_metrics() -> None:
+    summary = _balanced_validation_summary(
+        _balanced_validation_fixture(
+            (0.47, 0.96, 0.70, 0.81),
+            (0.89, 0.96, 0.60, 0.75),
+        ),
+        0.95,
+        ("enemy", "player"),
+    )
+
+    assert summary["selected_confidence_by_class"] == {
+        "enemy": 0.47,
+        "player": 0.89,
+    }
+    assert summary["per_class"]["player"]["selected"]["recall"] == 0.6
+    assert summary["per_class"]["player"]["precision_eligible"] is True
 
 
 @pytest.mark.parametrize("value", [-0.01, 1.01, float("nan"), float("inf")])

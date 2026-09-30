@@ -218,6 +218,101 @@ def _is_better_validation_metric(
     )
 
 
+def _balanced_validation_summary(
+    validation: dict[str, Any],
+    minimum_precision: float,
+    classes: list[str] | tuple[str, ...],
+) -> dict[str, Any]:
+    """Summarize per-class precision-gated validation selections.
+
+    The aggregate validation selection is dominated by whichever class has the
+    most boxes.  For multiclass experiments, this summary evaluates each class
+    at its own precision-gated threshold and exposes a class-balanced ordering
+    for an additional checkpoint.  The existing aggregate selection remains
+    unchanged for backward compatibility.
+    """
+    _validate_range("minimum-precision", minimum_precision, 0.0, 1.0)
+    diagnostics = validation.get("per_class_thresholds")
+    if not isinstance(diagnostics, dict):
+        raise ValueError("validation must contain per_class_thresholds")
+    class_diagnostics = diagnostics.get("classes")
+    if not isinstance(class_diagnostics, dict):
+        raise ValueError("validation per_class_thresholds must contain classes")
+    if not classes:
+        raise ValueError("classes must not be empty")
+
+    per_class: dict[str, Any] = {}
+    selected_confidence_by_class: dict[str, float] = {}
+    recalls: list[float] = []
+    f1s: list[float] = []
+    eligible_class_count = 0
+    for class_id, class_name in enumerate(classes):
+        diagnostic = class_diagnostics.get(class_name)
+        if not isinstance(diagnostic, dict):
+            raise ValueError(f"missing per-class validation diagnostics for {class_name}")
+        selected = diagnostic.get("selected")
+        if not isinstance(selected, dict):
+            raise ValueError(f"missing selected validation metric for {class_name}")
+        confidence = selected.get("confidence")
+        if (not isinstance(confidence, (int, float)) or isinstance(confidence, bool) or
+                not math.isfinite(float(confidence))):
+            raise ValueError(f"invalid selected confidence for {class_name}")
+        precision = _metric_value(selected, "precision")
+        recall = _metric_value(selected, "recall")
+        f1 = _metric_value(selected, "f1")
+        precision_eligible = precision >= minimum_precision
+        if precision_eligible:
+            eligible_class_count += 1
+        selected_confidence_by_class[class_name] = float(confidence)
+        recalls.append(recall)
+        f1s.append(f1)
+        per_class[class_name] = {
+            "class_id": class_id,
+            "confidence": float(confidence),
+            "precision_eligible": precision_eligible,
+            "minimum_precision": minimum_precision,
+            "selected": selected,
+        }
+
+    minimum_recall = min(recalls)
+    mean_recall = sum(recalls) / len(recalls)
+    mean_f1 = sum(f1s) / len(f1s)
+    return {
+        "minimum_precision": minimum_precision,
+        "selection_policy": (
+            "maximize_precision_eligible_class_count_then_minimum_recall_"
+            "then_mean_recall_then_mean_f1"
+        ),
+        "selection_metric": (
+            "eligible_class_count_then_minimum_recall_then_mean_recall_then_mean_f1"
+        ),
+        "eligible_class_count": eligible_class_count,
+        "class_count": len(classes),
+        "minimum_recall": round(minimum_recall, 6),
+        "mean_recall": round(mean_recall, 6),
+        "mean_f1": round(mean_f1, 6),
+        "selected_confidence_by_class": selected_confidence_by_class,
+        "per_class": per_class,
+    }
+
+
+def _balanced_selection_key(summary: dict[str, Any]) -> tuple[float, ...]:
+    """Return the multiclass checkpoint ordering for a balanced summary."""
+    return (
+        float(summary.get("eligible_class_count", 0)),
+        float(summary.get("minimum_recall", 0.0)),
+        float(summary.get("mean_recall", 0.0)),
+        float(summary.get("mean_f1", 0.0)),
+    )
+
+
+def _is_better_balanced_selection(
+    candidate: dict[str, Any], current: dict[str, Any] | None
+) -> bool:
+    """Compare multiclass balanced summaries, retaining the first exact tie."""
+    return current is None or _balanced_selection_key(candidate) > _balanced_selection_key(current)
+
+
 def _validate_range(name: str, value: float, lower: float, upper: float | None = None) -> None:
     if not math.isfinite(value) or value < lower or (upper is not None and value > upper):
         limit = f"{lower:g}..{upper:g}" if upper is not None else f">={lower:g}"
@@ -700,6 +795,26 @@ def main() -> None:
                 "recall_then_f1_then_precision_if_precision_meets_minimum_else_f1_then_recall"
             ),
         },
+        "balanced_selection": {
+            "enabled": len(exp.class_names) > 1,
+            "minimum_precision": args.minimum_precision,
+            "policy": (
+                "maximize_precision_eligible_class_count_then_minimum_recall_"
+                "then_mean_recall_then_mean_f1"
+            ),
+            "metric": (
+                "eligible_class_count_then_minimum_recall_then_mean_recall_then_mean_f1"
+            ),
+            "best_epoch": None,
+            "best_key": None,
+            "eligible_class_count": None,
+            "class_count": len(exp.class_names),
+            "minimum_recall": None,
+            "mean_recall": None,
+            "mean_f1": None,
+            "selected_confidence_by_class": None,
+            "per_class": None,
+        },
         "lr_scale": args.lr_scale,
         "basic_lr_per_img": exp.basic_lr_per_img,
         "no_aug_epochs": exp.no_aug_epochs,
@@ -730,6 +845,8 @@ def main() -> None:
     }
     best_selected: dict[str, Any] | None = None
     best_epoch = None
+    best_balanced: dict[str, Any] | None = None
+    best_balanced_epoch = None
     evaluations_without_improvement = 0
     stopped_early = False
     no_aug = False
@@ -784,6 +901,35 @@ def main() -> None:
                 args.minimum_precision, exp.class_names,
             )
             record["validation"] = validation
+            if len(exp.class_names) > 1:
+                balanced = _balanced_validation_summary(
+                    validation, args.minimum_precision, exp.class_names,
+                )
+                validation["balanced_selection"] = balanced
+                if _is_better_balanced_selection(balanced, best_balanced):
+                    best_balanced = balanced
+                    best_balanced_epoch = epoch + 1
+                    torch.save(
+                        {
+                            "model": ema.ema.state_dict(),
+                            "epoch": epoch + 1,
+                            "validation": validation,
+                            "balanced_selection": balanced,
+                        },
+                        output / "best_balanced_ckpt.pth",
+                    )
+                    metadata["balanced_selection"].update({
+                        "best_epoch": best_balanced_epoch,
+                        "best_key": list(_balanced_selection_key(balanced)),
+                        "eligible_class_count": balanced["eligible_class_count"],
+                        "minimum_recall": balanced["minimum_recall"],
+                        "mean_recall": balanced["mean_recall"],
+                        "mean_f1": balanced["mean_f1"],
+                        "selected_confidence_by_class": balanced[
+                            "selected_confidence_by_class"
+                        ],
+                        "per_class": balanced["per_class"],
+                    })
             selected = validation["selected"]
             if _is_better_validation_metric(
                 selected, best_selected, args.minimum_precision
@@ -833,6 +979,22 @@ def main() -> None:
         best_validation.get("per_class_thresholds")
         if isinstance(best_validation, dict) else None
     )
+    metadata["best_balanced_epoch"] = best_balanced_epoch
+    metadata["best_balanced_validation_metric"] = best_balanced
+    if best_balanced is not None:
+        metadata["balanced_selection"].update({
+            "best_epoch": best_balanced_epoch,
+            "best_key": list(_balanced_selection_key(best_balanced)),
+            "eligible_class_count": best_balanced["eligible_class_count"],
+            "minimum_recall": best_balanced["minimum_recall"],
+            "mean_recall": best_balanced["mean_recall"],
+            "mean_f1": best_balanced["mean_f1"],
+            "selected_confidence_by_class": best_balanced[
+                "selected_confidence_by_class"
+            ],
+            "per_class": best_balanced["per_class"],
+        })
+        metadata["best_balanced_validation_metric"] = metadata["balanced_selection"]
     if best_selected is not None:
         selected_confidence = float(best_selected["confidence"])
         metadata["postprocess"]["confidence"] = selected_confidence
@@ -850,6 +1012,8 @@ def main() -> None:
         "output": str(output),
         "best_epoch": best_epoch,
         "best_validation_metric": best_selected,
+        "best_balanced_epoch": best_balanced_epoch,
+        "best_balanced_selection": best_balanced,
         "elapsed_seconds": metadata["elapsed_seconds"],
     }, indent=2))
 
