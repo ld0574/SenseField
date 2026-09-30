@@ -8,15 +8,23 @@
 
 候选排序器 v2 严格复用首版流程：MPS、seed `20260930`、25 轮、batch size 96、候选绿色环 patch、仅使用人工 `corrected`／`negative` 标签。训练 split 使用 208 帧，pooled val 使用 129 帧；`skip` 不进入训练或评估。active batch 已并入源队列，没有作为独立代表性测试集。
 
-## 安全双类 v8 开发候选
+## v6 512 微调（338 个人工终态，最新开发诊断）
+
+在 338 个人工终态（276 `corrected`、61 `negative`、1 `skip`，其中 337 个可训练）上完成安全双类 v8 的 v6 512 微调，best epoch 为 6，固定阈值为 enemy/player `0.57/0.59`。固定 val 上，`minimap_player` TP/FP/FN 为 `84/4/9`，precision `0.954545`，visible recall `0.903226`，中心误差 P95 `6.289928 px`（相对短边 `0.017083`）；`minimap_enemy` P/R/F1 为 `0.953488 / 0.872340 / 0.911111`。
+
+v6 `metrics.json`、balanced checkpoint、fixed-val report 的 SHA-256 分别为 `cbf00864dd30a66dee39c11cc2a471650b8b7f5e8c3f4de9021923d0f0b70637`、`88a7de0332b18ce63539039fcbaccfd23f0499782818675f5698ffd0ede4ea46`、`d24e7e0a78d9636df9ebe5398f26f364b5acae3a3bdacba94d330afa8f36ee9b`。
+
+val 同时参与选模和阈值选择，test 为 0；上述数值只能称 development diagnostic，v6 不能接入 release。Android 已支持校验 metadata 声明的 `320–1024`、`32` 的倍数、正方形输入并按输入尺寸动态计算 anchors；默认 release assets/profile 仍为 320 单类 `minimap_enemy`，未启用 `minimap_player`。
+
+## 安全双类 v8 开发候选（v5 历史对照）
 
 `build/data/minimap-dual-coco-v8`（审计 `build/data/minimap-dual-coco-v8.audit.json`）通过带 provenance 的安全导出得到 323 张图、840 个框：train 194 张／512 框，val 129 张／328 框；其中 `minimap_enemy` 575 框、`minimap_player` 265 框，test 为空。审计状态为 `passed_with_warnings`，警告包括源 SQLite 原始哈希漂移但语义校验通过等历史状态。双类 v8 只用于开发诊断，不是发布数据集；审计确认没有读取 sealed source、没有把机器建议当真值、player/source 数据库只读、帧哈希已核对且所有框都在 crop 内。
 
-当前最好开发候选为双类 YOLOX-Nano v5 416：epoch 26，输入 `[1,3,416,416]`，输出 `[1,3549,7]`，阈值为 enemy `0.55`、player `0.71`。固定 val 的逐类结果为：enemy P/R/F1 `0.950000 / 0.889362 / 0.918681`，player P/R/F1 `0.952381 / 0.860215 / 0.903955`；player visible recall 为 `0.860215`（80/93），中心误差 P95 为 `7.805562 px`（相对 `0.018585`）。player precision 与中心误差通过门槛，但 visible recall 最低要求 `0.90` 未通过；93 个可见帧需命中至少 84 帧，当前还少 4 帧，因此 player quality gate 仍为 failed。
+此前开发候选为双类 YOLOX-Nano v5 416：epoch 26，输入 `[1,3,416,416]`，输出 `[1,3549,7]`，阈值为 enemy `0.55`、player `0.71`。固定 val 的逐类结果为：enemy P/R/F1 `0.950000 / 0.889362 / 0.918681`，player P/R/F1 `0.952381 / 0.860215 / 0.903955`；player visible recall 为 `0.860215`（80/93），中心误差 P95 为 `7.805562 px`（相对 `0.018585`）。player precision 与中心误差通过门槛，但 visible recall 最低要求 `0.90` 未通过；93 个可见帧需命中至少 84 帧，当前还少 4 帧，因此 player quality gate 仍为 failed。
 
 v3 320 是保留的基线：epoch 28、阈值 enemy/player `0.57/0.81`，player visible recall `0.688172`，中心误差 P95 `5.697911 px`（相对 `0.013566`）；v5 相对 v3 的 visible recall 提高 `0.172043`。v4 低增强对照的 player visible recall 只有 `0.365591`，说明简单削弱增强没有改善该问题。v5 的 416 输入像素量约为 320 输入的 `1.69` 倍，存在端侧延迟风险，尚未接入 Android。
 
-在 v5 416 后追加严格 HSV 绿色 annulus 后处理（model confidence `0.34`、green coverage `≥0.12`、radius `7–23 px`）后，同一 v8 val 得到 TP/FP/FN `85/4/8`、precision `0.955056`、visible recall `0.913978`、中心误差 P95 `7.805562 px`（相对 `0.018585`）。precision、visible recall 和中心误差三项开发门槛同时通过，因此这是**值得继续冻结验证的开发候选**。半径是在原始 COCO crop 坐标中固定取值，尚未按短边或框尺寸归一化；参数又是在同一 129 张 val 上穷举得到，存在明显的同集调参乐观偏差。当前没有独立 test、Android 实现或运行时验证，仍不得接入明日 release；Android/release 继续使用单类 `minimap_enemy`。
+在 v5 416 后追加严格 HSV 绿色 annulus 后处理（model confidence `0.34`、green coverage `≥0.12`、radius `7–23 px`），在用于调参的同一 pooled val 上得到 TP/FP/FN `85/4/8`、precision `0.955056`、visible recall `0.913978`。随后进行三折 leave-one-source-out：在两场来源选择参数后冻结到第三场，所有统一参数组合都无法同时让三场满足 precision `≥0.95`、visible recall `≥0.90`、中心 P95 相对短边 `≤0.03`。典型失败为留出 video2 时 P/R `0.9672/0.8310`，留出 video11 时 `0.9333/1.0000`，留出 video13 时最高仅 `0.8889/1.0000`。因此 annulus pooled 数值属于同集调参乐观结果，不实现到 Android，也不作为发布门禁。
 
 关键 SHA-256：v8 audit `c22fa60f6a0b641f9c7a692347c8b57671e4dbef742a9f02a19c0a5224582c82`，train／val annotations `36cdcf3c4f82339a7a65a91ff5ea2875fa9d19907cb35ccaabd51888134ae5eb`／`bd48e7e2523354517b821215fc5c9c0a260eb6ae0af4d9fb02f7812e3cdcfde2`，v5 metrics `5ccc9a3f4eebe8e2c7f026674b0111b64ada19f66435d8da58bbb55fcb49b3c4`，balanced checkpoint `0eeaaa4ece647939d4d3dcd5d858b6d7cd8258c1ce8c0d1c1d6f4592b5e27118`，fixed-val report `bbb44bde3baa89f1c684017d2a0e3339fb9eade4ee80cf426d226476c1bc50ae`。
 

@@ -65,8 +65,8 @@ sensefield-0.3.0-alpha.1-arm64-v8a-signed-candidate.apk
 
 ```text
 android/app/build/outputs/preview/sensefield-0.3.0-alpha.1-arm64-v8a-debug-candidate.apk
-11,979,737 bytes
-SHA-256 82843ad428849c3cd8c144fc4777fc12ab652f3add6145698b41d21a5df428c6
+17,156,242 bytes
+SHA-256 4084ee6fb1eaf25059a743aa0e996d095cf4cb01c575d31695495a6c21859151
 ```
 
 `apksigner` 确认 v2 签名有效，signer 为 Android Debug，证书 SHA-256 为 `5a42a53a8f06850e89c46ea193931e9853e3ce7cff99551b42e8b414a1eaaf68`。`aapt` 确认包名 `com.openkhub.sensefield`、versionCode 7、versionName `0.3.0-alpha.1`、minSdk 29 和 targetSdk 35；APK 仅包含 `arm64-v8a`。如重新构建，必须以新产物的大小、哈希和签名输出替换这组值。

@@ -120,15 +120,19 @@ shasum -a 256 build/models/yolox_nano.pth
 
 玩家主动学习首轮 218 张与第二批 120 张已完成并安全合并。队列共有 338 个人工终态：276 `corrected`、61 `negative`、1 `skip`；337 个可训练，901 个 `pending`。玩家队列 manifest SHA-256 为 `ff8d9a35647456391a9a8cd63683b0ec59744aae38121cd585fd7126daf33a27`。候选排序器 v2 仍只是 `review_aid_non_release` 复核辅助器，机器建议不是真值。
 
-安全双类 v8 位于 `build/data/minimap-dual-coco-v8`，审计为 `build/data/minimap-dual-coco-v8.audit.json`；导出为 323 张图／840 个框：train 194 张／512 框，val 129 张／328 框，test 为空；`minimap_enemy` 575 框，`minimap_player` 265 框。审计状态为 `passed_with_warnings`，警告包括源 SQLite 原始哈希漂移但语义校验通过等历史状态。当前最好开发候选为 v5 416：epoch 26，输入 `[1,3,416,416]`，输出 `[1,3549,7]`，阈值 enemy/player `0.55/0.71`；固定 val 的 enemy P/R/F1 为 `0.950000 / 0.889362 / 0.918681`，player 为 `0.952381 / 0.860215 / 0.903955`。player visible recall `0.860215`（80/93），中心误差 P95 `7.805562 px`（相对 `0.018585`）。player precision 与中心误差通过门槛，但 visible recall 最低要求 `0.90` 未通过；93 个可见帧需命中至少 84 帧，当前还少 4 帧，player quality gate 仍为 failed。保留的 v3 320 基线为 epoch 28、阈值 `0.57/0.81`、player visible recall `0.688172`、中心误差 P95 `5.697911 px`（相对 `0.013566`），v5 相对 v3 提高 `0.172043`。v4 低增强对照的 player visible recall 只有 `0.365591`，说明简单削弱增强没有改善该问题。416 输入像素量约为 320 的 `1.69` 倍，存在端侧延迟风险，v5 未接入 Android。val 参与选模和阈值选择，没有独立 test，因此这些数值只能称 development diagnostic。
+安全双类 v8 位于 `build/data/minimap-dual-coco-v8`，审计为 `build/data/minimap-dual-coco-v8.audit.json`；导出为 323 张图／840 个框：train 194 张／512 框，val 129 张／328 框，test 为空；`minimap_enemy` 575 框，`minimap_player` 265 框。审计状态为 `passed_with_warnings`，警告包括源 SQLite 原始哈希漂移但语义校验通过等历史状态。当前最好开发候选为 v6 512 微调：best epoch 6，阈值 enemy/player `0.57/0.59`；固定 val 的 enemy P/R/F1 为 `0.953488 / 0.872340 / 0.911111`，player TP/FP/FN 为 `84/4/9`、P/R/F1 `0.954545 / 0.903226 / 0.928177`。player visible recall 为 `0.903226`（84/93），中心误差 P95 `6.289928 px`（相对 `0.017083`），三项 player development gate 均通过。v6 从 v5 balanced checkpoint 以 512 输入微调 20 轮，训练耗时 `329.104s`；512 像素量为 320 的 `2.56` 倍，仍需真机验证延迟。
 
-在 v5 416 后追加严格 HSV 绿色 annulus 后处理（model confidence `0.34`、green coverage `≥0.12`、radius `7–23 px`），同一 v8 val 得到 TP/FP/FN `85/4/8`、precision `0.955056`、visible recall `0.913978`、中心误差 P95 `7.805562 px`（相对 `0.018585`）。precision、visible recall 和中心误差三项开发门槛同时通过，这是**值得继续冻结验证的开发候选**。半径是在原始 COCO crop 坐标中固定取值，尚未按短边或框尺寸归一化；参数又是在同一 129 张 val 上穷举得到，存在明显的同集调参乐观偏差。当前没有独立 test、Android 实现或运行时验证，仍不得接入明日 release；Android/release 继续使用单类 `minimap_enemy`。
+v6 `metrics.json`、balanced checkpoint、fixed-val report 的 SHA-256 分别为 `cbf00864dd30a66dee39c11cc2a471650b8b7f5e8c3f4de9021923d0f0b70637`、`88a7de0332b18ce63539039fcbaccfd23f0499782818675f5698ffd0ede4ea46`、`d24e7e0a78d9636df9ebe5398f26f364b5acae3a3bdacba94d330afa8f36ee9b`。
+
+v5 416 历史对照为 epoch 26、阈值 enemy/player `0.55/0.71`：enemy P/R/F1 `0.950000 / 0.889362 / 0.918681`，player `0.952381 / 0.860215 / 0.903955`，player visible recall `0.860215`（80/93），中心误差 P95 `7.805562 px`（相对 `0.018585`）。保留的 v3 320 基线 visible recall 为 `0.688172`，v4 低增强对照为 `0.365591`。所有版本的 val 都参与选模和阈值选择，test 为空，因此只能称 development diagnostic；v6 尚未导出、未做 ncnn/Android parity 和真机耗时验证，不能接入 release。Android 运行时现在能校验 `320–1024` 范围内、32 倍数的正方形输入并动态计算 anchors，但内置 assets/profile 仍是 320 单类 `minimap_enemy`。
+
+在 v5 416 后追加严格 HSV 绿色 annulus 后处理（model confidence `0.34`、green coverage `≥0.12`、radius `7–23 px`），在用于调参的同一 pooled val 上得到 TP/FP/FN `85/4/8`、precision `0.955056`、visible recall `0.913978`。随后进行三折 leave-one-source-out：在两场来源选择参数后冻结到第三场，所有统一参数组合都无法同时让三场满足 precision `≥0.95`、visible recall `≥0.90`、中心 P95 相对短边 `≤0.03`。典型失败为留出 video2 时 P/R `0.9672/0.8310`，留出 video11 时 `0.9333/1.0000`，留出 video13 时最高仅 `0.8889/1.0000`。因此 annulus pooled 数值属于同集调参乐观结果，不实现到 Android，也不作为发布门禁。
 
 关键 SHA-256：v8 audit `c22fa60f6a0b641f9c7a692347c8b57671e4dbef742a9f02a19c0a5224582c82`，train／val annotations `36cdcf3c4f82339a7a65a91ff5ea2875fa9d19907cb35ccaabd51888134ae5eb`／`bd48e7e2523354517b821215fc5c9c0a260eb6ae0af4d9fb02f7812e3cdcfde2`，v5 metrics `5ccc9a3f4eebe8e2c7f026674b0111b64ada19f66435d8da58bbb55fcb49b3c4`，balanced checkpoint `0eeaaa4ece647939d4d3dcd5d858b6d7cd8258c1ce8c0d1c1d6f4592b5e27118`，fixed-val report `bbb44bde3baa89f1c684017d2a0e3339fb9eade4ee80cf426d226476c1bc50ae`。
 
 导出器必须通过 player manifest、source manifest/database、source frame provenance 和只读数据库关联两类标注；禁止手写普通 timestamp union。导出审计要求 `sealed_sources_read_or_run=false`、`machine_suggestions_used_as_truth=false`、player/source database read-only、frame hashes verified 且所有框在 crop 内。默认导出不读取视频帧；不要加入 `--verify-video-bytes`，也不得引用、运行或查看 video9/video12。安全双类 v8 未复制到 Android assets/profile，当前 Android/release 仍为单类 `minimap_enemy`。
 
-复现安全导出时使用新的忽略目录，避免覆盖已存在的 `build/data/minimap-dual-coco-v8`；训练和固定 val 评估命令指向已审计的 v8 目录。下面复现当前 v5 416；v3 320 的指标作为基线保留在上文：
+复现安全导出时使用新的忽略目录，避免覆盖已存在的 `build/data/minimap-dual-coco-v8`；训练和固定 val 评估命令指向已审计的 v8 目录。下面先复现 v5 416，再从其 balanced checkpoint 复现当前 v6 512 微调；v3 320 的指标作为基线保留在上文：
 
 ```sh
 .venv/bin/python training/export_minimap_dual_class.py \
@@ -160,6 +164,31 @@ PYTHONPATH=build/third_party/YOLOX:python \
   --confidence-by-class '{"minimap_enemy":0.55,"minimap_player":0.71}' \
   --iou-threshold 0.5 --nms-threshold 0.5 \
   --output build/training/yolox-nano-minimap-dualclass-v5-416-v8/fixed-val-per-class.json
+
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python training/train_yolox_minimap.py \
+  --yolox-root build/third_party/YOLOX \
+  --data-dir build/data/minimap-dual-coco-v8 \
+  --pretrained build/training/yolox-nano-minimap-dualclass-v5-416-v8/best_balanced_ckpt.pth \
+  --output build/training/yolox-nano-minimap-dualclass-v6-512-v8-finetune \
+  --classes minimap_enemy minimap_player \
+  --epochs 20 --batch-size 8 --input-size 512 --lr-scale 0.1 \
+  --mosaic-prob 0.5 --mosaic-scale-min 0.7 --mosaic-scale-max 1.3 \
+  --hsv-prob 0.8 --flip-prob 0.5 --degrees 5 --translate 0.08 --shear 1 \
+  --nms-threshold 0.5 --minimum-precision 0.95 \
+  --no-aug-epochs 4 --eval-every 2 --log-every 5 \
+  --device mps --seed 20260930
+
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python training/evaluate_yolox_minimap.py \
+  --yolox-root build/third_party/YOLOX \
+  --data-dir build/data/minimap-dual-coco-v8 \
+  --checkpoint build/training/yolox-nano-minimap-dualclass-v6-512-v8-finetune/best_balanced_ckpt.pth \
+  --input-size 512 --split val \
+  --classes minimap_enemy minimap_player \
+  --confidence-by-class '{"minimap_enemy":0.57,"minimap_player":0.59}' \
+  --iou-threshold 0.5 --nms-threshold 0.5 \
+  --output build/training/yolox-nano-minimap-dualclass-v6-512-v8-finetune/fixed-val-per-class.json
 ```
 
 ### HD bootstrap 训练与标注辅助（2026-09-28）
