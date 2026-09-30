@@ -17,6 +17,7 @@ final class NativeBridge {
             float minConfidence, byte[] enemyRgba, int enemyWidth, int enemyHeight,
             byte[] pingRgba, int pingWidth, int pingHeight,
             boolean minimapYolox, int yoloxInputSize,
+            String yoloxParamAsset, String yoloxBinAsset,
             float yoloxConfidence, float yoloxNms,
             int[] yoloxClassKinds, float[] yoloxClassThresholds,
             boolean minimapLocatorEnabled, float[] minimapLocatorFloats,

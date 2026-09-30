@@ -29,6 +29,21 @@ final class GameProfile {
     static final String PREF_VISION_MEMORY = "vision_memory";
     static final boolean DEFAULT_VISION_MEMORY = true;
 
+    // Keep these names stable for the bundled 320px model. Imported profiles
+    // may select another metadata/model pair, but only after its metadata has
+    // passed the same tensor contract and the asset names have been checked.
+    static final String DEFAULT_YOLOX_METADATA_ASSET =
+            "minimap-yolox-nano-320.metadata.json";
+    static final String DEFAULT_YOLOX_PARAM_ASSET = "minimap-yolox-nano-320.param";
+    static final String DEFAULT_YOLOX_BIN_ASSET = "minimap-yolox-nano-320.bin";
+    static final int YOLOX_MIN_INPUT_SIZE = 320;
+    // Bound imported profiles so a malformed or experimental model cannot
+    // request a multi-gigapixel tensor on a phone. Current candidates are
+    // 320, 416 and 512; 1024 still leaves ample room for later experiments.
+    static final int YOLOX_MAX_INPUT_SIZE = 1024;
+    static final int YOLOX_INPUT_ALIGNMENT = 32;
+    static final int[] YOLOX_STRIDES = {8, 16, 32};
+
     static final class TemplateData {
         final byte[] rgba;
         final int width;
@@ -71,6 +86,18 @@ final class GameProfile {
         }
     }
 
+    private static final class YoloxBinding {
+        final YoloxModelData model;
+        final String paramAsset;
+        final String binAsset;
+
+        YoloxBinding(YoloxModelData model, String paramAsset, String binAsset) {
+            this.model = model;
+            this.paramAsset = paramAsset;
+            this.binAsset = binAsset;
+        }
+    }
+
     final String name;
     final String version;
     final boolean verified;
@@ -84,6 +111,9 @@ final class GameProfile {
     final float yoloxConfidence;
     final float yoloxNms;
     final String minimapYoloxBinSha256;
+    final String yoloxMetadataAsset;
+    final String yoloxParamAsset;
+    final String yoloxBinAsset;
     /** Optional profile thresholds keyed by the metadata class name. */
     final JSONObject yoloxProfileClassThresholds;
     final int[] yoloxClassKinds;
@@ -101,7 +131,9 @@ final class GameProfile {
                         float[] tuning, int[] eventInts, float minConfidence,
                         boolean minimapYolox, int yoloxInputSize,
                         float yoloxConfidence, float yoloxNms,
-                        String minimapYoloxBinSha256, JSONObject yoloxProfileClassThresholds,
+                        String minimapYoloxBinSha256, String yoloxMetadataAsset,
+                        String yoloxParamAsset, String yoloxBinAsset,
+                        JSONObject yoloxProfileClassThresholds,
                         int[] yoloxClassKinds,
                         float[] yoloxClassThresholds,
                         boolean minimapLocatorEnabled, float[] minimapLocatorFloats,
@@ -121,6 +153,9 @@ final class GameProfile {
         this.yoloxConfidence = yoloxConfidence;
         this.yoloxNms = yoloxNms;
         this.minimapYoloxBinSha256 = minimapYoloxBinSha256;
+        this.yoloxMetadataAsset = yoloxMetadataAsset;
+        this.yoloxParamAsset = yoloxParamAsset;
+        this.yoloxBinAsset = yoloxBinAsset;
         this.yoloxProfileClassThresholds = yoloxProfileClassThresholds;
         this.yoloxClassKinds = yoloxClassKinds.clone();
         this.yoloxClassThresholds = yoloxClassThresholds.clone();
@@ -144,22 +179,22 @@ final class GameProfile {
                 : context.getAssets().open("profile.json")) {
             GameProfile profile = parse(readText(stream), settings(context));
             if (profile.minimapYolox) {
-                requireAsset(context, "minimap-yolox-nano-320.param");
-                requireAsset(context, "minimap-yolox-nano-320.bin");
-                YoloxModelData model = verifyMinimapYoloxModelBinding(
+                YoloxBinding binding = verifyMinimapYoloxModelBinding(
                         context, profile.minimapYoloxBinSha256, profile.verified,
+                        profile.yoloxInputSize, profile.yoloxMetadataAsset,
+                        profile.yoloxParamAsset, profile.yoloxBinAsset,
                         profile.yoloxConfidence, profile.yoloxProfileClassThresholds);
-                profile = profile.withYoloxModel(model);
+                profile = profile.withYoloxModel(binding);
             }
             return profile;
         }
     }
 
-    private GameProfile withYoloxModel(YoloxModelData model) {
+    private GameProfile withYoloxModel(YoloxBinding binding) {
         return new GameProfile(name, version, verified, rois, flags, tuning, eventInts,
                 minConfidence, minimapYolox, yoloxInputSize, yoloxConfidence, yoloxNms,
-                minimapYoloxBinSha256, yoloxProfileClassThresholds,
-                model.classKinds, model.classThresholds,
+                minimapYoloxBinSha256, yoloxMetadataAsset, binding.paramAsset, binding.binAsset,
+                yoloxProfileClassThresholds, binding.model.classKinds, binding.model.classThresholds,
                 minimapLocatorEnabled, minimapLocatorFloats, minimapLocatorInts,
                 minimapLocatorDescriptor, enemyTemplate, pingTemplate, playerLife);
     }
@@ -170,16 +205,16 @@ final class GameProfile {
             // only when its private model assets were included in the APK.
         } catch (IOException missing) {
             throw new IOException(
-                    "当前配置启用了实验小地图识别，但 APK 未包含本地模型文件 "
-                            + "minimap-yolox-nano-320.param 和 minimap-yolox-nano-320.bin。"
+                    "当前配置启用了实验小地图识别，但 APK 未包含本地模型文件 " + name + "。"
                             + "请按团队本地运行文档放置模型后重新构建。",
                     missing);
         }
     }
 
-    private static YoloxModelData verifyMinimapYoloxModelBinding(
+    private static YoloxBinding verifyMinimapYoloxModelBinding(
             Context context, String profileSha256, boolean requireVerifiedModel,
-            float fallbackConfidence, JSONObject profileClassThresholds)
+            int profileInputSize, String metadataAsset, String profileParamAsset,
+            String profileBinAsset, float fallbackConfidence, JSONObject profileClassThresholds)
             throws IOException {
         if (profileSha256 == null || !profileSha256.matches("[0-9a-f]{64}")) {
             throw new IOException("启用 minimap_yolox 的 GameProfile 必须在 "
@@ -187,31 +222,51 @@ final class GameProfile {
         }
 
         final String metadataText;
-        try (InputStream stream = context.getAssets().open(
-                "minimap-yolox-nano-320.metadata.json")) {
+        try (InputStream stream = context.getAssets().open(metadataAsset)) {
             metadataText = readText(stream);
         } catch (IOException missing) {
-            throw new IOException("APK 缺少 minimap-yolox-nano-320.metadata.json，"
+            throw new IOException("APK 缺少 " + metadataAsset + "，"
                     + "无法核对启用的 YOLOX 权重。", missing);
         }
 
         final JSONObject metadata;
+        final String runtimeParamSha256;
         final String runtimeSha256;
+        final String metadataParamAsset;
+        final String metadataBinAsset;
+        final int metadataInputSize;
         try {
             metadata = new JSONObject(metadataText);
             JSONObject runtime = metadata.optJSONObject("runtime");
+            Object paramHash = runtime == null ? null : runtime.opt("param_sha256");
             Object value = runtime == null ? null : runtime.opt("bin_sha256");
-            if (!(value instanceof String)) {
-                throw new JSONException("runtime.bin_sha256 is missing or is not a string");
+            if (!(paramHash instanceof String) || !(value instanceof String)) {
+                throw new JSONException(
+                        "runtime.param_sha256/bin_sha256 are missing or are not strings");
             }
+            runtimeParamSha256 = (String) paramHash;
             runtimeSha256 = (String) value;
+            metadataParamAsset = modelAssetName(runtime, "param_asset", DEFAULT_YOLOX_PARAM_ASSET);
+            metadataBinAsset = modelAssetName(runtime, "bin_asset", DEFAULT_YOLOX_BIN_ASSET);
+            int[] input = jsonShape(metadata.getJSONArray("input"), "input");
+            int[] output = jsonShape(metadata.getJSONArray("output"), "output");
+            JSONArray classes = metadata.getJSONArray("classes");
+            validateYoloxTensorContract(input, output, classes.length());
+            validateYoloxStrides(metadata);
+            metadataInputSize = input[2];
         } catch (JSONException malformed) {
             throw new IOException("APK 模型 metadata 格式无效，必须包含 "
-                    + "runtime.bin_sha256。", malformed);
+                    + "runtime.param_sha256/bin_sha256、合法的 input/output tensor contract。",
+                    malformed);
         }
-        if (!runtimeSha256.matches("[0-9a-f]{64}")) {
-            throw new IOException("APK 模型 metadata 的 runtime.bin_sha256 格式无效，"
-                    + "必须是 64 位小写 SHA-256。");
+        if (!runtimeParamSha256.matches("[0-9a-f]{64}") ||
+                !runtimeSha256.matches("[0-9a-f]{64}")) {
+            throw new IOException("APK 模型 metadata 的 runtime.param_sha256/bin_sha256 "
+                    + "格式无效，必须是 64 位小写 SHA-256。");
+        }
+        if (metadataInputSize != profileInputSize) {
+            throw new IOException("GameProfile 的 minimap_yolox_input_size 与模型 metadata input 不一致；"
+                    + "请导入与当前模型匹配的 profile。" );
         }
         if (requireVerifiedModel && !metadataAllowsVerifiedYolox(metadata)) {
             throw new IOException("GameProfile 将 YOLOX 标记为已验证，但 APK 模型 metadata "
@@ -223,7 +278,18 @@ final class GameProfile {
                     + "请导入与当前 APK 权重匹配的 profile。");
         }
         try {
-            return parseYoloxModelData(metadata, fallbackConfidence, profileClassThresholds);
+            String paramAsset = profileParamAsset == null ? metadataParamAsset : profileParamAsset;
+            String binAsset = profileBinAsset == null ? metadataBinAsset : profileBinAsset;
+            requireAsset(context, paramAsset);
+            requireAsset(context, binAsset);
+            if (!runtimeParamSha256.equals(sha256Asset(context, paramAsset)) ||
+                    !runtimeSha256.equals(sha256Asset(context, binAsset))) {
+                throw new IOException("APK 中的 YOLOX param/bin 文件与所选 metadata 的 "
+                        + "SHA-256 不一致。");
+            }
+            return new YoloxBinding(
+                    parseYoloxModelData(metadata, fallbackConfidence, profileClassThresholds),
+                    paramAsset, binAsset);
         } catch (JSONException malformed) {
             throw new IOException("APK 模型 metadata 的 classes 或分类阈值无效。", malformed);
         }
@@ -251,6 +317,7 @@ final class GameProfile {
                 jsonShape(metadata.getJSONArray("input"), "input"),
                 jsonShape(metadata.getJSONArray("output"), "output"),
                 classes.length());
+        validateYoloxStrides(metadata);
         JSONObject postprocess = null;
         if (metadata.has("postprocess") && !metadata.isNull("postprocess")) {
             Object rawPostprocess = metadata.get("postprocess");
@@ -402,15 +469,101 @@ final class GameProfile {
         return result;
     }
 
+    private static String modelAssetName(JSONObject object, String key, String fallback)
+            throws JSONException {
+        if (object == null || !object.has(key) || object.isNull(key)) return fallback;
+        Object value = object.get(key);
+        if (!(value instanceof String))
+            throw new JSONException(key + " must be a string");
+        String name = (String) value;
+        if (!validModelAssetName(name))
+            throw new JSONException(key + " is not a safe APK asset name");
+        return name;
+    }
+
+    private static String optionalModelAssetName(JSONObject object, String key)
+            throws JSONException {
+        if (object == null || !object.has(key) || object.isNull(key)) return null;
+        return modelAssetName(object, key, null);
+    }
+
+    /** Keep model paths inside the APK asset namespace; no filesystem paths or traversal. */
+    static boolean validModelAssetName(String name) {
+        if (name == null || name.isEmpty() || name.length() > 240 ||
+                name.charAt(0) == '/' || name.charAt(name.length() - 1) == '/') return false;
+        String[] parts = name.split("/", -1);
+        for (String part : parts) {
+            if (part.isEmpty() || ".".equals(part) || "..".equals(part)) return false;
+            for (int index = 0; index < part.length(); index++) {
+                char character = part.charAt(index);
+                if (!(character >= 'a' && character <= 'z') &&
+                        !(character >= 'A' && character <= 'Z') &&
+                        !(character >= '0' && character <= '9') &&
+                        character != '.' && character != '_' && character != '-') {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static void validateYoloxStrides(JSONObject metadata) throws JSONException {
+        JSONObject postprocess = metadata.optJSONObject("postprocess");
+        if (postprocess == null || !postprocess.has("strides") ||
+                postprocess.isNull("strides")) return;
+        JSONArray strides = postprocess.getJSONArray("strides");
+        int[] values = new int[strides.length()];
+        for (int index = 0; index < strides.length(); index++) {
+            Object value = strides.get(index);
+            if (!(value instanceof Number) ||
+                    ((Number) value).doubleValue() != ((Number) value).intValue()) {
+                throw new JSONException("YOLOX postprocess.strides must be [8,16,32]");
+            }
+            values[index] = ((Number) value).intValue();
+        }
+        validateYoloxStrides(values);
+    }
+
+    /** Pure Java stride-contract guard for local JVM tests. */
+    static void validateYoloxStrides(int[] strides) throws JSONException {
+        if (!java.util.Arrays.equals(strides, YOLOX_STRIDES))
+            throw new JSONException("YOLOX postprocess.strides must be [8,16,32]");
+    }
+
     /** Pure Java tensor-contract guard for unit tests and the JSON parser. */
     static void validateYoloxTensorContract(int[] input, int[] output, int classCount)
             throws JSONException {
         if (input == null || output == null || classCount < 1 || classCount > 8)
             throw new JSONException("Invalid YOLOX tensor contract");
-        if (!java.util.Arrays.equals(input, new int[] {1, 3, 320, 320}))
-            throw new JSONException("YOLOX input shape must be [1,3,320,320]");
-        if (!java.util.Arrays.equals(output, new int[] {1, 2100, 5 + classCount}))
-            throw new JSONException("YOLOX output shape must be [1,2100,5+C]");
+        if (input.length != 4 || input[0] != 1 || input[1] != 3 ||
+                input[2] != input[3] || !validYoloxInputSize(input[2])) {
+            throw new JSONException("YOLOX input shape must be [1,3,S,S], where S is a "
+                    + "square 32-pixel multiple at least 320");
+        }
+        int expectedAnchors = yoloxAnchorCount(input[2]);
+        if (output.length != 3 || output[0] != 1 || output[1] != expectedAnchors ||
+                output[2] != 5 + classCount) {
+            throw new JSONException("YOLOX output shape must be [1," + expectedAnchors
+                    + ",5+C]");
+        }
+    }
+
+    static boolean validYoloxInputSize(int inputSize) {
+        return inputSize >= YOLOX_MIN_INPUT_SIZE && inputSize <= YOLOX_MAX_INPUT_SIZE &&
+                inputSize % YOLOX_INPUT_ALIGNMENT == 0;
+    }
+
+    static int yoloxAnchorCount(int inputSize) throws JSONException {
+        if (!validYoloxInputSize(inputSize))
+            throw new JSONException("Invalid YOLOX input size");
+        long anchors = 0;
+        for (int stride : YOLOX_STRIDES) {
+            int grid = inputSize / stride;
+            anchors += (long) grid * grid;
+        }
+        if (anchors > Integer.MAX_VALUE)
+            throw new JSONException("YOLOX anchor count is too large");
+        return (int) anchors;
     }
 
     /** Pure-Java portion of the metadata contract, kept directly unit-testable. */
@@ -480,6 +633,12 @@ final class GameProfile {
         JSONObject models = data.optJSONObject("models");
         String minimapYoloxBinSha256 = models == null ? null
                 : models.optString("minimap_yolox_bin_sha256", null);
+        String yoloxMetadataAsset = modelAssetName(
+                models, "minimap_yolox_metadata_asset", DEFAULT_YOLOX_METADATA_ASSET);
+        String yoloxParamAsset = optionalModelAssetName(
+                models, "minimap_yolox_param_asset");
+        String yoloxBinAsset = optionalModelAssetName(
+                models, "minimap_yolox_bin_asset");
         JSONObject thresholds = data.getJSONObject("thresholds");
         boolean minimapYolox = enabled && detectors.optBoolean("minimap_yolox", false);
         double yoloxInputValue = thresholds.optDouble("minimap_yolox_input_size", 320);
@@ -522,8 +681,7 @@ final class GameProfile {
                 !finiteRange(tuning[3], 1f, 100f) ||
                 !finiteRange(tuning[4], 0f, 1f) ||
                 !Double.isFinite(yoloxInputValue) || yoloxInputValue != yoloxInputSize ||
-                // The packaged pnnx graph has fixed 320x320 reshape dimensions.
-                yoloxInputSize != 320 ||
+                !validYoloxInputSize(yoloxInputSize) ||
                 !finiteRange(yoloxConfidence, 0f, 1f) ||
                 !finiteRange(yoloxNms, 0f, 1f) ||
                 !finiteRange(minConfidence, 0f, 1f) ||
@@ -550,7 +708,8 @@ final class GameProfile {
         return new GameProfile(data.optString("name", "unnamed"),
                 data.optString("profile_version", "unversioned"), verified, rois, flags,
                 tuning, eventInts, minConfidence, minimapYolox, yoloxInputSize,
-                yoloxConfidence, yoloxNms, minimapYoloxBinSha256,
+                yoloxConfidence, yoloxNms, minimapYoloxBinSha256, yoloxMetadataAsset,
+                yoloxParamAsset, yoloxBinAsset,
                 parseYoloxProfileClassThresholds(thresholds),
                 new int[] {2}, new float[] {yoloxConfidence},
                 useMinimapLocator,
@@ -791,6 +950,30 @@ final class GameProfile {
         } catch (NoSuchAlgorithmException error) {
             throw new JSONException("SHA-256 is unavailable");
         }
+    }
+
+    private static String sha256Asset(Context context, String assetName) throws IOException {
+        final MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException error) {
+            throw new IOException("SHA-256 is unavailable", error);
+        }
+        try (InputStream stream = context.getAssets().open(assetName)) {
+            byte[] buffer = new byte[64 * 1024];
+            for (int count; (count = stream.read(buffer)) != -1; ) {
+                digest.update(buffer, 0, count);
+            }
+        }
+        byte[] value = digest.digest();
+        char[] alphabet = "0123456789abcdef".toCharArray();
+        char[] encoded = new char[value.length * 2];
+        for (int i = 0; i < value.length; i++) {
+            int item = value[i] & 255;
+            encoded[i * 2] = alphabet[item >>> 4];
+            encoded[i * 2 + 1] = alphabet[item & 15];
+        }
+        return new String(encoded);
     }
 
     private static float jsonFloat(JSONArray values, int index, float min, float max)

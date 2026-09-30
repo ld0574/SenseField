@@ -96,8 +96,19 @@ public final class GameProfileTest {
     @Test public void yoloxMetadataValidatesTensorContract() throws Exception {
         GameProfile.validateYoloxTensorContract(
                 new int[] {1, 3, 320, 320}, new int[] {1, 2100, 7}, 2);
+        GameProfile.validateYoloxTensorContract(
+                new int[] {1, 3, 416, 416}, new int[] {1, 3549, 7}, 2);
+        assertTrue(GameProfile.validYoloxInputSize(320));
+        assertTrue(GameProfile.validYoloxInputSize(416));
+        assertTrue(GameProfile.validYoloxInputSize(640));
+        assertFalse(GameProfile.validYoloxInputSize(1056));
+        assertTrue(GameProfile.yoloxAnchorCount(320) == 2100);
+        assertTrue(GameProfile.yoloxAnchorCount(416) == 3549);
         int[][] invalidInputs = {
-                {1, 3, 640, 640},
+                {1, 3, 319, 319},
+                {1, 3, 321, 321},
+                {1, 3, 300, 300},
+                {1, 3, 416, 384},
                 {1, 320, 320},
         };
         for (int[] input : invalidInputs) {
@@ -111,7 +122,7 @@ public final class GameProfileTest {
         }
         try {
             GameProfile.validateYoloxTensorContract(
-                    new int[] {1, 3, 320, 320}, new int[] {1, 2100, 6}, 2);
+                    new int[] {1, 3, 416, 416}, new int[] {1, 3548, 7}, 2);
             fail("Expected class/output width mismatch to be rejected");
         } catch (JSONException expected) {
             // Expected.
@@ -122,6 +133,29 @@ public final class GameProfileTest {
         try {
             GameProfile.validateYoloxTensorContract(null, new int[] {1, 2100, 7}, 2);
             fail("Expected a missing canonical input shape to be rejected");
+        } catch (JSONException expected) {
+            // Expected.
+        }
+    }
+
+    @Test public void yoloxAssetNamesStayInsideTheApkAssetNamespace() {
+        assertTrue(GameProfile.validModelAssetName(
+                GameProfile.DEFAULT_YOLOX_PARAM_ASSET));
+        assertTrue(GameProfile.validModelAssetName("models/yolox-416.bin"));
+        assertFalse(GameProfile.validModelAssetName("../outside.bin"));
+        assertFalse(GameProfile.validModelAssetName("/absolute.bin"));
+        assertFalse(GameProfile.validModelAssetName("models//yolox.bin"));
+        assertFalse(GameProfile.validModelAssetName("models/yolox\\.bin"));
+    }
+
+    @Test public void yoloxMetadataAcceptsCanonicalStrides() throws Exception {
+        GameProfile.validateYoloxStrides(new int[] {8, 16, 32});
+    }
+
+    @Test public void yoloxMetadataRejectsNonCanonicalStrides() throws Exception {
+        try {
+            GameProfile.validateYoloxStrides(new int[] {4, 8, 16});
+            fail("Expected non-canonical YOLOX strides to be rejected");
         } catch (JSONException expected) {
             // Expected.
         }

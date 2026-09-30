@@ -10,11 +10,13 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "layer.h"
 #include "mapassist.h"
 #include "net.h"
+#include "yolox_contract.h"
 
 namespace {
 
@@ -100,6 +102,8 @@ struct Session {
     float yolox_nms = 0.5f;
     std::vector<int> yolox_class_kinds{MA_MINIMAP_ENEMY};
     std::vector<float> yolox_class_thresholds{0.29f};
+    std::string yolox_param_asset = kYoloxParamAsset;
+    std::string yolox_bin_asset = kYoloxBinAsset;
     bool yolox_runtime_error_logged = false;
     ma_minimap_locator *minimap_locator = nullptr;
     ma_player_state_matcher *player_state_matcher = nullptr;
@@ -190,6 +194,43 @@ void non_maximum_suppression(std::vector<Detection> &detections, float threshold
     detections.swap(kept);
 }
 
+bool valid_asset_name(const std::string &name) {
+    if (name.empty() || name.size() > 240 || name.front() == '/' || name.back() == '/')
+        return false;
+    size_t segment_start = 0;
+    while (segment_start < name.size()) {
+        const size_t slash = name.find('/', segment_start);
+        const size_t segment_end = slash == std::string::npos ? name.size() : slash;
+        if (segment_end == segment_start ||
+            (segment_end - segment_start == 1 && name[segment_start] == '.') ||
+            (segment_end - segment_start == 2 && name[segment_start] == '.' &&
+             name[segment_start + 1] == '.')) return false;
+        for (size_t index = segment_start; index < segment_end; ++index) {
+            const char character = name[index];
+            if (!((character >= 'a' && character <= 'z') ||
+                  (character >= 'A' && character <= 'Z') ||
+                  (character >= '0' && character <= '9') || character == '.' ||
+                  character == '_' || character == '-')) return false;
+        }
+        if (slash == std::string::npos) break;
+        segment_start = slash + 1;
+    }
+    return true;
+}
+
+bool copy_asset_name(JNIEnv *env, jstring value, const char *fallback,
+                     std::string &destination) {
+    if (!value) {
+        destination = fallback;
+        return true;
+    }
+    const char *chars = env->GetStringUTFChars(value, nullptr);
+    if (!chars) return false;
+    destination.assign(chars);
+    env->ReleaseStringUTFChars(value, chars);
+    return valid_asset_name(destination);
+}
+
 bool load_yolox(AAssetManager *assets, Session &session) {
     if (!assets) {
         __android_log_print(ANDROID_LOG_ERROR, kLogTag, "AssetManager is unavailable");
@@ -203,18 +244,18 @@ bool load_yolox(AAssetManager *assets, Session &session) {
     session.yolox.opt.use_fp16_arithmetic = false;
     session.yolox.opt.use_vulkan_compute = false;
     session.yolox.register_custom_layer("YoloV5Focus", YoloV5Focus_layer_creator);
-    const int param_status = session.yolox.load_param(assets, kYoloxParamAsset);
+    const int param_status = session.yolox.load_param(assets, session.yolox_param_asset.c_str());
     if (param_status != 0) {
         __android_log_print(ANDROID_LOG_ERROR, kLogTag,
                             "Could not load %s (status %d)",
-                            kYoloxParamAsset, param_status);
+                            session.yolox_param_asset.c_str(), param_status);
         return false;
     }
-    const int model_status = session.yolox.load_model(assets, kYoloxBinAsset);
+    const int model_status = session.yolox.load_model(assets, session.yolox_bin_asset.c_str());
     if (model_status != 0) {
         __android_log_print(ANDROID_LOG_ERROR, kLogTag,
                             "Could not load %s (status %d)",
-                            kYoloxBinAsset, model_status);
+                            session.yolox_bin_asset.c_str(), model_status);
         return false;
     }
     __android_log_print(ANDROID_LOG_INFO, kLogTag,
@@ -273,11 +314,11 @@ void append_yolox_observations(Session &session, const uint8_t *rgba,
         return;
     }
     ncnn::Mat output;
-    constexpr int expected_anchors = 40 * 40 + 20 * 20 + 10 * 10;
     const int extract_status = extractor.extract("out0", output);
     if (extract_status != 0 || output.empty() || output.dims != 2 ||
-        output.w != 5 + static_cast<int>(session.yolox_class_kinds.size()) ||
-        output.h != expected_anchors || output.elempack != 1) {
+        !mapassist_yolox::valid_output_shape(
+                target, static_cast<int>(session.yolox_class_kinds.size()),
+                output.h, output.w) || output.elempack != 1) {
         if (!session.yolox_runtime_error_logged) {
             __android_log_print(ANDROID_LOG_ERROR, kLogTag,
                                 "Invalid YOLOX output status=%d dims=%d w=%d h=%d pack=%d",
@@ -366,6 +407,7 @@ Java_com_openkhub_sensefield_NativeBridge_nativeCreate(
         jbyteArray enemy_rgba, jint enemy_width, jint enemy_height,
         jbyteArray ping_rgba, jint ping_width, jint ping_height,
         jboolean minimap_yolox, jint yolox_input_size,
+        jstring yolox_param_asset, jstring yolox_bin_asset,
         jfloat yolox_confidence, jfloat yolox_nms,
         jintArray yolox_class_kinds, jfloatArray yolox_class_thresholds,
         jboolean minimap_locator_enabled, jfloatArray minimap_locator_floats,
@@ -379,7 +421,7 @@ Java_com_openkhub_sensefield_NativeBridge_nativeCreate(
         env->GetArrayLength(tuning) != 5 || env->GetArrayLength(event_ints) != 5)
         return 0;
     if (minimap_yolox &&
-        (yolox_input_size != 320 ||
+        (!mapassist_yolox::valid_input_size(yolox_input_size) ||
          !std::isfinite(yolox_confidence) || yolox_confidence < 0.0f || yolox_confidence > 1.0f ||
          !std::isfinite(yolox_nms) || yolox_nms < 0.0f || yolox_nms > 1.0f ||
          !yolox_class_kinds || !yolox_class_thresholds ||
@@ -431,6 +473,10 @@ Java_com_openkhub_sensefield_NativeBridge_nativeCreate(
     session->yolox_confidence = yolox_confidence;
     session->yolox_nms = yolox_nms;
     if (minimap_yolox) {
+        if (!copy_asset_name(env, yolox_param_asset, kYoloxParamAsset,
+                             session->yolox_param_asset) ||
+            !copy_asset_name(env, yolox_bin_asset, kYoloxBinAsset,
+                             session->yolox_bin_asset)) return 0;
         const int class_count = env->GetArrayLength(yolox_class_kinds);
         session->yolox_class_kinds.resize(static_cast<size_t>(class_count));
         session->yolox_class_thresholds.resize(static_cast<size_t>(class_count));

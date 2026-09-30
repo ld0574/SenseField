@@ -253,6 +253,7 @@ public final class CaptureService extends Service {
                         ping == null ? 0 : ping.width,
                         ping == null ? 0 : ping.height,
                         profile.minimapYolox, profile.yoloxInputSize,
+                        profile.yoloxParamAsset, profile.yoloxBinAsset,
                         profile.yoloxConfidence, profile.yoloxNms,
                         profile.yoloxClassKinds, profile.yoloxClassThresholds,
                         profile.minimapLocatorEnabled,

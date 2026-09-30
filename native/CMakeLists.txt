@@ -17,4 +17,11 @@ if(BUILD_TESTING AND NOT ANDROID)
     target_link_libraries(mapassist_perception_memory_test PRIVATE mapassist)
     add_test(NAME mapassist_perception_memory
              COMMAND mapassist_perception_memory_test)
+
+    add_executable(mapassist_yolox_contract_test tests/yolox_contract_test.cpp)
+    target_compile_features(mapassist_yolox_contract_test PRIVATE cxx_std_17)
+    target_include_directories(mapassist_yolox_contract_test
+                               PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    add_test(NAME mapassist_yolox_contract
+             COMMAND mapassist_yolox_contract_test)
 endif()
