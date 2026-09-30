@@ -1,44 +1,46 @@
-# 小地图玩家头像：218 张种子与主动学习批次
+# 小地图玩家头像：合并后的人工队列与候选排序器 v2
 
 更新时间：2026-09-30
 
 ## 当前结论
 
-首轮人工复核的 218 张已经能显著改善复核建议，但还不能直接产生可发布的玩家定位模型。当前最合适的用途是主动学习：让模型从剩余图片里挑少量高价值样本，再由人复核，而不是继续清洗全部 1,021 张。
+首轮主动学习批次的人工结果已经合并到 `data/private/minimap-player-review-queue-v1`。当前队列有 338 个人工终态：276 `corrected`、61 `negative`、1 `skip`；其中 337 个可训练（`corrected` + `negative`）。另有 901 个 `pending`，保留为待复核积压；后续按优先级处理，不把全量清洗 901 张列为前置要求。
 
-首轮人工结果为 174 张正例、174 个玩家框和 44 张负例，来自 video1-HD、video2-HD、video3-HD。审计发现 3 张 `corrected` 图片同时保留了旧机器框和后来补画的正确框。由于一帧最多只有一个自身头像，并且旧框与 `suggested_boxes` 完全相同，已在完整 SQLite/manifest 备份后删除这 3 个旧框。修复记录位于私有队列的 `single-box-repair-audit.json`，没有改动其它 215 张人工结果。
+候选排序器 v2 严格复用首版流程：MPS、seed `20260930`、25 轮、batch size 96、候选绿色环 patch、仅使用人工 `corrected`／`negative` 标签。训练 split 使用 208 帧，pooled val 使用 129 帧；`skip` 不进入训练或评估。active batch 已并入源队列，没有作为独立代表性测试集。
 
-私有队列中的 `queue-audit.json` 是 1,239 张任务刚生成时的构建快照，保留其“全部 pending”历史记录，不代表当前复核进度。当前 174/44/1,021 状态以只读学习报告和实时 SQLite 为准。
+## v2 开发诊断
 
-原绿色圆环规则在修复后的 218 张上只有 31 个正确建议、3 个错误建议和 140 个漏检，frame-level precision 为 91.2%，recall 为 17.8%。它适合生成候选，不能单独承担预标。
+阈值 `0.81` 在 pooled val 上按 precision ≥95% 后最大化 recall 选择。所有逐视频结果使用这一共同阈值，没有按视频单独调阈值。中心误差只统计命中的人工框，单位为像素。
 
-## 第一轮学习诊断
+| 开发来源 | TP/FP/FN/TN | Precision | Recall | F1 | 中心误差均值 / P95 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| pooled val（video2/11/13） | 84/4/9/32 | 95.4545% | 90.3226% | 92.8177% | 4.3656 / 12.8733 px |
+| video2-HD | 66/3/5/26 | 95.6522% | 92.9577% | 94.2857% | 4.5348 / 12.6490 px |
+| video11-HD | 13/0/1/1 | 100.0000% | 92.8571% | 96.2963% | 3.4698 / 14.2699 px |
+| video13 | 5/1/3/5 | 83.3333% | 62.5000% | 71.4286% | 4.4619 / 13.2544 px |
 
-正式 CLI 候选排序器以 video1+video3 的 118 张已复核图片训练，用完整 video2 的 100 张已复核图片作开发验证。训练使用 MPS、seed `20260930`、25 轮，阈值在 video2 上选择，因此这些数字是开发诊断，不是独立测试成绩：
+video13 是跨来源开发诊断，precision、recall 和 F1 明显低于 video2／video11；它已经参与模型与阈值判断，不能称为独立 test 或最终门禁成绩。上述结果全部是开发集诊断，不代表 Android 能力或发布能力。
 
-- TP 66、FP 2、FN 5、TN 27；
-- precision 97.1%；
-- recall 93.0%；
-- 中心误差均值 4.7 px，P95 12.9 px。
+## 复现命令与产物
 
-正式脚本耗时约 365 秒，以只读 SQLite 扫描全部 1,021 张 `pending`，生成 700 个达到开发阈值的建议框。联系表仍暴露出明显的域外假阳性：绿色方形地图标记、局部绿色特效和地图装饰会被误认为玩家头像。因此没有把这些预测直接覆盖进全量队列，也没有把上述开发数字写成 Android 或 Release 能力。输出位于忽略目录 `build/player-label-audit/candidate-ranker-v1-20260930`，三项产物均标记为 `review_aid_non_release`。
-
-## 120 张主动学习批次
-
-当前默认网页入口是：
-
-```text
-data/private/minimap-player-active-review-v2
+```bash
+PYTHONPATH=. .venv/bin/python training/learn_minimap_player_suggestions.py \
+  --source data/private/minimap-player-review-queue-v1 \
+  --output build/player-label-audit/candidate-ranker-v2-338 \
+  --seed 20260930 --epochs 25 --batch-size 96 \
+  --pending-batch-size 8 --device auto
 ```
 
-从尚未复核的 video3/4/5/7/8/10/11/13 各选 15 张，共 120 张：
+源 manifest SHA-256：`ff8d9a35647456391a9a8cd63683b0ec59744aae38121cd585fd7126daf33a27`。
 
-- 42 张高分候选；
-- 47 张临界候选；
-- 13 张低分／机器空框；
-- 14 张经联系表发现的绿色方形标记等困难案例；
-- 4 张用于补足部分来源的时间覆盖。
+v2 产物位于忽略目录 `build/player-label-audit/candidate-ranker-v2-338`，均标记为 `review_aid_non_release`：
 
-其中 100 张带可编辑建议框，20 张没有建议框；所有 120 张在 SQLite 和 manifest 中均为 `pending`。批次清单和每帧元数据都明确记录建议来自学习排序器，不再继承旧绿色规则的来源说明。video9、video12 仍封存，未用于预测、选择或查看结果。生成审计位于私有批次的 `audit.json`；机器框与选择分数都不是人工真值、训练真值、评测证据或发布能力证据。
+- `checkpoint.pt`：`eab10db1176ebd90c16a4f919fb346c21266b4e8d31f5fbf939e783f4ef32793`
+- `report.json`：`32fb10ed766c5d19aab39e94251e016b3c6213013b8ad4b224e931ad991f41c4`
+- `pending-predictions.json`：`7f7be016ee996d3dd48bbe6c1bc77110b0b53372c25d6219e34dfd729cef5873`
 
-复核完成后先合并这 120 张的人工结果，再重新训练候选排序器。video11、video13 在此轮只作跨来源开发诊断；真正的发布门禁仍需整场、未参与阈值选择的留出数据。玩家 precision ≥95%、可见帧 recall ≥90%、中心误差 P95 ≤小地图短边 3% 三项同时满足前，Android 中的玩家轨迹继续保持禁用。
+模型为复核排序辅助器，不是 ground truth、评测证据或 Android 发布模型；没有导出、替换或启用 Android 模型与 profile。
+
+## 数据边界
+
+v2 只读取合并后的源队列 manifest、SQLite 和其中允许的帧。`pending-predictions.json` 为 901 张 pending 的复核建议，其中 623 张有建议框、278 张无建议框；机器建议不覆盖人工标签，也不作为训练真值。video9 和 video12 继续封存，本轮未读取、未预标、未查看预测。

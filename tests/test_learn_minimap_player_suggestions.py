@@ -13,6 +13,7 @@ from training.learn_minimap_player_suggestions import (
     choose_threshold,
     final_boxes,
     frame_metrics,
+    frame_metrics_by_match,
     manifest_match_index,
 )
 
@@ -65,6 +66,27 @@ def test_frame_metrics_is_one_prediction_per_frame() -> None:
     assert metrics["fp"] == 1
     assert metrics["fn"] == 0
     assert metrics["tn"] == 0
+
+
+def test_frame_metrics_by_match_uses_one_shared_threshold() -> None:
+    scored = [
+        {
+            "match_id": "video2-hd-player",
+            "ground_truth": [(10.0, 10.0, [0.1, 0.1, 0.02, 0.02])],
+            "scored_items": [{"x": 10, "y": 10, "probability": 0.8}],
+        },
+        {
+            "match_id": "video11-hd-player",
+            "ground_truth": [],
+            "scored_items": [{"x": 20, "y": 20, "probability": 0.8}],
+        },
+    ]
+    metrics = frame_metrics_by_match(scored, 0.5)
+    assert list(metrics) == ["video11-hd-player", "video2-hd-player"]
+    assert metrics["video2-hd-player"]["recall"] == 1.0
+    assert metrics["video11-hd-player"]["precision"] == 0.0
+    with pytest.raises(ValueError, match="missing a match_id"):
+        frame_metrics_by_match([{"ground_truth": [], "scored_items": []}], 0.5)
 
 
 def test_manifest_index_rejects_sealed_source_before_work() -> None:

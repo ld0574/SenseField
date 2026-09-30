@@ -750,6 +750,30 @@ def _threshold_metrics(scored: Sequence[Mapping[str, Any]]) -> list[dict[str, An
             for threshold in (index / 100 for index in range(5, 100))]
 
 
+def frame_metrics_by_match(
+        scored_records: Sequence[Mapping[str, Any]],
+        threshold: float,
+        center_tolerance_px: float = FRAME_CENTER_TOLERANCE_PX,
+        ) -> dict[str, dict[str, Any]]:
+    """Compute fixed-threshold frame metrics for each source match.
+
+    The threshold is supplied by the aggregate development split.  This
+    helper deliberately does not select a threshold per match, so the
+    per-video values remain comparable and cannot silently overfit a small
+    source-specific sample.
+    """
+    grouped: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for record in scored_records:
+        match_id = record.get("match_id")
+        if not isinstance(match_id, str) or not match_id:
+            raise ValueError("scored record is missing a match_id")
+        grouped[match_id].append(record)
+    return {
+        match_id: frame_metrics(records, threshold, center_tolerance_px)
+        for match_id, records in sorted(grouped.items())
+    }
+
+
 def _prediction_for_record(record: Mapping[str, Any], threshold: float) -> dict[str, Any]:
     ranked = sorted(record.get("scored_items", []),
                     key=lambda item: item["probability"], reverse=True)
@@ -846,6 +870,12 @@ def run(source: Path, output: Path, *, seed: int = DEFAULT_SEED,
     threshold_candidates = _threshold_metrics(scored_val)
     best = choose_threshold(threshold_candidates)
     train_at_threshold = frame_metrics(scored_train, best["threshold"])
+    train_at_threshold["by_match"] = frame_metrics_by_match(
+        scored_train, best["threshold"],
+    )
+    validation_by_match = frame_metrics_by_match(
+        scored_val, best["threshold"],
+    )
     training_task_count = len(train_records)
     training_positive_frames = sum(
         bool(record["ground_truth"]) for record in train_records
@@ -948,8 +978,10 @@ def run(source: Path, output: Path, *, seed: int = DEFAULT_SEED,
             "split": "val",
             "task_count": validation_task_count,
             "status_counts": validation_status_counts,
+            "threshold_selection_scope": "aggregate_val",
             "threshold_selection": best,
             "metrics_at_selected_threshold": best,
+            "by_match": validation_by_match,
         },
         "train_at_selected_threshold": train_at_threshold,
         "pending": {
