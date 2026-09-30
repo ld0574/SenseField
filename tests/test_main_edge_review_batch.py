@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -9,7 +10,12 @@ import pytest
 from PIL import Image
 
 from mapassist.annotation_server import AnnotationStore
-from training.audit_main_edge_queue import _database_content_sha256, run
+from mapassist.finalize_review import finalize
+from training.audit_main_edge_queue import (
+    _database_content_sha256,
+    enrich_review_manifest,
+    run,
+)
 
 
 def _edge_source(tmp_path: Path) -> Path:
@@ -17,6 +23,9 @@ def _edge_source(tmp_path: Path) -> Path:
     queue = source / "queue"
     media = queue / "train/video1-edge"
     media.mkdir(parents=True)
+    video = source / "video" / "video1-edge.mp4"
+    video.parent.mkdir(parents=True)
+    video.write_bytes(b"fixture video metadata only")
     classes = (
         ["empty"] * 5 + ["left_only"] * 3 + ["both"] * 2
         + ["right_only"] * 10
@@ -53,7 +62,17 @@ def _edge_source(tmp_path: Path) -> Path:
         "review_mode": "manual",
         "roi": [0.0, 0.0, 1.0, 1.0],
         "matches": [{
-            "id": "video1-edge", "split": "train", "samples": samples,
+            "id": "video1-edge",
+            "split": "train",
+            "video": str(video),
+            "video_sha256": hashlib.sha256(video.read_bytes()).hexdigest(),
+            "orientation": {
+                "source_coded_size": [96, 54],
+                "display_size": [96, 54],
+                "display_rotation_degrees": 0,
+                "queue_frames_must_be_display_oriented": True,
+            },
+            "samples": samples,
         }],
     }
     (queue / "review-manifest.json").write_text(
@@ -97,6 +116,79 @@ def test_edge_batch_is_self_contained_before_server_reopen(tmp_path: Path) -> No
     assert audit["output_batch"]["database_content_sha256"] == (
         _database_content_sha256(output / "annotations.sqlite3")
     )
+
+
+def test_edge_batch_propagates_source_metadata_for_finalization(tmp_path: Path) -> None:
+    source = _edge_source(tmp_path)
+    output = tmp_path / "edge-focus"
+    run(source, output)
+
+    manifest_path = output / "review-manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    source_manifest = json.loads(
+        (source / "queue/review-manifest.json").read_text()
+    )
+    expected = source_manifest["matches"][0]
+    match = manifest["matches"][0]
+    assert match["video"] == expected["video"]
+    assert match["video_sha256"] == expected["video_sha256"]
+    assert match["orientation"] == expected["orientation"]
+
+    for sample in match["samples"]:
+        sample["review_status"] = "negative"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    detections = tmp_path / "detections.json"
+    finalize(manifest_path, detections)
+    exported = json.loads(detections.read_text())
+    exported_match = exported["matches"][0]
+    assert exported_match["video"] == expected["video"]
+    assert exported_match["video_sha256"] == expected["video_sha256"]
+    assert exported_match["orientation"] == expected["orientation"]
+
+
+def test_enrich_existing_batch_preserves_reviewed_samples(tmp_path: Path) -> None:
+    source = _edge_source(tmp_path)
+    generated = tmp_path / "generated"
+    run(source, generated)
+
+    legacy = tmp_path / "legacy"
+    legacy.mkdir()
+    legacy_path = legacy / "review-manifest.json"
+    legacy_document = json.loads(
+        (generated / "review-manifest.json").read_text()
+    )
+    for match in legacy_document["matches"]:
+        match.pop("video")
+        match.pop("video_sha256")
+        match.pop("orientation")
+        match["samples"][0]["review_status"] = "corrected"
+        match["samples"][0]["reviewed_boxes"] = [[0.1, 0.2, 0.03, 0.04]]
+        match["samples"][0]["reviewed_categories"] = ["main_enemy"]
+    legacy_path.write_text(
+        json.dumps(legacy_document, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    before = legacy_path.read_bytes()
+    enriched_path = legacy / "review-manifest.enriched.json"
+
+    result = enrich_review_manifest(
+        legacy_path,
+        source / "queue/review-manifest.json",
+        enriched_path,
+    )
+
+    assert result["matches"] == 1
+    assert result["added_fields"] == 3
+    assert legacy_path.read_bytes() == before
+    enriched = json.loads(enriched_path.read_text())
+    expected = json.loads(
+        (source / "queue/review-manifest.json").read_text()
+    )["matches"][0]
+    actual = enriched["matches"][0]
+    assert actual["video"] == expected["video"]
+    assert actual["video_sha256"] == expected["video_sha256"]
+    assert actual["orientation"] == expected["orientation"]
+    assert actual["samples"] == legacy_document["matches"][0]["samples"]
 
 
 def test_edge_batch_never_replaces_source_directories(tmp_path: Path) -> None:

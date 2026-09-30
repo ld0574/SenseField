@@ -17,22 +17,29 @@ sealed video9/video12 identifiers.
 from __future__ import annotations
 
 import argparse
+import copy
 import csv
 import hashlib
 import json
 import math
+import os
 import shutil
 import sqlite3
+import tempfile
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from PIL import Image, ImageDraw
 
 from mapassist.annotation_server import AnnotationStore
+from mapassist.orientation import from_manifest
 
 
 SEALED_PREFIXES = ("video9", "video12")
+SOURCE_METADATA_KEYS = ("video", "video_sha256", "orientation")
+
+
 def _json(value: Any) -> Any:
     return json.loads(value) if isinstance(value, str) else value
 
@@ -54,6 +61,174 @@ def _canonical_sha256(value: Any) -> str:
     payload = json.dumps(value, ensure_ascii=False, sort_keys=True,
                          separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
+
+
+def _write_json_atomic(path: Path, value: Any) -> None:
+    """Write JSON through a sibling temporary file and atomic replace."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent,
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(value, stream, ensure_ascii=False, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _source_metadata(source_manifest: Path, match: dict[str, Any],
+                     document: dict[str, Any]) -> dict[str, Any]:
+    """Extract the immutable media metadata needed by review finalization."""
+    match_id = match.get("id")
+    if not isinstance(match_id, str) or not match_id:
+        raise ValueError(f"source manifest has a match without a valid id: {source_manifest}")
+    if _sealed(match_id):
+        raise ValueError(f"sealed match is present in source manifest: {match_id}")
+
+    video = match.get("video")
+    if not isinstance(video, str) or not video:
+        video = match.get("source_video_path")
+    if not isinstance(video, str) or not video:
+        raise ValueError(f"{match_id} needs video or source_video_path in {source_manifest}")
+
+    video_sha256 = match.get("video_sha256")
+    if not isinstance(video_sha256, str) or not video_sha256:
+        video_sha256 = match.get("source_video_sha256")
+    if (not isinstance(video_sha256, str) or len(video_sha256) != 64 or
+            any(character not in "0123456789abcdefABCDEF"
+                for character in video_sha256)):
+        raise ValueError(f"{match_id} video_sha256 must be 64 hexadecimal characters")
+
+    orientation = from_manifest(match, match_id)
+    if orientation is None:
+        orientation = from_manifest(document, f"{source_manifest} orientation")
+    if orientation is None:
+        raise ValueError(f"{match_id} needs orientation metadata in {source_manifest}")
+
+    return {
+        "video": video,
+        "video_sha256": video_sha256.lower(),
+        "orientation": orientation,
+    }
+
+
+def _load_source_metadata(source_manifest: Path) -> dict[str, dict[str, Any]]:
+    """Load per-match source media metadata without opening any video files."""
+    source_manifest = source_manifest.resolve()
+    try:
+        document = json.loads(source_manifest.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise FileNotFoundError(source_manifest) from error
+    except json.JSONDecodeError as error:
+        raise ValueError(f"invalid source manifest JSON: {source_manifest}") from error
+    if not isinstance(document, dict):
+        raise ValueError(f"source manifest must contain an object: {source_manifest}")
+    matches = document.get("matches")
+    if not isinstance(matches, list) or not matches:
+        raise ValueError(f"source manifest needs matches: {source_manifest}")
+    metadata: dict[str, dict[str, Any]] = {}
+    for match in matches:
+        if not isinstance(match, dict):
+            raise ValueError(f"source manifest match must be an object: {source_manifest}")
+        match_id = match.get("id")
+        if not isinstance(match_id, str) or not match_id:
+            raise ValueError(f"source manifest has a match without a valid id: {source_manifest}")
+        if match_id in metadata:
+            raise ValueError(f"duplicate source manifest match id: {match_id}")
+        metadata[match_id] = _source_metadata(source_manifest, match, document)
+    return metadata
+
+
+def _sample_payload_sha256(document: dict[str, Any]) -> str:
+    """Hash labels and sample provenance while ignoring match metadata fields."""
+    matches = document.get("matches")
+    if not isinstance(matches, list):
+        raise ValueError("review manifest needs matches")
+    payload = []
+    for match in matches:
+        if not isinstance(match, dict):
+            raise ValueError("review manifest match must be an object")
+        payload.append({
+            "id": match.get("id"),
+            "split": match.get("split"),
+            "samples": copy.deepcopy(match.get("samples")),
+        })
+    return _canonical_sha256(payload)
+
+
+def enrich_review_manifest(review_manifest: Path, source_manifest: Path,
+                           output: Path | None = None) -> dict[str, Any]:
+    """Add source media metadata while preserving every reviewed sample.
+
+    The default output is a sibling ``review-manifest.enriched.json`` so a
+    completed batch can be repaired without replacing its original manifest.
+    Passing the original path explicitly is supported for a deliberate,
+    atomic in-place repair.
+    """
+    review_manifest = review_manifest.resolve()
+    source_manifest = source_manifest.resolve()
+    if review_manifest == source_manifest:
+        raise ValueError("review manifest and source manifest must differ")
+    output = (output or review_manifest.with_name("review-manifest.enriched.json")).resolve()
+
+    try:
+        document = json.loads(review_manifest.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise FileNotFoundError(review_manifest) from error
+    except json.JSONDecodeError as error:
+        raise ValueError(f"invalid review manifest JSON: {review_manifest}") from error
+    if not isinstance(document, dict):
+        raise ValueError(f"review manifest must contain an object: {review_manifest}")
+    matches = document.get("matches")
+    if not isinstance(matches, list) or not matches:
+        raise ValueError(f"review manifest needs matches: {review_manifest}")
+
+    metadata_by_id = _load_source_metadata(source_manifest)
+    labels_before = _sample_payload_sha256(document)
+    enriched = copy.deepcopy(document)
+    added_fields = 0
+    for match in enriched["matches"]:
+        if not isinstance(match, dict):
+            raise ValueError("review manifest match must be an object")
+        match_id = match.get("id")
+        if not isinstance(match_id, str) or not match_id:
+            raise ValueError("review manifest has a match without a valid id")
+        if _sealed(match_id):
+            raise ValueError(f"sealed match is present in review manifest: {match_id}")
+        try:
+            metadata = metadata_by_id[match_id]
+        except KeyError as error:
+            raise ValueError(
+                f"source manifest has no metadata for review match: {match_id}"
+            ) from error
+        for key in SOURCE_METADATA_KEYS:
+            existing = match.get(key)
+            if existing is not None:
+                if key == "orientation":
+                    existing = from_manifest(match, match_id)
+                elif key == "video_sha256" and isinstance(existing, str):
+                    existing = existing.lower()
+                if existing != metadata[key]:
+                    raise ValueError(f"{match_id} has conflicting {key} metadata")
+            else:
+                added_fields += 1
+            match[key] = copy.deepcopy(metadata[key])
+
+    labels_after = _sample_payload_sha256(enriched)
+    if labels_after != labels_before:
+        raise AssertionError("metadata enrichment changed reviewed samples")
+    _write_json_atomic(output, enriched)
+    return {
+        "output": str(output),
+        "matches": len(enriched["matches"]),
+        "added_fields": added_fields,
+        "sample_payload_sha256": labels_after,
+    }
 
 
 def _dhash(path: Path) -> int:
@@ -486,7 +661,8 @@ def _write_contacts(output: Path, selected: list[dict[str, Any]]) -> None:
 
 
 def _write_output(output: Path, selected: list[dict[str, Any]], audit: dict[str, Any],
-                  selection: dict[str, Any], queue_root: Path) -> None:
+                  selection: dict[str, Any], queue_root: Path,
+                  metadata_by_match: dict[str, dict[str, Any]]) -> None:
     if output in {queue_root, queue_root.parent}:
         raise ValueError("Output directory must differ from the source queue")
     if output.exists():
@@ -520,6 +696,12 @@ def _write_output(output: Path, selected: list[dict[str, Any]], audit: dict[str,
     }
     for task_id, source_row in enumerate(selected, start=1):
         match_id = source_row["match_id"]
+        try:
+            source_metadata = metadata_by_match[match_id]
+        except KeyError as error:
+            raise ValueError(
+                f"source manifest has no metadata for selected match: {match_id}"
+            ) from error
         target_frame = Path("frames") / source_row["split"] / match_id / Path(source_row["frame"]).name
         target_overlay = Path("overlays") / source_row["split"] / match_id / Path(source_row["overlay"]).name
         _copy_media(queue_root / source_row["frame"], output / target_frame)
@@ -528,7 +710,12 @@ def _write_output(output: Path, selected: list[dict[str, Any]], audit: dict[str,
         source_row["batch_frame"] = str(target_frame)
         source_row["batch_overlay"] = str(target_overlay)
         item = matches.setdefault(match_id, {
-            "id": match_id, "split": source_row["split"], "samples": []
+            "id": match_id,
+            "split": source_row["split"],
+            "video": source_metadata["video"],
+            "video_sha256": source_metadata["video_sha256"],
+            "orientation": copy.deepcopy(source_metadata["orientation"]),
+            "samples": [],
         })
         item["samples"].append({
             "at_ms": source_row["at_ms"],
@@ -621,12 +808,14 @@ def run(source: Path, output: Path) -> dict[str, Any]:
     db_path = queue_root / "annotations.sqlite3"
     if not db_path.is_file():
         raise FileNotFoundError(db_path)
+    source_manifest = queue_root / "review-manifest.json"
+    metadata_by_match = _load_source_metadata(source_manifest)
     rows = _load_rows(db_path, queue_root)
     audit = _audit(rows, queue_root)
     selected, selection = _select_batch(rows)
     if any(_sealed(row["match_id"]) for row in selected):
         raise AssertionError("sealed match leaked into selected batch")
-    _write_output(output, selected, audit, selection, queue_root)
+    _write_output(output, selected, audit, selection, queue_root, metadata_by_match)
     return {
         "audit": audit,
         "selection": selection,
@@ -637,17 +826,51 @@ def run(source: Path, output: Path) -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--enrich-existing", type=Path,
+        help=("copy source video/video_sha256/orientation metadata into an "
+              "existing review manifest; defaults to a sidecar output"),
+    )
+    parser.add_argument(
+        "--source-manifest", type=Path,
+        help="source queue manifest used by --enrich-existing",
+    )
+    parser.add_argument(
+        "--in-place", action="store_true",
+        help="with --enrich-existing, atomically replace that manifest",
+    )
+    parser.add_argument(
         "--source", type=Path,
         default=Path("data/private/main-edge-review-v1"),
         help="private main-edge-review-v1 directory",
     )
     parser.add_argument(
         "--output", type=Path,
-        default=Path("data/private/main-edge-review-v1/review-batch-v1"),
-        help="new empty directory for the independent review batch",
+        default=None,
+        help=("new empty directory for the independent review batch, or an "
+              "output manifest path with --enrich-existing"),
     )
     args = parser.parse_args()
-    result = run(args.source.resolve(), args.output.resolve())
+    if args.enrich_existing is not None:
+        if args.in_place and args.output is not None:
+            parser.error("--in-place cannot be combined with --output")
+        source_manifest = args.source_manifest
+        if source_manifest is None:
+            source_manifest = (
+                args.enrich_existing.resolve().parent.parent
+                / "queue" / "review-manifest.json"
+            )
+        target = args.enrich_existing if args.in_place else args.output
+        if target is None:
+            target = args.enrich_existing.with_name("review-manifest.enriched.json")
+        result = enrich_review_manifest(
+            args.enrich_existing, source_manifest, target,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    if args.in_place or args.source_manifest is not None:
+        parser.error("--in-place and --source-manifest require --enrich-existing")
+    output = args.output or Path("data/private/main-edge-review-v1/review-batch-v1")
+    result = run(args.source.resolve(), output.resolve())
     print(json.dumps({
         "output": result["output"],
         "source_rows": result["audit"]["counts"]["rows"],
