@@ -21,11 +21,17 @@ import java.util.List;
 /** Non-interactive, opt-in overlay for confirmed minimap tracks. */
 final class MinimapOverlay implements AutoCloseable {
     private static final String TAG = "MapAssistOverlay";
+    private static final int SELF_CAPTURE_PROBE_LEFT_COLOR = Color.rgb(
+            OverlayCaptureGuard.PROBE_LEFT_RED, OverlayCaptureGuard.PROBE_LEFT_GREEN,
+            OverlayCaptureGuard.PROBE_LEFT_BLUE);
+    private static final int SELF_CAPTURE_PROBE_RIGHT_COLOR = Color.rgb(
+            OverlayCaptureGuard.PROBE_RIGHT_RED, OverlayCaptureGuard.PROBE_RIGHT_GREEN,
+            OverlayCaptureGuard.PROBE_RIGHT_BLUE);
     // Kept as ABI documentation for callers compiled against the 0.2.2
     // marker packet. New callers should use NativeFrameResult instead.
     private static final int MARKER_OFFSET = 12;
     static final int MARKER_STRIDE = 9;
-    private static final int MAX_MARKERS = 9;
+    static final int MAX_MARKERS = 9;
 
     private final WindowManager windows;
     private final MarkerView view;
@@ -33,7 +39,7 @@ final class MinimapOverlay implements AutoCloseable {
     private final WindowManager.LayoutParams layoutParams;
     // WindowManager and View mutations are confined to the main looper. The
     // capture worker only builds immutable marker snapshots and posts them.
-    private boolean attached;
+    private volatile boolean attached;
     private volatile boolean closed;
     private List<Marker> pendingMarkers = Collections.emptyList();
 
@@ -91,8 +97,8 @@ final class MinimapOverlay implements AutoCloseable {
         }
     }
 
-    void update(NativeFrameResult frame) {
-        if (closed || frame == null) return;
+    boolean update(NativeFrameResult frame) {
+        if (closed || frame == null) return false;
         List<Marker> markers = new ArrayList<>(Math.min(MAX_MARKERS, frame.entities.size()));
         for (TrackedEntity entity : frame.entities) {
             if (!entity.isMinimapTrack() || entity.state == TrackedEntity.STATE_EXPIRED
@@ -112,6 +118,11 @@ final class MinimapOverlay implements AutoCloseable {
             pendingMarkers = snapshot;
             if (attached) view.setMarkers(snapshot);
         });
+        return attached;
+    }
+
+    boolean isClosed() {
+        return closed;
     }
 
     private static boolean validNormalizedBox(TrackedEntity entity) {
@@ -180,6 +191,7 @@ final class MinimapOverlay implements AutoCloseable {
     private static final class MarkerView extends View {
         private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint probe = new Paint();
         private final Path arrow = new Path();
         private final float density;
         private List<Marker> markers = Collections.emptyList();
@@ -230,6 +242,20 @@ final class MinimapOverlay implements AutoCloseable {
                         Color.argb(245, player ? 159 : 255, player ? 235 : 211,
                                 player ? 255 : 92));
             }
+            // FLAG_SECURE should keep this pixel out of MediaProjection. If a
+            // device/OEM still includes it, CaptureService latches off only
+            // this visual layer while retaining native tracking and audio.
+            probe.setStyle(Paint.Style.FILL);
+            probe.setAntiAlias(false);
+            probe.setColor(SELF_CAPTURE_PROBE_LEFT_COLOR);
+            canvas.drawRect(centerX - OverlayCaptureGuard.PROBE_HALF_WIDTH_PX,
+                    centerY - OverlayCaptureGuard.PROBE_HALF_HEIGHT_PX,
+                    centerX, centerY + OverlayCaptureGuard.PROBE_HALF_HEIGHT_PX, probe);
+            probe.setColor(SELF_CAPTURE_PROBE_RIGHT_COLOR);
+            canvas.drawRect(centerX,
+                    centerY - OverlayCaptureGuard.PROBE_HALF_HEIGHT_PX,
+                    centerX + OverlayCaptureGuard.PROBE_HALF_WIDTH_PX,
+                    centerY + OverlayCaptureGuard.PROBE_HALF_HEIGHT_PX, probe);
         }
 
         private void drawDirection(Canvas canvas, float x, float y, float radius,

@@ -52,6 +52,7 @@ public final class CaptureService extends Service {
     private CueDispatcher cueDispatcher;
     private CueSettings cueSettings;
     private MinimapOverlay minimapOverlay;
+    private final OverlayCaptureGuard overlayCaptureGuard = new OverlayCaptureGuard();
     private final CueArbiter cueArbiter = new CueArbiter();
     private final CueArbiter.DirectCueOutput directCueOutput =
             new CueArbiter.DirectCueOutput() {
@@ -380,6 +381,7 @@ public final class CaptureService extends Service {
         cueArbiter.reset();
         clearCueCategoriesLocked();
         if (minimapOverlay != null) minimapOverlay.clear();
+        overlayCaptureGuard.clearMarkers();
     }
 
     /** Native/session resets invalidate every cue that could outlive the frame stream. */
@@ -410,6 +412,7 @@ public final class CaptureService extends Service {
             cueDispatcher.clearCategory(CueRequest.Category.VISION_MEMORY);
         }
         boolean visualEnabled = feedbackEnabled &&
+                !overlayCaptureGuard.isSuppressed() &&
                 (cueSettings.enabledChannels(CueRequest.Category.VISION_MEMORY)
                         & CueRequest.CHANNEL_VISUAL) != 0;
         if (visualEnabled) {
@@ -418,6 +421,9 @@ public final class CaptureService extends Service {
             minimapOverlay.clear();
             minimapOverlay.close();
             minimapOverlay = null;
+            overlayCaptureGuard.clearMarkers();
+        } else if (!overlayCaptureGuard.isSuppressed()) {
+            overlayCaptureGuard.clearMarkers();
         }
     }
 
@@ -624,6 +630,14 @@ public final class CaptureService extends Service {
                 lastFrameLandscape = landscape;
                 if (landscape && !paused && nativeSession != 0) {
                     syncVisionMemoryOutputsLocked();
+                    if (minimapOverlay != null && overlayCaptureGuard.observeFrame(
+                            pixels, width, height, plane.getRowStride())) {
+                        Log.w(TAG, "Overlay was re-captured by MediaProjection; "
+                                + "visual overlay disabled for this session");
+                        minimapOverlay.clear();
+                        minimapOverlay.close();
+                        minimapOverlay = null;
+                    }
                     long processingAtMs = SystemClock.elapsedRealtime();
                     captureHealth.frameProcessed(processingAtMs);
                     recordLandscapeProcessedFrameLocked(processingAtMs);
@@ -645,7 +659,17 @@ public final class CaptureService extends Service {
                                     + frame.minimapRoi.width() + ","
                                     + frame.minimapRoi.height());
                         }
-                        if (minimapOverlay != null) minimapOverlay.update(frame);
+                        if (minimapOverlay != null) {
+                            if (minimapOverlay.update(frame)) {
+                                overlayCaptureGuard.recordRenderedFrame(frame);
+                            } else {
+                                overlayCaptureGuard.clearMarkers();
+                                if (minimapOverlay.isClosed()) {
+                                    minimapOverlay.close();
+                                    minimapOverlay = null;
+                                }
+                            }
+                        }
                         // Let the arbiter submit a direct cue through the same
                         // dispatcher policy used by all other output. A
                         // minimap APPEAR is suppressed only after that direct
@@ -951,6 +975,7 @@ public final class CaptureService extends Service {
             lastLoggedLocatorState = Integer.MIN_VALUE;
             lastFrameLandscape = false;
             visionMemoryEnabled = false;
+            overlayCaptureGuard.reset();
             profileName = "";
             auditSessionId = UUID.randomUUID().toString();
             auditSessionStartedAtMs = startedAtMs;
@@ -1043,6 +1068,7 @@ public final class CaptureService extends Service {
             minimapOverlay.close();
             minimapOverlay = null;
         }
+        overlayCaptureGuard.reset();
         if (worker != null && displayWatchdog != null) {
             worker.removeCallbacks(displayWatchdog);
             displayWatchdog = null;
