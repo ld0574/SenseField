@@ -14,7 +14,7 @@ cmake --build build/native -j4
 PYTHONPATH=python python3 -m mapassist.synthetic_android --output-dir build/synthetic_android
 ```
 
-生成的 `fixture-android-loop.mp4` 是约 63 秒的合成录像。`android-screen-profile.json` 内嵌放大后的敌人及危险信号模板，用于验证模板识别链路；`android-ring-profile.json` 启用小地图红环、主画面模板和危险信号模板，用于单独确认红环识别经过 JNI、事件排序和 Android 音频队列的完整链路。两份配置仅适用于 AOSP Gallery 将 320×180 视频以 6 倍大小显示、左侧留 304 像素空白的 2400×1080 屏幕。播放器布局或分辨率变化后，应重新计算区域与模板。配置的 `verified` 仍为 `false`，不可当作游戏配置。
+生成的 `fixture-android-loop.mp4` 是约 63 秒的合成录像。`android-screen-profile.json` 内嵌放大后的敌人及危险信号模板，用于验证模板识别链路；`android-ring-profile.json` 启用小地图红环、主画面模板和危险信号模板，用于单独确认红环识别经过 JNI、事件排序和 Android 音频队列的完整链路。它们只是合成回归夹具，不是默认或发布 profile。两份配置仅适用于 AOSP Gallery 将 320×180 视频以 6 倍大小显示、左侧留 304 像素空白的 2400×1080 屏幕。播放器布局或分辨率变化后，应重新计算区域与模板。配置的 `verified` 仍为 `false`，不可当作游戏配置。
 
 将 APK 安装到该模拟器后，可用以下命令放入测试文件：
 

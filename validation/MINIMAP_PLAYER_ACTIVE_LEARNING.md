@@ -14,7 +14,7 @@
 
 v6 `metrics.json`、balanced checkpoint、fixed-val report 的 SHA-256 分别为 `cbf00864dd30a66dee39c11cc2a471650b8b7f5e8c3f4de9021923d0f0b70637`、`88a7de0332b18ce63539039fcbaccfd23f0499782818675f5698ffd0ede4ea46`、`d24e7e0a78d9636df9ebe5398f26f364b5acae3a3bdacba94d330afa8f36ee9b`。
 
-val 同时参与选模和阈值选择，test 为 0；上述数值只能称 development diagnostic，v6 不能接入 release。Android 已支持校验 metadata 声明的 `320–1024`、`32` 的倍数、正方形输入并按输入尺寸动态计算 anchors；默认 release assets/profile 仍为 320 单类 `minimap_enemy`，未启用 `minimap_player`。
+val 同时参与选模和阈值选择，test 为 0；上述数值只能称 development diagnostic。v6 512 双类模型已完成 ONNX/TorchScript/ncnn 导出，产物和报告位于忽略目录 `build/ignored/v6-512-export`：ONNX raw 严格门禁失败（最大误差 `0.0006387 > 0.0005`），但 12 张图的最终 detection arrays 全部一致；ncnn Android 等价严格门禁通过。2 线程桌面 preprocess+inference P95 为 `28.9552 ms`。本次未改 Android assets/profile；由于没有独立 test 或 Android 真机验证，v6 仍不能接入 release。Android 已支持校验 metadata 声明的 `320–1024`、`32` 的倍数、正方形输入并按输入尺寸动态计算 anchors；默认 release assets/profile 仍为 320 单类 `minimap_enemy`，未启用 `minimap_player`。
 
 ## 安全双类 v8 开发候选（v5 历史对照）
 
@@ -30,7 +30,7 @@ v3 320 是保留的基线：epoch 28、阈值 enemy/player `0.57/0.81`，player 
 
 val 已参与选模和阈值选择，没有独立 test，这些数值只能称 development diagnostic。
 
-双类 v8 未导出或接入 Android assets/profile；当前 Android/release 仍绑定单类 `minimap_enemy`。
+v6 512 双类模型已导出到忽略目录 `build/ignored/v6-512-export`，但未复制或接入 Android assets/profile；当前 Android/release 仍绑定单类 `minimap_enemy`。由于没有独立 test 或 Android 真机验证，仍未达到 release-ready。
 
 ### 安全双类 v8 复现命令
 
@@ -101,7 +101,7 @@ v2 产物位于忽略目录 `build/player-label-audit/candidate-ranker-v2-338`�
 - `report.json`：`32fb10ed766c5d19aab39e94251e016b3c6213013b8ad4b224e931ad991f41c4`
 - `pending-predictions.json`：`7f7be016ee996d3dd48bbe6c1bc77110b0b53372c25d6219e34dfd729cef5873`
 
-模型为复核排序辅助器，不是 ground truth、评测证据或 Android 发布模型；没有导出、替换或启用 Android 模型与 profile。
+这个 v2 排序器是复核辅助器，不是 ground truth、评测证据或 Android 发布模型；它没有导出，也没有替换或启用 Android 模型与 profile。后文的 v6 512 双类检测模型是另一项产物。
 
 ## 数据边界
 
