@@ -6,13 +6,70 @@ import argparse
 import copy
 import json
 import math
+import os
 import sys
+import tempfile
 from pathlib import Path
 
+from .dataset_scope import validate_dataset_scope
 from .orientation import from_manifest
 
 
 SPLITS = {"train", "val", "test"}
+
+
+def _has_symlink_component(path: Path) -> bool:
+    candidate = path.expanduser()
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+    for component in (candidate, *candidate.parents):
+        try:
+            if component.is_symlink():
+                return True
+        except OSError as error:
+            raise ValueError(f"cannot inspect output path: {path}") from error
+    return False
+
+
+def _output_path(manifests: list[Path], output: Path) -> Path:
+    raw = Path(output).expanduser()
+    if _has_symlink_component(raw):
+        raise ValueError(f"output must not use a symlink path: {output}")
+    try:
+        resolved = raw.resolve()
+    except (OSError, RuntimeError, ValueError) as error:
+        raise ValueError(f"cannot resolve output path: {output}") from error
+    if resolved.exists() and not resolved.is_file():
+        raise ValueError(f"output must be a file path: {output}")
+    for manifest in manifests:
+        input_path = Path(manifest).expanduser().resolve()
+        if resolved == input_path:
+            raise ValueError(f"output must not overwrite input manifest: {manifest}")
+        if resolved.exists() and input_path.exists():
+            try:
+                same_file = os.path.samefile(resolved, input_path)
+            except OSError:
+                same_file = False
+            if same_file:
+                raise ValueError(f"output must not overwrite input manifest: {manifest}")
+    return resolved
+
+
+def _write_json_atomic(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(value, stream, ensure_ascii=False, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _roi(value: object, label: str) -> list[float]:
@@ -49,6 +106,7 @@ def merge(manifests: list[Path], output: Path,
           split_overrides: dict[str, str] | None = None) -> dict:
     if not manifests:
         raise ValueError("At least one detection manifest is required")
+    output = _output_path(manifests, output)
     split_overrides = split_overrides or {}
     category = None
     classes: list[str] | None = None
@@ -57,10 +115,34 @@ def merge(manifests: list[Path], output: Path,
     seen_videos: set[Path] = set()
     used_overrides: set[str] = set()
     orientations = []
+    scope_seen = False
+    merged_scope: dict | None = None
     for manifest in manifests:
         data = json.loads(manifest.read_text(encoding="utf-8"))
         if data.get("schema_version") != 1:
             raise ValueError(f"Expected schema_version 1: {manifest}")
+        current_scope = (
+            validate_dataset_scope(
+                data["dataset_scope"],
+                f"{manifest} dataset_scope",
+                require_training_truth=True,
+            )
+            if "dataset_scope" in data else None
+        )
+        if (isinstance(current_scope, dict) and
+                current_scope["training_truth"] is False):
+            raise ValueError(
+                f"{manifest} dataset_scope.training_truth=false cannot be merged; "
+                "export diagnostic data separately"
+            )
+        if scope_seen and current_scope != merged_scope:
+            raise ValueError(
+                "Detection manifest dataset_scope metadata conflicts; all inputs "
+                "must omit it or use exactly the same training scope"
+            )
+        if not scope_seen:
+            scope_seen = True
+            merged_scope = current_scope
         current_category = data.get("category")
         if not isinstance(current_category, str) or not current_category:
             raise ValueError(f"Missing category: {manifest}")
@@ -160,13 +242,12 @@ def merge(manifests: list[Path], output: Path,
         raise ValueError(f"Split overrides did not match a recording: {', '.join(unused)}")
     result = {"schema_version": 1, "category": category,
               "classes": classes, "matches": matches}
+    if merged_scope is not None:
+        result["dataset_scope"] = copy.deepcopy(merged_scope)
     if orientations and all(item == orientations[0] for item in orientations):
         if orientations[0] is not None:
             result["orientation"] = orientations[0]
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    _write_json_atomic(output, result)
     counts = {split: 0 for split in sorted(SPLITS)}
     frames = {split: 0 for split in sorted(SPLITS)}
     boxes = {split: 0 for split in sorted(SPLITS)}

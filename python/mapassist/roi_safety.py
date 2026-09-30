@@ -99,8 +99,17 @@ def coco_roi_blocker(document: dict, split_name: str) -> str | None:
     if audit is None:
         return None
     contacts = audit["crop_edge_contacts"]
+    info = document.get("info", {})
+    scope = info.get("dataset_scope") if isinstance(info, dict) else None
+    diagnostic_scope = isinstance(scope, dict) and scope.get("training_truth") is False
     if (contacts or audit.get("training_eligible") is False or
             audit.get("usable_for_training_or_evaluation") is False):
+        if diagnostic_scope and not contacts:
+            # A diagnostic export intentionally reports overall training_eligible
+            # as false. Its scope gate is handled by the training entry point;
+            # this helper should continue to report only crop completeness so
+            # diagnostic evaluation remains possible when the ROI is safe.
+            return None
         count = len(contacts) if isinstance(contacts, list) else 1
         return (
             f"{split_name} COCO data have {count} target box(es) touching an "

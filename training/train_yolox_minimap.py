@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from mapassist.detection_evaluate import _match_boxes
+from mapassist.dataset_scope import coco_dataset_scope
 from mapassist.roi_safety import (
     assert_coco_boxes_within_images,
     assert_coco_roi_safe,
@@ -352,6 +353,12 @@ def _assert_roi_boundaries_clear(data_dir: Path) -> None:
         if not annotation_path.is_file():
             raise ValueError(f"Missing {split} annotations: {annotation_path}")
         document = json.loads(annotation_path.read_text(encoding="utf-8"))
+        scope = coco_dataset_scope(document, f"{split} COCO")
+        if isinstance(scope, dict) and scope.get("training_truth") is False:
+            raise ValueError(
+                f"{split} COCO dataset_scope.training_truth=false; "
+                "diagnostic-only data cannot be used for training"
+            )
         assert_coco_roi_safe(document, split)
         assert_coco_boxes_within_images(document, split)
 

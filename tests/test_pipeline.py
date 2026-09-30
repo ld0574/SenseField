@@ -1227,6 +1227,50 @@ def test_cue_before_visible_evidence_is_false_positive() -> None:
     assert result["main_enemy"]["fn"] == 1
 
 
+def test_detection_dataset_blocks_explicit_non_training_scope(tmp_path: Path) -> None:
+    manifest = tmp_path / "diagnostic.json"
+    scope = {
+        "label_semantics": "red_candidate_hard_negative_diagnostic",
+        "training_truth": False,
+        "enemy_hero_training_truth": False,
+        "release_eligible": False,
+    }
+    manifest.write_text(json.dumps({
+        "schema_version": 1,
+        "category": "main_enemy",
+        "dataset_scope": scope,
+        "matches": [],
+    }), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="training_truth=false"):
+        export_detection_dataset(manifest, tmp_path / "blocked")
+    assert not (tmp_path / "blocked").exists()
+
+    # The explicit override only changes the scope gate. Subsequent manifest
+    # validation still runs, so a malformed diagnostic set cannot slip through.
+    with pytest.raises(ValueError, match="at least one match"):
+        export_detection_dataset(
+            manifest, tmp_path / "diagnostic", allow_diagnostic_scope=True,
+        )
+    assert not (tmp_path / "diagnostic").exists()
+
+
+@pytest.mark.parametrize("training_truth", [0, 1, "false", None])
+def test_detection_dataset_requires_boolean_training_truth(
+    tmp_path: Path, training_truth: object,
+) -> None:
+    manifest = tmp_path / "invalid-scope.json"
+    manifest.write_text(json.dumps({
+        "schema_version": 1,
+        "dataset_scope": {"training_truth": training_truth},
+        "matches": [],
+    }), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="training_truth must be a boolean"):
+        export_detection_dataset(manifest, tmp_path / "output")
+    assert not (tmp_path / "output").exists()
+
+
 def test_overlapping_events_use_maximum_one_to_one_matching() -> None:
     labels = [
         {"kind": "main_enemy", "start_ms": 1000, "end_ms": 1200, "direction": "left"},
@@ -1250,6 +1294,7 @@ def test_detection_dataset_exports_boxes_and_negative_frames(tmp_path: Path) -> 
     val_fixture = create(tmp_path / "other_match")
     manifest = tmp_path / "detections.json"
     manifest.write_text(json.dumps({"schema_version": 1,
+                                    "dataset_scope": {"training_truth": True},
                                     "roi": [0.05, 0.1, 0.5, 0.4],
                                     "widget_roi": [0.1, 0.15, 0.35, 0.3],
                                     "label_roi": [0.15, 0.2, 0.1, 0.1],
@@ -1266,6 +1311,7 @@ def test_detection_dataset_exports_boxes_and_negative_frames(tmp_path: Path) -> 
     summary = export_detection_dataset(manifest, output)
     coco = json.loads((output / "annotations/instances_train2017.json").read_text())
     assert summary["train"] == {"images": 2, "boxes": 1, "negative_images": 1}
+    assert coco["info"]["dataset_scope"] == {"training_truth": True}
     assert len(coco["images"]) == 2
     assert coco["annotations"][0]["bbox"] == [32.0, 36.0, 96.0, 18.0]
     assert all((output / "train2017" / image["file_name"]).is_file()
@@ -1288,6 +1334,28 @@ def test_detection_dataset_exports_boxes_and_negative_frames(tmp_path: Path) -> 
     assert cropped["annotations"][0]["bbox"] == [16.0, 18.0, 96.0, 18.0]
     with Image.open(cropped_output / "train2017/match-01_000001000.png") as image:
         assert image.size == (160, 72)
+
+    diagnostic_document = json.loads(manifest.read_text(encoding="utf-8"))
+    diagnostic_document["dataset_scope"] = {
+        "training_truth": False,
+        "label_semantics": "red_candidate_hard_negative_diagnostic",
+    }
+    manifest.write_text(json.dumps(diagnostic_document), encoding="utf-8")
+    diagnostic_output = tmp_path / "diagnostic-dataset"
+    export_detection_dataset(
+        manifest, diagnostic_output, crop_roi=True, allow_diagnostic_scope=True,
+    )
+    diagnostic_coco = json.loads(
+        (diagnostic_output / "annotations/instances_train2017.json").read_text()
+    )
+    assert diagnostic_coco["info"]["dataset_scope"] == {
+        "training_truth": False,
+        "label_semantics": "red_candidate_hard_negative_diagnostic",
+    }
+    assert diagnostic_coco["info"]["roi_boundary_audit"]["training_eligible"] is False
+    assert diagnostic_coco["info"]["roi_boundary_audit"][
+        "usable_for_training_or_evaluation"
+    ] is True
 
     manifest.write_text(json.dumps({"schema_version": 1, "matches": [
         {"id": "train", "video": fixture["video"].name, "split": "train",
@@ -1660,6 +1728,149 @@ def test_combine_detection_manifests_normalizes_missing_category(
     combine_detection_manifests(paths, output)
 
     assert json.loads(output.read_text())["category"] == "main_enemy"
+
+
+def test_detection_manifest_scope_is_preserved_when_inputs_match(
+    tmp_path: Path,
+) -> None:
+    scope = {"training_truth": True, "label_semantics": "reviewed"}
+    combine_video = tmp_path / "combine-video.mp4"
+    combine_video.write_bytes(b"combine fixture")
+    combine_paths = []
+    for index, timestamp in enumerate((100, 200)):
+        path = tmp_path / f"combine-{index}.json"
+        path.write_text(json.dumps({
+            "schema_version": 1,
+            "category": "minimap_enemy",
+            "dataset_scope": scope,
+            "roi": [0.0, 0.0, 0.25, 0.5],
+            "matches": [{
+                "id": "match-01", "video": combine_video.name, "split": "train",
+                "frames": [{"at_ms": timestamp, "boxes": []}],
+            }],
+        }), encoding="utf-8")
+        combine_paths.append(path)
+
+    combined = tmp_path / "combined-scoped.json"
+    combine_detection_manifests(combine_paths, combined)
+    assert json.loads(combined.read_text())["dataset_scope"] == scope
+
+    merge_paths = []
+    for index in range(2):
+        video = tmp_path / f"merge-video-{index}.mp4"
+        video.write_bytes(f"merge fixture {index}".encode())
+        path = tmp_path / f"merge-{index}.json"
+        path.write_text(json.dumps({
+            "schema_version": 1,
+            "category": "minimap_enemy",
+            "dataset_scope": scope,
+            "roi": [0.0, 0.0, 0.25, 0.5],
+            "matches": [{
+                "id": f"match-{index}", "video": video.name, "split": "train",
+                "frames": [{"at_ms": 100, "boxes": []}],
+            }],
+        }), encoding="utf-8")
+        merge_paths.append(path)
+
+    merged = tmp_path / "merged-scoped.json"
+    merge_detection_manifests(merge_paths, merged)
+    assert json.loads(merged.read_text())["dataset_scope"] == scope
+
+
+@pytest.mark.parametrize("operation", ["combine", "merge"])
+def test_detection_manifest_merges_reject_non_training_scope(
+    tmp_path: Path, operation: str,
+) -> None:
+    video = tmp_path / "diagnostic-video.mp4"
+    video.write_bytes(b"diagnostic fixture")
+    manifest = tmp_path / "diagnostic.json"
+    manifest.write_text(json.dumps({
+        "schema_version": 1,
+        "category": "main_red_candidate",
+        "dataset_scope": {"training_truth": False},
+        "matches": [{
+            "id": "diagnostic", "video": video.name, "split": "train",
+            "frames": [{"at_ms": 100, "boxes": []}],
+        }],
+    }), encoding="utf-8")
+    output = tmp_path / f"{operation}.json"
+    merger = (combine_detection_manifests if operation == "combine"
+              else merge_detection_manifests)
+
+    with pytest.raises(ValueError, match="training_truth=false.*cannot be merged"):
+        merger([manifest], output)
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("operation", ["combine", "merge"])
+def test_detection_manifest_merges_reject_scope_conflicts(
+    tmp_path: Path, operation: str,
+) -> None:
+    first_video = tmp_path / "first-video.mp4"
+    second_video = tmp_path / "second-video.mp4"
+    first_video.write_bytes(b"first fixture")
+    second_video.write_bytes(b"second fixture")
+    first = tmp_path / "first-scoped.json"
+    second = tmp_path / "second-scoped.json"
+    common = {
+        "schema_version": 1,
+        "category": "minimap_enemy",
+        "dataset_scope": {"training_truth": True, "label_semantics": "reviewed"},
+        "roi": [0.0, 0.0, 0.25, 0.5],
+    }
+    first.write_text(json.dumps({
+        **common,
+        "matches": [{"id": "first", "video": first_video.name, "split": "train",
+                     "frames": [{"at_ms": 100, "boxes": []}]}],
+    }), encoding="utf-8")
+    second_document = {
+        **common,
+        "dataset_scope": {"training_truth": True, "label_semantics": "other"},
+        "matches": [{"id": "second", "video": second_video.name, "split": "train",
+                     "frames": [{"at_ms": 100, "boxes": []}]}],
+    }
+    second.write_text(json.dumps(second_document), encoding="utf-8")
+    output = tmp_path / f"conflict-{operation}.json"
+    merger = (combine_detection_manifests if operation == "combine"
+              else merge_detection_manifests)
+
+    with pytest.raises(ValueError, match="dataset_scope metadata conflicts"):
+        merger([first, second], output)
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("operation", ["combine", "merge"])
+def test_detection_manifest_merges_reject_scope_presence_mismatch(
+    tmp_path: Path, operation: str,
+) -> None:
+    first_video = tmp_path / "scoped-video.mp4"
+    second_video = tmp_path / "legacy-video.mp4"
+    first_video.write_bytes(b"scoped fixture")
+    second_video.write_bytes(b"legacy fixture")
+    first = tmp_path / "scoped.json"
+    second = tmp_path / "legacy.json"
+    first.write_text(json.dumps({
+        "schema_version": 1,
+        "category": "minimap_enemy",
+        "dataset_scope": {"training_truth": True},
+        "roi": [0.0, 0.0, 0.25, 0.5],
+        "matches": [{"id": "scoped", "video": first_video.name, "split": "train",
+                     "frames": [{"at_ms": 100, "boxes": []}]}],
+    }), encoding="utf-8")
+    second.write_text(json.dumps({
+        "schema_version": 1,
+        "category": "minimap_enemy",
+        "roi": [0.0, 0.0, 0.25, 0.5],
+        "matches": [{"id": "legacy", "video": second_video.name, "split": "train",
+                     "frames": [{"at_ms": 100, "boxes": []}]}],
+    }), encoding="utf-8")
+    output = tmp_path / f"presence-mismatch-{operation}.json"
+    merger = (combine_detection_manifests if operation == "combine"
+              else merge_detection_manifests)
+
+    with pytest.raises(ValueError, match="dataset_scope metadata conflicts"):
+        merger([first, second], output)
+    assert not output.exists()
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),

@@ -6,14 +6,18 @@ import argparse
 import ctypes as C
 import hashlib
 import json
-import re
-import sys
 import math
+import os
+import re
+import shutil
+import sys
+import tempfile
 from pathlib import Path
 
 from PIL import Image
 
 from .extract_frame import extract
+from .dataset_scope import validate_dataset_scope
 from .minimap_locator_evaluate import _load_locator
 from .native import Rect, default_library_path, load_library
 from .orientation import from_manifest, resolve, rotation
@@ -184,13 +188,121 @@ def _direction_roi_for_crop(widget_roi: list[float], frame_width: int,
     ]
 
 
+def _absolute_path(path: Path) -> Path:
+    """Make a normalized absolute path without following symlinks."""
+    return Path(os.path.abspath(os.fspath(path)))
+
+
+def _is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+    except ValueError:
+        return False
+    return True
+
+
+def _validate_export_paths(manifest: Path, output: Path) -> tuple[Path, Path]:
+    """Validate paths before creating any export staging directory."""
+    manifest_path = _absolute_path(manifest)
+    output_path = _absolute_path(output)
+    if output_path.is_symlink():
+        raise ValueError(f"Output path must not be a symlink: {output_path}")
+
+    # Compare canonical paths after rejecting the output symlink itself. This
+    # catches an output directory that would contain the manifest (and be
+    # replaced wholesale), as well as the inverse path relationship.
+    manifest_real = manifest_path.resolve()
+    output_real = output_path.resolve(strict=False)
+    if (_is_relative_to(manifest_real, output_real) or
+            _is_relative_to(output_real, manifest_real)):
+        raise ValueError(
+            "Output path must not overlap the input manifest: "
+            f"{output_path} and {manifest_path}"
+        )
+    if output_path.exists() and not output_path.is_dir():
+        raise ValueError(f"Output path must be a directory: {output_path}")
+    if not manifest_real.is_file():
+        raise ValueError(f"Detection manifest does not exist: {manifest_real}")
+    return manifest_real, output_path
+
+
+def _new_staging_directory(output: Path) -> Path:
+    """Create a staging directory beside the final output directory."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(
+        prefix=f".{output.name}.staging-", dir=output.parent,
+    ))
+
+
+def _remove_directory(path: Path) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.exists():
+        shutil.rmtree(path)
+
+
+def _replace_staged_output(staging: Path, output: Path) -> None:
+    """Replace ``output`` with ``staging`` and restore it if the swap fails."""
+    if output.is_symlink():
+        raise ValueError(f"Output path must not be a symlink: {output}")
+    if output.exists() and not output.is_dir():
+        raise ValueError(f"Output path must be a directory: {output}")
+
+    backup: Path | None = None
+    if output.exists():
+        backup = Path(tempfile.mkdtemp(
+            prefix=f".{output.name}.backup-", dir=output.parent,
+        ))
+        backup.rmdir()
+        try:
+            os.replace(output, backup)
+        except BaseException:
+            _remove_directory(backup)
+            raise
+    try:
+        os.replace(staging, output)
+    except BaseException as error:
+        if backup is not None:
+            try:
+                os.replace(backup, output)
+            except BaseException as rollback_error:
+                raise RuntimeError(
+                    f"Failed to replace {output} and restore its previous contents"
+                ) from rollback_error
+        raise error
+    if backup is not None:
+        # The new output is already committed. A cleanup failure must not turn
+        # a successful atomic swap into an exception that suggests old content
+        # is still active; retain the private backup for manual recovery.
+        try:
+            _remove_directory(backup)
+        except OSError:
+            pass
+
+
 def export(manifest: Path, output: Path, crop_roi: bool = False,
-           locator: Path | None = None, library: Path | None = None) -> dict:
-    manifest = manifest.resolve()
-    output = output.resolve()
+           locator: Path | None = None, library: Path | None = None,
+           allow_diagnostic_scope: bool = False) -> dict:
+    manifest, output = _validate_export_paths(manifest, output)
     data = json.loads(manifest.read_text(encoding="utf-8"))
     if data.get("schema_version") != 1:
         raise ValueError("Expected detection manifest schema_version 1")
+    if "dataset_scope" in data and data["dataset_scope"] is None:
+        raise ValueError("Detection manifest dataset_scope must be an object")
+    dataset_scope = (
+        validate_dataset_scope(
+            data["dataset_scope"], "Detection manifest dataset_scope"
+        )
+        if "dataset_scope" in data else None
+    )
+    if (isinstance(dataset_scope, dict) and
+            dataset_scope.get("training_truth") is False and
+            not allow_diagnostic_scope):
+        raise ValueError(
+            "Detection manifest explicitly sets dataset_scope.training_truth=false; "
+            "it cannot be exported as training truth. Use --allow-diagnostic-scope "
+            "only for an isolated diagnostic export."
+        )
     matches = data.get("matches")
     category = data.get("category", "main_enemy")
     if not isinstance(category, str) or not MATCH_ID.fullmatch(category):
@@ -301,9 +413,12 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
             ))
 
     # Validate all metadata before writing output so bad splits do not produce partial datasets.
-    adaptive = _AdaptiveCropper(locator, library) if locator is not None else None
+    adaptive = None
+    staging: Path | None = None
     summary = {}
     try:
+        staging = _new_staging_directory(output)
+        adaptive = _AdaptiveCropper(locator, library) if locator is not None else None
         for split, frames in prepared.items():
             images = []
             annotations = []
@@ -316,7 +431,7 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
             roi_boundary_contacts = []
             physical_edge_contacts = []
             split_name = SPLIT_DIRS[split]
-            split_dir = output / split_name
+            split_dir = staging / split_name
             split_dir.mkdir(parents=True, exist_ok=True)
             for (match_id, video, at_ms, boxes, box_categories, roi, widget_roi,
                  display_rotation) in frames:
@@ -410,21 +525,25 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
                                         "category_id": category_ids[box_categories[box_index]],
                                         "bbox": px_box,
                                         "area": px_box[2] * px_box[3], "iscrowd": 0})
-            annotation_dir = output / "annotations"
+            annotation_dir = staging / "annotations"
             annotation_dir.mkdir(parents=True, exist_ok=True)
             coco = {"images": images, "annotations": annotations,
                     "categories": [{"id": identifier, "name": name,
                                     "supercategory": "game"}
                                    for name, identifier in category_ids.items()]}
+            if dataset_scope is not None:
+                coco.setdefault("info", {})["dataset_scope"] = dataset_scope
             if default_widget_roi is not None or any(
                     match[5] is not None for match in frames):
-                coco["info"] = {
-                    "direction_reference": (
-                        "Per-image direction_roi is normalized to the exported image "
-                        "and identifies the minimap widget boundary."
-                    ),
-                }
+                coco.setdefault("info", {})["direction_reference"] = (
+                    "Per-image direction_roi is normalized to the exported image "
+                    "and identifies the minimap widget boundary."
+                )
             if crop_roi or adaptive is not None:
+                scope_allows_training = not (
+                    isinstance(dataset_scope, dict) and
+                    dataset_scope.get("training_truth") is False
+                )
                 coco.setdefault("info", {}).update({
                     "roi_boundary_audit": {
                         "schema_version": 1,
@@ -433,7 +552,9 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
                         "physical_edge_contacts": physical_edge_contacts,
                         # Keep the initial key for readers of earlier reports.
                         "edge_contacts": roi_boundary_contacts,
-                        "training_eligible": not roi_boundary_contacts,
+                        "training_eligible": (
+                            scope_allows_training and not roi_boundary_contacts
+                        ),
                         "usable_for_training_or_evaluation": not roi_boundary_contacts,
                         "policy": (
                             "Target boxes within an expandable crop-edge safety band "
@@ -458,10 +579,14 @@ def export(manifest: Path, output: Path, crop_roi: bool = False,
                     "skipped_positive_images": skipped_positive_images,
                     "skipped_boxes": skipped_boxes,
                 })
+        _replace_staged_output(staging, output)
+        staging = None
         return summary
     finally:
         if adaptive is not None:
             adaptive.close()
+        if staging is not None and staging.exists():
+            _remove_directory(staging)
 
 
 def main() -> None:
@@ -477,10 +602,16 @@ def main() -> None:
     )
     parser.add_argument("--library", type=Path,
                         help="native library used by --locator")
+    parser.add_argument(
+        "--allow-diagnostic-scope", action="store_true",
+        help=("Allow a manifest explicitly marked training_truth=false to be "
+              "exported for isolated diagnostics; its scope is preserved in COCO"),
+    )
     args = parser.parse_args()
     try:
         print(json.dumps(export(args.manifest, args.output, crop_roi=args.crop_roi,
-                                locator=args.locator, library=args.library),
+                                locator=args.locator, library=args.library,
+                                allow_diagnostic_scope=args.allow_diagnostic_scope),
                          ensure_ascii=False, indent=2))
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
         print(f"error: {error}", file=sys.stderr)

@@ -50,6 +50,44 @@ def test_audit_accepts_semantic_categories_and_separate_images(tmp_path: Path) -
     ]
 
 
+def test_audit_blocks_false_training_scope_from_coco_info(tmp_path: Path) -> None:
+    _write_split(tmp_path, "train", "train.jpg", "minimap_enemy")
+    _write_split(tmp_path, "test", "test.jpg", "minimap_enemy")
+    (tmp_path / "test2017/test.jpg").write_bytes(b"different-image")
+    annotation = tmp_path / "annotations/instances_train2017.json"
+    document = json.loads(annotation.read_text(encoding="utf-8"))
+    document["info"] = {"dataset_scope": {
+        "training_truth": False,
+        "label_semantics": "diagnostic",
+    }}
+    annotation.write_text(json.dumps(document), encoding="utf-8")
+
+    report = audit_coco_dataset(tmp_path)
+
+    assert report["splits"]["train"]["dataset_scope"] == document["info"][
+        "dataset_scope"
+    ]
+    assert any(
+        "train: dataset_scope.training_truth=false" in blocker
+        for blocker in report["training_blockers"]
+    )
+
+
+def test_audit_blocks_non_boolean_training_scope_from_coco_info(tmp_path: Path) -> None:
+    _write_split(tmp_path, "train", "train.jpg", "minimap_enemy")
+    annotation = tmp_path / "annotations/instances_train2017.json"
+    document = json.loads(annotation.read_text(encoding="utf-8"))
+    document["info"] = {"dataset_scope": {"training_truth": "false"}}
+    annotation.write_text(json.dumps(document), encoding="utf-8")
+
+    report = audit_coco_dataset(tmp_path)
+
+    assert any(
+        "training_truth must be a boolean" in blocker
+        for blocker in report["training_blockers"]
+    )
+
+
 def test_audit_detects_duplicate_image_category_and_annotation_ids(tmp_path: Path) -> None:
     _write_split(tmp_path, "train", "train.jpg", "minimap_enemy")
     annotation = tmp_path / "annotations/instances_train2017.json"

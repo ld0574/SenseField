@@ -315,6 +315,26 @@ def test_training_gate_allows_physical_screen_edge_contacts(tmp_path: Path) -> N
     _assert_roi_boundaries_clear(tmp_path)
 
 
+def test_training_gate_rejects_false_dataset_scope(tmp_path: Path) -> None:
+    annotation_dir = tmp_path / "annotations"
+    annotation_dir.mkdir()
+    document = {
+        "images": [{"id": 1, "width": 100, "height": 100}],
+        "annotations": [],
+        "info": {"dataset_scope": {
+            "training_truth": False,
+            "label_semantics": "diagnostic",
+        }},
+    }
+    for split in ("train", "val"):
+        (annotation_dir / f"instances_{split}2017.json").write_text(
+            json.dumps(document), encoding="utf-8"
+        )
+
+    with pytest.raises(ValueError, match="training_truth=false.*cannot be used"):
+        _assert_roi_boundaries_clear(tmp_path)
+
+
 def test_training_gate_rejects_bbox_outside_image(tmp_path: Path) -> None:
     annotation_dir = tmp_path / "annotations"
     annotation_dir.mkdir()

@@ -16,6 +16,7 @@ from math import isfinite
 from pathlib import Path
 from typing import Any
 
+from .dataset_scope import coco_dataset_scope
 from .image_manifest import IMAGE_MANIFEST_HASH_ALGORITHM, image_manifest_sha256
 from .roi_safety import (
     coco_roi_blocker,
@@ -89,6 +90,17 @@ def audit_coco_dataset(root: Path) -> dict[str, Any]:
         _assert_within(root, annotation_path, "Annotation path")
         _assert_within(root, image_dir, "Image directory")
         document = json.loads(annotation_path.read_text(encoding="utf-8"))
+        document_scope = None
+        try:
+            document_scope = coco_dataset_scope(document, f"{split} COCO")
+        except ValueError as error:
+            blockers.append(f"{split}: {error}")
+        if (isinstance(document_scope, dict) and
+                document_scope.get("training_truth") is False):
+            blockers.append(
+                f"{split}: dataset_scope.training_truth=false; diagnostic-only "
+                "data cannot be used as training truth"
+            )
         images = document.get("images")
         annotations = document.get("annotations")
         categories = document.get("categories")
@@ -172,7 +184,7 @@ def audit_coco_dataset(root: Path) -> dict[str, Any]:
             split_image_manifest_entries.append((file_name, image_sha256))
             all_image_manifest_entries.append((f"{split}/{file_name}", image_sha256))
         class_counts = Counter(int(item["category_id"]) for item in annotations)
-        split_reports[split] = {
+        split_report = {
             "layout": layout,
             "image_directory": f"{image_dir.relative_to(root)}",
             "annotation_file": f"{annotation_path.relative_to(root)}",
@@ -196,6 +208,9 @@ def audit_coco_dataset(root: Path) -> dict[str, Any]:
             "roi_edge_touch_annotations": edge_touch_annotations,
             "invalid_annotation_boxes": invalid_annotation_boxes,
         }
+        if document_scope is not None:
+            split_report["dataset_scope"] = document_scope
+        split_reports[split] = split_report
         if missing_files:
             blockers.append(f"{split}: {len(missing_files)} image files are missing")
         if unknown_image_ids:
