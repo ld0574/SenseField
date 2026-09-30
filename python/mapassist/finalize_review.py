@@ -29,6 +29,44 @@ def _roi(value: object, label: str) -> list[float]:
     return result
 
 
+def _video_path(review_manifest: Path, match: dict, label: str) -> str:
+    """Resolve a match video while keeping legacy manifests readable.
+
+    Review batches created from an existing queue record the source media as
+    ``source_video_path``.  Those paths are usually relative to the
+    repository root, while the review manifest itself lives several
+    directories below it.  Search the manifest directory and each ancestor
+    for a real file, then export the resolved absolute path.  Older manifests
+    use ``video`` and may point at a fixture or a media file that is not
+    present on the current machine; preserve that value when it cannot be
+    resolved so finalization remains backwards compatible.
+    """
+    value = match.get("video")
+    from_source = False
+    if not isinstance(value, str) or not value:
+        value = match.get("source_video_path")
+        from_source = True
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{label} needs video or source_video_path")
+
+    candidate = Path(value).expanduser()
+    if candidate.is_absolute():
+        resolved = candidate.resolve()
+        if resolved.is_file() or not from_source:
+            return str(resolved if resolved.is_file() else value)
+        raise ValueError(f"{label} source video does not exist: {resolved}")
+
+    for directory in (review_manifest.parent, *review_manifest.parent.parents):
+        resolved = (directory / candidate).resolve()
+        if resolved.is_file():
+            return str(resolved)
+    if from_source:
+        raise ValueError(
+            f"{label} source video was not found from {review_manifest}: {value}"
+        )
+    return value
+
+
 def finalize(review_manifest: Path, output: Path) -> dict:
     data = json.loads(review_manifest.read_text(encoding="utf-8"))
     if data.get("schema_version") != 1:
@@ -111,9 +149,15 @@ def finalize(review_manifest: Path, output: Path) -> dict:
             frames.append(frame_record)
             total_boxes += len(boxes)
         if frames:
-            exported = {"id": match["id"], "video": match["video"],
+            exported = {"id": match["id"],
+                        "video": _video_path(review_manifest, match,
+                                              str(match.get("id"))),
                         "split": match["split"], "frames": frames}
             video_sha256 = match.get("video_sha256")
+            if video_sha256 is None:
+                # Review queue manifests retain the immutable source media
+                # identity under this provenance field.
+                video_sha256 = match.get("source_video_sha256")
             if video_sha256 is not None:
                 if (not isinstance(video_sha256, str) or len(video_sha256) != 64 or
                         any(character not in "0123456789abcdefABCDEF"

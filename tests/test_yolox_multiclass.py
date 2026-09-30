@@ -291,3 +291,38 @@ def test_review_finalization_rejects_ambiguous_multiclass_boxes(tmp_path: Path) 
 
     with pytest.raises(ValueError, match="categories are required"):
         finalize(manifest, tmp_path / "detections.json")
+
+
+def test_review_finalization_resolves_source_video_path_from_ancestor(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    video = repository / "video" / "player.mp4"
+    video.parent.mkdir(parents=True)
+    video.touch()
+    manifest = repository / "data" / "private" / "review" / "review-manifest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps({
+        "schema_version": 1,
+        "kind": "minimap_player",
+        "classes": ["minimap_player"],
+        "matches": [{
+            "id": "video-player",
+            "source_video_path": "video/player.mp4",
+            "source_video_sha256": "a" * 64,
+            "split": "train",
+            "samples": [{
+                "at_ms": 1000,
+                "review_status": "corrected",
+                "reviewed_boxes": [[0.1, 0.1, 0.1, 0.1]],
+                "reviewed_categories": ["minimap_player"],
+            }],
+        }],
+    }), encoding="utf-8")
+
+    output = tmp_path / "detections.json"
+    finalize(manifest, output)
+
+    exported = json.loads(output.read_text(encoding="utf-8"))
+    assert exported["matches"][0]["video"] == str(video.resolve())
+    assert exported["matches"][0]["video_sha256"] == "a" * 64
