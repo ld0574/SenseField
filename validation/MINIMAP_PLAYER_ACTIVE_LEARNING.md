@@ -1,12 +1,66 @@
-# 小地图玩家头像：合并后的人工队列与候选排序器 v2
+# 小地图玩家头像：合并后的人工队列、候选排序器与安全双类 v8
 
 更新时间：2026-09-30
 
 ## 当前结论
 
-首轮主动学习批次的人工结果已经合并到 `data/private/minimap-player-review-queue-v1`。当前队列有 338 个人工终态：276 `corrected`、61 `negative`、1 `skip`；其中 337 个可训练（`corrected` + `negative`）。另有 901 个 `pending`，保留为待复核积压；后续按优先级处理，不把全量清洗 901 张列为前置要求。
+首轮 218 张加第二批 120 张主动学习批次已经完成并安全合并到 `data/private/minimap-player-review-queue-v1`。当前队列有 338 个人工终态：276 `corrected`、61 `negative`、1 `skip`；其中 337 个可训练（`corrected` + `negative`）。另有 901 个 `pending`，保留为待复核积压；后续按优先级处理，不把全量清洗 901 张列为前置要求。
 
 候选排序器 v2 严格复用首版流程：MPS、seed `20260930`、25 轮、batch size 96、候选绿色环 patch、仅使用人工 `corrected`／`negative` 标签。训练 split 使用 208 帧，pooled val 使用 129 帧；`skip` 不进入训练或评估。active batch 已并入源队列，没有作为独立代表性测试集。
+
+## 安全双类 v8 开发候选
+
+`build/data/minimap-dual-coco-v8`（审计 `build/data/minimap-dual-coco-v8.audit.json`）通过带 provenance 的安全导出得到 323 张图、840 个框：train 194 张／512 框，val 129 张／328 框；其中 `minimap_enemy` 575 框、`minimap_player` 265 框，test 为空。审计状态为 `passed_with_warnings`，警告包括源 SQLite 原始哈希漂移但语义校验通过等历史状态。双类 v8 只用于开发诊断，不是发布数据集；审计确认没有读取 sealed source、没有把机器建议当真值、player/source 数据库只读、帧哈希已核对且所有框都在 crop 内。
+
+当前最好开发候选为双类 YOLOX-Nano v5 416：epoch 26，输入 `[1,3,416,416]`，输出 `[1,3549,7]`，阈值为 enemy `0.55`、player `0.71`。固定 val 的逐类结果为：enemy P/R/F1 `0.950000 / 0.889362 / 0.918681`，player P/R/F1 `0.952381 / 0.860215 / 0.903955`；player visible recall 为 `0.860215`（80/93），中心误差 P95 为 `7.805562 px`（相对 `0.018585`）。player precision 与中心误差通过门槛，但 visible recall 最低要求 `0.90` 未通过；93 个可见帧需命中至少 84 帧，当前还少 4 帧，因此 player quality gate 仍为 failed。
+
+v3 320 是保留的基线：epoch 28、阈值 enemy/player `0.57/0.81`，player visible recall `0.688172`，中心误差 P95 `5.697911 px`（相对 `0.013566`）；v5 相对 v3 的 visible recall 提高 `0.172043`。v4 低增强对照的 player visible recall 只有 `0.365591`，说明简单削弱增强没有改善该问题。v5 的 416 输入像素量约为 320 输入的 `1.69` 倍，存在端侧延迟风险，尚未接入 Android。
+
+在 v5 416 后追加严格 HSV 绿色 annulus 后处理（model confidence `0.34`、green coverage `≥0.12`、radius `7–23 px`）后，同一 v8 val 得到 TP/FP/FN `85/4/8`、precision `0.955056`、visible recall `0.913978`、中心误差 P95 `7.805562 px`（相对 `0.018585`）。precision、visible recall 和中心误差三项开发门槛同时通过，因此这是**值得继续冻结验证的开发候选**。半径是在原始 COCO crop 坐标中固定取值，尚未按短边或框尺寸归一化；参数又是在同一 129 张 val 上穷举得到，存在明显的同集调参乐观偏差。当前没有独立 test、Android 实现或运行时验证，仍不得接入明日 release；Android/release 继续使用单类 `minimap_enemy`。
+
+关键 SHA-256：v8 audit `c22fa60f6a0b641f9c7a692347c8b57671e4dbef742a9f02a19c0a5224582c82`，train／val annotations `36cdcf3c4f82339a7a65a91ff5ea2875fa9d19907cb35ccaabd51888134ae5eb`／`bd48e7e2523354517b821215fc5c9c0a260eb6ae0af4d9fb02f7812e3cdcfde2`，v5 metrics `5ccc9a3f4eebe8e2c7f026674b0111b64ada19f66435d8da58bbb55fcb49b3c4`，balanced checkpoint `0eeaaa4ece647939d4d3dcd5d858b6d7cd8258c1ce8c0d1c1d6f4592b5e27118`，fixed-val report `bbb44bde3baa89f1c684017d2a0e3339fb9eade4ee80cf426d226476c1bc50ae`。
+
+val 已参与选模和阈值选择，没有独立 test，这些数值只能称 development diagnostic。
+
+双类 v8 未导出或接入 Android assets/profile；当前 Android/release 仍绑定单类 `minimap_enemy`。
+
+### 安全双类 v8 复现命令
+
+导出器按 player queue 的 SQLite、player manifest、source manifest/database 和 source-frame provenance 关联两类标注，不能手写普通 timestamp union。下面使用新的忽略目录，避免覆盖已存在的 v8 产物；命令不加 `--verify-video-bytes`，默认只读取已复核队列图片，不读取视频帧。训练和评估命令继续指向已审计的 `build/data/minimap-dual-coco-v8`；若使用新导出的 repro 目录，应将两条命令的 `--data-dir` 一并替换。
+
+```sh
+.venv/bin/python training/export_minimap_dual_class.py \
+  --player-queue data/private/minimap-player-review-queue-v1 \
+  --output build/data/minimap-dual-coco-v8-repro \
+  --audit build/data/minimap-dual-coco-v8-repro.audit.json
+
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python training/train_yolox_minimap.py \
+  --yolox-root build/third_party/YOLOX \
+  --data-dir build/data/minimap-dual-coco-v8 \
+  --pretrained build/training/yolox-nano-hd-bootstrap-video10-video11-v2-320/best_ckpt.pth \
+  --output build/training/yolox-nano-minimap-dualclass-v5-416-v8 \
+  --classes minimap_enemy minimap_player \
+  --epochs 30 --batch-size 8 --input-size 416 --lr-scale 0.5 \
+  --mosaic-prob 0.5 --mosaic-scale-min 0.7 --mosaic-scale-max 1.3 \
+  --hsv-prob 0.8 --flip-prob 0.5 --degrees 5 --translate 0.08 --shear 1 \
+  --nms-threshold 0.5 --minimum-precision 0.95 \
+  --no-aug-epochs 6 --eval-every 2 --log-every 5 \
+  --device mps --seed 20260930
+
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python training/evaluate_yolox_minimap.py \
+  --yolox-root build/third_party/YOLOX \
+  --data-dir build/data/minimap-dual-coco-v8 \
+  --checkpoint build/training/yolox-nano-minimap-dualclass-v5-416-v8/best_balanced_ckpt.pth \
+  --input-size 416 --split val \
+  --classes minimap_enemy minimap_player \
+  --confidence-by-class '{"minimap_enemy":0.55,"minimap_player":0.71}' \
+  --iou-threshold 0.5 --nms-threshold 0.5 \
+  --output build/training/yolox-nano-minimap-dualclass-v5-416-v8/fixed-val-per-class.json
+```
+
+不得用普通时间戳拼接来源，不得引用、运行或查看 video9/video12；安全双类 v8 也不得作为 Android release 候选。
 
 ## v2 开发诊断
 

@@ -15,6 +15,7 @@
 
 - [x] Release body 链接 README 和本 release notes；明确这是 pre-release developer preview、不是最终验收版本。
 - [x] 写明实验小地图模型尚未通过独立留出对局验收；开发指标不写成独立测试成绩。
+- [x] 明确 release APK 仍绑定单类 `minimap_enemy`；安全双类 v8 只作开发诊断，未导出或放入 Android assets。
 - [x] 写明公共默认 profile 关闭主画面边缘分类器，相关数据未复核前不进入 Release 配置。
 - [x] 写明 APK 只支持 `arm64-v8a`，并附 Android 最低版本和 SHA-256。
 - [x] 说明 `MediaProjection` 用于用户授权的整屏帧、悬浮窗权限用于非交互提示层、通知权限用于前台服务状态；说明处理在本地完成。

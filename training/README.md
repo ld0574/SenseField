@@ -1,6 +1,6 @@
 # 小地图 YOLOX-Nano 开发训练
 
-> **当前 HD-only 规则（2026-09-30）**：后续训练、验证、阈值和模型评估只使用 HD。train/dev 来源为已替换成高清内容的 `video/video1hd.mp4`、`video2hd`、`video3hd`、`video4hd`、`video5hd`、`video7`、`video8`、`video10`；`video11` 是 HD dev-val。`video13` 已完成模型辅助人工复核和 Codex temporal audit；它最初形成 test-only COCO 诊断，但首轮真机反馈后查看了多档 confidence（包括当前部署值 `0.67`），现为跨来源开发诊断，不能再称独立 test 或用于最终门禁。训练阶段 confidence `0.49` 的结果仅保留为历史。`video12` 为 primary sealed holdout，`video9` 为 cross-source sealed holdout；不得对这两场运行模型或查看预测。Hero 仅用于 UX／事件故事。低清 video2–6 及其队列、模型和指标全部退役为历史；`video6hd.mp4` 不属于当前数据集。
+> **当前 HD-only 规则（2026-09-30）**：后续训练、验证、阈值和模型评估只使用 HD。train/dev 来源为已替换成高清内容的 `video/video1hd.mp4`、`video2hd`、`video3hd`、`video4hd`、`video5hd`、`video7`、`video8`、`video10`；`video11` 是 HD dev-val。`video13` 已完成模型辅助人工复核和 Codex temporal audit；它最初形成 test-only COCO 诊断，但首轮真机反馈后查看了多档 confidence（包括当前部署值 `0.67`），现为跨来源开发诊断，不能再称独立 test 或用于最终门禁。训练阶段 confidence `0.49` 的结果仅保留为历史。`video12` 为 primary sealed holdout，`video9` 为 cross-source sealed holdout；不得对这两场运行模型或查看预测。Hero 仅用于 UX／事件故事。低清 video2–6 及其队列、模型和指标全部退役为历史；`video6hd.mp4` 不属于当前数据集。当前 Android/release assets/profile 仍为单类 `minimap_enemy`；玩家安全双类 v8 只作开发诊断，尚未导出到 Android。
 >
 > 当前 bootstrap v2 split 使用 video1+8+3+4+5+10 train（664 图／1211 框）与 video2-HD+11 val（230 图／400 框）；bootstrap test 仍为空，不能产生 bootstrap 最终成绩。video4-HD、video5-HD、video10/11 已完成人工复核，队列的 SQLite／manifest、source hash、显示尺寸、三层 ROI 和 crop-edge 审计均通过；video10 已纳入 train，video11 作为 HD dev-val。video13 的 130/130 个任务已人工复核（110 `corrected`、11 `negative`、9 `excluded`、0 pending/lease），并经 temporal audit。训练阶段 confidence `0.49` 的历史诊断为 `204/28/7`、P/R/F1 `87.9310% / 96.6825% / 92.0993%`，方向 `171/171=100%`；准确率门槛未过，召回与方向已过。首轮真机反馈后对 video13 检查多档阈值，当前 confidence `0.67` 下为 `192/16/19`、P/R/F1 `92.3077% / 90.9953% / 91.6468%`。因此 video13 是模型辅助的跨来源开发诊断，不能再作为独立 test 或最终门禁成绩。video7-edge 仍待复核，video9/12 继续封存。
 
@@ -115,6 +115,52 @@ shasum -a 256 build/models/yolox_nano.pth
 ## 当前数据状态：只接受人工复核后的 HD
 
 当前 HD bootstrap v2 train 为人工复核后的 video1+8+3+4+5+10（664 图／1211 框），val 为 video2-HD+11（230 图／400 框）；bootstrap test 仍为空，不能作为 bootstrap 最终成绩。video3-HD 120/120 帧、video4-HD 100/100 帧、video5-HD 100/100 帧、video10/11 各 130/130 帧均已复核完成并通过三层 ROI、尺寸、框合法性和 crop-edge audit。video10 已进入 train，video11 保持 HD dev-val；video7-edge 仍待复核，未复核前不得将其加入当前 COCO、训练或验证。video13 已完成 130/130 个任务人工复核（110 `corrected`、11 `negative`、9 `excluded`、0 pending/lease），并完成 Codex temporal audit；此前的 test-only COCO audit 无 blocker，121 张可评测图含 211 框。训练阶段 confidence `0.49` 的历史诊断 TP/FP/FN 为 `204/28/7`，P/R/F1 `87.9310% / 96.6825% / 92.0993%`，方向 `171/171=100%`；准确率门槛未过，召回与方向已过。首轮真机反馈后又检查多档阈值，当前部署 confidence `0.67` 下为 `192/16/19`、P/R/F1 `92.3077% / 90.9953% / 91.6468%`。video13 因此是开发诊断，不能再作为独立 test 或最终门禁成绩；video9/12 保持 sealed 且未读取。低清 video2–6 及其旧 checkpoint、指标均已退役。
+
+### 玩家主动学习合并与安全双类 v8（2026-09-30）
+
+玩家主动学习首轮 218 张与第二批 120 张已完成并安全合并。队列共有 338 个人工终态：276 `corrected`、61 `negative`、1 `skip`；337 个可训练，901 个 `pending`。玩家队列 manifest SHA-256 为 `ff8d9a35647456391a9a8cd63683b0ec59744aae38121cd585fd7126daf33a27`。候选排序器 v2 仍只是 `review_aid_non_release` 复核辅助器，机器建议不是真值。
+
+安全双类 v8 位于 `build/data/minimap-dual-coco-v8`，审计为 `build/data/minimap-dual-coco-v8.audit.json`；导出为 323 张图／840 个框：train 194 张／512 框，val 129 张／328 框，test 为空；`minimap_enemy` 575 框，`minimap_player` 265 框。审计状态为 `passed_with_warnings`，警告包括源 SQLite 原始哈希漂移但语义校验通过等历史状态。当前最好开发候选为 v5 416：epoch 26，输入 `[1,3,416,416]`，输出 `[1,3549,7]`，阈值 enemy/player `0.55/0.71`；固定 val 的 enemy P/R/F1 为 `0.950000 / 0.889362 / 0.918681`，player 为 `0.952381 / 0.860215 / 0.903955`。player visible recall `0.860215`（80/93），中心误差 P95 `7.805562 px`（相对 `0.018585`）。player precision 与中心误差通过门槛，但 visible recall 最低要求 `0.90` 未通过；93 个可见帧需命中至少 84 帧，当前还少 4 帧，player quality gate 仍为 failed。保留的 v3 320 基线为 epoch 28、阈值 `0.57/0.81`、player visible recall `0.688172`、中心误差 P95 `5.697911 px`（相对 `0.013566`），v5 相对 v3 提高 `0.172043`。v4 低增强对照的 player visible recall 只有 `0.365591`，说明简单削弱增强没有改善该问题。416 输入像素量约为 320 的 `1.69` 倍，存在端侧延迟风险，v5 未接入 Android。val 参与选模和阈值选择，没有独立 test，因此这些数值只能称 development diagnostic。
+
+在 v5 416 后追加严格 HSV 绿色 annulus 后处理（model confidence `0.34`、green coverage `≥0.12`、radius `7–23 px`），同一 v8 val 得到 TP/FP/FN `85/4/8`、precision `0.955056`、visible recall `0.913978`、中心误差 P95 `7.805562 px`（相对 `0.018585`）。precision、visible recall 和中心误差三项开发门槛同时通过，这是**值得继续冻结验证的开发候选**。半径是在原始 COCO crop 坐标中固定取值，尚未按短边或框尺寸归一化；参数又是在同一 129 张 val 上穷举得到，存在明显的同集调参乐观偏差。当前没有独立 test、Android 实现或运行时验证，仍不得接入明日 release；Android/release 继续使用单类 `minimap_enemy`。
+
+关键 SHA-256：v8 audit `c22fa60f6a0b641f9c7a692347c8b57671e4dbef742a9f02a19c0a5224582c82`，train／val annotations `36cdcf3c4f82339a7a65a91ff5ea2875fa9d19907cb35ccaabd51888134ae5eb`／`bd48e7e2523354517b821215fc5c9c0a260eb6ae0af4d9fb02f7812e3cdcfde2`，v5 metrics `5ccc9a3f4eebe8e2c7f026674b0111b64ada19f66435d8da58bbb55fcb49b3c4`，balanced checkpoint `0eeaaa4ece647939d4d3dcd5d858b6d7cd8258c1ce8c0d1c1d6f4592b5e27118`，fixed-val report `bbb44bde3baa89f1c684017d2a0e3339fb9eade4ee80cf426d226476c1bc50ae`。
+
+导出器必须通过 player manifest、source manifest/database、source frame provenance 和只读数据库关联两类标注；禁止手写普通 timestamp union。导出审计要求 `sealed_sources_read_or_run=false`、`machine_suggestions_used_as_truth=false`、player/source database read-only、frame hashes verified 且所有框在 crop 内。默认导出不读取视频帧；不要加入 `--verify-video-bytes`，也不得引用、运行或查看 video9/video12。安全双类 v8 未复制到 Android assets/profile，当前 Android/release 仍为单类 `minimap_enemy`。
+
+复现安全导出时使用新的忽略目录，避免覆盖已存在的 `build/data/minimap-dual-coco-v8`；训练和固定 val 评估命令指向已审计的 v8 目录。下面复现当前 v5 416；v3 320 的指标作为基线保留在上文：
+
+```sh
+.venv/bin/python training/export_minimap_dual_class.py \
+  --player-queue data/private/minimap-player-review-queue-v1 \
+  --output build/data/minimap-dual-coco-v8-repro \
+  --audit build/data/minimap-dual-coco-v8-repro.audit.json
+
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python training/train_yolox_minimap.py \
+  --yolox-root build/third_party/YOLOX \
+  --data-dir build/data/minimap-dual-coco-v8 \
+  --pretrained build/training/yolox-nano-hd-bootstrap-video10-video11-v2-320/best_ckpt.pth \
+  --output build/training/yolox-nano-minimap-dualclass-v5-416-v8 \
+  --classes minimap_enemy minimap_player \
+  --epochs 30 --batch-size 8 --input-size 416 --lr-scale 0.5 \
+  --mosaic-prob 0.5 --mosaic-scale-min 0.7 --mosaic-scale-max 1.3 \
+  --hsv-prob 0.8 --flip-prob 0.5 --degrees 5 --translate 0.08 --shear 1 \
+  --nms-threshold 0.5 --minimum-precision 0.95 \
+  --no-aug-epochs 6 --eval-every 2 --log-every 5 \
+  --device mps --seed 20260930
+
+PYTHONPATH=build/third_party/YOLOX:python \
+  .venv/bin/python training/evaluate_yolox_minimap.py \
+  --yolox-root build/third_party/YOLOX \
+  --data-dir build/data/minimap-dual-coco-v8 \
+  --checkpoint build/training/yolox-nano-minimap-dualclass-v5-416-v8/best_balanced_ckpt.pth \
+  --input-size 416 --split val \
+  --classes minimap_enemy minimap_player \
+  --confidence-by-class '{"minimap_enemy":0.55,"minimap_player":0.71}' \
+  --iou-threshold 0.5 --nms-threshold 0.5 \
+  --output build/training/yolox-nano-minimap-dualclass-v5-416-v8/fixed-val-per-class.json
+```
 
 ### HD bootstrap 训练与标注辅助（2026-09-28）
 
