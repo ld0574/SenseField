@@ -14,7 +14,7 @@
 
 v6 `metrics.json`、balanced checkpoint、fixed-val report 的 SHA-256 分别为 `cbf00864dd30a66dee39c11cc2a471650b8b7f5e8c3f4de9021923d0f0b70637`、`88a7de0332b18ce63539039fcbaccfd23f0499782818675f5698ffd0ede4ea46`、`d24e7e0a78d9636df9ebe5398f26f364b5acae3a3bdacba94d330afa8f36ee9b`。
 
-val 同时参与选模和阈值选择，test 为 0；上述数值只能称 development diagnostic。v6 512 双类模型已完成 ONNX/TorchScript/ncnn 导出，产物和报告位于忽略目录 `build/ignored/v6-512-export`：ONNX raw 严格门禁失败（最大误差 `0.0006387 > 0.0005`），但 12 张图的最终 detection arrays 全部一致；ncnn Android 等价严格门禁通过。2 线程桌面 preprocess+inference P95 为 `28.9552 ms`。本次未改 Android assets/profile；由于没有独立 test 或 Android 真机验证，v6 仍不能接入 release。Android 已支持校验 metadata 声明的 `320–1024`、`32` 的倍数、正方形输入并按输入尺寸动态计算 anchors；默认 release assets/profile 仍为 320 单类 `minimap_enemy`，未启用 `minimap_player`。
+val 同时参与选模和阈值选择，test 为 0；上述数值只能称 development diagnostic。v6 512 双类模型已完成 ONNX/TorchScript/ncnn 导出，产物和报告位于忽略目录 `build/ignored/v6-512-export`：ONNX raw 严格门禁失败（最大误差 `0.0006387 > 0.0005`），但 12 张图的最终 detection arrays 全部一致；ncnn Android 等价严格门禁通过。2 线程桌面 preprocess+inference P95 为 `28.9552 ms`。本次未改 Android assets/profile；由于没有独立 test 或 Android 真机验证，v6 仍不能接入 release。Android 已支持校验 metadata 声明的 `320–1024`、`32` 的倍数、正方形输入并按输入尺寸动态计算 anchors。2026-10-01 起，v6 512 以 `profile-dual-512-near-zone.json` 和 `minimap-yolox-nano-dual-512.metadata.json` 作为实验近区 profile 接入 APK；`assets/profile.json` 仍是 320 单类基线，release 未启用 `minimap_player`。
 
 ## 安全双类 v8 开发候选（v5 历史对照）
 
@@ -30,7 +30,7 @@ v3 320 是保留的基线：epoch 28、阈值 enemy/player `0.57/0.81`，player 
 
 val 已参与选模和阈值选择，没有独立 test，这些数值只能称 development diagnostic。
 
-v6 512 双类模型已导出到忽略目录 `build/ignored/v6-512-export`，但未复制或接入 Android assets/profile；当前 Android/release 仍绑定单类 `minimap_enemy`。由于没有独立 test 或 Android 真机验证，仍未达到 release-ready。
+v6 512 双类模型已导出到忽略目录 `build/ignored/v6-512-export`，并于 2026-10-01 以实验近区 profile 复制到 Android assets（权重仍不入 Git）；release 仍绑定单类 `minimap_enemy`。由于没有独立 test 或 Android 真机验证，仍未达到 release-ready。
 
 ### 安全双类 v8 复现命令
 
