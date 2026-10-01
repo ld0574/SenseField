@@ -9,17 +9,33 @@ final class CueSettings implements CueDispatcher.Policy {
     static final String PRESET_STANDARD = "standard";
     static final String PRESET_DETAILED = "detailed";
     static final String PRESET_CUSTOM = "custom";
+    static final String PREF_CATEGORY_NEAR = "cue_category_near";
+    static final String PREF_NEAR_HAPTIC = "cue_near_haptic";
+    static final String PREF_FAR_APPEAR = "cue_far_appear";
 
     private final SharedPreferences preferences;
 
     CueSettings(Context context) {
         preferences = GameProfile.settings(context);
         if (!preferences.contains("cue_preset")) applyPreset(preferences, PRESET_STANDARD);
+        // Installs that saved a preset before the near-zone category existed
+        // get its defaults without rewriting any earlier choice.
+        if (!preferences.contains(PREF_CATEGORY_NEAR)) {
+            String preset = preferences.getString("cue_preset", PRESET_STANDARD);
+            preferences.edit()
+                    .putBoolean(PREF_CATEGORY_NEAR, true)
+                    .putBoolean(PREF_NEAR_HAPTIC, false)
+                    .putBoolean(PREF_FAR_APPEAR, PRESET_DETAILED.equals(preset))
+                    .apply();
+        }
     }
 
     static void applyPreset(SharedPreferences preferences, String preset) {
         SharedPreferences.Editor edit = preferences.edit().putString("cue_preset", preset);
         boolean compact = PRESET_COMPACT.equals(preset);
+        edit.putBoolean(PREF_CATEGORY_NEAR, true)
+                .putBoolean(PREF_NEAR_HAPTIC, false)
+                .putBoolean(PREF_FAR_APPEAR, PRESET_DETAILED.equals(preset));
         edit.putBoolean("cue_channel_visual", true)
                 .putBoolean("cue_channel_tone", !compact)
                 .putBoolean("cue_channel_speech", true)
@@ -61,6 +77,8 @@ final class CueSettings implements CueDispatcher.Policy {
             return preferences.getBoolean("cue_category_danger", false);
         if (category == CueRequest.Category.PLAYER_STATE)
             return preferences.getBoolean("cue_category_player", true);
+        if (category == CueRequest.Category.NEAR_ZONE)
+            return preferences.getBoolean(PREF_CATEGORY_NEAR, true);
         return preferences.getBoolean("cue_category_system", true);
     }
 
@@ -85,6 +103,11 @@ final class CueSettings implements CueDispatcher.Policy {
 
     static int channelsForCategory(int enabledChannels, String preset,
                                    CueRequest.Category category) {
+        // The compact preset switches the shared tone channel off, but its
+        // near-zone cue is exactly one spatial short tone without speech.
+        if (category == CueRequest.Category.NEAR_ZONE && PRESET_COMPACT.equals(preset)) {
+            return CueRequest.CHANNEL_TONE;
+        }
         return enabledChannels & presetCategoryChannels(preset, category);
     }
 
@@ -107,6 +130,13 @@ final class CueSettings implements CueDispatcher.Policy {
             // default feedback is one short stereo tone in every preset.
             return CueRequest.CHANNEL_TONE;
         }
+        if (category == CueRequest.Category.NEAR_ZONE) {
+            // The overlay is a separate opt-in layer; near-zone cues never
+            // request it. Haptics also need the per-feature opt-in.
+            if (PRESET_COMPACT.equals(preset)) return CueRequest.CHANNEL_TONE;
+            return CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH |
+                    CueRequest.CHANNEL_HAPTIC;
+        }
         return CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH |
                 CueRequest.CHANNEL_HAPTIC | CueRequest.CHANNEL_VISUAL;
     }
@@ -116,10 +146,23 @@ final class CueSettings implements CueDispatcher.Policy {
             return preferences.getInt("cue_vision_speech_gap_ms", 2000);
         }
         if (category == CueRequest.Category.PERIPHERAL_THREAT) return 2000;
+        // Only guards same-frame repeats; occupancy episodes do the real dedupe.
+        if (category == CueRequest.Category.NEAR_ZONE)
+            return NearZoneRouting.NEAR_SPEECH_DEDUPE_MS;
         return category == CueRequest.Category.SYSTEM ? 1000 : 500;
     }
 
     boolean speakAppear() {
         return preferences.getBoolean("cue_speak_appear", false);
+    }
+
+    boolean nearHapticEnabled() {
+        return preferences.getBoolean(PREF_NEAR_HAPTIC, false);
+    }
+
+    /** Whether the distant new-portrait tone stays on while near-zone cues run. */
+    boolean farAppearPreference() {
+        return preferences.getBoolean(PREF_FAR_APPEAR, PRESET_DETAILED.equals(
+                preferences.getString("cue_preset", PRESET_STANDARD)));
     }
 }

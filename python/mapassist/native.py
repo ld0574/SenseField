@@ -25,6 +25,19 @@ MA_VISION_EVENT_NONE = 0
 MA_VISION_EVENT_APPEAR = 1
 MA_VISION_EVENT_DISAPPEAR = 2
 MA_PLAYER_RELEVANCE_MAX_AGE_MS = 500
+MA_MAX_MINIMAP_TRACKS = 8
+MA_MAX_TRACKED_ENTITIES = MA_MAX_MINIMAP_TRACKS + 1
+# Relation-layer cue kinds (MA_API_VERSION 9). They are never detector
+# observations; ma_relation_update() produces them.
+MA_NEAR_ZONE = 7
+MA_RADAR_STATUS = 8
+RELATION_SCHEMA = "mapassist.minimap_relation"
+RELATION_STATE_NAMES = {0: "UNKNOWN", 1: "CLEAR", 2: "PENDING", 3: "OCCUPIED", 4: "REARM"}
+RELATION_EVENT_NAMES = {0: None, 1: "NEAR_ENTER", 2: "RADAR_PAUSED",
+                        3: "RADAR_RESUMED", 4: "SUPPRESSED"}
+RELATION_SUPPRESSION_NAMES = {0: None, 1: "rearm_pending", 2: "short_gap"}
+RELATION_SECTOR_NAMES = {0: None, 1: "right", 2: "up_right", 3: "up", 4: "up_left",
+                         5: "left", 6: "down_left", 7: "down", 8: "down_right"}
 
 
 class Rect(C.Structure):
@@ -166,6 +179,34 @@ class MinimapLocatorConfig(C.Structure):
     ]
 
 
+class RelationConfig(C.Structure):
+    _fields_ = [
+        ("enter_radius", C.c_float),
+        ("exit_radius", C.c_float),
+        ("sector_hysteresis_deg", C.c_float),
+        ("adjacent_ratio", C.c_float),
+        ("tie_ratio", C.c_float),
+        ("confirm_hits", C.c_int),
+        ("rearm_ms", C.c_int),
+        ("short_gap_ms", C.c_int),
+        ("pause_min_gap_ms", C.c_int),
+        ("max_freshness_ms", C.c_int),
+    ]
+
+
+class RelationOutput(C.Structure):
+    _fields_ = [
+        ("state", C.c_int),
+        ("event", C.c_int),
+        ("sector", C.c_int),
+        ("pan", C.c_float),
+        ("nearest_distance", C.c_float),
+        ("episode_id", C.c_int),
+        ("suppression", C.c_int),
+        ("reliable", C.c_int),
+    ]
+
+
 def default_library_path() -> Path:
     root = Path(__file__).resolve().parents[2]
     for extension in ("dylib", "so"):
@@ -224,6 +265,125 @@ def load_library(path: Path | None = None) -> C.CDLL:
     lib.ma_player_state_match_rgba.restype = C.c_int
     lib.ma_player_state_matcher_destroy.argtypes = [C.c_void_p]
     return lib
+
+
+def bind_relation(lib: C.CDLL) -> C.CDLL:
+    """Declare the near-zone relation ABI, which older prebuilt cores lack."""
+    try:
+        create = lib.ma_relation_create
+    except AttributeError as error:
+        raise RuntimeError(
+            "Native core has no ma_relation_* symbols (MA_API_VERSION < 9); rebuild it: "
+            "cmake -S native -B build/native && cmake --build build/native"
+        ) from error
+    create.argtypes = [C.POINTER(RelationConfig)]
+    create.restype = C.c_void_p
+    lib.ma_relation_destroy.argtypes = [C.c_void_p]
+    lib.ma_relation_destroy.restype = None
+    lib.ma_relation_reset.argtypes = [C.c_void_p]
+    lib.ma_relation_reset.restype = None
+    lib.ma_relation_update.argtypes = [
+        C.c_void_p, C.POINTER(TrackedEntity), C.c_int, Rect, C.c_int, C.c_int, C.c_int,
+        C.c_int64, C.POINTER(RelationOutput),
+    ]
+    lib.ma_relation_update.restype = C.c_int
+    return lib
+
+
+def relation_config_from_profile(profile_json: dict[str, Any]) -> RelationConfig | None:
+    """Validate ``minimap_relation`` with the same bounds as Android and native."""
+    section = profile_json.get("minimap_relation")
+    if section is None:
+        return None
+    if not isinstance(section, dict):
+        raise ValueError("minimap_relation must be an object")
+    enabled = section.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ValueError("minimap_relation.enabled must be true or false")
+    if not enabled:
+        return None
+    if section.get("schema") != RELATION_SCHEMA:
+        raise ValueError("Unsupported minimap_relation schema")
+    if _profile_integer(section.get("schema_version"),
+                        "minimap_relation.schema_version", 1, 1) != 1:
+        raise ValueError("Unsupported minimap_relation schema version")
+    if "minimap_direction" not in profile_json.get("rois", {}):
+        raise ValueError("minimap_relation requires rois.minimap_direction as the map body")
+    enter = _profile_float(section.get("enter_radius"),
+                           "minimap_relation.enter_radius", 0.01, 2.0)
+    exit_ = _profile_float(section.get("exit_radius"),
+                           "minimap_relation.exit_radius", 0.01, 3.0)
+    if exit_ <= enter:
+        raise ValueError("minimap_relation.exit_radius must exceed enter_radius")
+    calibration = section.get("calibration")
+    if calibration is not None and (not isinstance(calibration, dict) or
+                                    calibration.get("status") not in {"provisional", "calibrated"}):
+        raise ValueError("minimap_relation.calibration.status must be provisional or calibrated")
+    return RelationConfig(
+        enter, exit_,
+        _profile_float(section.get("sector_hysteresis_deg"),
+                       "minimap_relation.sector_hysteresis_deg", 0.0, 22.0),
+        _profile_float(section.get("adjacent_ratio"),
+                       "minimap_relation.adjacent_ratio", 0.0, 1.0),
+        _profile_float(section.get("tie_ratio"), "minimap_relation.tie_ratio", 0.0, 1.0),
+        _profile_integer(section.get("confirm_hits"), "minimap_relation.confirm_hits", 1, 3),
+        _profile_integer(section.get("rearm_ms"), "minimap_relation.rearm_ms", 0, 60000),
+        _profile_integer(section.get("short_gap_ms"),
+                         "minimap_relation.short_gap_ms", 500, 10000),
+        _profile_integer(section.get("pause_min_gap_ms"),
+                         "minimap_relation.pause_min_gap_ms", 0, 120000),
+        _profile_integer(section.get("max_freshness_ms"),
+                         "minimap_relation.max_freshness_ms", 0, 5000),
+    )
+
+
+def relation_output_dict(value: RelationOutput) -> dict[str, Any]:
+    return {
+        "state": RELATION_STATE_NAMES[value.state],
+        "event": RELATION_EVENT_NAMES[value.event],
+        "sector": RELATION_SECTOR_NAMES[value.sector],
+        "pan": round(float(value.pan), 4),
+        "nearest_distance": (round(float(value.nearest_distance), 4)
+                             if value.nearest_distance >= 0 else None),
+        "episode_id": value.episode_id,
+        "suppression": RELATION_SUPPRESSION_NAMES[value.suppression],
+        "reliable": bool(value.reliable),
+    }
+
+
+class Relation:
+    """Owns one native near-zone relation handle shared with the Android path."""
+
+    def __init__(self, lib: C.CDLL, config: RelationConfig):
+        self.lib = bind_relation(lib)
+        self.config = config
+        self.handle = self.lib.ma_relation_create(C.byref(config))
+        if not self.handle:
+            raise ValueError("Native relation layer rejected minimap_relation")
+
+    def update(self, entities: Any, count: int, map_body: Rect, map_valid: bool,
+               width: int, height: int, now_ms: int) -> dict[str, Any]:
+        output = RelationOutput()
+        if self.lib.ma_relation_update(self.handle, entities, count, map_body,
+                                       1 if map_valid else 0, width, height, now_ms,
+                                       C.byref(output)) != 1:
+            raise ValueError("Native relation layer rejected the frame")
+        return relation_output_dict(output)
+
+    def reset(self) -> None:
+        if self.handle:
+            self.lib.ma_relation_reset(self.handle)
+
+    def close(self) -> None:
+        if self.handle:
+            self.lib.ma_relation_destroy(self.handle)
+            self.handle = None
+
+    def __enter__(self) -> "Relation":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
 
 
 def _rect(values: list[float]) -> Rect:
@@ -413,6 +573,7 @@ def read_profile(path: Path) -> tuple[Profile, dict[str, Any]]:
     _validate_player_life(
         state_recognition.get("player_life") if state_recognition else None
     )
+    relation_config_from_profile(data)
     return profile, data
 
 

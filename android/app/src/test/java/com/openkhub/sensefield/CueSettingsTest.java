@@ -41,4 +41,23 @@ public final class CueSettingsTest {
         assertTrue(GameProfile.DEFAULT_VISION_MEMORY);
     }
 
+    @Test public void nearZoneChannelsFollowPresetAndSurviveCompactToneSwitch() {
+        int compactGlobalChannels = CueRequest.CHANNEL_SPEECH
+                | CueRequest.CHANNEL_HAPTIC | CueRequest.CHANNEL_VISUAL;
+        assertEquals(CueRequest.CHANNEL_TONE,
+                CueSettings.channelsForCategory(compactGlobalChannels,
+                        CueSettings.PRESET_COMPACT, CueRequest.Category.NEAR_ZONE));
+        int voiced = CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH
+                | CueRequest.CHANNEL_HAPTIC;
+        assertEquals(voiced, CueSettings.channelsForCategory(15,
+                CueSettings.PRESET_STANDARD, CueRequest.Category.NEAR_ZONE));
+        assertEquals(voiced, CueSettings.channelsForCategory(15,
+                CueSettings.PRESET_DETAILED, CueRequest.Category.NEAR_ZONE));
+        // Global switches still apply outside the compact special case, and
+        // the overlay is never requested by near-zone cues.
+        assertEquals(CueRequest.CHANNEL_SPEECH, CueSettings.channelsForCategory(
+                CueRequest.CHANNEL_SPEECH | CueRequest.CHANNEL_VISUAL,
+                CueSettings.PRESET_STANDARD, CueRequest.Category.NEAR_ZONE));
+    }
+
 }

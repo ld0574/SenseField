@@ -94,38 +94,48 @@ dependencies {
 }
 
 def minimapModelDir = file('src/main/assets')
-def minimapModelMetadata = file("${minimapModelDir}/minimap-yolox-nano-320.metadata.json")
+// The frozen 320 enemy-only baseline and the experimental dual-class
+// near-zone model. Weights stay local; each tracked metadata sidecar pins them.
+def minimapModelSets = ['minimap-yolox-nano-320', 'minimap-yolox-nano-dual-512']
 
 tasks.register('verifyMinimapModelAssets') {
-    def param = file("${minimapModelDir}/minimap-yolox-nano-320.param")
-    def weights = file("${minimapModelDir}/minimap-yolox-nano-320.bin")
-    inputs.files(param, weights, minimapModelMetadata)
+    minimapModelSets.each { stem ->
+        inputs.files(file("${minimapModelDir}/${stem}.param"),
+                file("${minimapModelDir}/${stem}.bin"),
+                file("${minimapModelDir}/${stem}.metadata.json"))
+    }
     doLast {
-        def presentCount = [param, weights].count { it.isFile() }
-        if (presentCount == 0) {
-            logger.lifecycle('Private YOLOX assets are absent; the APK will not be able to run '
-                    + 'its default experimental minimap profile until matching model files are added.')
-            return
-        }
-        if (presentCount != 2) {
-            throw new GradleException(
-                    'YOLOX assets are incomplete. Place both minimap-yolox-nano-320.param '
-                            + 'and minimap-yolox-nano-320.bin in app/src/main/assets, or remove both.'
-            )
-        }
-        if (!minimapModelMetadata.isFile()) {
-            throw new GradleException(
-                    'YOLOX model metadata is missing; cannot verify local model hashes.'
-            )
-        }
-        def metadata = new JsonSlurper().parse(minimapModelMetadata)
-        [['param', param], ['bin', weights]].each { entry ->
-            def expected = metadata.runtime["${entry[0]}_sha256"]
-            def actual = MessageDigest.getInstance('SHA-256')
-                    .digest(entry[1].bytes).encodeHex().toString()
-            if (!(expected instanceof String) || actual != expected) {
-                throw new GradleException("Minimap model ${entry[0]} SHA-256 mismatch: "
-                        + "expected ${expected}, got ${actual}")
+        minimapModelSets.each { stem ->
+            def param = file("${minimapModelDir}/${stem}.param")
+            def weights = file("${minimapModelDir}/${stem}.bin")
+            def metadataFile = file("${minimapModelDir}/${stem}.metadata.json")
+            def presentCount = [param, weights].count { it.isFile() }
+            if (presentCount == 0) {
+                logger.lifecycle("Private YOLOX assets ${stem} are absent; the profile bound to "
+                        + 'them cannot run until matching model files are added.')
+                return
+            }
+            if (presentCount != 2) {
+                throw new GradleException(
+                        "YOLOX assets are incomplete. Place both ${stem}.param "
+                                + "and ${stem}.bin in app/src/main/assets, or remove both."
+                )
+            }
+            if (!metadataFile.isFile()) {
+                throw new GradleException(
+                        "YOLOX model metadata ${stem}.metadata.json is missing; "
+                                + 'cannot verify local model hashes.'
+                )
+            }
+            def metadata = new JsonSlurper().parse(metadataFile)
+            [['param', param], ['bin', weights]].each { entry ->
+                def expected = metadata.runtime["${entry[0]}_sha256"]
+                def actual = MessageDigest.getInstance('SHA-256')
+                        .digest(entry[1].bytes).encodeHex().toString()
+                if (!(expected instanceof String) || actual != expected) {
+                    throw new GradleException("Minimap model ${stem} ${entry[0]} SHA-256 "
+                            + "mismatch: expected ${expected}, got ${actual}")
+                }
             }
         }
     }

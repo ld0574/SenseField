@@ -10,7 +10,16 @@ from pathlib import Path
 
 
 KIND_BY_CODE = {1: "main_enemy", 2: "minimap_enemy", 3: "danger_ping",
-                4: "player_dead", 5: "player_alive"}
+                4: "player_dead", 5: "player_alive",
+                7: "near_zone", 8: "radar_status"}
+NEAR_ZONE_STATES = {"UNKNOWN", "CLEAR", "PENDING", "OCCUPIED", "REARM"}
+NEAR_ZONE_EVENTS = {"NEAR_ENTER", "RADAR_PAUSED", "RADAR_RESUMED", "SUPPRESSED"}
+NEAR_ZONE_OUTCOMES = {"ACCEPTED", "DROPPED", "CATEGORY_DISABLED", "SUPPRESSED"}
+NEAR_ZONE_SUPPRESSIONS = {"none", "rearm_pending", "short_gap"}
+NEAR_ZONE_SUMMARY_FIELDS = (
+    "unknownFrames", "clearFrames", "pendingFrames", "occupiedFrames", "rearmFrames",
+    "nearEnters", "suppressed", "radarPauses", "radarResumes",
+)
 
 # These values mirror CueRequest and CueDispatcher in the Android client.  Keep
 # the parser closed over the producer's vocabulary: accepting an unknown bit or
@@ -46,6 +55,7 @@ ANDROID_CUE_CATEGORIES = {
     "DANGER",
     "PLAYER_STATE",
     "SYSTEM",
+    "NEAR_ZONE",
 }
 ANDROID_HEALTH_STATES = {
     "HEALTHY",
@@ -109,6 +119,9 @@ def parse_session_log(path: Path, session_id: str) -> dict[str, object]:
     dispatch_records: list[dict[str, str]] = []
     playback_records: list[dict[str, str]] = []
     health_records: list[dict[str, str]] = []
+    near_state_records: list[dict[str, str]] = []
+    near_event_records: list[dict[str, str]] = []
+    near_summaries: list[dict[str, str]] = []
     with path.open(encoding="utf-8", errors="replace") as stream:
         for line in stream:
             if "MapAssistCapture" not in line:
@@ -119,6 +132,9 @@ def parse_session_log(path: Path, session_id: str) -> dict[str, object]:
                 ("CueDispatch", dispatch_records),
                 ("CuePlayback", playback_records),
                 ("CaptureHealth", health_records),
+                ("NearZoneState", near_state_records),
+                ("NearZoneEvent", near_event_records),
+                ("NearZoneSummary", near_summaries),
                 ("SessionSummary", summaries),
             ):
                 values = _fields(line, marker)
@@ -436,7 +452,9 @@ def parse_session_log(path: Path, session_id: str) -> dict[str, object]:
             str(item["cue_id"]) for item in playbacks
             if item["channel"] in {"TONE", "SPEECH"} and item["result"] == "STARTED"
         ))
-    return {
+    near_zone = _near_zone_section(near_state_records, near_event_records, near_summaries,
+                                   cue_by_id, summary)
+    result: dict[str, object] = {
         "schema_version": 2 if enhanced else 1,
         "session_id": session_id,
         "start_id": _integer(start, "startId", "SessionStart"),
@@ -453,6 +471,83 @@ def parse_session_log(path: Path, session_id: str) -> dict[str, object]:
         "native_p95_micros": _p95([
             int(item["native_micros"]) for item in non_stale
         ]),
+    }
+    if near_zone is not None:
+        result["near_zone"] = near_zone
+    return result
+
+
+def _near_zone_section(state_records: list[dict[str, str]],
+                       event_records: list[dict[str, str]],
+                       summaries: list[dict[str, str]],
+                       cue_by_id: dict[str, dict[str, object]],
+                       session_summary: dict[str, object]) -> dict[str, object] | None:
+    """Validate near-zone audit records and derive coverage and cue rate."""
+    if not (state_records or event_records or summaries):
+        return None
+    if len(summaries) != 1:
+        raise ValueError(f"Expected exactly one NearZoneSummary, found {len(summaries)}")
+    transitions = []
+    for values in state_records:
+        to_state = _required(values, "to", "NearZoneState")
+        from_state = _required(values, "from", "NearZoneState")
+        if to_state not in NEAR_ZONE_STATES or from_state not in NEAR_ZONE_STATES | {"RESET"}:
+            raise ValueError(f"NearZoneState has invalid transition {from_state}->{to_state}")
+        transitions.append({
+            "from": from_state, "to": to_state,
+            "reliable": _boolean(values, "reliable", "NearZoneState"),
+            "at_ms": _integer(values, "atMs", "NearZoneState"),
+        })
+    events = []
+    counted = {name: 0 for name in NEAR_ZONE_EVENTS}
+    suppressions: dict[str, int] = {}
+    for values in event_records:
+        event = _required(values, "event", "NearZoneEvent")
+        outcome = _required(values, "outcome", "NearZoneEvent")
+        suppression = _required(values, "suppression", "NearZoneEvent")
+        if event not in NEAR_ZONE_EVENTS or outcome not in NEAR_ZONE_OUTCOMES or \
+                suppression not in NEAR_ZONE_SUPPRESSIONS:
+            raise ValueError(f"NearZoneEvent has invalid event/outcome {event}/{outcome}")
+        sector = _integer(values, "sector", "NearZoneEvent")
+        if sector not in range(9):
+            raise ValueError(f"NearZoneEvent has invalid sector {sector}")
+        cue_id = _required(values, "cueId", "NearZoneEvent")
+        if outcome in {"ACCEPTED", "DROPPED"}:
+            cue = cue_by_id.get(cue_id)
+            expected_kind = "near_zone" if event == "NEAR_ENTER" else "radar_status"
+            if cue is None or cue["kind"] != expected_kind:
+                raise ValueError(f"NearZoneEvent {cue_id!r} does not match a {expected_kind} CueEvent")
+        counted[event] += 1
+        if event == "SUPPRESSED":
+            suppressions[suppression] = suppressions.get(suppression, 0) + 1
+        events.append({
+            "event": event, "episode": _integer(values, "episode", "NearZoneEvent"),
+            "sector": sector, "suppression": None if suppression == "none" else suppression,
+            "cue_id": None if cue_id == "-" else cue_id, "outcome": outcome,
+            "at_ms": _integer(values, "atMs", "NearZoneEvent"),
+        })
+    frames = {key: _integer(summaries[0], key, "NearZoneSummary")
+              for key in NEAR_ZONE_SUMMARY_FIELDS}
+    if any(value < 0 for value in frames.values()):
+        raise ValueError("NearZoneSummary counters must be nonnegative")
+    for key, event in (("nearEnters", "NEAR_ENTER"), ("suppressed", "SUPPRESSED"),
+                       ("radarPauses", "RADAR_PAUSED"), ("radarResumes", "RADAR_RESUMED")):
+        if frames[key] != counted[event]:
+            raise ValueError(
+                f"NearZoneSummary.{key}={frames[key]} does not match {counted[event]} events"
+            )
+    total = sum(frames[key] for key in NEAR_ZONE_SUMMARY_FIELDS[:5])
+    minutes = session_summary["durationMs"] / 60000.0
+    return {
+        "transitions": transitions,
+        "events": events,
+        "state_frames": {key: frames[key] for key in NEAR_ZONE_SUMMARY_FIELDS[:5]},
+        "coverage": round((total - frames["unknownFrames"]) / total, 4) if total else None,
+        "near_enters": counted["NEAR_ENTER"],
+        "near_enter_per_minute": round(counted["NEAR_ENTER"] / minutes, 3) if minutes else None,
+        "suppressions": suppressions,
+        "radar_pauses": counted["RADAR_PAUSED"],
+        "radar_resumes": counted["RADAR_RESUMED"],
     }
 
 

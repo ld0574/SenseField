@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "model": "YOLOX-Nano minimap enemy + local player detector",
+  "candidate": {
+    "id": "yolox-nano-dualclass-v6-512-v8-finetune-dev-candidate",
+    "status": "development_candidate_not_promoted",
+    "release_ready": false,
+    "profile_version": "0.9.0-yolox-nano-dual-512-v6-near-zone"
+  },
+  "verified": false,
+  "release_status": "experimental; development diagnostic only; no independent test split and no Android device validation",
+  "input": [1, 3, 512, 512],
+  "output": [1, 5376, 7],
+  "classes": ["minimap_enemy", "minimap_player"],
+  "runtime": {
+    "name": "ncnn",
+    "version": "20260526",
+    "param_asset": "minimap-yolox-nano-dual-512.param",
+    "bin_asset": "minimap-yolox-nano-dual-512.bin",
+    "param_sha256": "77ea946b9b6c4360296e9f068010414631f3dccd0368b01087507aa639391da0",
+    "bin_sha256": "808ce276487d262acc66164f5eb77bbc1ac92f6d6ec31bb530c19fafc8371bd3"
+  },
+  "source": {
+    "checkpoint": "build/training/yolox-nano-minimap-dualclass-v6-512-v8-finetune/best_balanced_ckpt.pth",
+    "checkpoint_sha256": "88a7de0332b18ce63539039fcbaccfd23f0499782818675f5698ffd0ede4ea46",
+    "onnx_sha256": "0003ea10ce7381c704f87c56506c5e290c38acc480d052aee922859badac8710",
+    "torchscript_sha256": "5c9b6bcf4d59503aa44ede13224a549fdc0c707c54a1f38a9b04300b43f7e946",
+    "export_report_sha256": "ff8553f77b74f24ad9c92cdd45e0129a2931aeae7255260c4ab97231762c4dfa"
+  },
+  "postprocess": {
+    "confidence": 0.57,
+    "confidence_by_class": {
+      "minimap_enemy": 0.57,
+      "minimap_player": 0.59
+    },
+    "nms_iou": 0.5,
+    "strides": [8, 16, 32]
+  },
+  "development_validation": {
+    "split": "safe dual-class v8 pooled development val (video2-HD, video11, video13); used for model and threshold selection; test split empty; not independent",
+    "minimap_player": {
+      "tp": 84,
+      "fp": 4,
+      "fn": 9,
+      "precision": 0.954545,
+      "visible_recall": 0.903226,
+      "center_error_p95_px": 6.289928,
+      "center_error_p95_relative_short_edge": 0.017083
+    },
+    "minimap_enemy": {
+      "precision": 0.953488,
+      "recall": 0.87234,
+      "f1": 0.911111
+    },
+    "interpretation": "development diagnostic only; not a release or independent result"
+  },
+  "parity": {
+    "pytorch_vs_onnx": {
+      "frames": 12,
+      "passed": false,
+      "maximum_raw_error": 0.0006387233734130859,
+      "raw_gate": 0.0005,
+      "all_final_detection_arrays_match": true
+    },
+    "torchscript_vs_ncnn_and_android_preprocess": {
+      "frames": 12,
+      "overall_passed": true,
+      "raw_max_error": 0.0004534125328063965,
+      "maximum_detection_value_error": 0.005615234375,
+      "all_final_detection_counts_match": true
+    }
+  },
+  "desktop_benchmark": {
+    "threads": 2,
+    "preprocess_plus_inference_ms_p95": 28.9551849,
+    "note": "desktop ncnn only; phone latency must be measured on device"
+  },
+  "sealed_sources": {
+    "video9": "not read, run or viewed",
+    "video12": "not read, run or viewed"
+  }
+}

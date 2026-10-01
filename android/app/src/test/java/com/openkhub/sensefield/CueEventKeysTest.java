@@ -10,6 +10,13 @@ public final class CueEventKeysTest {
                 CueEventKeys.visionMemory(1, 7, 1));
     }
 
+    @Test public void nearZoneKeyIsPerEpisodeAndRadarKeyPerAnnouncement() {
+        org.junit.Assert.assertEquals(CueEventKeys.nearZone(0, 3), CueEventKeys.nearZone(0, 3));
+        assertNotEquals(CueEventKeys.nearZone(0, 3), CueEventKeys.nearZone(0, 4));
+        assertNotEquals(CueEventKeys.nearZone(0, 3), CueEventKeys.nearZone(1, 3));
+        assertNotEquals(CueEventKeys.radarStatus(0, 1, 2), CueEventKeys.radarStatus(0, 2, 2));
+    }
+
     @Test public void resetGenerationSeparatesNativeAndPlayerCues() {
         assertNotEquals(CueEventKeys.nativeCue(0, 1, 2),
                 CueEventKeys.nativeCue(1, 1, 2));

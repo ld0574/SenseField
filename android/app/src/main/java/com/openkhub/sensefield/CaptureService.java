@@ -118,6 +118,16 @@ public final class CaptureService extends Service {
     private Runnable displayWatchdog;
     private long captureGeneration;
     private long nativeResetGeneration;
+    // Near-zone relation layer state for routing and the session audit.
+    private boolean nearZoneActive;
+    private boolean nearCategoryWasEnabled = true;
+    private int lastRelationState = Integer.MIN_VALUE;
+    private final int[] nearZoneStateFrames = new int[5];
+    private int nearZoneEnters;
+    private int nearZoneSuppressed;
+    private int radarPauses;
+    private int radarResumes;
+    private long nextRadarSequence;
 
     @Override
     public void onCreate() {
@@ -228,7 +238,8 @@ public final class CaptureService extends Service {
                 cueSettings = new CueSettings(this);
                 cueDispatcher = new CueDispatcher(cuePlayer, cueSettings,
                         new CueAuditListener(), SystemClock::elapsedRealtime);
-                GameProfile profile = GameProfile.load(this);
+                GameProfile.Loaded loaded = GameProfile.loadResolved(this);
+                GameProfile profile = loaded.profile;
                 profileName = profile.name + " · " + profile.version;
                 maxObservationAgeMs = profile.eventInts[0];
                 // A development profile may carry an older, shorter native
@@ -269,7 +280,21 @@ public final class CaptureService extends Service {
                         playerLife == null ? null : playerLife.luma,
                         playerLife == null ? null : playerLife.chroma);
                 if (nativeSession == 0) throw new IllegalStateException("Native recognizer rejected profile");
+                if (profile.relation != null) {
+                    if (!NativeBridge.nativeConfigureRelation(nativeSession,
+                            profile.relation.floats, profile.relation.ints)) {
+                        throw new IllegalStateException("Native near-zone layer rejected profile");
+                    }
+                    nearZoneActive = true;
+                }
+                if (loaded.fallbackReason != null) {
+                    Log.w(TAG, "Near-zone profile not in use: " + loaded.fallbackReason);
+                }
                 Log.i(TAG, "SessionConfig sessionId=" + auditSessionId
+                        + " profileSource=" + loaded.source
+                        + " nearZone=" + nearZoneActive
+                        + " nearZoneCalibrated=" + (profile.relation != null
+                                && profile.relation.calibrated)
                         + " profileName=" + profile.name
                         + " profileVersion=" + profile.version
                         + " verified=" + profile.verified
@@ -382,6 +407,8 @@ public final class CaptureService extends Service {
         clearCueCategoriesLocked();
         if (minimapOverlay != null) minimapOverlay.clear();
         overlayCaptureGuard.clearMarkers();
+        // Native reset also cleared the relation layer; log a fresh state.
+        lastRelationState = Integer.MIN_VALUE;
     }
 
     /** Native/session resets invalidate every cue that could outlive the frame stream. */
@@ -411,6 +438,11 @@ public final class CaptureService extends Service {
         if (wasEnabled && !feedbackEnabled && cueDispatcher != null) {
             cueDispatcher.clearCategory(CueRequest.Category.VISION_MEMORY);
         }
+        boolean nearEnabled = cueSettings.categoryEnabled(CueRequest.Category.NEAR_ZONE);
+        if (nearCategoryWasEnabled && !nearEnabled && cueDispatcher != null) {
+            cueDispatcher.clearCategory(CueRequest.Category.NEAR_ZONE);
+        }
+        nearCategoryWasEnabled = nearEnabled;
         boolean visualEnabled = feedbackEnabled &&
                 !overlayCaptureGuard.isSuppressed() &&
                 (cueSettings.enabledChannels(CueRequest.Category.VISION_MEMORY)
@@ -679,6 +711,9 @@ public final class CaptureService extends Service {
                                 directCueOutput, observedAtMs);
                         playVisionMemoryTransitions(frame, decision.minimapAppearances,
                                 observedAtMs, decision.suppressedMinimap);
+                        // Near-zone events bypass the minimap APPEAR cooldown:
+                        // native occupancy episodes and REARM are their dedupe.
+                        handleNearZone(frame, observedAtMs);
                     }
                 }
                 if (now - lastNotificationAtMs > 5000) {
@@ -740,6 +775,20 @@ public final class CaptureService extends Service {
                     + " cueSuppressed=true suppression=" + item.reason);
         }
         if (cueDispatcher == null || appearances == null || appearances.isEmpty()) return;
+        boolean audible = cueSettings == null || NearZoneRouting.farAppearAudible(
+                nearZoneActive, cueSettings.categoryEnabled(CueRequest.Category.NEAR_ZONE),
+                cueSettings.farAppearPreference());
+        if (!audible) {
+            // Near-zone cues replace the distant new-portrait tone; the
+            // overlay still draws the marker from the native snapshot.
+            for (TrackedEntity entity : appearances) {
+                Log.i(TAG, "VisionMemoryEvent sessionId=" + auditSessionId
+                        + " event=APPEAR"
+                        + " trackId=" + entity.trackId
+                        + " cueSuppressed=true suppression=near_zone_active");
+            }
+            return;
+        }
         for (TrackedEntity entity : appearances) {
             int position = minimapPosition(entity.bbox.centerX(), entity.bbox.centerY(),
                     frame.minimapRoi);
@@ -778,6 +827,109 @@ public final class CaptureService extends Service {
                     + " ageMs=" + entity.ageMs
                     + " feedbackQueued=" + dispatched.audioQueued());
         }
+    }
+
+    /** Route one frame of native near-zone relation output. Called under processingLock. */
+    private void handleNearZone(NativeFrameResult frame, long observedAtMs) {
+        NativeFrameResult.Relation relation = frame.relation;
+        if (!nearZoneActive || !relation.available()) return;
+        if (relation.state >= 0 && relation.state < nearZoneStateFrames.length) {
+            nearZoneStateFrames[relation.state]++;
+        }
+        if (relation.state != lastRelationState) {
+            Log.i(TAG, "NearZoneState sessionId=" + auditSessionId
+                    + " from=" + (lastRelationState == Integer.MIN_VALUE ? "RESET"
+                            : NearZoneRouting.stateName(lastRelationState))
+                    + " to=" + NearZoneRouting.stateName(relation.state)
+                    + " reliable=" + relation.reliable
+                    + " atMs=" + observedAtMs);
+            lastRelationState = relation.state;
+        }
+        switch (relation.event) {
+            case NearZoneRouting.EVENT_NEAR_ENTER:
+                nearZoneEnters++;
+                dispatchNearZoneCue(relation, observedAtMs);
+                break;
+            case NearZoneRouting.EVENT_RADAR_PAUSED:
+            case NearZoneRouting.EVENT_RADAR_RESUMED:
+                if (relation.event == NearZoneRouting.EVENT_RADAR_PAUSED) radarPauses++;
+                else radarResumes++;
+                dispatchRadarTone(relation, observedAtMs);
+                break;
+            case NearZoneRouting.EVENT_SUPPRESSED:
+                nearZoneSuppressed++;
+                logNearZoneEvent(relation, observedAtMs, "-", "SUPPRESSED");
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void dispatchNearZoneCue(NativeFrameResult.Relation relation, long observedAtMs) {
+        if (cueDispatcher == null || cueSettings == null) return;
+        if (!cueSettings.categoryEnabled(CueRequest.Category.NEAR_ZONE)) {
+            logNearZoneEvent(relation, observedAtMs, "-", "CATEGORY_DISABLED");
+            return;
+        }
+        String cueId = auditSessionId + ":" + nextCueId++;
+        CueRequest request = new CueRequest(auditSessionId, cueId,
+                CueEventKeys.nearZone(nativeResetGeneration, relation.episodeId),
+                "NEAR_ZONE", CueRequest.Category.NEAR_ZONE, NearZoneRouting.NEAR_PRIORITY,
+                observedAtMs, observedAtMs + NearZoneRouting.NEAR_TTL_MS,
+                NearZoneRouting.nearChannels(cueSettings.nearHapticEnabled()),
+                NearZoneRouting.TONE_NEAR, 0, 0, NearZoneRouting.speech(relation.sector),
+                relation.pan);
+        submitRelationCue(request, NearZoneRouting.KIND_NEAR_ZONE, relation, observedAtMs);
+    }
+
+    private void dispatchRadarTone(NativeFrameResult.Relation relation, long observedAtMs) {
+        if (cueDispatcher == null || cueSettings == null) return;
+        if (!cueSettings.categoryEnabled(CueRequest.Category.NEAR_ZONE)) {
+            logNearZoneEvent(relation, observedAtMs, "-", "CATEGORY_DISABLED");
+            return;
+        }
+        boolean paused = relation.event == NearZoneRouting.EVENT_RADAR_PAUSED;
+        String cueId = auditSessionId + ":" + nextCueId++;
+        CueRequest request = new CueRequest(auditSessionId, cueId,
+                CueEventKeys.radarStatus(nativeResetGeneration, nextRadarSequence++,
+                        relation.event),
+                paused ? "RADAR_PAUSED" : "RADAR_RESUMED", CueRequest.Category.NEAR_ZONE,
+                NearZoneRouting.RADAR_PRIORITY, observedAtMs,
+                observedAtMs + NearZoneRouting.RADAR_TTL_MS, NearZoneRouting.radarChannels(),
+                paused ? NearZoneRouting.TONE_RADAR_PAUSED : NearZoneRouting.TONE_RADAR_RESUMED,
+                0, 0, null, 0f);
+        submitRelationCue(request, NearZoneRouting.KIND_RADAR_STATUS, relation, observedAtMs);
+    }
+
+    private void submitRelationCue(CueRequest request, int kind,
+                                   NativeFrameResult.Relation relation, long observedAtMs) {
+        long frameAgeMs = Math.max(0, SystemClock.elapsedRealtime() - observedAtMs);
+        CueDispatcher.DispatchResult dispatched = cueDispatcher.submit(request);
+        boolean stale = recordCueDispatch(dispatched);
+        Log.i(TAG, "CueEvent sessionId=" + auditSessionId
+                + " cueId=" + request.cueId
+                + " kind=" + kind
+                + " direction=0"
+                + " observedAtMs=" + observedAtMs
+                + " frameAgeMs=" + frameAgeMs
+                + " nativeMicros=" + latestNativeMicros
+                + " stale=" + stale
+                + " audioQueued=" + dispatched.audioQueued());
+        logNearZoneEvent(relation, observedAtMs, request.cueId, dispatched.outcome);
+    }
+
+    private void logNearZoneEvent(NativeFrameResult.Relation relation, long observedAtMs,
+                                  String cueId, String outcome) {
+        Log.i(TAG, "NearZoneEvent sessionId=" + auditSessionId
+                + " event=" + NearZoneRouting.eventName(relation.event)
+                + " episode=" + relation.episodeId
+                + " sector=" + relation.sector
+                + " panMilli=" + Math.round(relation.pan * 1000f)
+                + " distanceMilli=" + Math.round(relation.nearestDistance * 1000f)
+                + " suppression=" + NearZoneRouting.suppressionName(relation.suppression)
+                + " cueId=" + cueId
+                + " outcome=" + outcome
+                + " atMs=" + observedAtMs);
     }
 
     private boolean dispatchNativeCue(int kind, int direction, int nativePriority,
@@ -975,6 +1127,15 @@ public final class CaptureService extends Service {
             lastLoggedLocatorState = Integer.MIN_VALUE;
             lastFrameLandscape = false;
             visionMemoryEnabled = false;
+            nearZoneActive = false;
+            nearCategoryWasEnabled = true;
+            lastRelationState = Integer.MIN_VALUE;
+            java.util.Arrays.fill(nearZoneStateFrames, 0);
+            nearZoneEnters = 0;
+            nearZoneSuppressed = 0;
+            radarPauses = 0;
+            radarResumes = 0;
+            nextRadarSequence = 0;
             overlayCaptureGuard.reset();
             profileName = "";
             auditSessionId = UUID.randomUUID().toString();
@@ -1005,6 +1166,20 @@ public final class CaptureService extends Service {
     private void finishAuditSessionLocked(String reason) {
         if (!auditSessionActive) return;
         long endedAtMs = SystemClock.elapsedRealtime();
+        if (nearZoneActive) {
+            // Frame counts per relation state give evidence coverage without
+            // reconstructing wall-clock intervals across pauses.
+            Log.i(TAG, "NearZoneSummary sessionId=" + auditSessionId
+                    + " unknownFrames=" + nearZoneStateFrames[0]
+                    + " clearFrames=" + nearZoneStateFrames[1]
+                    + " pendingFrames=" + nearZoneStateFrames[2]
+                    + " occupiedFrames=" + nearZoneStateFrames[3]
+                    + " rearmFrames=" + nearZoneStateFrames[4]
+                    + " nearEnters=" + nearZoneEnters
+                    + " suppressed=" + nearZoneSuppressed
+                    + " radarPauses=" + radarPauses
+                    + " radarResumes=" + radarResumes);
+        }
         Log.i(TAG, "SessionSummary sessionId=" + auditSessionId
                 + " durationMs=" + Math.max(0, endedAtMs - auditSessionStartedAtMs)
                 + " processedFrames=" + processedFrames

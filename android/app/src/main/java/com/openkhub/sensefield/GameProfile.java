@@ -28,6 +28,18 @@ final class GameProfile {
     static final boolean DEFAULT_ALLOW_EXPERIMENTAL = true;
     static final String PREF_VISION_MEMORY = "vision_memory";
     static final boolean DEFAULT_VISION_MEMORY = true;
+    /** Opt back into the frozen 320 enemy-only profile, which has no near-zone cues. */
+    static final String PREF_BASELINE_MODEL = "use_baseline_model";
+
+    // The frozen 320 enemy-only profile stays the release baseline and test
+    // fixture. The dual-class near-zone profile is the experimental default
+    // whenever its private weights are present in the APK.
+    static final String BASELINE_PROFILE_ASSET = "profile.json";
+    static final String NEAR_ZONE_PROFILE_ASSET = "profile-dual-512-near-zone.json";
+    static final String SOURCE_IMPORTED = "imported";
+    static final String SOURCE_NEAR_ZONE_ASSET = "near_zone_asset";
+    static final String SOURCE_BASELINE_ASSET = "baseline_asset";
+    static final String RELATION_SCHEMA = "mapassist.minimap_relation";
 
     // Keep these names stable for the bundled 320px model. Imported profiles
     // may select another metadata/model pair, but only after its metadata has
@@ -98,6 +110,39 @@ final class GameProfile {
         }
     }
 
+    /** Native ma_relation_config values for the minimap near-zone layer. */
+    static final class RelationData {
+        /** enter radius, exit radius, sector hysteresis, adjacent ratio, tie ratio. */
+        final float[] floats;
+        /** confirm hits, REARM ms, short gap ms, pause-tone gap ms, max freshness ms. */
+        final int[] ints;
+        final boolean calibrated;
+
+        RelationData(float[] floats, int[] ints, boolean calibrated) {
+            this.floats = floats.clone();
+            this.ints = ints.clone();
+            this.calibrated = calibrated;
+        }
+
+        float enterRadius() {
+            return floats[0];
+        }
+    }
+
+    /** A resolved profile with where it came from, for the session audit log. */
+    static final class Loaded {
+        final GameProfile profile;
+        final String source;
+        /** Why the near-zone profile is not in use, or null. */
+        final String fallbackReason;
+
+        Loaded(GameProfile profile, String source, String fallbackReason) {
+            this.profile = profile;
+            this.source = source;
+            this.fallbackReason = fallbackReason;
+        }
+    }
+
     final String name;
     final String version;
     final boolean verified;
@@ -126,6 +171,8 @@ final class GameProfile {
     final TemplateData enemyTemplate;
     final TemplateData pingTemplate;
     final PlayerLifeData playerLife;
+    /** Near-zone relation configuration, or null when the layer is off. */
+    final RelationData relation;
 
     private GameProfile(String name, String version, boolean verified, float[] rois, int[] flags,
                         float[] tuning, int[] eventInts, float minConfidence,
@@ -139,7 +186,7 @@ final class GameProfile {
                         boolean minimapLocatorEnabled, float[] minimapLocatorFloats,
                         int[] minimapLocatorInts, byte[] minimapLocatorDescriptor,
                         TemplateData enemyTemplate, TemplateData pingTemplate,
-                        PlayerLifeData playerLife) {
+                        PlayerLifeData playerLife, RelationData relation) {
         this.name = name;
         this.version = version;
         this.verified = verified;
@@ -166,6 +213,7 @@ final class GameProfile {
         this.enemyTemplate = enemyTemplate;
         this.pingTemplate = pingTemplate;
         this.playerLife = playerLife;
+        this.relation = relation;
     }
 
     static SharedPreferences settings(Context context) {
@@ -173,21 +221,72 @@ final class GameProfile {
     }
 
     static GameProfile load(Context context) throws IOException, JSONException {
+        return loadResolved(context).profile;
+    }
+
+    /**
+     * Resolve the active profile: an imported profile wins; otherwise the
+     * dual-class near-zone profile unless the user chose the baseline or its
+     * private weights are absent, in which case the frozen 320 profile runs.
+     */
+    static Loaded loadResolved(Context context) throws IOException, JSONException {
+        SharedPreferences preferences = settings(context);
         File imported = new File(context.getFilesDir(), IMPORTED_FILE);
-        try (InputStream stream = imported.exists()
-                ? new FileInputStream(imported)
-                : context.getAssets().open("profile.json")) {
-            GameProfile profile = parse(readText(stream), settings(context));
-            if (profile.minimapYolox) {
-                YoloxBinding binding = verifyMinimapYoloxModelBinding(
-                        context, profile.minimapYoloxBinSha256, profile.verified,
-                        profile.yoloxInputSize, profile.yoloxMetadataAsset,
-                        profile.yoloxParamAsset, profile.yoloxBinAsset,
-                        profile.yoloxConfidence, profile.yoloxProfileClassThresholds);
-                profile = profile.withYoloxModel(binding);
+        if (imported.exists()) {
+            try (InputStream stream = new FileInputStream(imported)) {
+                return new Loaded(bind(context, readText(stream), preferences),
+                        SOURCE_IMPORTED, null);
             }
-            return profile;
         }
+        String fallbackReason = "baseline_selected_in_settings";
+        if (!preferences.getBoolean(PREF_BASELINE_MODEL, false)) {
+            try {
+                return new Loaded(bindAsset(context, NEAR_ZONE_PROFILE_ASSET, preferences),
+                        SOURCE_NEAR_ZONE_ASSET, null);
+            } catch (IOException missingWeights) {
+                // Missing private dual-class weights are expected in a clean
+                // clone. A malformed near-zone profile is a JSONException and
+                // is deliberately not swallowed here.
+                fallbackReason = "near_zone_unavailable: " + missingWeights.getMessage();
+            }
+        }
+        return new Loaded(bindAsset(context, BASELINE_PROFILE_ASSET, preferences),
+                SOURCE_BASELINE_ASSET, fallbackReason);
+    }
+
+    private static GameProfile bindAsset(Context context, String asset,
+                                         SharedPreferences preferences)
+            throws IOException, JSONException {
+        try (InputStream stream = context.getAssets().open(asset)) {
+            return bind(context, readText(stream), preferences);
+        }
+    }
+
+    private static GameProfile bind(Context context, String text, SharedPreferences preferences)
+            throws IOException, JSONException {
+        GameProfile profile = parse(text, preferences);
+        if (profile.minimapYolox) {
+            YoloxBinding binding = verifyMinimapYoloxModelBinding(
+                    context, profile.minimapYoloxBinSha256, profile.verified,
+                    profile.yoloxInputSize, profile.yoloxMetadataAsset,
+                    profile.yoloxParamAsset, profile.yoloxBinAsset,
+                    profile.yoloxConfidence, profile.yoloxProfileClassThresholds);
+            profile = profile.withYoloxModel(binding);
+        }
+        requireRelationModel(profile.relation, profile.yoloxClassKinds);
+        return profile;
+    }
+
+    /** The near-zone layer needs the player's own marker from the same model. */
+    static void requireRelationModel(RelationData relation, int[] classKinds)
+            throws JSONException {
+        if (relation == null) return;
+        if (classKinds != null) {
+            for (int kind : classKinds) {
+                if (kind == 6) return;
+            }
+        }
+        throw new JSONException("minimap_relation needs a model with the minimap_player class");
     }
 
     private GameProfile withYoloxModel(YoloxBinding binding) {
@@ -196,7 +295,7 @@ final class GameProfile {
                 minimapYoloxBinSha256, yoloxMetadataAsset, binding.paramAsset, binding.binAsset,
                 yoloxProfileClassThresholds, binding.model.classKinds, binding.model.classThresholds,
                 minimapLocatorEnabled, minimapLocatorFloats, minimapLocatorInts,
-                minimapLocatorDescriptor, enemyTemplate, pingTemplate, playerLife);
+                minimapLocatorDescriptor, enemyTemplate, pingTemplate, playerLife, relation);
     }
 
     private static void requireAsset(Context context, String name) throws IOException {
@@ -705,6 +804,10 @@ final class GameProfile {
                 (minimapYolox || flags[1] != 0 || flags[2] != 0);
         PlayerLifeData playerLife = parsePlayerLife(data.optJSONObject("state_recognition"),
                 enabled);
+        // A malformed section is always an error; a valid one only runs when
+        // the minimap detector that feeds it is enabled.
+        RelationData relation = parseRelation(data, rois);
+        if (!minimapYolox) relation = null;
         return new GameProfile(data.optString("name", "unnamed"),
                 data.optString("profile_version", "unversioned"), verified, rois, flags,
                 tuning, eventInts, minConfidence, minimapYolox, yoloxInputSize,
@@ -716,7 +819,77 @@ final class GameProfile {
                 locator == null ? new float[0] : locator.floats,
                 locator == null ? new int[0] : locator.ints,
                 locator == null ? null : locator.descriptor,
-                enemy, ping, playerLife);
+                enemy, ping, playerLife, relation);
+    }
+
+    private static RelationData parseRelation(JSONObject data, float[] rois)
+            throws JSONException {
+        if (!data.has("minimap_relation") || data.isNull("minimap_relation")) return null;
+        Object raw = data.get("minimap_relation");
+        if (!(raw instanceof JSONObject)) {
+            throw new JSONException("minimap_relation must be an object");
+        }
+        JSONObject section = (JSONObject) raw;
+        Object enabledValue = section.has("enabled") ? section.get("enabled") : Boolean.FALSE;
+        if (!(enabledValue instanceof Boolean)) {
+            throw new JSONException("minimap_relation.enabled must be true or false");
+        }
+        if (!(Boolean) enabledValue) return null;
+        if (!RELATION_SCHEMA.equals(section.getString("schema")) ||
+                section.getInt("schema_version") != 1) {
+            throw new JSONException("Unsupported minimap_relation schema");
+        }
+        JSONObject calibration = section.optJSONObject("calibration");
+        String status = calibration == null ? "provisional"
+                : calibration.optString("status", "provisional");
+        if (!"provisional".equals(status) && !"calibrated".equals(status)) {
+            throw new JSONException("minimap_relation.calibration.status is invalid");
+        }
+        return relationData(rois[14] > 0 && rois[15] > 0,
+                (float) section.getDouble("enter_radius"),
+                (float) section.getDouble("exit_radius"),
+                (float) section.getDouble("sector_hysteresis_deg"),
+                (float) section.getDouble("adjacent_ratio"),
+                (float) section.getDouble("tie_ratio"),
+                section.getDouble("confirm_hits"), section.getDouble("rearm_ms"),
+                section.getDouble("short_gap_ms"), section.getDouble("pause_min_gap_ms"),
+                section.getDouble("max_freshness_ms"), "calibrated".equals(status));
+    }
+
+    /**
+     * Pure bounds check shared with {@code native.relation_config_from_profile}
+     * and {@code ma_relation_create}; directly unit-testable on the JVM.
+     */
+    static RelationData relationData(boolean hasMapBody, float enter, float exit,
+                                     float hysteresis, float adjacent, float tie,
+                                     double confirmHits, double rearmMs, double shortGapMs,
+                                     double pauseMinGapMs, double maxFreshnessMs,
+                                     boolean calibrated) throws JSONException {
+        if (!hasMapBody) {
+            throw new JSONException(
+                    "minimap_relation requires rois.minimap_direction as the map body");
+        }
+        if (!finiteRange(enter, 0.01f, 2f) || !finiteRange(exit, 0.01f, 3f) || exit <= enter ||
+                !finiteRange(hysteresis, 0f, 22f) || !finiteRange(adjacent, 0f, 1f) ||
+                !finiteRange(tie, 0f, 1f)) {
+            throw new JSONException("Invalid minimap_relation radius or ratio");
+        }
+        int[] ints = new int[] {
+                relationInt(confirmHits, 1, 3),
+                relationInt(rearmMs, 0, 60000),
+                relationInt(shortGapMs, 500, 10000),
+                relationInt(pauseMinGapMs, 0, 120000),
+                relationInt(maxFreshnessMs, 0, 5000),
+        };
+        return new RelationData(new float[] {enter, exit, hysteresis, adjacent, tie}, ints,
+                calibrated);
+    }
+
+    private static int relationInt(double value, int min, int max) throws JSONException {
+        if (!Double.isFinite(value) || value != Math.rint(value) || value < min || value > max) {
+            throw new JSONException("Invalid minimap_relation integer");
+        }
+        return (int) value;
     }
 
     /** Validate the optional profile-side per-class confidence mapping. */

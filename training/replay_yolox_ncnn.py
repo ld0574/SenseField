@@ -108,8 +108,15 @@ def _validate_replay_profile(profile_json: dict[str, Any],
     thresholds = profile_json.get("thresholds", {})
     if not isinstance(thresholds, dict):
         raise ValueError("Profile thresholds must be an object")
-    if int(thresholds.get("minimap_yolox_input_size", 320)) != 320:
-        raise ValueError("Android YOLOX replay requires minimap_yolox_input_size=320")
+    input_size = thresholds.get("minimap_yolox_input_size", 320)
+    # Mirror native/include/yolox_contract.h: square 32-pixel multiples from
+    # the production 320 graph up to 1024.
+    if (isinstance(input_size, bool) or not isinstance(input_size, int) or
+            not 320 <= input_size <= 1024 or input_size % 32):
+        raise ValueError(
+            "Android YOLOX replay requires minimap_yolox_input_size in 320..1024 "
+            "and a multiple of 32"
+        )
     models = profile_json.get("models")
     if not isinstance(models, dict):
         raise ValueError("YOLOX replay profile needs models.minimap_yolox_bin_sha256")
@@ -271,8 +278,6 @@ class FrozenReplay:
                 )
         self.confidence_by_class = metadata_confidence_by_class or profile_confidence_by_class
         self.nms_threshold = float(thresholds.get("minimap_yolox_nms", 0.5))
-        if self.input_size != 320:
-            raise ValueError("Android YOLOX replay requires minimap_yolox_input_size=320")
         if (not math.isfinite(self.confidence) or not 0 <= self.confidence <= 1 or
                 not math.isfinite(self.nms_threshold) or not 0 <= self.nms_threshold <= 1):
             raise ValueError("Profile YOLOX confidence and NMS must be between 0 and 1")
@@ -290,6 +295,19 @@ class FrozenReplay:
         self.engine = self.lib.ma_engine_create(C.byref(self.engine_config))
         if not self.engine:
             raise RuntimeError("Could not create native event engine")
+        # The near-zone relation layer is the same C++ code the APK runs.
+        self.relation = None
+        self.relation_config = native.relation_config_from_profile(self.profile_json)
+        self.last_near_zone = None
+        if self.relation_config is not None:
+            if "minimap_player" not in self.classes:
+                self.close()
+                raise ValueError("minimap_relation needs a model with the minimap_player class")
+            try:
+                self.relation = native.Relation(self.lib, self.relation_config)
+            except Exception:
+                self.close()
+                raise
         self.locator = None
         self.locator_config = None
         layout = self.profile_json.get("layout")
@@ -334,6 +352,9 @@ class FrozenReplay:
         if getattr(self, "live_layers", None) is not None:
             self.live_layers.clear()
             self.live_layers = None
+        if getattr(self, "relation", None) is not None:
+            self.relation.close()
+            self.relation = None
         if getattr(self, "engine", None):
             self.lib.ma_engine_destroy(self.engine)
             self.engine = None
@@ -479,6 +500,16 @@ class FrozenReplay:
         )
         if cue_count < 0 or cue_count > 1:
             raise RuntimeError(f"Native event engine returned invalid count {cue_count}")
+        self.last_near_zone = None
+        if self.relation is not None:
+            entities = (native.TrackedEntity * native.MA_MAX_TRACKED_ENTITIES)()
+            entity_count = self.lib.ma_engine_read_tracked_entities(
+                self.engine, entities, len(entities))
+            rois = self.profile_json.get("rois", {})
+            map_body = (native.Rect(*rois["minimap_direction"])
+                        if "minimap_direction" in rois else frame_profile.minimap)
+            self.last_near_zone = self.relation.update(
+                entities, entity_count, map_body, minimap_ready, width, height, timestamp_ms)
         observations_json = [native.observation_dict(item) for item in observations]
         cues_json = [native.cue_dict(cues_buffer[index]) for index in range(cue_count)]
         return observations_json, detection_dicts, cues_json, layout
@@ -546,11 +577,16 @@ def run(video: Path, profile: Path, param: Path, model_bin: Path,
     total_cues = 0
     total_frames = 0
     layout_states = {"fixed": 0, "searching": 0, "locked": 0, "held": 0}
+    near_states = {name: 0 for name in native.RELATION_STATE_NAMES.values()}
+    near_events = {name: 0 for name in native.RELATION_EVENT_NAMES.values() if name}
+    near_suppressions: dict[str, int] = {}
+    near_zone_enabled = False
     started = time.perf_counter()
     try:
         with FrozenReplay(profile, param, model_bin, library, threads,
                           input_name, output_name, ncnn, classes, model_metadata) as replay, \
                 temporary.open("w", encoding="utf-8") as stream:
+            near_zone_enabled = replay.relation is not None
             for index, frame in enumerate(decoded_frames(video, width, height, fps)):
                 timestamp_ms = round(index * 1000 / fps)
                 frame_started = time.perf_counter()
@@ -558,14 +594,24 @@ def run(video: Path, profile: Path, param: Path, model_bin: Path,
                     frame, width, height, timestamp_ms
                 )
                 processing_ms.append((time.perf_counter() - frame_started) * 1000)
-                stream.write(json.dumps({
+                record = {
                     "frame_index": index,
                     "timestamp_ms": timestamp_ms,
                     "observations": observations,
                     "detections": detections,
                     "cues": cues,
                     "layout": layout,
-                }, ensure_ascii=False, allow_nan=False) + "\n")
+                }
+                near_zone = replay.last_near_zone
+                if near_zone is not None:
+                    record["near_zone"] = near_zone
+                    near_states[near_zone["state"]] += 1
+                    if near_zone["event"] is not None:
+                        near_events[near_zone["event"]] += 1
+                    if near_zone["suppression"] is not None:
+                        near_suppressions[near_zone["suppression"]] = (
+                            near_suppressions.get(near_zone["suppression"], 0) + 1)
+                stream.write(json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n")
                 total_frames += 1
                 total_observations += len(observations)
                 total_detections += len(detections)
@@ -592,6 +638,23 @@ def run(video: Path, profile: Path, param: Path, model_bin: Path,
         ) if ordered else None,
         "layout_states": layout_states,
     }
+    if near_zone_enabled:
+        minutes = total_frames / fps / 60.0 if total_frames else 0.0
+        known = total_frames - near_states["UNKNOWN"]
+        stats["near_zone"] = {
+            # Evidence coverage: share of frames with a usable self marker
+            # and map. Report it next to the cue rate; silence alone would
+            # also give a low false-cue rate.
+            "coverage": round(known / total_frames, 4) if total_frames else None,
+            "state_frames": near_states,
+            "events": near_events,
+            "suppressions": near_suppressions,
+            "near_enter_per_minute": (round(near_events["NEAR_ENTER"] / minutes, 3)
+                                      if minutes else None),
+            "radar_pauses_per_minute": (round(near_events["RADAR_PAUSED"] / minutes, 3)
+                                        if minutes else None),
+            "replay_minutes": round(minutes, 3),
+        }
     provenance = {
         "schema_version": 1,
         "replay": "frozen_yolox_ncnn_native_event_replay",

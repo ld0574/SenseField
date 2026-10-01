@@ -18,6 +18,18 @@ public final class PendingToneQueueTest {
         assertEquals(3, loaded.direction);
     }
 
+    @Test public void pendingToneKeepsContinuousPan() {
+        PendingToneQueue queue = new PendingToneQueue();
+
+        assertTrue(queue.enqueue(12, 7, 0, 1000, 100, CueRequest.Category.NEAR_ZONE, null,
+                -0.707f));
+        PendingToneQueue.Pending loaded = queue.completeLoad(12, 500, true);
+
+        assertEquals(-0.707f, loaded.pan, 1e-6f);
+        assertTrue(queue.enqueue(13, 2, 1, 1000, 100));
+        assertTrue(Float.isNaN(queue.completeLoad(13, 500, true).pan));
+    }
+
     @Test public void expiredPendingToneIsDiscardedAtLoadAndExpiredRequestIsRejected() {
         PendingToneQueue queue = new PendingToneQueue();
 

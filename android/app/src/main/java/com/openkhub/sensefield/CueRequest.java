@@ -10,7 +10,9 @@ final class CueRequest {
         PERIPHERAL_THREAT,
         DANGER,
         PLAYER_STATE,
-        SYSTEM
+        SYSTEM,
+        /** An enemy marker entered the player's minimap near zone, or the radar paused/resumed. */
+        NEAR_ZONE
     }
 
     static final int CHANNEL_TONE = 1;
@@ -31,11 +33,21 @@ final class CueRequest {
     final int direction;
     final int hapticCode;
     final String speech;
+    /** Continuous stereo position in [-1, 1]; NaN keeps the legacy direction pan. */
+    final float pan;
 
     CueRequest(String sessionId, String cueId, String eventKey, String kind,
                Category category, int priority, long createdAtMs, long expiresAtMs,
                int requestedChannels, int toneKind, int direction, int hapticCode,
                String speech) {
+        this(sessionId, cueId, eventKey, kind, category, priority, createdAtMs, expiresAtMs,
+                requestedChannels, toneKind, direction, hapticCode, speech, Float.NaN);
+    }
+
+    CueRequest(String sessionId, String cueId, String eventKey, String kind,
+               Category category, int priority, long createdAtMs, long expiresAtMs,
+               int requestedChannels, int toneKind, int direction, int hapticCode,
+               String speech, float pan) {
         this.sessionId = Objects.requireNonNull(sessionId);
         this.cueId = Objects.requireNonNull(cueId);
         this.eventKey = Objects.requireNonNull(eventKey);
@@ -49,5 +61,10 @@ final class CueRequest {
         this.direction = direction;
         this.hapticCode = hapticCode;
         this.speech = speech;
+        this.pan = Float.isFinite(pan) ? Math.max(-1f, Math.min(1f, pan)) : Float.NaN;
+    }
+
+    boolean hasPan() {
+        return Float.isFinite(pan);
     }
 }

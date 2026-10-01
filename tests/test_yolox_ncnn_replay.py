@@ -68,10 +68,16 @@ def test_replay_requires_android_yolox_profile() -> None:
     _validate_replay_profile(base)
     with pytest.raises(ValueError, match="minimap_yolox=true"):
         _validate_replay_profile({"detectors": {}, "thresholds": {}})
-    with pytest.raises(ValueError, match="320"):
-        _validate_replay_profile({"detectors": {"minimap_yolox": True},
-                                  "thresholds": {"minimap_yolox_input_size": 640},
-                                  "models": {"minimap_yolox_bin_sha256": "a" * 64}})
+    # 512 matches the dual-class near-zone candidate; sizes outside the
+    # Android tensor contract are still rejected.
+    _validate_replay_profile({"detectors": {"minimap_yolox": True},
+                              "thresholds": {"minimap_yolox_input_size": 512},
+                              "models": {"minimap_yolox_bin_sha256": "a" * 64}})
+    for invalid in (330, 256, 1056):
+        with pytest.raises(ValueError, match="320"):
+            _validate_replay_profile({"detectors": {"minimap_yolox": True},
+                                      "thresholds": {"minimap_yolox_input_size": invalid},
+                                      "models": {"minimap_yolox_bin_sha256": "a" * 64}})
 
 
 def test_replay_profile_requires_and_checks_ncnn_bin_sha256(tmp_path: Path) -> None:

@@ -27,11 +27,13 @@ import java.util.concurrent.ConcurrentHashMap;
 final class CuePlayer implements CueDispatcher.Renderer {
     private static final String TAG = "MapAssistAudio";
     private static final long TONE_DURATION_MS = 90;
+    private static final long RADAR_TONE_DURATION_MS = 160;
 
     private final Context context;
     private final SoundPool pool;
     private final Object audioLock = new Object();
     private final Map<Integer, Integer> tones = new HashMap<>();
+    private final Map<Integer, Long> toneDurations = new HashMap<>();
     private final Map<String, CueDispatcher.PlaybackCallback> speechCallbacks =
             new ConcurrentHashMap<>();
     private final Set<Integer> ready = ConcurrentHashMap.newKeySet();
@@ -61,8 +63,8 @@ final class CuePlayer implements CueDispatcher.Renderer {
                 PendingToneQueue.Pending pending = pendingTones.take(sampleId);
                 if (pending != null) {
                     boolean played = status == 0 && now <= pending.expiresAtMs
-                            && playToneLocked(pending.kind, pending.direction);
-                    finishToneAttempt(pending.callback, now, played);
+                            && playToneLocked(pending.kind, pending.direction, pending.pan);
+                    finishToneAttempt(pending.callback, now, played, pending.kind);
                     Log.i(TAG, "Played cue after SoundPool load kind=" + pending.kind
                             + " queued=" + played);
                 }
@@ -74,6 +76,14 @@ final class CuePlayer implements CueDispatcher.Renderer {
             loadTone(3, "ping", 1100);
             loadTone(4, "death", 360);
             loadTone(5, "respawn", 920);
+            // Near-zone sounds: a short bright steady tone for an entering
+            // enemy, and falling/rising sweeps for radar pause and resume.
+            // All stay clear of the 360 Hz death tone.
+            loadTone(NearZoneRouting.TONE_NEAR, "near", 760, 760, TONE_DURATION_MS);
+            loadTone(NearZoneRouting.TONE_RADAR_PAUSED, "radar_paused", 420, 260,
+                    RADAR_TONE_DURATION_MS);
+            loadTone(NearZoneRouting.TONE_RADAR_RESUMED, "radar_resumed", 330, 520,
+                    RADAR_TONE_DURATION_MS);
         } catch (IOException error) {
             Log.e(TAG, "Cannot prepare cue tones", error);
         }
@@ -81,14 +91,24 @@ final class CuePlayer implements CueDispatcher.Renderer {
     }
 
     private void loadTone(int kind, String name, int frequency) throws IOException {
-        int sample = pool.load(writeTone(name, frequency).getAbsolutePath(), 1);
-        if (sample == 0) Log.e(TAG, "SoundPool rejected cue tone kind=" + kind);
-        else tones.put(kind, sample);
+        loadTone(kind, name, frequency, frequency, TONE_DURATION_MS);
     }
 
-    private File writeTone(String name, int frequency) throws IOException {
+    private void loadTone(int kind, String name, int startFrequency, int endFrequency,
+                          long durationMs) throws IOException {
+        int sample = pool.load(writeTone(name, startFrequency, endFrequency, durationMs)
+                .getAbsolutePath(), 1);
+        if (sample == 0) Log.e(TAG, "SoundPool rejected cue tone kind=" + kind);
+        else {
+            tones.put(kind, sample);
+            toneDurations.put(kind, durationMs);
+        }
+    }
+
+    private File writeTone(String name, int startFrequency, int endFrequency,
+                           long durationMs) throws IOException {
         final int sampleRate = 48000;
-        final int samples = sampleRate * 9 / 100;
+        final int samples = (int) (sampleRate * durationMs / 1000);
         final int dataBytes = samples * 2;
         File file = new File(context.getCacheDir(), "cue_" + name + ".wav");
         try (FileOutputStream output = new FileOutputStream(file)) {
@@ -104,11 +124,16 @@ final class CuePlayer implements CueDispatcher.Renderer {
             littleEndian16(output, 16);
             output.write("data".getBytes(StandardCharsets.US_ASCII));
             littleEndian32(output, dataBytes);
+            // Integrate the instantaneous frequency so a sweep stays click-free;
+            // equal start/end frequencies reproduce the original steady tone.
+            double phase = 0.0;
             for (int i = 0; i < samples; i++) {
                 double envelope = Math.min(1.0, i / 400.0)
                         * Math.min(1.0, (samples - i) / 800.0);
-                short value = (short) (Math.sin(2 * Math.PI * frequency * i / sampleRate)
-                        * 13000 * envelope);
+                double frequency = startFrequency
+                        + (endFrequency - startFrequency) * (double) i / samples;
+                short value = (short) (Math.sin(phase) * 13000 * envelope);
+                phase += 2 * Math.PI * frequency / sampleRate;
                 littleEndian16(output, value);
             }
         }
@@ -180,14 +205,20 @@ final class CuePlayer implements CueDispatcher.Renderer {
         return Math.max(0f, Math.min(1f, volumePercent / 100f));
     }
 
-    private boolean playToneLocked(int kind, int direction) {
+    private boolean playToneLocked(int kind, int direction, float pan) {
         Integer tone = tones.get(kind);
         if (tone == null || !ready.contains(tone)) return false;
         float volume = volume();
         float left = volume;
         float right = volume;
-        if (direction == 1) right *= 0.12f;
-        if (direction == 2) left *= 0.12f;
+        if (Float.isFinite(pan)) {
+            float[] gains = NearZoneRouting.stereoGains(pan, volume);
+            left = gains[0];
+            right = gains[1];
+        } else {
+            if (direction == 1) right *= 0.12f;
+            if (direction == 2) left *= 0.12f;
+        }
         return pool.play(tone, left, right, kind, 0, 1f) != 0;
     }
 
@@ -203,24 +234,26 @@ final class CuePlayer implements CueDispatcher.Renderer {
         if (replaced != null && replaced.callback != null)
             replaced.callback.onFinished(now, false);
         if (ready.contains(tone)) {
-            boolean played = playToneLocked(request.toneKind, request.direction);
-            finishToneAttempt(callback, now, played);
+            boolean played = playToneLocked(request.toneKind, request.direction, request.pan);
+            finishToneAttempt(callback, now, played, request.toneKind);
             return played;
         }
         return pendingTones.enqueue(tone, request.toneKind, request.direction,
-                request.expiresAtMs, now, request.category, callback);
+                request.expiresAtMs, now, request.category, callback, request.pan);
     }
 
     private void finishToneAttempt(CueDispatcher.PlaybackCallback callback, long now,
-                                   boolean played) {
+                                   boolean played, int kind) {
         if (callback == null) return;
         if (!played) {
             callback.onFinished(now, false);
             return;
         }
         callback.onStarted(now);
+        Long duration = toneDurations.get(kind);
         mainHandler.postDelayed(() -> callback.onFinished(
-                SystemClock.elapsedRealtime(), true), TONE_DURATION_MS);
+                SystemClock.elapsedRealtime(), true),
+                duration == null ? TONE_DURATION_MS : duration);
     }
 
     @Override public boolean playTone(CueRequest request,

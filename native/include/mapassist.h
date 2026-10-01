@@ -13,7 +13,7 @@ extern "C" {
  * is appended below.  Bump the header contract when consumers want to use the
  * appended entity kind and snapshot fields.
  */
-#define MA_API_VERSION 8
+#define MA_API_VERSION 9
 
 /* Hard bounds shared by native producers and platform consumers. */
 #define MA_MAX_MINIMAP_TRACKS 8
@@ -28,7 +28,14 @@ enum ma_kind {
     MA_PLAYER_DEAD = 4,
     MA_PLAYER_ALIVE = 5,
     /* Reserved for the local player's minimap icon. It is state-only. */
-    MA_MINIMAP_PLAYER = 6
+    MA_MINIMAP_PLAYER = 6,
+    /*
+     * Relation-layer cue kinds. They are produced by ma_relation_update(),
+     * never accepted as detector observations, and share this integer space
+     * so platform audit logs use one vocabulary.
+     */
+    MA_NEAR_ZONE = 7,
+    MA_RADAR_STATUS = 8
 };
 
 /* Stable names for consumers that use entity terminology. */
@@ -286,6 +293,100 @@ int ma_engine_read_tracked_entities(const ma_engine *engine,
                                     ma_tracked_entity *out, int capacity);
 /* Clear minimap tracking without disturbing other event tracks or cooldowns. */
 void ma_engine_clear_minimap_tracks(ma_engine *engine);
+
+/*
+ * Minimap near-zone relation layer.
+ *
+ * Reads the confirmed entity snapshot after ma_engine_step() and reports when
+ * a visible enemy marker enters the neighbourhood of the local player's own
+ * minimap marker. Distances are measured in units of the map body's short
+ * edge in pixels; bearings are minimap-relative (screen up is up) and centred
+ * on the player marker, not on hero facing or attack range.
+ *
+ * One occupancy episode produces at most one MA_RELATION_EVENT_NEAR_ENTER.
+ * There is no global cooldown: re-entry is gated only by the REARM window.
+ * Every call returns at most one event.
+ */
+enum ma_relation_state {
+    MA_RELATION_UNKNOWN = 0,   /* self or map unreliable beyond the grace gap */
+    MA_RELATION_CLEAR = 1,     /* reliable, no enemy inside the enter radius */
+    MA_RELATION_PENDING = 2,   /* enemy inside the enter radius, confirming */
+    MA_RELATION_OCCUPIED = 3,  /* confirmed occupancy; already announced */
+    MA_RELATION_REARM = 4      /* left the exit radius, waiting to be stable */
+};
+
+enum ma_relation_event {
+    MA_RELATION_EVENT_NONE = 0,
+    MA_RELATION_EVENT_NEAR_ENTER = 1,
+    MA_RELATION_EVENT_RADAR_PAUSED = 2,
+    MA_RELATION_EVENT_RADAR_RESUMED = 3,
+    /* A would-be cue that the rules suppressed; for audit logs only. */
+    MA_RELATION_EVENT_SUPPRESSED = 4
+};
+
+enum ma_relation_suppression {
+    MA_RELATION_SUPPRESSION_NONE = 0,
+    /* Re-entered before the REARM window completed. */
+    MA_RELATION_SUPPRESSION_REARM_PENDING = 1,
+    /* Recovered from a short self-marker gap while the zone stayed occupied. */
+    MA_RELATION_SUPPRESSION_SHORT_GAP = 2
+};
+
+/* Eight 45-degree minimap sectors; 0 means no reliable bearing. */
+enum ma_relation_sector {
+    MA_SECTOR_NONE = 0,
+    MA_SECTOR_RIGHT = 1,
+    MA_SECTOR_UP_RIGHT = 2,
+    MA_SECTOR_UP = 3,
+    MA_SECTOR_UP_LEFT = 4,
+    MA_SECTOR_LEFT = 5,
+    MA_SECTOR_DOWN_LEFT = 6,
+    MA_SECTOR_DOWN = 7,
+    MA_SECTOR_DOWN_RIGHT = 8
+};
+
+typedef struct ma_relation_config {
+    float enter_radius;          /* R_enter, map short-edge units */
+    float exit_radius;           /* R_exit, must exceed R_enter */
+    float sector_hysteresis_deg; /* kept-sector margin at each boundary */
+    float adjacent_ratio;        /* d < ratio * R_enter reports no bearing */
+    float tie_ratio;             /* two targets this close report no bearing */
+    int confirm_hits;            /* hits in the last three frames */
+    int rearm_ms;                /* stable clear time before CLEAR */
+    int short_gap_ms;            /* self-loss tolerance; also UNKNOWN delay */
+    int pause_min_gap_ms;        /* minimum spacing between pause tones */
+    int max_freshness_ms;        /* entity freshness limit */
+} ma_relation_config;
+
+typedef struct ma_relation_output {
+    int state;              /* ma_relation_state after this update */
+    int event;              /* ma_relation_event, at most one per update */
+    int sector;             /* reported sector for NEAR_ENTER, else current */
+    float pan;              /* cos(sector centre); 0 without a bearing */
+    float nearest_distance; /* nearest eligible enemy, -1 when none/unknown */
+    int episode_id;         /* monotonic occupancy episode, 0 before the first */
+    int suppression;        /* ma_relation_suppression for SUPPRESSED */
+    int reliable;           /* 1 when self and map were usable this frame */
+} ma_relation_output;
+
+typedef struct ma_relation ma_relation;
+
+/* Returns NULL when the configuration is out of range. */
+ma_relation *ma_relation_create(const ma_relation_config *config);
+void ma_relation_destroy(ma_relation *relation);
+/* Clear state and tone pairing; episode ids stay monotonic per handle. */
+void ma_relation_reset(ma_relation *relation);
+/*
+ * Call once per processed frame after ma_engine_read_tracked_entities().
+ * map_body is the normalized full-frame rectangle of the map widget itself
+ * (profile rois.minimap_direction), not the padded detector crop. map_valid
+ * is 0 while the layout locator is searching. Returns 1 on success and 0 on
+ * invalid arguments; out is always written.
+ */
+int ma_relation_update(ma_relation *relation,
+                       const ma_tracked_entity *entities, int entity_count,
+                       ma_rect map_body, int map_valid, int width, int height,
+                       int64_t now_ms, ma_relation_output *out);
 
 #ifdef __cplusplus
 }

@@ -108,9 +108,11 @@ struct Session {
     ma_minimap_locator *minimap_locator = nullptr;
     ma_player_state_matcher *player_state_matcher = nullptr;
     ma_rect player_state_roi{};
+    ma_relation *relation = nullptr;
     ncnn::Net yolox;
 
     ~Session() {
+        ma_relation_destroy(relation);
         ma_minimap_locator_destroy(minimap_locator);
         ma_player_state_matcher_destroy(player_state_matcher);
         ma_engine_destroy(engine);
@@ -582,9 +584,12 @@ Java_com_openkhub_sensefield_NativeBridge_nativeProcess(
     // magic/version/header size/record stride, cue, observation/latency,
     // locator state/score, minimap ROI (ppm), entity count. Records carry the
     // stable ma_tracked_entity snapshot plus a derived movement direction.
+    // Version 2 appends the near-zone relation output as header fields
+    // 16..23: state (-1 = relation off), event, sector, pan milli, nearest
+    // distance milli, episode id, suppression and reliable flag.
     constexpr jint packet_magic = 0x4e465231;  // ASCII NFR1
-    constexpr int packet_version = 1;
-    constexpr int entity_offset = 16;
+    constexpr int packet_version = 2;
+    constexpr int entity_offset = 24;
     constexpr int entity_stride = 16;
     constexpr int entity_capacity = MA_MAX_TRACKED_ENTITIES;
     constexpr int result_size = entity_offset + entity_stride * entity_capacity;
@@ -594,6 +599,8 @@ Java_com_openkhub_sensefield_NativeBridge_nativeProcess(
     result[2] = entity_offset;
     result[3] = entity_stride;
     result[9] = -1;
+    result[16] = -1;
+    result[20] = -1000;
     auto *session = reinterpret_cast<Session *>(handle);
     auto *rgba = frame ? static_cast<uint8_t *>(env->GetDirectBufferAddress(frame)) : nullptr;
     const jlong capacity = frame ? env->GetDirectBufferCapacity(frame) : -1;
@@ -716,6 +723,25 @@ Java_com_openkhub_sensefield_NativeBridge_nativeProcess(
             result[base + 13] = static_cast<jint>(last_seen & 0xffffffffULL);
             result[base + 14] = static_cast<jint>((last_seen >> 32) & 0xffffffffULL);
         }
+        if (session->relation) {
+            // The relation clock must match the engine step so entity
+            // freshness is measured on one timeline. The map body is the
+            // calibrated widget rectangle, never the padded detector crop.
+            ma_relation_output relation{};
+            const ma_rect map_body = has_rect(session->profile.minimap_direction)
+                    ? session->profile.minimap_direction : frame_profile.minimap;
+            ma_relation_update(session->relation, entities, entity_count, map_body,
+                               minimap_ready ? 1 : 0, width, height,
+                               processing_now_ms + processing_ms, &relation);
+            result[16] = relation.state;
+            result[17] = relation.event;
+            result[18] = relation.sector;
+            result[19] = static_cast<jint>(std::lround(relation.pan * 1000.0f));
+            result[20] = static_cast<jint>(std::lround(relation.nearest_distance * 1000.0f));
+            result[21] = relation.episode_id;
+            result[22] = relation.suppression;
+            result[23] = relation.reliable;
+        }
         result[7] = static_cast<jint>(observations.size());
         result[8] = static_cast<jint>(std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - start).count());
@@ -725,12 +751,33 @@ Java_com_openkhub_sensefield_NativeBridge_nativeProcess(
     return output;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_openkhub_sensefield_NativeBridge_nativeConfigureRelation(
+        JNIEnv *env, jclass, jlong handle, jfloatArray floats, jintArray ints) {
+    auto *session = reinterpret_cast<Session *>(handle);
+    if (!session || !floats || !ints || env->GetArrayLength(floats) != 5 ||
+        env->GetArrayLength(ints) != 5) return JNI_FALSE;
+    jfloat f[5];
+    jint i[5];
+    env->GetFloatArrayRegion(floats, 0, 5, f);
+    env->GetIntArrayRegion(ints, 0, 5, i);
+    if (env->ExceptionCheck()) return JNI_FALSE;
+    const ma_relation_config config{f[0], f[1], f[2], f[3], f[4],
+                                    i[0], i[1], i[2], i[3], i[4]};
+    ma_relation *relation = ma_relation_create(&config);
+    if (!relation) return JNI_FALSE;
+    ma_relation_destroy(session->relation);
+    session->relation = relation;
+    return JNI_TRUE;
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_openkhub_sensefield_NativeBridge_nativeReset(JNIEnv *, jclass, jlong handle) {
     auto *session = reinterpret_cast<Session *>(handle);
     if (session) {
         ma_engine_reset(session->engine);
         ma_minimap_locator_reset(session->minimap_locator);
+        ma_relation_reset(session->relation);
     }
 }
 

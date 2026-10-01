@@ -37,6 +37,14 @@ final class NativeBridge {
         return NativeFrameResult.parse(packed, frameTimestampMs);
     }
 
+    /**
+     * Enable the near-zone relation layer for an existing session. Floats are
+     * enter/exit radius, sector hysteresis, adjacent ratio and tie ratio; ints
+     * are confirm hits, REARM, short gap, pause-tone gap and max freshness.
+     * Returns false when native code rejects the configuration.
+     */
+    static native boolean nativeConfigureRelation(long session, float[] floats, int[] ints);
+
     static native void nativeReset(long session);
     static native void nativeDestroy(long session);
 }

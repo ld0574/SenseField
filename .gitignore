@@ -83,3 +83,4 @@ docs/*
 *.engine
 *.gguf
 android/app/src/main/assets/minimap-yolox-nano-320.bin
+android/app/src/main/assets/minimap-yolox-nano-dual-512.bin

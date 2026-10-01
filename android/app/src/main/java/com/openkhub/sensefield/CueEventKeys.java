@@ -8,6 +8,16 @@ final class CueEventKeys {
         return "vision:" + nativeResetGeneration + ":" + trackId + ":" + event;
     }
 
+    /** One key per native occupancy episode; track ids are never part of it. */
+    static String nearZone(long nativeResetGeneration, int episodeId) {
+        return "near:" + nativeResetGeneration + ":" + episodeId;
+    }
+
+    /** Radar status tones are unique per announcement. */
+    static String radarStatus(long nativeResetGeneration, long sequence, int event) {
+        return "radar:" + nativeResetGeneration + ":" + sequence + ":" + event;
+    }
+
     static String nativeCue(long nativeResetGeneration, int kind, int direction) {
         if (kind >= 4) return "player:" + nativeResetGeneration + ":" + kind;
         return "native:" + nativeResetGeneration + ":" + kind + ":" + direction;

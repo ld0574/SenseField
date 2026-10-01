@@ -19,6 +19,9 @@ import java.util.List;
 final class NativeFrameResult {
     static final int LEGACY_FORMAT_VERSION = 0;
     static final int VERSION_1 = 1;
+    /** Version 1 plus the near-zone relation output in header fields 16..23. */
+    static final int VERSION_2 = 2;
+    static final int VERSION_2_HEADER_SIZE = 24;
     // ASCII "NFR1".  No legacy cue kind can accidentally equal this value.
     static final int MAGIC = 0x4e465231;
 
@@ -44,6 +47,48 @@ final class NativeFrameResult {
     private static final int H_ROI_W = 13;
     private static final int H_ROI_H = 14;
     private static final int H_ENTITY_COUNT = 15;
+    // Version 2 relation fields; state -1 means the relation layer is off.
+    private static final int H_RELATION_STATE = 16;
+    private static final int H_RELATION_EVENT = 17;
+    private static final int H_RELATION_SECTOR = 18;
+    private static final int H_RELATION_PAN_MILLI = 19;
+    private static final int H_RELATION_DISTANCE_MILLI = 20;
+    private static final int H_RELATION_EPISODE = 21;
+    private static final int H_RELATION_SUPPRESSION = 22;
+    private static final int H_RELATION_RELIABLE = 23;
+
+    /** Near-zone relation output for one frame. */
+    static final class Relation {
+        static final Relation UNAVAILABLE = new Relation(
+                NearZoneRouting.STATE_UNAVAILABLE, NearZoneRouting.EVENT_NONE, 0, 0f, -1f, 0, 0,
+                false);
+
+        final int state;
+        final int event;
+        final int sector;
+        final float pan;
+        /** Nearest eligible enemy in map short-edge units, or -1. */
+        final float nearestDistance;
+        final int episodeId;
+        final int suppression;
+        final boolean reliable;
+
+        Relation(int state, int event, int sector, float pan, float nearestDistance,
+                 int episodeId, int suppression, boolean reliable) {
+            this.state = state;
+            this.event = event;
+            this.sector = sector;
+            this.pan = pan;
+            this.nearestDistance = nearestDistance;
+            this.episodeId = episodeId;
+            this.suppression = suppression;
+            this.reliable = reliable;
+        }
+
+        boolean available() {
+            return state != NearZoneRouting.STATE_UNAVAILABLE;
+        }
+    }
 
     // Versioned record: kind, track id, state, transition, direction,
     // bbox x/y/w/h ppm, confidence milli, last-seen age ms,
@@ -75,11 +120,21 @@ final class NativeFrameResult {
     final int locatorScoreMilli;
     final RectF minimapRoi;
     final List<TrackedEntity> entities;
+    final Relation relation;
 
     private NativeFrameResult(int formatVersion, int cueKind, int cueDirection,
                               int cuePriority, int observationCount, int processingMicros,
                               int locatorState, int locatorScoreMilli, RectF minimapRoi,
                               List<TrackedEntity> entities) {
+        this(formatVersion, cueKind, cueDirection, cuePriority, observationCount,
+                processingMicros, locatorState, locatorScoreMilli, minimapRoi, entities,
+                Relation.UNAVAILABLE);
+    }
+
+    private NativeFrameResult(int formatVersion, int cueKind, int cueDirection,
+                              int cuePriority, int observationCount, int processingMicros,
+                              int locatorState, int locatorScoreMilli, RectF minimapRoi,
+                              List<TrackedEntity> entities, Relation relation) {
         this.formatVersion = formatVersion;
         this.cueKind = cueKind;
         this.cueDirection = cueDirection;
@@ -90,6 +145,7 @@ final class NativeFrameResult {
         this.locatorScoreMilli = locatorScoreMilli;
         this.minimapRoi = minimapRoi == null ? new RectF() : new RectF(minimapRoi);
         this.entities = Collections.unmodifiableList(new ArrayList<>(entities));
+        this.relation = relation == null ? Relation.UNAVAILABLE : relation;
     }
 
     static NativeFrameResult empty() {
@@ -148,8 +204,15 @@ final class NativeFrameResult {
         int recordStride = packed[3];
         // Unknown versions remain inspectable only when their common header is
         // safely described.  Malformed packets are ignored rather than guessed.
-        if (version != VERSION_1 || headerSize < VERSIONED_HEADER_SIZE ||
+        int minimumHeader = version == VERSION_2 ? VERSION_2_HEADER_SIZE : VERSIONED_HEADER_SIZE;
+        if ((version != VERSION_1 && version != VERSION_2) || headerSize < minimumHeader ||
                 headerSize > packed.length || recordStride < 13) return empty();
+        Relation relation = version == VERSION_2 ? new Relation(
+                packed[H_RELATION_STATE], packed[H_RELATION_EVENT], packed[H_RELATION_SECTOR],
+                packed[H_RELATION_PAN_MILLI] / 1000.0f,
+                packed[H_RELATION_DISTANCE_MILLI] / 1000.0f,
+                packed[H_RELATION_EPISODE], packed[H_RELATION_SUPPRESSION],
+                packed[H_RELATION_RELIABLE] != 0) : Relation.UNAVAILABLE;
         int count = clamp(packed[H_ENTITY_COUNT], 0, MAX_ENTITY_CAPACITY);
         List<TrackedEntity> entities = new ArrayList<>(count);
         for (int index = 0; index < count; index++) {
@@ -178,7 +241,7 @@ final class NativeFrameResult {
         return new NativeFrameResult(version, packed[H_CUE_KIND], packed[H_DIRECTION],
                 packed[H_PRIORITY], packed[H_OBSERVATION_COUNT], packed[H_PROCESSING_MICROS],
                 packed[H_LOCATOR_STATE], packed[H_LOCATOR_SCORE], ppmRect(packed, H_ROI_X),
-                entities);
+                entities, relation);
     }
 
     private static int at(int[] values, int index, int fallback) {

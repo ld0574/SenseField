@@ -9,15 +9,24 @@ final class PendingToneQueue {
         final long expiresAtMs;
         final CueRequest.Category category;
         final CueDispatcher.PlaybackCallback callback;
+        /** Continuous pan, or NaN for the legacy direction gains. */
+        final float pan;
 
         Pending(int sampleId, int kind, int direction, long expiresAtMs,
                 CueRequest.Category category, CueDispatcher.PlaybackCallback callback) {
+            this(sampleId, kind, direction, expiresAtMs, category, callback, Float.NaN);
+        }
+
+        Pending(int sampleId, int kind, int direction, long expiresAtMs,
+                CueRequest.Category category, CueDispatcher.PlaybackCallback callback,
+                float pan) {
             this.sampleId = sampleId;
             this.kind = kind;
             this.direction = direction;
             this.expiresAtMs = expiresAtMs;
             this.category = category;
             this.callback = callback;
+            this.pan = pan;
         }
     }
 
@@ -34,9 +43,16 @@ final class PendingToneQueue {
 
     boolean enqueue(int sampleId, int kind, int direction, long expiresAtMs, long nowMs,
                     CueRequest.Category category, CueDispatcher.PlaybackCallback callback) {
+        return enqueue(sampleId, kind, direction, expiresAtMs, nowMs, category, callback,
+                Float.NaN);
+    }
+
+    boolean enqueue(int sampleId, int kind, int direction, long expiresAtMs, long nowMs,
+                    CueRequest.Category category, CueDispatcher.PlaybackCallback callback,
+                    float pan) {
         if (sampleId <= 0 || nowMs > expiresAtMs) return false;
         pending = null;
-        pending = new Pending(sampleId, kind, direction, expiresAtMs, category, callback);
+        pending = new Pending(sampleId, kind, direction, expiresAtMs, category, callback, pan);
         return true;
     }
 

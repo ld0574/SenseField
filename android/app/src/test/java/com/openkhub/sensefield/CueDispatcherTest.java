@@ -76,6 +76,32 @@ public final class CueDispatcherTest {
                 0, expires, channels, 2, 1, 1, speech);
     }
 
+    private static CueRequest near(String id, int episode, long expires, float pan) {
+        return new CueRequest("session", id, CueEventKeys.nearZone(0, episode), "NEAR_ZONE",
+                CueRequest.Category.NEAR_ZONE, NearZoneRouting.NEAR_PRIORITY, 0, expires,
+                NearZoneRouting.nearChannels(false), NearZoneRouting.TONE_NEAR, 0, 0,
+                NearZoneRouting.speech(4), pan);
+    }
+
+    @Test public void nearZoneCuesAreNotReplayedAndDistinctEpisodesBothPlay() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+        clock.now = 1300;
+        assertEquals(0, dispatcher.submit(near("late", 1, 1200, -0.7f)).acceptedChannels);
+        assertEquals(0, renderer.tones);
+        clock.now = 1000;
+        CueRequest first = near("first", 2, 2200, -0.7f);
+        assertTrue(first.hasPan());
+        assertTrue(dispatcher.submit(first).audioQueued());
+        // Episode keys, not a session cooldown, separate two approaches.
+        clock.now = 1600;
+        assertTrue(dispatcher.submit(near("second", 3, 2800, 0.7f)).audioQueued());
+        assertEquals(2, renderer.tones);
+        assertFalse(events.events.contains("late:TONE:STARTED"));
+    }
+
     @Test public void expiryCategoryAndDedupeAreAppliedBeforePlayback() {
         MutableClock clock = new MutableClock();
         FakeRenderer renderer = new FakeRenderer();

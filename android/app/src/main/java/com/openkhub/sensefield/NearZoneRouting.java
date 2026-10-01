@@ -1,0 +1,105 @@
+package com.openkhub.sensefield;
+
+/**
+ * Pure mapping from native near-zone relation events to cue parameters.
+ *
+ * <p>Kept free of Android framework calls so JVM tests can lock the wording,
+ * stereo gains and channel rules. Integer values mirror
+ * {@code native/include/mapassist.h}.</p>
+ */
+final class NearZoneRouting {
+    static final int KIND_NEAR_ZONE = 7;
+    static final int KIND_RADAR_STATUS = 8;
+
+    static final int STATE_UNAVAILABLE = -1;
+    static final int STATE_UNKNOWN = 0;
+    static final int STATE_CLEAR = 1;
+    static final int STATE_PENDING = 2;
+    static final int STATE_OCCUPIED = 3;
+    static final int STATE_REARM = 4;
+
+    static final int EVENT_NONE = 0;
+    static final int EVENT_NEAR_ENTER = 1;
+    static final int EVENT_RADAR_PAUSED = 2;
+    static final int EVENT_RADAR_RESUMED = 3;
+    static final int EVENT_SUPPRESSED = 4;
+
+    // CuePlayer sample ids for the three relation sounds.
+    static final int TONE_NEAR = 7;
+    static final int TONE_RADAR_PAUSED = 8;
+    static final int TONE_RADAR_RESUMED = 9;
+
+    static final int NEAR_PRIORITY = 80;
+    static final long NEAR_TTL_MS = 1200;
+    static final int RADAR_PRIORITY = 20;
+    static final long RADAR_TTL_MS = 2000;
+    static final long NEAR_SPEECH_DEDUPE_MS = 1000;
+
+    private static final String[] SECTOR_NAMES = {
+            null, "右", "右上", "上", "左上", "左", "左下", "下", "右下"};
+    private static final String[] STATE_NAMES = {
+            "UNKNOWN", "CLEAR", "PENDING", "OCCUPIED", "REARM"};
+
+    private NearZoneRouting() {}
+
+    /** Short factual phrase; no “danger”, “safe” or intent words. */
+    static String speech(int sector) {
+        if (sector >= 1 && sector <= 8) return SECTOR_NAMES[sector] + "，敌人";
+        return "附近有敌人";
+    }
+
+    /** Channels requested before the preset and global switches are applied. */
+    static int nearChannels(boolean hapticEnabled) {
+        int channels = CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH;
+        return hapticEnabled ? channels | CueRequest.CHANNEL_HAPTIC : channels;
+    }
+
+    /**
+     * Radar status is tone-only in every preset. Speech here would start the
+     * category speech cooldown and could swallow a near-zone phrase that
+     * follows a respawn within a second.
+     */
+    static int radarChannels() {
+        return CueRequest.CHANNEL_TONE;
+    }
+
+    /**
+     * Balance law matching the legacy hard left/right gains: the far side is
+     * attenuated to 12% at |pan| = 1 and both sides stay full at the centre.
+     */
+    static float[] stereoGains(float pan, float volume) {
+        float value = Float.isFinite(pan) ? Math.max(-1f, Math.min(1f, pan)) : 0f;
+        float left = volume * (value > 0f ? 1f - 0.88f * value : 1f);
+        float right = volume * (value < 0f ? 1f + 0.88f * value : 1f);
+        return new float[] {left, right};
+    }
+
+    /**
+     * With the relation layer active and enabled, the distant new-portrait
+     * tone is replaced by near-zone cues unless the user asks for it. If the
+     * near-zone category is switched off, the old tone comes back.
+     */
+    static boolean farAppearAudible(boolean nearZoneActive, boolean nearZoneCategoryEnabled,
+                                    boolean farAppearPreference) {
+        return !nearZoneActive || !nearZoneCategoryEnabled || farAppearPreference;
+    }
+
+    static String stateName(int state) {
+        if (state == STATE_UNAVAILABLE) return "UNAVAILABLE";
+        return state >= 0 && state < STATE_NAMES.length ? STATE_NAMES[state] : "INVALID";
+    }
+
+    static String eventName(int event) {
+        if (event == EVENT_NEAR_ENTER) return "NEAR_ENTER";
+        if (event == EVENT_RADAR_PAUSED) return "RADAR_PAUSED";
+        if (event == EVENT_RADAR_RESUMED) return "RADAR_RESUMED";
+        if (event == EVENT_SUPPRESSED) return "SUPPRESSED";
+        return "NONE";
+    }
+
+    static String suppressionName(int suppression) {
+        if (suppression == 1) return "rearm_pending";
+        if (suppression == 2) return "short_gap";
+        return "none";
+    }
+}

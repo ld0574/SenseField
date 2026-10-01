@@ -38,6 +38,9 @@ public final class AlertSettingsActivity extends Activity {
 
         LinearLayout categories = UiKit.card(this);
         UiKit.add(categories, UiKit.heading(this, "事件提示"), 8);
+        addToggle(categories, "附近敌人提醒（小地图近区）", CueSettings.PREF_CATEGORY_NEAR, true);
+        addToggle(categories, "附近敌人震动", CueSettings.PREF_NEAR_HAPTIC, false);
+        addToggle(categories, "远处新敌人提示音", CueSettings.PREF_FAR_APPEAR, false);
         addToggle(categories, "小地图新目标", "cue_category_vision", true);
         addToggle(categories, "屏幕边缘威胁", "cue_category_peripheral", true);
         addToggle(categories, "危险接近（默认关闭）", "cue_category_danger", false);

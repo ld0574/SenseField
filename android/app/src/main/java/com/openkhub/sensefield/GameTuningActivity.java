@@ -85,7 +85,15 @@ public final class GameTuningActivity extends Activity {
                 startActivityForResult(permission, REQUEST_OVERLAY);
             }
         });
-        UiKit.add(recognition, minimapOverlay, 0);
+        UiKit.add(recognition, minimapOverlay, 4);
+
+        CheckBox baseline = checkBox("使用单类基线模型（关闭附近敌人提醒）");
+        baseline.setChecked(GameProfile.settings(this)
+                .getBoolean(GameProfile.PREF_BASELINE_MODEL, false));
+        baseline.setOnCheckedChangeListener((button, checked) ->
+                GameProfile.settings(this).edit()
+                        .putBoolean(GameProfile.PREF_BASELINE_MODEL, checked).apply());
+        UiKit.add(recognition, baseline, 0);
         UiKit.add(content, recognition, 14);
 
         LinearLayout cueCard = UiKit.card(this);
