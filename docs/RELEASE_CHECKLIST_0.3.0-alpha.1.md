@@ -1,39 +1,23 @@
-# 0.3.0-alpha.1 GitHub pre-release 检查清单
+# 0.3.0-alpha.1 预发布检查
 
-这份清单用于明日 developer preview 发布前的可审查准备。未完成的项目保留为未勾选，不能在 Release 文案中写成已验收。
+2026-10-01：按用户要求交付给队友测试。[预发布入口](https://github.com/ld0574/SenseField/releases/tag/v0.3.0-alpha.1)。
 
-## 版本和候选文件
+## 已完成
 
-- [x] `android/app/build.gradle` 为 `versionName '0.3.0-alpha.1'`、`versionCode 7`。
-- [x] `android/app/build.gradle` 只声明 `arm64-v8a`；页面注明最低 API 29、目标 API 35。
-- [x] 用 `bash scripts/build_android_preview.sh` 构建并运行 `apksigner verify`；当前 Debug candidate 为 17,156,242 bytes，SHA-256 为 `49043142158a360abb7bb3c5d8c9c7ed24828374f67bdb888e9eedcb445a6b0a`。
-- [x] 没有完整签名环境变量时，附件名称明确包含 `debug-candidate`，并在 Release body 说明它不是正式 release 签名包。
-- [ ] 有签名 candidate 时，四个 `SENSEFIELD_*` 环境变量来自发布者的已有 keystore；记录 APK SHA-256 和签名验证输出。
-- [x] 发布者没有生成、上传或提交发布 keystore、密码、`.env`、`local.properties` 或其他签名材料；Debug candidate 使用 Android Gradle 的标准 debug signing。
+- [x] Release APK，debuggable=false，versionCode 7，arm64-v8a，API 29/35。
+- [x] 沿用既有 Android Debug 证书，v2 验证通过；文件名标明签名类型。
+- [x] APK 14,775,158 bytes；SHA-256 `8638eca6695444b1526f91013e07b879ecc178bc01a7dc32c497d4fb705d6286`，附校验和与构建信息。
+- [x] JVM 93/93、Debug/Release 构建和 lint；Python 449 通过、1 条件跳过，日志解析回归 22/22；Debug CTest 3/3。
+- [x] 基线和双类模型／profile 资产哈希一致；私有日志、录像及签名材料不纳入 Git 或发布附件。
+- [x] 上一份包取得唯一完整会话 Summary，用户确认方位语音有用；误报和无震动反馈如实记录。
+- [x] 定位变化改为仅日志；附近提示音改双音；震动使用无障碍用途并增加独立测试按钮。
+- [x] 修复包已安装；当前包的短测结果另记 candidate-info.json。
 
-## 功能边界和权限文案
+## 留给队友及后续验收
 
-- [x] Release body 链接 README 和本 release notes；明确这是 pre-release developer preview、不是最终验收版本。
-- [x] 写明实验小地图模型尚未通过独立留出对局验收；开发指标不写成独立测试成绩。
-- [x] 明确 release APK 仍绑定单类 `minimap_enemy`；安全双类 v8 只作开发诊断，v6 512 模型已完成 ONNX/TorchScript/ncnn 导出到忽略目录 `build/ignored/v6-512-export`，但未复制或接入 Android assets/profile。ONNX raw 严格门禁最大误差 `0.0006387 > 0.0005`（最终检测数组一致），ncnn Android 等价严格门禁通过；无独立测试对局或 Android 真机验证，仍未达到 release-ready。
-- [x] 写明公共默认 profile 和发布版关闭主画面边缘候选分支，且上下文分类器尚未接入；160 张已人工复核（47 `corrected`、113 `negative`、114 框），完成审计见 `data/private/main-edge-review-v1/review-batch-v1/review-completion-audit.json`。这些红色候选／困难负样本仅作诊断，不能作为 `enemy hero` 真值；后续必须通过 `enemy_hero_bar` 分类、250 ms 内玩家屏幕锚点、500 ms 内小地图玩家位置、HUD 有效、玩家存活、敌我接近、镜头跟随和外围视野门，再执行 `2/3` 帧确认与统一仲裁；任一条件缺失即静默。
-- [x] 写明 APK 只支持 `arm64-v8a`，并附 Android 最低版本和 SHA-256。
-- [x] 说明 `MediaProjection` 用于用户授权的整屏帧、悬浮窗权限用于非交互提示层、通知权限用于前台服务状态；说明处理在本地完成。
-- [x] 核对 README、Release notes、应用设置文案中的默认开关和关闭方式一致。
+- [ ] 最新包整局确认震动、方位、疑似误报、后台运行与发热。
+- [ ] 至少 15 分钟连续会话并满足帧率／间隔门槛，测真实发声端到端延迟。
+- [ ] R_enter 人工标定、逐条误报／漏报复核、WP-A 访谈和目标玩家试玩。
+- [ ] 必要权限缺失的跳转与运行态开始停止互斥专项复核。
 
-## 公开仓库和证据
-
-- [x] `python3 scripts/check_public_repo.py` 通过。
-- [x] `git diff --check` 通过，逐个查看将要提交的 README、版本配置、验证状态、发布文档和脚本。
-- [x] 没有私有录像、标注数据库、预测结果、训练权重、模型 checkpoint 或玩家个人信息进入发布附件。
-- [x] `validation/STATUS.md` 中的历史 0.2.x 证据仍标为历史；新版本准备状态不冒充实体机最终验收。
-- [x] 真实录像、截图和音频只有在取得公开授权后才作为附件；默认只发布源码和经过复核的 APK。
-
-## GitHub 操作
-
-- [ ] 在目标提交上创建 tag `v0.3.0-alpha.1`，确认 tag 指向的版本配置为 versionCode 7。
-- [ ] 创建 GitHub Release 时勾选 **Set as a pre-release**，标题包含 `0.3.0-alpha.1`。
-- [ ] 上传经过签名核验的候选 APK 和脚本生成的 `.sha256` 文件；附件文件名保留 `debug-candidate` 或 `signed-candidate`。
-- [ ] Release body 保留实验模型、主画面边缘候选分支关闭、上下文分类器未接入、arm64-v8a、权限用途和本地处理限制。
-- [ ] 发布后从干净浏览器页面检查附件可下载、校验和可见、README 链接有效；把最终 URL 和校验和回填团队记录。
-- [ ] 不使用脚本自动发布 GitHub Release；发布按钮由完成复核的团队成员最后确认。
+这些未完成项不阻止团队测试版预发布；版本不标为最终验收通过或稳定版本。

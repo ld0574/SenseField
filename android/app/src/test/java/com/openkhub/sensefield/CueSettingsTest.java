@@ -21,7 +21,7 @@ public final class CueSettingsTest {
                 CueSettings.channelsForCategory(15, CueSettings.PRESET_STANDARD,
                         CueRequest.Category.VISION_MEMORY));
         assertEquals(CueRequest.CHANNEL_VISUAL | CueRequest.CHANNEL_TONE
-                        | CueRequest.CHANNEL_SPEECH,
+                        | CueRequest.CHANNEL_SPEECH | CueRequest.CHANNEL_HAPTIC,
                 CueSettings.channelsForCategory(15, CueSettings.PRESET_DETAILED,
                         CueRequest.Category.VISION_MEMORY));
         assertEquals(CueRequest.CHANNEL_TONE,

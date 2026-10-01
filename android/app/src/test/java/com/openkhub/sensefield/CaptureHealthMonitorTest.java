@@ -115,6 +115,46 @@ public final class CaptureHealthMonitorTest {
         assertEquals(275, monitor.lastProcessedAtMs());
     }
 
+    @Test public void portraitSetupWaitsWithoutExhaustingRecoveryAndLandscapeIsMonitored() {
+        CaptureHealthMonitor monitor = new CaptureHealthMonitor();
+        monitor.start(0);
+        monitor.frameArrived(100);
+        assertEquals(CaptureHealthMonitor.State.HEALTHY, monitor.check(60000, false));
+        assertEquals(0, monitor.attempts());
+
+        assertEquals(CaptureHealthMonitor.State.HEALTHY, monitor.check(61000, true));
+        assertEquals(CaptureHealthMonitor.State.STARVED, monitor.check(62000, true));
+        assertEquals(500, monitor.beginRecovery());
+
+        // Returning to setup cancels this recovery budget. Opening the game
+        // again still detects a genuinely stalled landscape stream.
+        assertEquals(CaptureHealthMonitor.State.HEALTHY, monitor.check(62200, false));
+        assertEquals(0, monitor.attempts());
+        assertEquals(CaptureHealthMonitor.State.STARVED, monitor.check(64200, true));
+        assertEquals(500, monitor.beginRecovery());
+    }
+
+    @Test public void portraitWaitCannotUndoRevocationFailureOrUserPause() {
+        CaptureHealthMonitor monitor = new CaptureHealthMonitor();
+        monitor.start(0);
+        monitor.pause(true, 100);
+        assertEquals(CaptureHealthMonitor.State.PAUSED, monitor.check(60000, false));
+
+        monitor.start(0);
+        monitor.revoke();
+        assertEquals(CaptureHealthMonitor.State.REVOKED, monitor.check(60000, false));
+
+        monitor.start(0);
+        monitor.check(2000);
+        monitor.beginRecovery();
+        monitor.recoveryFailed();
+        monitor.beginRecovery();
+        monitor.recoveryFailed();
+        monitor.beginRecovery();
+        monitor.recoveryFailed();
+        assertEquals(CaptureHealthMonitor.State.FAILED, monitor.check(60000, false));
+    }
+
     @Test public void revokedProjectionNeverRecovers() {
         CaptureHealthMonitor monitor = new CaptureHealthMonitor();
         monitor.start(0);

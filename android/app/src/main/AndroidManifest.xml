@@ -22,6 +22,12 @@
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:usesCleartextTraffic="false">
         <activity
+            android:name=".AppSettingsActivity"
+            android:exported="false" />
+        <activity
+            android:name=".CapturePermissionsActivity"
+            android:exported="false" />
+        <activity
             android:name=".AlertSettingsActivity"
             android:exported="false" />
         <activity

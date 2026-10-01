@@ -1,10 +1,21 @@
 package com.openkhub.sensefield;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
+import android.content.pm.ResolveInfo;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.Settings;
+import android.speech.tts.TextToSpeech;
+import android.util.Log;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.LinearLayout;
@@ -22,6 +33,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 /** Advanced profile and cue tuning for the selected game adapter. */
 public final class GameTuningActivity extends Activity {
@@ -31,9 +43,17 @@ public final class GameTuningActivity extends Activity {
     private CheckBox minimapOverlay;
     private RadioGroup presets;
     private boolean awaitingOverlayPermission;
+    private Button test;
+    private Button hapticTest;
+    private TextView testStatus;
+    private CuePlayer testPlayer;
+    private CueDispatcher testDispatcher;
+    private final Handler testHandler = new Handler(Looper.getMainLooper());
+    private int testGeneration;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);
         UiKit.configureWindow(this);
         new CueSettings(this);
 
@@ -46,6 +66,22 @@ public final class GameTuningActivity extends Activity {
 
         UiKit.addBrandHeader(content, "王者荣耀");
         UiKit.add(content, UiKit.text(this, "配置与调参", 28, UiKit.INK, true), 20);
+
+        LinearLayout voices = UiKit.card(this);
+        UiKit.add(voices, UiKit.heading(this, "提醒测试与语音"), 10);
+        testStatus = UiKit.body(this, "调高媒体音量，标准模式直接播报方位。");
+        UiKit.add(voices, testStatus, 10);
+        Button engines = button("选择语音引擎", false);
+        engines.setOnClickListener(view -> chooseVoiceEngine());
+        UiKit.add(voices, engines, 12);
+        addSpeechRateControl(voices);
+        test = button("测试提醒", false);
+        test.setOnClickListener(view -> testCue());
+        UiKit.add(voices, test, 0);
+        hapticTest = button("测试震动", false);
+        hapticTest.setOnClickListener(view -> testHaptic());
+        UiKit.add(voices, hapticTest, 10);
+        UiKit.add(content, voices, 14);
 
         LinearLayout profileCard = UiKit.card(this);
         UiKit.add(profileCard, UiKit.heading(this, "标定配置"), 12);
@@ -117,17 +153,181 @@ public final class GameTuningActivity extends Activity {
         addCenterControl(tuning);
         UiKit.add(content, tuning, 18);
 
-        Button gameSelection = button("返回游戏选择", false);
-        gameSelection.setOnClickListener(view -> returnToGameSelection());
-        UiKit.add(content, gameSelection, 0);
+        Button back = button("返回", false);
+        back.setOnClickListener(view -> finish());
+        UiKit.add(content, back, 0);
 
         setContentView(scroll);
+    }
+
+    private void testCue() {
+        if (GameProfile.settings(this).getBoolean("capture_active", false)) {
+            toast("请先停止辅助，再测试提醒");
+            return;
+        }
+        AudioManager audio = getSystemService(AudioManager.class);
+        if (audio == null || audio.getStreamVolume(AudioManager.STREAM_MUSIC) == 0
+                || audio.isStreamMute(AudioManager.STREAM_MUSIC)) {
+            testStatus.setText("媒体音量为 0 或已静音。请按音量＋调高，再点击测试提醒。");
+            Log.w("MapAssistAudio", "AudioSelfTest blocked=media_muted");
+            return;
+        }
+        if (GameProfile.settings(this).getInt("volume", 45) == 0) {
+            testStatus.setText("应用提示音量为 0，请在配置与调参中调高。");
+            return;
+        }
+        CueSettings settings = new CueSettings(this);
+        int channels = settings.nearRequestedChannels();
+        if (!settings.categoryEnabled(CueRequest.Category.NEAR_ZONE) || channels == 0) {
+            testStatus.setText("附近敌人提醒已关闭，请在配置与调参中开启。");
+            return;
+        }
+        stopTestCue();
+        final int generation = testGeneration;
+        test.setEnabled(false);
+        testStatus.setText("正在准备测试提醒……");
+        testPlayer = new CuePlayer(this);
+        testDispatcher = new CueDispatcher(testPlayer, settings, new CueDispatcher.Listener() {
+            @Override public void onDispatch(CueRequest request,
+                    CueDispatcher.DispatchResult result) {
+                Log.i("MapAssistAudio", "AudioSelfTest dispatch=" + result.outcome
+                        + " acceptedMask=" + result.acceptedChannels + " reason=" + result.reason);
+            }
+            @Override public void onPlayback(CueRequest request, String channel,
+                    long atMs, String result) {
+                Log.i("MapAssistAudio", "AudioSelfTest channel=" + channel + " result=" + result);
+                if ("SPEECH".equals(channel) && ("FAILED".equals(result)
+                        || "UNAVAILABLE".equals(result))) {
+                    testHandler.post(() -> {
+                        if (generation == testGeneration) testStatus.setText(
+                                "语音未能正常播放，请选择其他语音引擎，再测试提醒。");
+                    });
+                }
+            }
+        }, SystemClock::elapsedRealtime);
+        prepareTestCue(generation, channels, SystemClock.elapsedRealtime() + 3000);
+    }
+
+    private void chooseVoiceEngine() {
+        List<ResolveInfo> engines = getPackageManager().queryIntentServices(
+                new Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE), 0);
+        String[] labels = new String[engines.size() + 1];
+        String[] packages = new String[labels.length];
+        labels[0] = "跟随手机系统";
+        packages[0] = "";
+        String selected = GameProfile.settings(this).getString(CuePlayer.PREF_TTS_ENGINE, "");
+        int current = 0;
+        for (int i = 0; i < engines.size(); i++) {
+            ResolveInfo engine = engines.get(i);
+            labels[i + 1] = engine.serviceInfo.applicationInfo.loadLabel(getPackageManager()).toString();
+            packages[i + 1] = engine.serviceInfo.packageName;
+            if (packages[i + 1].equals(selected)) current = i + 1;
+        }
+        ArrayAdapter<String> choices = new ArrayAdapter<String>(this,
+                android.R.layout.simple_list_item_single_choice, labels) {
+            @Override public View getView(int position, View convertView, ViewGroup parent) {
+                TextView item = (TextView) super.getView(position, convertView, parent);
+                item.setTextSize(22);
+                item.setMinimumHeight(UiKit.dp(GameTuningActivity.this, 72));
+                return item;
+            }
+        };
+        AlertDialog picker = new AlertDialog.Builder(this).setTitle("听野使用的语音引擎")
+                .setSingleChoiceItems(choices, current, (dialog, which) -> {
+                    stopTestCue();
+                    GameProfile.settings(this).edit()
+                            .putString(CuePlayer.PREF_TTS_ENGINE, packages[which]).apply();
+                    testStatus.setText(getString(R.string.tuning_voice_engine_selected, labels[which]));
+                    dialog.dismiss();
+                }).setNegativeButton("取消", null).show();
+        picker.getButton(AlertDialog.BUTTON_NEGATIVE).setTextSize(22);
+    }
+
+    private void testHaptic() {
+        if (CaptureService.isRunning()) {
+            testStatus.setText("请先停止辅助，再测试震动。");
+            return;
+        }
+        CueSettings settings = new CueSettings(this);
+        if (!settings.nearHapticEnabled()
+                || (settings.enabledChannels() & CueRequest.CHANNEL_HAPTIC) == 0) {
+            testStatus.setText("请先在提示通道与事件中开启触觉和附近敌人震动。");
+            return;
+        }
+        stopTestCue();
+        final int generation = testGeneration;
+        hapticTest.setEnabled(false);
+        testPlayer = new CuePlayer(this);
+        long now = SystemClock.elapsedRealtime();
+        boolean requested = testPlayer.vibrate(new CueRequest("haptic-test",
+                "haptic-test:" + now, "haptic-test:" + now, "HAPTIC_TEST",
+                CueRequest.Category.NEAR_ZONE, NearZoneRouting.NEAR_PRIORITY,
+                now, now + 1200, CueRequest.CHANNEL_HAPTIC, 0, 0, 0, null));
+        testStatus.setText(requested ? "已请求两次短震动，请确认能否感觉到。"
+                : "未能请求震动，请检查手机是否支持震动。");
+        testHandler.postDelayed(() -> {
+            if (generation == testGeneration) hapticTest.setEnabled(true);
+        }, 600);
+    }
+
+    private void prepareTestCue(int generation, int channels, long prepareUntilMs) {
+        if (generation != testGeneration || testPlayer == null) return;
+        long now = SystemClock.elapsedRealtime();
+        if ((channels & CueRequest.CHANNEL_SPEECH) != 0 && !testPlayer.speechReady()
+                && now < prepareUntilMs) {
+            testHandler.postDelayed(() -> prepareTestCue(generation, channels, prepareUntilMs), 100);
+            return;
+        }
+        testStatus.setText((channels & CueRequest.CHANNEL_SPEECH) != 0
+                ? "请确认能否听到“上方有敌人”。" : "请确认能否听到提示音。");
+        testDispatcher.submit(new CueRequest("audio-test", "audio-test:" + now,
+                "audio-test:" + now, "AUDIO_TEST", CueRequest.Category.NEAR_ZONE, 80,
+                now, now + 1200, channels, NearZoneRouting.TONE_NEAR, 0, 0,
+                NearZoneRouting.speech(3), 0f));
+        testHandler.postDelayed(() -> {
+            if (generation == testGeneration) test.setEnabled(true);
+        }, 4500);
+    }
+
+    private void stopTestCue() {
+        testGeneration++;
+        testHandler.removeCallbacksAndMessages(null);
+        if (testDispatcher != null) testDispatcher.close();
+        if (testPlayer != null) testPlayer.close();
+        testDispatcher = null;
+        testPlayer = null;
+        if (test != null) test.setEnabled(true);
+        if (hapticTest != null) hapticTest.setEnabled(true);
+    }
+
+    @Override protected void onPause() {
+        stopTestCue();
+        super.onPause();
+    }
+
+    private void addSpeechRateControl(LinearLayout parent) {
+        TextView label = settingLabel("语速");
+        SeekBar rate = new SeekBar(this);
+        rate.setMax(16);
+        int saved = GameProfile.settings(this).getInt(CuePlayer.PREF_TTS_RATE,
+                CuePlayer.DEFAULT_TTS_RATE_PERCENT);
+        rate.setProgress(Math.max(0, Math.min(16, (saved - 80) / 10)));
+        label.setText(getString(R.string.tuning_speech_rate_value,
+                (80 + rate.getProgress() * 10) / 100f));
+        UiKit.styleSeekBar(rate, this);
+        rate.setOnSeekBarChangeListener(new SimpleSeekListener(value -> {
+            int percent = 80 + value * 10;
+            GameProfile.settings(this).edit().putInt(CuePlayer.PREF_TTS_RATE, percent).apply();
+            label.setText(getString(R.string.tuning_speech_rate_value, percent / 100f));
+        }));
+        UiKit.add(parent, label, 0);
+        UiKit.add(parent, rate, 12);
     }
 
     private CheckBox checkBox(String label) {
         CheckBox checkBox = new CheckBox(this);
         checkBox.setText(label);
-        checkBox.setTextSize(18);
+        checkBox.setTextSize(22);
         checkBox.setTextColor(UiKit.INK);
         UiKit.styleCheckable(checkBox, this);
         return checkBox;
@@ -135,16 +335,16 @@ public final class GameTuningActivity extends Activity {
 
     private Button button(String label, boolean primary) {
         Button button = UiKit.button(this, label, primary);
-        button.setTextSize(18);
-        button.setMinHeight(UiKit.dp(this, 60));
-        button.setMinimumHeight(UiKit.dp(this, 60));
+        button.setTextSize(22);
+        button.setMinHeight(UiKit.dp(this, 72));
+        button.setMinimumHeight(UiKit.dp(this, 72));
         return button;
     }
 
     private void addPreset(String label, String value) {
         RadioButton button = new RadioButton(this);
         button.setText(label);
-        button.setTextSize(18);
+        button.setTextSize(22);
         button.setTextColor(UiKit.INK);
         UiKit.styleCheckable(button, this);
         button.setTag(value);
@@ -215,7 +415,7 @@ public final class GameTuningActivity extends Activity {
     }
 
     private TextView settingLabel(String label) {
-        return UiKit.text(this, label, 18, UiKit.INK, true);
+        return UiKit.text(this, label, 22, UiKit.INK, true);
     }
 
     private int profileCenterPercent() {
@@ -265,13 +465,6 @@ public final class GameTuningActivity extends Activity {
         } catch (IOException | JSONException error) {
             toast("导入失败：" + error.getMessage());
         }
-    }
-
-    private void returnToGameSelection() {
-        Intent selection = new Intent(this, GameSelectionActivity.class);
-        selection.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        startActivity(selection);
-        finish();
     }
 
     private void toast(String text) {

@@ -8,6 +8,15 @@ import java.nio.ByteBuffer;
 import org.junit.Test;
 
 public final class OverlayCaptureGuardTest {
+    @Test public void blackoutFallbackStaysSuppressedUntilNewSession() {
+        OverlayCaptureGuard guard = new OverlayCaptureGuard();
+        guard.suppressForBlackFrames();
+        guard.clearMarkers();
+        assertTrue(guard.isSuppressed());
+        guard.reset();
+        assertFalse(guard.isSuppressed());
+    }
+
     private static NativeFrameResult frame(float x, float y) {
         int[] packet = new int[NativeFrameResult.VERSIONED_HEADER_SIZE +
                 NativeFrameResult.VERSIONED_RECORD_STRIDE];
