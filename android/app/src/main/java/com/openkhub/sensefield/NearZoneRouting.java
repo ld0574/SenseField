@@ -44,7 +44,7 @@ final class NearZoneRouting {
 
     /** Short factual phrase; no “danger”, “safe” or intent words. */
     static String speech(int sector) {
-        if (sector >= 1 && sector <= 8) return SECTOR_NAMES[sector] + "，敌人";
+        if (sector >= 1 && sector <= 8) return SECTOR_NAMES[sector] + "方有敌人";
         return "附近有敌人";
     }
 
@@ -54,13 +54,17 @@ final class NearZoneRouting {
         return hapticEnabled ? channels | CueRequest.CHANNEL_HAPTIC : channels;
     }
 
-    /**
-     * Radar status is tone-only in every preset. Speech here would start the
-     * category speech cooldown and could swallow a near-zone phrase that
-     * follows a respawn within a second.
-     */
-    static int radarChannels() {
-        return CueRequest.CHANNEL_TONE;
+    /** Spoken facts take priority; tones are a speech-off/compact option. */
+    static int nearChannels(boolean hapticEnabled, int enabledChannels) {
+        return nearChannels(hapticEnabled, enabledChannels, true);
+    }
+
+    /** Standard uses direct speech; detailed/custom honor every selected output. */
+    static int nearChannels(boolean hapticEnabled, int enabledChannels, boolean preferSpeech) {
+        int channels = nearChannels(hapticEnabled);
+        if (preferSpeech && (enabledChannels & CueRequest.CHANNEL_SPEECH) != 0)
+            channels &= ~CueRequest.CHANNEL_TONE;
+        return channels & enabledChannels;
     }
 
     /**

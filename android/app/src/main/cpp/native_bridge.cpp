@@ -240,6 +240,9 @@ bool load_yolox(AAssetManager *assets, Session &session) {
     }
     session.yolox.opt.lightmode = true;
     session.yolox.opt.num_threads = 2;
+    // Sampled inference has idle gaps. Let OpenMP workers sleep immediately
+    // instead of spending the default 20 ms busy-waiting after each layer.
+    session.yolox.opt.openmp_blocktime = 0;
     session.yolox.opt.use_packing_layout = true;
     session.yolox.opt.use_fp16_packed = false;
     session.yolox.opt.use_fp16_storage = false;

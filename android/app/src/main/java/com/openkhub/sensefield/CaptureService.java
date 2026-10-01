@@ -31,6 +31,8 @@ import java.util.List;
 import java.util.UUID;
 
 public final class CaptureService extends Service {
+    private static volatile boolean running;
+    static boolean isRunning() { return running; }
     static final String ACTION_START = "com.openkhub.sensefield.START";
     static final String ACTION_TOGGLE_PAUSE = "com.openkhub.sensefield.TOGGLE_PAUSE";
     static final String ACTION_STOP = "com.openkhub.sensefield.STOP";
@@ -42,8 +44,6 @@ public final class CaptureService extends Service {
     private static final int NOTIFICATION_ID = 104;
     private static final long FRAME_PERIOD_MS = 83; // About 12 sampled frames per second.
     private static final long DISPLAY_CHECK_PERIOD_MS = 500;
-    private static final long BLACK_FRAME_GRACE_MS = 5000;
-    private static final long BLACK_STOP_AFTER_MS = 10000;
     private final Object processingLock = new Object();
     private HandlerThread workerThread;
     private Handler worker;
@@ -82,7 +82,7 @@ public final class CaptureService extends Service {
     private long startedAtMs;
     private long lastProcessedAtMs;
     private long lastNotificationAtMs;
-    private long blackSinceMs;
+    private final BlackFrameMonitor blackFrameMonitor = new BlackFrameMonitor();
     private int processedFrames;
     private int detectedCues;
     private int queuedCues;
@@ -127,11 +127,11 @@ public final class CaptureService extends Service {
     private int nearZoneSuppressed;
     private int radarPauses;
     private int radarResumes;
-    private long nextRadarSequence;
 
     @Override
     public void onCreate() {
         super.onCreate();
+        running = true;
         notificationManager = getSystemService(NotificationManager.class);
         notificationManager.createNotificationChannel(new NotificationChannel(
                 CHANNEL, "游戏画面采集", NotificationManager.IMPORTANCE_LOW));
@@ -152,7 +152,12 @@ public final class CaptureService extends Service {
                         // Rotation can stop frame callbacks before the old reader
                         // reaches its next periodic size check.
                         resizeIfNeeded();
-                        if (captureHealth.check(SystemClock.elapsedRealtime()) ==
+                        boolean expectFrames = frameWidth > frameHeight;
+                        if (!expectFrames && recoveryRunnable != null) {
+                            worker.removeCallbacks(recoveryRunnable);
+                            recoveryRunnable = null;
+                        }
+                        if (captureHealth.check(SystemClock.elapsedRealtime(), expectFrames) ==
                                 CaptureHealthMonitor.State.STARVED) {
                             starvationCount++;
                             scheduleRecoveryLocked(expectedSessionGeneration);
@@ -337,6 +342,7 @@ public final class CaptureService extends Service {
                         GameProfile.settings(CaptureService.this).edit()
                                 .putBoolean("capture_active", false)
                                 .putBoolean("capture_paused", false)
+                                .putBoolean("capture_waiting_for_image", false)
                                 .putString("last_capture_status", "系统截屏授权已结束").apply();
                         // Do not let a delayed callback from an older capture
                         // session stop a newer start command.
@@ -354,6 +360,7 @@ public final class CaptureService extends Service {
                 GameProfile.settings(this).edit()
                         .putBoolean("capture_active", true)
                         .putBoolean("capture_paused", false)
+                        .putBoolean("capture_waiting_for_image", false)
                         .apply();
                 captureHealth.start(SystemClock.elapsedRealtime());
                 scheduleDisplayWatchdogLocked(sessionGeneration);
@@ -471,7 +478,7 @@ public final class CaptureService extends Service {
             if (minimapOverlay != null) minimapOverlay.clear();
             lastFrameLandscape = frameWidth > frameHeight;
             discardFrameAfterRotation = true;
-            blackSinceMs = 0;
+            blackFrameMonitor.reset();
             Log.i(TAG, "Capture rotation changed to " + rotation
                     + " without a size change; temporal state reset");
             return;
@@ -497,7 +504,7 @@ public final class CaptureService extends Service {
         if (minimapOverlay != null) minimapOverlay.clear();
         lastFrameLandscape = frameWidth > frameHeight;
         discardFrameAfterRotation = rotationChanged;
-        blackSinceMs = 0;
+        blackFrameMonitor.reset();
         if (recoveryPending)
             captureHealth.recoveryRebuilt(SystemClock.elapsedRealtime());
         Log.i(TAG, "Capture resized to " + frameWidth + "x" + frameHeight);
@@ -536,7 +543,7 @@ public final class CaptureService extends Service {
                     virtualDisplay.setSurface(reader.getSurface());
                     resetNativeLocked();
                     if (minimapOverlay != null) minimapOverlay.clear();
-                    blackSinceMs = 0;
+                    blackFrameMonitor.reset();
                     captureHealth.recoveryRebuilt(SystemClock.elapsedRealtime());
                     logCaptureHealth(captureHealth.state().name(), "reader_rebuilt_waiting_for_frame");
                     refreshNotification();
@@ -620,7 +627,7 @@ public final class CaptureService extends Service {
                     if (minimapOverlay != null) minimapOverlay.clear();
                     lastFrameLandscape = landscape;
                     discardFrameAfterRotation = true;
-                    blackSinceMs = 0;
+                    blackFrameMonitor.reset();
                     Log.i(TAG, "Capture rotation changed to " + rotation
                             + " on frame; temporal state reset");
                 }
@@ -643,14 +650,36 @@ public final class CaptureService extends Service {
                 if (stopping || source != reader || generation != readerGeneration) return;
                 processedFrames++;
                 resizeAfterClose = processedFrames % 12 == 0;
-                if (!landscape || !blackFrame) {
-                    blackSinceMs = 0;
-                } else if (blackSinceMs == 0) {
-                    blackSinceMs = now;
+                boolean wasBlack = blackFrameMonitor.isBlack();
+                BlackFrameMonitor.Action blackAction = blackFrameMonitor.update(
+                        blackFrame, minimapOverlay != null, now);
+                if (blackFrame && !wasBlack) {
+                    resetNativeLocked();
+                    GameProfile.settings(this).edit()
+                            .putBoolean("capture_waiting_for_image", true).apply();
+                    Log.w(TAG, "CaptureBlackFrame sessionId=" + auditSessionId
+                            + " state=WAITING");
+                    refreshNotification();
+                } else if (!blackFrame && wasBlack) {
+                    GameProfile.settings(this).edit()
+                            .putBoolean("capture_waiting_for_image", false).apply();
+                    Log.i(TAG, "CaptureBlackFrame sessionId=" + auditSessionId
+                            + " state=RECOVERED overlaySuppressed="
+                            + overlayCaptureGuard.isSuppressed());
+                    refreshNotification();
                 }
-                if (landscape && now - startedAtMs > BLACK_FRAME_GRACE_MS
-                        && blackSinceMs > 0 && now - blackSinceMs >= BLACK_STOP_AFTER_MS) {
+                if (blackAction == BlackFrameMonitor.Action.DISABLE_OVERLAY) {
+                    // Close only our own secure window. Never try to bypass
+                    // protection on game or other application content.
+                    overlayCaptureGuard.suppressForBlackFrames();
+                    minimapOverlay.close();
+                    minimapOverlay = null;
+                    Log.w(TAG, "CaptureBlackFrame sessionId=" + auditSessionId
+                            + " state=OVERLAY_DISABLED");
+                }
+                if (blackAction == BlackFrameMonitor.Action.STOP) {
                     Log.w(TAG, "Capture is consistently black; protected or unavailable content");
+                    finishAuditSessionLocked("black_frames");
                     stopWithStatus("画面持续黑屏，采集已停止；可能是受保护内容或系统限制");
                     return;
                 }
@@ -660,7 +689,7 @@ public final class CaptureService extends Service {
                     if (!landscape) latestNativeMicros = 0;
                 }
                 lastFrameLandscape = landscape;
-                if (landscape && !paused && nativeSession != 0) {
+                if (landscape && !blackFrame && !paused && nativeSession != 0) {
                     syncVisionMemoryOutputsLocked();
                     if (minimapOverlay != null && overlayCaptureGuard.observeFrame(
                             pixels, width, height, plane.getRowStride())) {
@@ -799,6 +828,10 @@ public final class CaptureService extends Service {
                 channels |= CueRequest.CHANNEL_SPEECH;
                 speech = CueRouting.unlocatedMinimapEnemySpeech();
             }
+            if (cueSettings != null && (cueSettings.enabledChannels(
+                    CueRequest.Category.VISION_MEMORY) & CueRequest.CHANNEL_HAPTIC) != 0) {
+                channels |= CueRequest.CHANNEL_HAPTIC;
+            }
             int event = entity.transition;
             String cueId = auditSessionId + ":" + nextCueId++;
             CueRequest request = new CueRequest(auditSessionId, cueId,
@@ -854,7 +887,9 @@ public final class CaptureService extends Service {
             case NearZoneRouting.EVENT_RADAR_RESUMED:
                 if (relation.event == NearZoneRouting.EVENT_RADAR_PAUSED) radarPauses++;
                 else radarResumes++;
-                dispatchRadarTone(relation, observedAtMs);
+                // Internal availability changes are kept for diagnosis;
+                // they do not interrupt the player's game with status sounds.
+                logNearZoneEvent(relation, observedAtMs, "-", "SUPPRESSED");
                 break;
             case NearZoneRouting.EVENT_SUPPRESSED:
                 nearZoneSuppressed++;
@@ -876,29 +911,10 @@ public final class CaptureService extends Service {
                 CueEventKeys.nearZone(nativeResetGeneration, relation.episodeId),
                 "NEAR_ZONE", CueRequest.Category.NEAR_ZONE, NearZoneRouting.NEAR_PRIORITY,
                 observedAtMs, observedAtMs + NearZoneRouting.NEAR_TTL_MS,
-                NearZoneRouting.nearChannels(cueSettings.nearHapticEnabled()),
+                cueSettings.nearRequestedChannels(),
                 NearZoneRouting.TONE_NEAR, 0, 0, NearZoneRouting.speech(relation.sector),
                 relation.pan);
         submitRelationCue(request, NearZoneRouting.KIND_NEAR_ZONE, relation, observedAtMs);
-    }
-
-    private void dispatchRadarTone(NativeFrameResult.Relation relation, long observedAtMs) {
-        if (cueDispatcher == null || cueSettings == null) return;
-        if (!cueSettings.categoryEnabled(CueRequest.Category.NEAR_ZONE)) {
-            logNearZoneEvent(relation, observedAtMs, "-", "CATEGORY_DISABLED");
-            return;
-        }
-        boolean paused = relation.event == NearZoneRouting.EVENT_RADAR_PAUSED;
-        String cueId = auditSessionId + ":" + nextCueId++;
-        CueRequest request = new CueRequest(auditSessionId, cueId,
-                CueEventKeys.radarStatus(nativeResetGeneration, nextRadarSequence++,
-                        relation.event),
-                paused ? "RADAR_PAUSED" : "RADAR_RESUMED", CueRequest.Category.NEAR_ZONE,
-                NearZoneRouting.RADAR_PRIORITY, observedAtMs,
-                observedAtMs + NearZoneRouting.RADAR_TTL_MS, NearZoneRouting.radarChannels(),
-                paused ? NearZoneRouting.TONE_RADAR_PAUSED : NearZoneRouting.TONE_RADAR_RESUMED,
-                0, 0, null, 0f);
-        submitRelationCue(request, NearZoneRouting.KIND_RADAR_STATUS, relation, observedAtMs);
     }
 
     private void submitRelationCue(CueRequest request, int kind,
@@ -1078,7 +1094,8 @@ public final class CaptureService extends Service {
     private void refreshNotification() {
         String healthState = captureHealth.state() == CaptureHealthMonitor.State.RECOVERING
                 ? "恢复截屏 " + captureHealth.attempts() + "/3"
-                : captureHealth.state() == CaptureHealthMonitor.State.STARVED
+                : blackFrameMonitor.isBlack()
+                        || captureHealth.state() == CaptureHealthMonitor.State.STARVED
                 ? "等待画面恢复" : null;
         notificationManager.notify(NOTIFICATION_ID,
                 notification(healthState != null ? healthState : paused ? "提示已暂停" :
@@ -1103,12 +1120,13 @@ public final class CaptureService extends Service {
             GameProfile.settings(this).edit()
                     .putBoolean("capture_active", false)
                     .putBoolean("capture_paused", false)
+                    .putBoolean("capture_waiting_for_image", false)
                     .remove("last_capture_status")
                     .apply();
             startedAtMs = SystemClock.elapsedRealtime();
             lastProcessedAtMs = 0;
             lastNotificationAtMs = 0;
-            blackSinceMs = 0;
+            blackFrameMonitor.reset();
             processedFrames = 0;
             detectedCues = 0;
             queuedCues = 0;
@@ -1135,7 +1153,6 @@ public final class CaptureService extends Service {
             nearZoneSuppressed = 0;
             radarPauses = 0;
             radarResumes = 0;
-            nextRadarSequence = 0;
             overlayCaptureGuard.reset();
             profileName = "";
             auditSessionId = UUID.randomUUID().toString();
@@ -1224,6 +1241,7 @@ public final class CaptureService extends Service {
                 GameProfile.settings(this).edit()
                         .putBoolean("capture_active", false)
                         .putBoolean("capture_paused", false)
+                        .putBoolean("capture_waiting_for_image", false)
                         .putString("last_capture_status", status).apply();
             }
             stopThroughStartId = latestServiceStartId;
@@ -1278,6 +1296,7 @@ public final class CaptureService extends Service {
 
     @Override
     public void onDestroy() {
+        running = false;
         synchronized (processingLock) {
             finishAuditSessionLocked("destroyed");
             releaseCapture();
@@ -1285,6 +1304,7 @@ public final class CaptureService extends Service {
         GameProfile.settings(this).edit()
                 .putBoolean("capture_active", false)
                 .putBoolean("capture_paused", false)
+                .putBoolean("capture_waiting_for_image", false)
                 .apply();
         // stopSelf() normally removes the notification with the service, but
         // make the foreground-service lifecycle explicit for projection and

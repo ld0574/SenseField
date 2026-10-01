@@ -41,6 +41,19 @@ final class CaptureHealthMonitor {
         lastProcessedAtMs = nowMs;
     }
 
+    /** Portrait setup screens may be static while the player opens the game. */
+    State check(long nowMs, boolean expectFrames) {
+        if (!expectFrames) {
+            // Give the next landscape reader a fresh startup window without
+            // spending recovery attempts on an inactive recognition screen.
+            // Waiting must never undo a real failure, revocation or user pause.
+            if (state != State.REVOKED && state != State.FAILED && state != State.PAUSED)
+                start(nowMs);
+            return state;
+        }
+        return check(nowMs);
+    }
+
     State check(long nowMs) {
         if (state == State.RECOVERING) {
             if (recoveryRebuiltAtMs >= 0 &&

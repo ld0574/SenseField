@@ -62,6 +62,12 @@ final class OverlayCaptureGuard {
         return suppressed;
     }
 
+    /** Some devices black out the whole capture under our secure overlay. */
+    void suppressForBlackFrames() {
+        suppressed = true;
+        clearMarkers();
+    }
+
     /**
      * Remember the locations drawn after the current frame was processed.
      * Coordinates are normalized to the complete captured frame.

@@ -62,6 +62,8 @@
 - `MediaProjection` 用于在用户每次明确授权后取得整屏帧；悬浮窗权限（`SYSTEM_ALERT_WINDOW`）只用于显示可选的非交互提示层；通知权限用于前台截屏服务的运行状态和健康提示。识别、事件筛选和模型推理在设备本地完成，不上传屏幕画面。
 - 没有完整签名环境变量时，发布脚本只生成名称含 `debug-candidate` 的 Debug APK，并沿用 Android Gradle 的标准 debug signing；签名材料必须由发布者通过环境变量提供，脚本不会生成或上传发布 keystore。候选构建和 GitHub Release 发布仍需按[发布说明草稿](docs/RELEASE_NOTES_0.3.0-alpha.1.md)与[检查清单](docs/RELEASE_CHECKLIST_0.3.0-alpha.1.md)复核。
 
+2026-10-01 团队测试版已完成 Release 构建：方位语音、无障碍震动、统一授权与底部大按钮，定位状态仅日志。[预发布下载](https://github.com/ld0574/SenseField/releases/tag/v0.3.0-alpha.1)；[真机反馈](validation/ANDROID_LIVE_SMOKE_2026-10-01.md)和[发布说明](docs/RELEASE_NOTES_0.3.0-alpha.1.md)保留实验模型与验收边界。
+
 ## 当前进度
 
 | 能力 | 状态 | 说明 |
