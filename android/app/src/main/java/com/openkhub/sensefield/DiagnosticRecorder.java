@@ -21,17 +21,27 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.LinkedHashSet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /** Local diagnostics sharing the existing capture stream; no second projection. */
 final class DiagnosticRecorder {
     static final String PREF_IMAGES = "diagnostic_images";
+    static final long IMAGE_PERIOD_MS = 10000;
+    static final int CONTEXT_SCREEN_EDGE = 480;
+    static final int CONTEXT_MAP_EDGE = 512;
+    static final long CONTEXT_FRAME_BYTES = 2L * 1024 * 1024;
+    static final int MAX_IMAGE_JOBS = 8;
+    static final long MAX_IMAGE_JOB_BYTES = 16L * 1024 * 1024;
+    private static final long CLEAR_FRAME_BYTES = 6L * 1024 * 1024;
+    // IO is shared across sessions; restarting capture must not multiply its image backlog.
+    private static final DiagnosticImageBudget IMAGE_BUDGET = new DiagnosticImageBudget(
+            MAX_IMAGE_JOBS, MAX_IMAGE_JOB_BYTES);
     static final ExecutorService IO = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "SenseFieldDiagnosticIO");
         thread.setDaemon(true);
@@ -53,7 +63,11 @@ final class DiagnosticRecorder {
     private final AtomicInteger pending = new AtomicInteger();
     private final AtomicInteger dropped = new AtomicInteger();
     private final AtomicInteger imageDrops = new AtomicInteger();
-    private final AtomicBoolean imagePending = new AtomicBoolean();
+    private final Object imageStateLock = new Object();
+    private final DiagnosticImageWindow<ImageSample> imageWindow = new DiagnosticImageWindow<>();
+    private final DiagnosticImageBudget imageBudget = IMAGE_BUDGET;
+    private final LinkedHashSet<Long> scheduledImageFrames = new LinkedHashSet<>();
+    private volatile long imageGeneration;
     private volatile boolean imageLimit;
     private volatile boolean imagesEnabled;
     private long nextImageAtMs;
@@ -62,9 +76,35 @@ final class DiagnosticRecorder {
     private volatile long frameSequence;
     private volatile long imageCount;
     private boolean markerPending;
+    private long lastContextObservedAtMs = -1;
+    private long lastImageObservedAtMs = -1;
+    private volatile long contextCopiedFrames;
+    private volatile long contextCopyMicros;
+    private volatile long maxContextCopyMicros;
+    private volatile long maxContextFrameBytes;
+    private volatile long contextWindows;
+    private volatile long contextRateLimited;
+    private volatile long contextDeferredFrames;
     private volatile JSONObject lastDeviceSample;
     private volatile JSONObject latestState;
+    private volatile LoadSample latestLoadSample = new LoadSample(-1, -1, -1);
     private ScheduledFuture<?> heartbeat;
+
+    /** Immutable device load snapshot for readers outside the capture worker. */
+    static final class LoadSample {
+        /** Battery temperature reported by ACTION_BATTERY_CHANGED, in tenths °C; -1 if unavailable. */
+        final int tempTenthsC;
+        /** Android thermal status; -1 if unavailable. */
+        final int thermalStatus;
+        /** elapsedRealtime timestamp of this sample. */
+        final long sampledAtMs;
+
+        LoadSample(int tempTenthsC, int thermalStatus, long sampledAtMs) {
+            this.tempTenthsC = tempTenthsC;
+            this.thermalStatus = thermalStatus;
+            this.sampledAtMs = sampledAtMs;
+        }
+    }
 
     static File root(Context context) { return new File(context.getFilesDir(), "diagnostics"); }
 
@@ -110,10 +150,20 @@ final class DiagnosticRecorder {
                 "product", Build.PRODUCT, "android_release", Build.VERSION.RELEASE,
                 "sdk", Build.VERSION.SDK_INT, "screen_width_px", display.widthPixels,
                 "screen_height_px", display.heightPixels, "density_dpi", display.densityDpi,
-                "images_enabled", imagesEnabled, "image_period_ms", 2000,
+                "images_enabled", imagesEnabled, "image_period_ms", IMAGE_PERIOD_MS,
+                "context_sample_period_ms", DiagnosticImageWindow.SAMPLE_PERIOD_MS,
+                "context_pre_ms", DiagnosticImageWindow.PRE_WINDOW_MS,
+                "context_post_ms", DiagnosticImageWindow.POST_WINDOW_MS,
+                "context_max_post_ms", DiagnosticImageWindow.MAX_WINDOW_MS,
+                "context_auto_gap_ms", DiagnosticImageWindow.AUTO_WINDOW_GAP_MS,
+                "context_max_frames", DiagnosticImageWindow.MAX_CACHED_FRAMES,
+                "context_frame_bytes_limit", CONTEXT_FRAME_BYTES,
+                "context_screen_edge", CONTEXT_SCREEN_EDGE, "context_map_edge", CONTEXT_MAP_EDGE,
+                "image_jobs_limit", MAX_IMAGE_JOBS, "image_job_bytes_limit", MAX_IMAGE_JOB_BYTES,
+                "image_job_budget_scope", "shared across sessions in this app process; peak counters are process lifetime",
                 "image_duration_limit_ms", 1200000, "image_bytes_limit", DiagnosticArchive.IMAGE_LIMIT,
                 "time_note", "Game HUD time is visible in optional screenshots; elapsed_ms is app-session time.",
-                "image_note", "Optional local landscape screenshots and minimap crops; JPEG, not exact replay pixels.",
+                "image_note", "Optional local sampled context plus event/periodic screenshots; JPEG, not continuous video or exact replay pixels. Event context may be rate limited or incomplete; see image_context/image_request records.",
                 "resolution_note", "screen_*_px is the display baseline; each frame records the actual projection width/height.");
         try {
             PackageInfo info = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
@@ -144,13 +194,32 @@ final class DiagnosticRecorder {
     }
 
     void setImagesEnabled(boolean enabled) {
-        imagesEnabled = enabled;
+        synchronized (imageStateLock) {
+            imagesEnabled = enabled;
+            imageGeneration++;
+            clearImageContextLocked();
+            scheduledImageFrames.clear();
+            nextImageAtMs = 0;
+        }
         record("image_setting", object("enabled", enabled));
     }
 
     void markIssue() {
-        markerPending = true;
-        record("user_marker", object("source", "notification"));
+        long requestedAtMs = SystemClock.elapsedRealtime();
+        record("user_marker", object("source", "notification", "requested_at_ms", requestedAtMs,
+                "images_enabled", imagesEnabled));
+        synchronized (imageStateLock) {
+            if (finished || !failure.isEmpty() || !imagesEnabled || imageLimit
+                    || requestedAtMs - startedAtMs > 1200000) return;
+            markerPending = true;
+            // Export recent context now, even if pausing/notification UI prevents a next frame.
+            // Anchor to the last capture time; the request's real timestamp is recorded above.
+            if (lastContextObservedAtMs >= 0 && requestedAtMs >= lastImageObservedAtMs
+                    && requestedAtMs - lastImageObservedAtMs <= DiagnosticImageWindow.PRE_WINDOW_MS) {
+                exportWindowLocked(imageWindow.trigger(lastImageObservedAtMs, true),
+                        "user_marker", requestedAtMs, true);
+            }
+        }
     }
 
     void audit(String message) {
@@ -203,35 +272,206 @@ final class DiagnosticRecorder {
                         "event", NearZoneRouting.eventName(r.event), "reliable", r.reliable,
                         "distance", r.nearestDistance, "sector", r.sector, "episode_id", r.episodeId,
                         "suppression", NearZoneRouting.suppressionName(r.suppression))));
-        boolean force = markerPending || r.event == NearZoneRouting.EVENT_NEAR_ENTER;
-        if (!imagesEnabled || imageLimit || width <= height || completedAtMs - startedAtMs > 1200000
-                || (completedAtMs < nextImageAtMs && !force)) return;
-        if (!imagePending.compareAndSet(false, true)) { imageDrops.incrementAndGet(); return; }
+        captureImages(f, pixels, width, height, rowStride, sequence, observedAtMs, completedAtMs);
+    }
+
+    private void captureImages(NativeFrameResult f, ByteBuffer pixels, int width, int height,
+                               int rowStride, long sequence, long observedAtMs, long completedAtMs) {
+        synchronized (imageStateLock) {
+            if (!imagesEnabled || imageLimit || width <= height
+                    || completedAtMs - startedAtMs > 1200000) {
+                clearImageContextLocked();
+                return;
+            }
+            boolean manual = markerPending;
+            boolean event = f.relation.event == NearZoneRouting.EVENT_NEAR_ENTER;
+            boolean periodic = completedAtMs >= nextImageAtMs;
+            lastImageObservedAtMs = observedAtMs;
+            boolean sampleDue = imageWindow.shouldSample(observedAtMs);
+            try {
+                ImageSample contextSample = null;
+                if (sampleDue || event || manual) {
+                    long copyStartedNs = System.nanoTime();
+                    ImageSample sample = copyImageSample(f, pixels, width, height, rowStride,
+                            sequence, observedAtMs, CONTEXT_SCREEN_EDGE, CONTEXT_MAP_EDGE);
+                    long micros = (System.nanoTime() - copyStartedNs) / 1000;
+                    contextCopyMicros += micros;
+                    maxContextCopyMicros = Math.max(maxContextCopyMicros, micros);
+                    if (sample != null && sample.bytes <= CONTEXT_FRAME_BYTES) {
+                        contextCopiedFrames++;
+                        maxContextFrameBytes = Math.max(maxContextFrameBytes, sample.bytes);
+                        imageWindow.add(sequence, observedAtMs, sample);
+                        lastContextObservedAtMs = observedAtMs;
+                        contextSample = sample;
+                    } else {
+                        imageDrops.incrementAndGet();
+                        record("image_request", object("frame_index", sequence,
+                                "status", "copy_unavailable", "reason", "context"));
+                    }
+                }
+
+                DiagnosticImageWindow.TriggerResult<ImageSample> triggered = event || manual
+                        ? imageWindow.trigger(observedAtMs, manual) : null;
+                long currentWindowId = triggered == null
+                        ? imageWindow.activeWindowId(observedAtMs) : triggered.id;
+                // Keep the original clear event/periodic image. Queue it before the pre-window
+                // so context cannot consume all admission slots ahead of the triggering frame.
+                if (periodic || event || manual) {
+                    ImageSample clearFrame = copyImageSample(f, pixels, width, height, rowStride,
+                            sequence, observedAtMs, 960, 768);
+                    enqueueImageLocked(clearFrame, event ? "near_enter" : manual ? "user_marker" : "periodic",
+                            currentWindowId);
+                    nextImageAtMs = completedAtMs + IMAGE_PERIOD_MS;
+                }
+                if (event || manual) {
+                    markerPending = false;
+                    exportWindowLocked(triggered, manual ? "user_marker_frame" : "near_enter", completedAtMs, false);
+                } else if (sampleDue) {
+                    if (currentWindowId != 0) {
+                        // Use the owned sample without rereading a released ImageReader buffer.
+                        if (contextSample != null)
+                            enqueueImageLocked(contextSample, "post_context", currentWindowId);
+                    }
+                }
+            } catch (RuntimeException error) {
+                imageDrops.incrementAndGet();
+                record("image_request", object("frame_index", sequence,
+                        "status", "copy_failed", "error", error.getClass().getSimpleName()));
+            }
+        }
+    }
+
+    private static ImageSample copyImageSample(NativeFrameResult f, ByteBuffer pixels, int width,
+                                               int height, int rowStride, long sequence,
+                                               long observedAtMs, int screenEdge, int mapEdge) {
+        DiagnosticPixels screen = DiagnosticPixels.copy(pixels, width, height, rowStride,
+                0, 0, width, height, screenEdge);
+        int x0 = Math.max(0, (int) Math.floor(f.minimapRoi.left * width));
+        int y0 = Math.max(0, (int) Math.floor(f.minimapRoi.top * height));
+        int x1 = Math.min(width, (int) Math.ceil(f.minimapRoi.right * width));
+        int y1 = Math.min(height, (int) Math.ceil(f.minimapRoi.bottom * height));
+        DiagnosticPixels map = DiagnosticPixels.copy(pixels, width, height, rowStride,
+                x0, y0, x1, y1, mapEdge);
+        if (screen == null) return null;
+        return new ImageSample(sequence, observedAtMs, screen, map,
+                new int[]{x0, y0, x1 - x0, y1 - y0});
+    }
+
+    private void exportWindowLocked(DiagnosticImageWindow.TriggerResult<ImageSample> window,
+                                    String reason, long requestedAtMs, boolean reserveMarkerFrame) {
+        if (window.status == DiagnosticImageWindow.TriggerStatus.ACCEPTED) contextWindows++;
+        if (window.status == DiagnosticImageWindow.TriggerStatus.RATE_LIMITED) contextRateLimited++;
+        JSONArray frames = new JSONArray();
+        for (DiagnosticImageWindow.Entry<ImageSample> entry : window.entries) {
+            frames.put(entry.frameIndex);
+            // A tap can occur before its next processed frame. Do not let that tap's
+            // pre-context consume the final slot/bytes needed by the subsequent clear frame.
+            if (reserveMarkerFrame && !scheduledImageFrames.contains(entry.frameIndex)
+                    && (imageBudget.pendingFrames() >= MAX_IMAGE_JOBS - 1
+                    || imageBudget.pendingBytes() + entry.payload.bytes > MAX_IMAGE_JOB_BYTES - CLEAR_FRAME_BYTES)) {
+                contextDeferredFrames++;
+                record("image_request", object("frame_index", entry.frameIndex, "window_id", window.id,
+                        "status", "deferred_for_marker_frame", "reason", reason));
+                continue;
+            }
+            enqueueImageLocked(entry.payload, "pre_context", window.id);
+        }
+        record("image_context", object("window_id", window.id, "status", window.status.name(),
+                "reason", reason, "requested_at_ms", requestedAtMs,
+                "start_observed_at_ms", window.startMs, "end_observed_at_ms", window.endMs,
+                "pre_frame_indices", frames, "sampling_note", "Sampled context; may be incomplete."));
+    }
+
+    private void enqueueImageLocked(ImageSample sample, String reason, long windowId) {
+        if (sample == null) { imageDrops.incrementAndGet(); return; }
+        if (scheduledImageFrames.contains(sample.sequence)) {
+            record("image_request", object("frame_index", sample.sequence, "observed_at_ms", sample.observedAtMs,
+                    "reason", reason, "window_id", windowId, "status", "already_requested"));
+            return;
+        }
+        if (!imageBudget.tryAcquire(sample.bytes)) {
+            imageDrops.incrementAndGet();
+            record("image_request", object("frame_index", sample.sequence, "observed_at_ms", sample.observedAtMs,
+                    "reason", reason, "window_id", windowId, "status", "queue_limited"));
+            return;
+        }
+        scheduledImageFrames.add(sample.sequence);
+        while (scheduledImageFrames.size() > 64)
+            scheduledImageFrames.remove(scheduledImageFrames.iterator().next());
+        long generation = imageGeneration;
+        record("image_request", object("frame_index", sample.sequence, "observed_at_ms", sample.observedAtMs,
+                "reason", reason, "window_id", windowId, "status", "queued", "raw_bytes", sample.bytes));
+        IO.execute(() -> {
+            try {
+                if (archive == null) return;
+                if (!imageRequestValid(generation)) {
+                    appendImageResult(sample, reason, windowId, "cancelled");
+                    return;
+                }
+                long before = imageCount;
+                saveImage(sample.screen, "screen-" + sample.sequence + "-" + sample.observedAtMs + ".jpg",
+                        sample.sequence, sample.observedAtMs, null, generation, reason, windowId);
+                saveImage(sample.map, "map-" + sample.sequence + "-" + sample.observedAtMs + ".jpg",
+                        sample.sequence, sample.observedAtMs, sample.sourceBounds, generation, reason, windowId);
+                long saved = imageCount - before;
+                appendImageResult(sample, reason, windowId, saved == 2 ? "saved_pair" : saved == 1 ? "partial" : "not_saved");
+                archive.flush();
+            } catch (Exception error) { failed(error); }
+            finally { imageBudget.release(sample.bytes); }
+        });
+    }
+
+    private boolean imageRequestValid(long generation) {
+        return imagesEnabled && generation == imageGeneration && !imageLimit;
+    }
+
+    private void appendImageResult(ImageSample sample, String reason, long windowId,
+                                    String status) throws IOException {
+        long atMs = SystemClock.elapsedRealtime();
+        archive.append(object("type", "image_request_result", "at_ms", atMs,
+                "elapsed_ms", Math.max(0, atMs - startedAtMs),
+                "data", object("frame_index", sample.sequence, "observed_at_ms", sample.observedAtMs,
+                        "reason", reason, "window_id", windowId, "status", status)).toString());
+    }
+
+    void clearImageContext(String reason) {
+        synchronized (imageStateLock) {
+            long windowId = lastImageObservedAtMs < 0 ? 0 : imageWindow.activeWindowId(lastImageObservedAtMs);
+            record("image_context_reset", object("window_id", windowId, "reason", reason,
+                    "last_observed_at_ms", lastImageObservedAtMs, "post_window_interrupted", windowId != 0));
+            clearImageContextLocked();
+        }
+    }
+
+    private void clearImageContextLocked() {
+        imageWindow.clear();
+        lastContextObservedAtMs = -1;
+        lastImageObservedAtMs = -1;
         markerPending = false;
-        nextImageAtMs = completedAtMs + 2000;
-        try {
-            DiagnosticPixels screen = DiagnosticPixels.copy(pixels, width, height, rowStride, 0, 0, width, height, 960);
-            int x0 = (int) Math.floor(f.minimapRoi.left * width);
-            int y0 = (int) Math.floor(f.minimapRoi.top * height);
-            int x1 = (int) Math.ceil(f.minimapRoi.right * width);
-            int y1 = (int) Math.ceil(f.minimapRoi.bottom * height);
-            DiagnosticPixels map = DiagnosticPixels.copy(pixels, width, height, rowStride, x0, y0, x1, y1, 768);
-            IO.execute(() -> {
-                try {
-                    if (archive == null || !imagesEnabled) return;
-                    saveImage(screen, "screen-" + sequence + "-" + observedAtMs + ".jpg", sequence, observedAtMs, null);
-                    saveImage(map, "map-" + sequence + "-" + observedAtMs + ".jpg", sequence, observedAtMs,
-                            new int[]{x0, y0, x1 - x0, y1 - y0});
-                    archive.flush();
-                } catch (Exception error) { failed(error); }
-                finally { imagePending.set(false); }
-            });
-        } catch (RuntimeException error) { imagePending.set(false); imageDrops.incrementAndGet(); }
+    }
+
+    private static final class ImageSample {
+        final long sequence;
+        final long observedAtMs;
+        final DiagnosticPixels screen;
+        final DiagnosticPixels map;
+        final int[] sourceBounds;
+        final long bytes;
+
+        ImageSample(long sequence, long observedAtMs, DiagnosticPixels screen, DiagnosticPixels map,
+                    int[] sourceBounds) {
+            this.sequence = sequence;
+            this.observedAtMs = observedAtMs;
+            this.screen = screen;
+            this.map = map;
+            this.sourceBounds = sourceBounds;
+            bytes = ((long) screen.argb.length + (map == null ? 0 : map.argb.length)) * 4;
+        }
     }
 
     private void saveImage(DiagnosticPixels data, String name, long sequence, long observedAtMs,
-                           int[] sourceBounds) throws IOException {
-        if (data == null) return;
+                           int[] sourceBounds, long generation, String reason, long windowId) throws IOException {
+        if (data == null || !imageRequestValid(generation)) return;
         Bitmap bitmap = Bitmap.createBitmap(data.argb, data.width, data.height, Bitmap.Config.ARGB_8888);
         byte[] bytes;
         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
@@ -239,7 +479,7 @@ final class DiagnosticRecorder {
                 throw new IOException("无法保存诊断画面");
             bytes = out.toByteArray();
         } finally { bitmap.recycle(); }
-        if (!imagesEnabled) return;
+        if (!imageRequestValid(generation)) return;
         if (!archive.image(name, bytes)) {
             imageLimit = true;
             archive.append(object("type", "image_limit", "at_ms", SystemClock.elapsedRealtime()).toString());
@@ -248,6 +488,7 @@ final class DiagnosticRecorder {
         imageCount++;
         archive.append(object("type", "image", "frame_index", sequence, "observed_at_ms", observedAtMs,
                 "file", "images/" + name, "output_width", data.width, "output_height", data.height,
+                "reason", reason, "window_id", windowId,
                 "source_bounds_xywh", sourceBounds == null ? JSONObject.NULL : array(sourceBounds)).toString());
     }
 
@@ -259,17 +500,31 @@ final class DiagnosticRecorder {
             AudioManager audio = context.getSystemService(AudioManager.class);
             PowerManager power = context.getSystemService(PowerManager.class);
             int thermalStatus = power == null ? -1 : power.getCurrentThermalStatus();
-            JSONObject sample = object("battery_temp_tenths_c", battery == null ? -1 :
-                    battery.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1),
+            int batteryTempTenthsC = battery == null ? -1 :
+                    battery.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1);
+            int batteryStatus = battery == null ? BatteryManager.BATTERY_STATUS_UNKNOWN :
+                    battery.getIntExtra(BatteryManager.EXTRA_STATUS,
+                            BatteryManager.BATTERY_STATUS_UNKNOWN);
+            int batteryPlugged = battery == null ? -1 :
+                    battery.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1);
+            JSONObject sample = object("battery_temp_tenths_c", batteryTempTenthsC,
                     "battery_level", battery == null ? -1 : battery.getIntExtra(BatteryManager.EXTRA_LEVEL, -1),
+                    "battery_status", batteryStatus,
+                    "battery_plugged", batteryPlugged,
+                    "charging", batteryStatus == BatteryManager.BATTERY_STATUS_CHARGING ||
+                            batteryStatus == BatteryManager.BATTERY_STATUS_FULL,
                     "media_volume", audio == null ? -1 : audio.getStreamVolume(AudioManager.STREAM_MUSIC),
                     "media_volume_max", audio == null ? -1 : audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC),
                     "thermal_status", thermalStatus,
                     "thermal_status_name", thermalStatusName(thermalStatus));
             lastDeviceSample = sample;
+            latestLoadSample = new LoadSample(batteryTempTenthsC, thermalStatus,
+                    SystemClock.elapsedRealtime());
             record("device", sample);
         } catch (RuntimeException ignored) { /* Optional device state. */ }
     }
+
+    LoadSample latestLoadSample() { return latestLoadSample; }
 
     private static String thermalStatusName(int status) {
         switch (status) {
@@ -315,6 +570,7 @@ final class DiagnosticRecorder {
             data.put("image_count", imageCount);
             data.put("dropped_events", dropped.get());
             data.put("dropped_image_requests", imageDrops.get());
+            data.put("image_context_stats", imageContextStats());
             data.put("last_device", lastDeviceSample == null ? JSONObject.NULL : lastDeviceSample);
             record("checkpoint", data);
             IO.execute(() -> {
@@ -328,6 +584,7 @@ final class DiagnosticRecorder {
 
     void finish(String reason) {
         if (finished) return;
+        clearImageContext("finish:" + reason);
         finished = true;
         if (heartbeat != null) heartbeat.cancel(false);
         long at = SystemClock.elapsedRealtime();
@@ -340,6 +597,7 @@ final class DiagnosticRecorder {
                         "interrupted", false, "end_observed", true, "last_state", finalState,
                         "images_limited", imageLimit, "dropped_events", dropped.get(),
                         "dropped_image_requests", imageDrops.get(), "diagnostic_error", failure,
+                        "image_context_stats", imageContextStats(),
                         "playback_note", "TTS callbacks and vibration requests do not prove actual sound/haptic delivery.").toString(2));
             } catch (Exception error) { failed(error); }
         });
@@ -348,5 +606,15 @@ final class DiagnosticRecorder {
     private void failed(Exception error) {
         failure = "诊断记录失败：" + error.getClass().getSimpleName();
         Log.w("SenseFieldDiagnostics", failure);
+    }
+
+    private JSONObject imageContextStats() {
+        return object("copied_context_frames", contextCopiedFrames, "context_copy_micros", contextCopyMicros,
+                "max_context_copy_micros", maxContextCopyMicros, "max_context_frame_bytes", maxContextFrameBytes,
+                "context_windows", contextWindows, "context_rate_limited", contextRateLimited,
+                "context_deferred_frames", contextDeferredFrames,
+                "image_queue_scope", "shared process budget; peaks cover process lifetime",
+                "pending_image_frames", imageBudget.pendingFrames(), "pending_image_bytes", imageBudget.pendingBytes(),
+                "peak_image_frames", imageBudget.peakFrames(), "peak_image_bytes", imageBudget.peakBytes());
     }
 }

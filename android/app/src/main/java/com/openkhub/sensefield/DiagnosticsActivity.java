@@ -68,7 +68,7 @@ public final class DiagnosticsActivity extends Activity {
             if (recorder != null && !recorder.finished) recorder.setImagesEnabled(enabled);
         });
         UiKit.add(page, images, 8);
-        UiKit.add(page, UiKit.body(this, "首次使用默认保存画面。每约 2 秒保存横屏画面和小地图；提醒时也会采样。最多 20 分钟或 60 MB，仅留最近 3 局。"), 10);
+        UiKit.add(page, UiKit.body(this, "首次使用默认保存画面。每约 10 秒保存背景截图；提醒时另存当时画面，并有上限地保存前后短时采样。漏报等问题请及时点通知里的“标记问题”。最多 20 分钟或 60 MB，仅留最近 3 局。采样可能不完整，不等于录像。"), 10);
         UiKit.add(page, UiKit.body(this, "画面可能包含昵称、聊天等信息。只保存在手机内，不自动上传；分享前请确认愿意提供这些内容。"), 16);
         status = UiKit.text(this, "正在读取记录…", 24, UiKit.INK, true);
         UiKit.add(page, status, 12);

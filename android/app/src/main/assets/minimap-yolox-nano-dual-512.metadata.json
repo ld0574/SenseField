@@ -5,13 +5,25 @@
     "id": "yolox-nano-dualclass-v6-512-v8-finetune-dev-candidate",
     "status": "development_candidate_not_promoted",
     "release_ready": false,
-    "profile_version": "0.9.0-yolox-nano-dual-512-v6-near-zone"
+    "profile_version": "0.9.1-yolox-nano-dual-512-v6-near-zone"
   },
   "verified": false,
   "release_status": "experimental; development diagnostic only; no independent test split and no Android device validation",
-  "input": [1, 3, 512, 512],
-  "output": [1, 5376, 7],
-  "classes": ["minimap_enemy", "minimap_player"],
+  "input": [
+    1,
+    3,
+    512,
+    512
+  ],
+  "output": [
+    1,
+    5376,
+    7
+  ],
+  "classes": [
+    "minimap_enemy",
+    "minimap_player"
+  ],
   "runtime": {
     "name": "ncnn",
     "version": "20260526",
@@ -34,7 +46,11 @@
       "minimap_player": 0.59
     },
     "nms_iou": 0.5,
-    "strides": [8, 16, 32]
+    "strides": [
+      8,
+      16,
+      32
+    ]
   },
   "development_validation": {
     "split": "safe dual-class v8 pooled development val (video2-HD, video11, video13); used for model and threshold selection; test split empty; not independent",

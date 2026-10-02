@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "name": "hok_minimap_dual_512_near_zone_dev",
-  "profile_version": "0.9.0-yolox-nano-dual-512-v6-near-zone",
+  "profile_version": "0.9.1-yolox-nano-dual-512-v6-near-zone",
   "game": "王者荣耀",
   "verified": false,
-  "notes": "Experimental dual-class near-zone candidate: v6 512 balanced checkpoint on safe dual-class v8 (train 194 images/512 boxes; pooled development val video2-HD+11+13, 129 images/328 boxes, used for model and threshold selection; test split empty). Development player P/R 95.45/90.32%, centre error P95 6.29 px; enemy P/R/F1 95.35/87.23/91.11%. These are not independent or release results. ONNX raw parity strict gate failed (0.000639 > 0.0005) with identical final detections; the ncnn Android-equivalent strict gate passed. events.min_confidence equals the lowest per-class detector threshold so the event engine does not filter a second time. minimap_relation.enter_radius is a provisional estimate until calibrated from screen-edge frames. Keep verified=false.",
+  "notes": "Experimental dual-class near-zone candidate: v6 512 balanced checkpoint on safe dual-class v8 (train 194 images/512 boxes; pooled development val video2-HD+11+13, 129 images/328 boxes, used for model and threshold selection; test split empty). Development player P/R 95.45/90.32%, centre error P95 6.29 px; enemy P/R/F1 95.35/87.23/91.11%. These are not independent or release results. ONNX raw parity strict gate failed (0.000639 > 0.0005) with identical final detections; the ncnn Android-equivalent strict gate passed. events.min_confidence equals the lowest per-class detector threshold so the event engine does not filter a second time. minimap_relation.enter_radius is a provisional estimate until calibrated from screen-edge frames. Keep verified=false. The event observation-age budget is 500 ms, aligned with minimap_relation.max_freshness_ms: Android diagnostic inference exceeded the former 250 ms gate. Capture timestamps remain unchanged; observations older than 500 ms are still rejected.",
   "rois": {
     "minimap": [
       0.022916666666666665,
@@ -65,7 +65,7 @@
   },
   "events": {
     "min_confidence": 0.57,
-    "max_observation_age_ms": 250,
+    "max_observation_age_ms": 500,
     "min_global_gap_ms": 1000,
     "minimap_min_gap_ms": 15000,
     "min_hits_in_three_frames": 2,

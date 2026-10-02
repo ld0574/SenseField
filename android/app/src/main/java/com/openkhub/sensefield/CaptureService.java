@@ -35,6 +35,7 @@ public final class CaptureService extends Service {
     static boolean isRunning() { return running; }
     static final String ACTION_START = "com.openkhub.sensefield.START";
     static final String ACTION_TOGGLE_PAUSE = "com.openkhub.sensefield.TOGGLE_PAUSE";
+    static final String ACTION_MARK_ISSUE = "com.openkhub.sensefield.MARK_ISSUE";
     static final String ACTION_STOP = "com.openkhub.sensefield.STOP";
     static final String EXTRA_RESULT_CODE = "result_code";
     static final String EXTRA_RESULT_DATA = "result_data";
@@ -42,9 +43,14 @@ public final class CaptureService extends Service {
     private static final String TAG = "MapAssistCapture";
     private static final String CHANNEL = "mapassist_capture";
     private static final int NOTIFICATION_ID = 104;
-    private static final long FRAME_PERIOD_MS = 83; // About 12 sampled frames per second.
+    private static final long FRAME_PERIOD_MS = 83; // Upper sampling limit; completion-based rest also applies.
     private static final long DISPLAY_CHECK_PERIOD_MS = 500;
     private final Object processingLock = new Object();
+    private final FrameProcessingPolicy frameProcessing = new FrameProcessingPolicy();
+    private long lastLoadSampleAtMs = -1;
+    private long loadSkippedFrames;
+    private long totalProcessingWallMs;
+    private long lastProcessingWallMs;
     private HandlerThread workerThread;
     private Handler worker;
     private NotificationManager notificationManager;
@@ -194,7 +200,8 @@ public final class CaptureService extends Service {
         if (intent == null) return START_NOT_STICKY;
         String action = intent.getAction();
         if (!ACTION_START.equals(action) && !ACTION_STOP.equals(action)
-                && !ACTION_TOGGLE_PAUSE.equals(action)) return START_NOT_STICKY;
+                && !ACTION_TOGGLE_PAUSE.equals(action)
+                && !ACTION_MARK_ISSUE.equals(action)) return START_NOT_STICKY;
         long expectedSessionGeneration = 0;
         synchronized (processingLock) {
             latestServiceStartId = startId;
@@ -208,6 +215,16 @@ public final class CaptureService extends Service {
             stopWithStatus("截屏已停止");
             return START_NOT_STICKY;
         }
+        if (ACTION_MARK_ISSUE.equals(action)) {
+            synchronized (processingLock) {
+                if (stopping || !auditSessionActive || diagnostics == null
+                        || diagnostics.finished) return START_NOT_STICKY;
+                // markIssue() records elapsedRealtime at the tap and forces the
+                // recorder to preserve the adjacent diagnostic image samples.
+                diagnostics.markIssue();
+            }
+            return START_NOT_STICKY;
+        }
         if (ACTION_TOGGLE_PAUSE.equals(action)) {
             synchronized (processingLock) {
                 if (stopping || nativeSession == 0) {
@@ -215,6 +232,7 @@ public final class CaptureService extends Service {
                     return START_NOT_STICKY;
                 }
                 paused = !paused;
+                if (paused && diagnostics != null) diagnostics.clearImageContext("paused");
                 GameProfile.settings(this).edit().putBoolean("capture_paused", paused).apply();
                 resetNativeLocked();
                 captureHealth.pause(paused, SystemClock.elapsedRealtime());
@@ -424,6 +442,8 @@ public final class CaptureService extends Service {
         // a stale overlay marker or suppressed frame must never survive it.
         cueArbiter.reset();
         nearZoneCombat.reset();
+        frameProcessing.reset();
+        lastLoadSampleAtMs = -1;
         clearCueCategoriesLocked();
         if (minimapOverlay != null) minimapOverlay.clear();
         overlayCaptureGuard.clearMarkers();
@@ -605,6 +625,7 @@ public final class CaptureService extends Service {
         Image image = null;
         boolean resizeAfterClose = false;
         boolean refreshAfterFrame = false;
+        long processingStartedAtMs = -1;
         try {
             image = source.acquireLatestImage();
             if (image == null) return;
@@ -625,6 +646,11 @@ public final class CaptureService extends Service {
                     refreshNotification();
                 }
                 if (now - lastProcessedAtMs < FRAME_PERIOD_MS) return;
+                updateLoadControlLocked();
+                if (!frameProcessing.canProcess(now)) {
+                    loadSkippedFrames++;
+                    return;
+                }
                 lastProcessedAtMs = now;
             }
             Image.Plane plane = image.getPlanes()[0];
@@ -714,6 +740,7 @@ public final class CaptureService extends Service {
                     return;
                 }
                 if (landscape != lastFrameLandscape && nativeSession != 0) {
+                    if (diagnostics != null) diagnostics.clearImageContext("orientation_changed");
                     resetNativeLocked();
                     if (minimapOverlay != null) minimapOverlay.clear();
                     if (!landscape) latestNativeMicros = 0;
@@ -729,6 +756,7 @@ public final class CaptureService extends Service {
                         minimapOverlay.close();
                         minimapOverlay = null;
                     }
+                    processingStartedAtMs = SystemClock.elapsedRealtime();
                     diagnosticProcessing = true;
                     publishDiagnosticStateLocked();
                     int[] result = NativeBridge.nativeProcess(nativeSession, pixels,
@@ -809,10 +837,19 @@ public final class CaptureService extends Service {
         } finally {
             if (image != null) image.close();
             synchronized (processingLock) {
-                if (source == reader && generation == readerGeneration) {
+                if (source == reader && generation == readerGeneration && processingStartedAtMs >= 0) {
+                    long completedAtMs = SystemClock.elapsedRealtime();
+                    lastProcessingWallMs = Math.max(0, completedAtMs - processingStartedAtMs);
+                    totalProcessingWallMs += lastProcessingWallMs;
+                    // Delay only the next admission. This image is already closed;
+                    // incoming callbacks still acquire/drain the latest frame and
+                    // feed capture health, without sleeping or queueing old pixels.
+                    frameProcessing.recordProcessed(processingStartedAtMs, completedAtMs);
                     diagnosticProcessing = false;
                     publishDiagnosticStateLocked();
                 }
+                // Skipped callbacks do not rebuild a JSON checkpoint snapshot.
+                // The independent 500 ms watchdog publishes their arrival state.
             }
             if (resizeAfterClose) {
                 try {
@@ -825,6 +862,24 @@ public final class CaptureService extends Service {
                     stopWithStatus("横屏切换后无法继续截屏");
                 }
             }
+        }
+    }
+
+    /** Reuse the recorder's independent device sampling; never poll in the pixel loop. */
+    private void updateLoadControlLocked() {
+        if (diagnostics == null) return;
+        DiagnosticRecorder.LoadSample sample = diagnostics.latestLoadSample();
+        if (sample.sampledAtMs < 0 || sample.sampledAtMs <= lastLoadSampleAtMs) return;
+        lastLoadSampleAtMs = sample.sampledAtMs;
+        FrameProcessingPolicy.Mode before = frameProcessing.mode();
+        frameProcessing.updateDevice(sample.tempTenthsC, sample.thermalStatus);
+        if (before != frameProcessing.mode()) {
+            String message = "CaptureLoadControl mode=" + frameProcessing.mode().name()
+                    + " batteryTempTenthsC=" + sample.tempTenthsC
+                    + " thermalStatus=" + sample.thermalStatus
+                    + " restMs=" + frameProcessing.lastRestMs();
+            Log.i(TAG, message);
+            diagnostics.audit(message);
         }
     }
 
@@ -1189,6 +1244,8 @@ public final class CaptureService extends Service {
     private Notification notification(String state) {
         PendingIntent pause = PendingIntent.getService(this, 1,
                 actionIntent(ACTION_TOGGLE_PAUSE), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent markIssue = PendingIntent.getService(this, 4,
+                actionIntent(ACTION_MARK_ISSUE), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         PendingIntent stop = PendingIntent.getService(this, 2,
                 actionIntent(ACTION_STOP), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         PendingIntent open = PendingIntent.getActivity(this, 3,
@@ -1207,6 +1264,7 @@ public final class CaptureService extends Service {
                 .setContentIntent(open)
                 .setOngoing(true)
                 .addAction(android.R.drawable.ic_media_pause, paused ? "继续" : "暂停", pause)
+                .addAction(android.R.drawable.ic_menu_edit, "标记问题", markIssue)
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel, "停止", stop)
                 .build();
     }
@@ -1251,6 +1309,11 @@ public final class CaptureService extends Service {
                     .apply();
             startedAtMs = SystemClock.elapsedRealtime();
             lastProcessedAtMs = 0;
+            frameProcessing.reset();
+            lastLoadSampleAtMs = -1;
+            loadSkippedFrames = 0;
+            totalProcessingWallMs = 0;
+            lastProcessingWallMs = 0;
             lastDiagnosticFrameArrivedAtMs = -1;
             lastDiagnosticFrameObservedAtMs = -1;
             lastDiagnosticFrameCompletedAtMs = -1;
@@ -1341,7 +1404,13 @@ public final class CaptureService extends Service {
                 "locator_state", latestLocatorState, "locator_score_milli", latestLocatorScoreMilli,
                 "relation_state", lastRelationState == Integer.MIN_VALUE
                         ? "RESET" : NearZoneRouting.stateName(lastRelationState),
-                "dense_combat", nearZoneCombat.isDense()));
+                "dense_combat", nearZoneCombat.isDense(),
+                "load_control_mode", frameProcessing.mode().name(),
+                "load_rest_ms", frameProcessing.lastRestMs(),
+                "next_processing_at_ms", frameProcessing.nextAllowedAtMs(),
+                "load_skipped_frames", loadSkippedFrames,
+                "last_processing_wall_ms", lastProcessingWallMs,
+                "total_processing_wall_ms", totalProcessingWallMs));
     }
 
     private void finishAuditSessionLocked(String reason) {

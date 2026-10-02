@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import ctypes
 import hashlib
 import json
 import math
@@ -185,6 +186,7 @@ def test_dual_class_profiles_match_bundle_and_metadata() -> None:
         thresholds["minimap_yolox_confidence_by_class"].values())
     metadata = json.loads(
         (ASSETS / "minimap-yolox-nano-dual-512.metadata.json").read_text(encoding="utf-8"))
+    assert metadata["candidate"]["profile_version"] == bundled["profile_version"]
     assert metadata["classes"] == ["minimap_enemy", "minimap_player"]
     assert metadata["input"] == [1, 3, 512, 512] and metadata["output"] == [1, 5376, 7]
     assert metadata["runtime"]["bin_sha256"] == bundled["models"]["minimap_yolox_bin_sha256"]
@@ -198,6 +200,52 @@ def test_dual_class_profiles_match_bundle_and_metadata() -> None:
     baseline = json.loads((ASSETS / "profile.json").read_text(encoding="utf-8"))
     assert "minimap_relation" not in baseline
     assert baseline["thresholds"]["minimap_yolox_input_size"] == 320
+
+
+@pytest.mark.parametrize("inference_ms,expected_enter", [(300, True), (500, True), (501, False)])
+def test_bundled_near_zone_accepts_bounded_inference_latency(
+    relation_library, inference_ms: int, expected_enter: bool
+) -> None:
+    # Exercise the engine -> entity -> relation path with capture time kept
+    # separate from completion time. The former 250 ms gate rejected both
+    # markers before the near-zone layer could confirm an enemy approaching.
+    profile = json.loads((ASSETS / "profile-dual-512-near-zone.json").read_text())
+    events = profile["events"]
+    assert events["max_observation_age_ms"] == profile["minimap_relation"]["max_freshness_ms"] == 500
+    config = native.EngineConfig(
+        events["min_confidence"], events["max_observation_age_ms"],
+        events["min_global_gap_ms"], events["minimap_min_gap_ms"],
+        events["min_hits_in_three_frames"], events["reset_after_missing_frames"],
+    )
+    engine = relation_library.ma_engine_create(ctypes.byref(config))
+    assert engine
+    entities = (native.TrackedEntity * native.MA_MAX_TRACKED_ENTITIES)()
+    cues = (native.Cue * 1)()
+    outputs = []
+    try:
+        with native.Relation(relation_library, native.relation_config_from_profile(profile)) as relation:
+            for index in range(5):
+                captured_ms = 1000 + index * 400
+                completed_ms = captured_ms + inference_ms
+                observations = (native.Observation * 2)(
+                    native.Observation(native.MA_MINIMAP_PLAYER, 0,
+                                       _self().bbox, 0.9, captured_ms),
+                    native.Observation(native.MA_MINIMAP_ENEMY, 0,
+                                       _enemy(0.15, 0).bbox, 0.9, captured_ms),
+                )
+                relation_library.ma_engine_step(engine, observations, 2, completed_ms, cues, 1)
+                count = relation_library.ma_engine_read_tracked_entities(
+                    engine, entities, len(entities))
+                if expected_enter and count:
+                    assert all(e.last_seen_ms == captured_ms for e in entities[:count])
+                    assert all(e.freshness_ms == inference_ms for e in entities[:count])
+                outputs.append(relation.update(entities, count, MAP_BODY, True,
+                                               1000, 1000, completed_ms))
+    finally:
+        relation_library.ma_engine_destroy(engine)
+    enters = [output for output in outputs if output["event"] == "NEAR_ENTER"]
+    assert len(enters) == (1 if expected_enter else 0)
+    assert outputs[-1]["reliable"] is expected_enter
 
 
 def test_local_dual_class_weights_match_metadata() -> None:
