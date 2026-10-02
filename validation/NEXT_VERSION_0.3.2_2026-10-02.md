@@ -22,12 +22,15 @@
 | 暂停／恢复 | 通过通知栏暂停、继续。暂停期间观察到至少 3 个周期检查点，状态为 `paused`／`not_expected`，设备采样继续；恢复并旋转后产生横屏帧和关联的整屏／小地图截图 |
 | 强制停止恢复 | `am force-stop` 后没有正常摘要；重开应用后自动生成 `process_interrupted` 摘要并保留原检查点。`ended_at_ms`、`duration_ms` 为 null，`last_known_at_ms` 与原检查点一致；首页开始按钮恢复可用、停止按钮禁用 |
 | 诊断导出 | 从“测试记录与反馈”保存 ZIP 到 Downloads，并核对字节一致。包内 metadata／events／summary／原 checkpoint／feedback 齐全；JSONL 可解析，152 条帧事件与 66 张截图按帧序号／采样时间关联，42 个检查点、1 条恢复事件。截图均为模拟器应用页面，无真实游戏事件真值 |
+| 正常停止 | 第二次竖屏短会话通过首页“停止”结束，写出 `interrupted=false`、`end_observed=true` 的摘要；再等超过一个检查点周期后，原检查点已清除且没有重新出现 |
 | 公开仓库 | `scripts/check_public_repo.py` 通过；相关 Python 测试 6 项通过；`git diff --check` 与预览脚本语法检查通过 |
 | APK 核验 | `0.3.2`／10、仅 `arm64-v8a`、minSdk 29、targetSdk 35；Android Debug 证书 v2 签名通过。JSON 测试依赖仅用于 JVM，不加入设备 runtime |
 
 模拟器展示的是应用自身页面，用于检查记录与恢复链路。它没有中文 TTS，不能验证实际发声、耳机声像或震动感知；电量和温度读数也不能用作真实游戏发热结论。原始 UI、JSONL、检查点和 ZIP 留在忽略目录 `validation/private/next-version-032-20261002/`，不公开。
 
 异常恢复 ZIP 的 SHA-256 为 `00370fe3c608dbbef4fd1f4e01474a3ac0ad2f5db7163456a47a2b6ba14c1956`，大小 `1,422,921 bytes`。恢复摘要的帧数来自最后检查点（150），日志末尾还有 2 条后续帧事件；摘要不冒充完整最终计数。
+
+本轮与远端的早期团队测试提交完成合并，保留其历史与较新的本地功能。合并前后 Android 源码、Gradle 配置和预览脚本完全相同，使用上述已验证 APK；模拟器的字体／旋转设置和临时通知／悬浮授权已恢复，关闭本轮启动的模拟器。
 
 ## 构建复现
 
