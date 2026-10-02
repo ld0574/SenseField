@@ -1,6 +1,24 @@
 # 模型接入记录
 
-## HD bootstrap v2 PyTorch 开发候选（2026-09-29）
+## 当前双类 v6 512 近区实验候选（2026-10-03 核对）
+
+当前本地 APK 在匹配权重存在时使用 v6 512 双类近区候选，缺失时才回退320单类基线。下面的v2/320记录是历史过程，不能用其推理速度或敌方质量代替当前模型。权威绑定为 `android/app/src/main/assets/minimap-yolox-nano-dual-512.metadata.json` 与 `profile-dual-512-near-zone.json`；模型权重不纳入Git。
+
+- 输入 `1×3×512×512`，输出 `1×5376×7`；类为 `minimap_enemy` / `minimap_player`，confidence分别 `0.57` / `0.59`，NMS `0.5`。
+- checkpoint SHA-256 `88a7de0332b18ce63539039fcbaccfd23f0499782818675f5698ffd0ede4ea46`；ncnn param/bin SHA-256 `77ea946b9b6c4360296e9f068010414631f3dccd0368b01087507aa639391da0` / `808ce276487d262acc66164f5eb77bbc1ac92f6d6ec31bb530c19fafc8371bd3`。
+- Safe dual-class v8 pooled dev-val来自video2-HD、video11、video13，参与选模与阈值选择，test为空。player TP/FP/FN `84/4/9`，precision/visible recall `0.954545/0.903226`，中心误差P95相对短边 `0.017083`；enemy P/R/F1 `0.953488/0.872340/0.911111`。这些都是开发诊断。
+
+| 冻结转换检查 | 记录（12张开发图） | 结论 |
+| --- | --- | --- |
+| PyTorch→ONNX raw，原门槛0.0005 | 最大误差0.000638723；最终检测数组全一致 | raw失败，不能豁免 |
+| TorchScript→ncnn raw | 最大误差0.000453413 | 本组通过 |
+| Android等价最终检测 | 数量全一致，最大检测值差0.005615234（上限0.01） | 本组通过 |
+
+导出/parity原始产物在ignored `build/ignored/v6-512-export`。仅12张开发图的parity不是独立质量验收。元数据仍 `verified=false`、`release_ready=false`；本轮未改模型、阈值或转换规则，也未打开video9/video12。
+
+桌面2线程preprocess+inference P95为28.9552 ms；[0.3.5实机记录](HEAT_RETEST_0.3.5_2026-10-02.md)的native P50/P95为314.5/431.9 ms，处理约2.08 FPS。桌面与手机数字不可互换，native耗时也不是实际发声时延。试用目标、500 ms观测预算与严格最终门槛见[Goal记录](SCORE_RECOVERY_GOAL_2026-10-03.md#三种指标口径)。
+
+## HD bootstrap v2 PyTorch 开发候选（2026-09-29，历史320基线）
 
 当前 HD bootstrap v2 使用人工复核后的 video1+8+3+4+5+10 作为 train（664 图／1211 框），video2-HD+11 作为开发 val（230 图／400 框），bootstrap test 为空。video10/11 的队列、ROI、尺寸和来源 provenance 均已审计通过；video10 已进入 train，video11 是 dev-val。video13 首轮按 test-only COCO audit 评测后又参与多档阈值检查，现为跨来源开发诊断，不能称为独立 test；video9/12 未读取、未预标注、未查看预测，继续封存。
 

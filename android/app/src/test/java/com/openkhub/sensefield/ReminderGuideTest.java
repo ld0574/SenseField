@@ -16,7 +16,7 @@ public final class ReminderGuideTest {
         assertTrue(text.contains("方向按地图，不随镜头转动"));
         assertTrue(text.contains("震动不区分左右方向"));
         assertFalse(text.contains("暂时无法定位"));
-        assertEquals(1, samples(steps, CueRequest.CHANNEL_TONE));
+        assertEquals(3, samples(steps, CueRequest.CHANNEL_TONE));
         assertEquals(1, samples(steps, CueRequest.CHANNEL_SPEECH));
         assertEquals(1, samples(steps, CueRequest.CHANNEL_HAPTIC));
         assertFalse(text.contains("小地图出现了新敌方头像"));
@@ -24,7 +24,7 @@ public final class ReminderGuideTest {
 
     @Test public void compactDoesNotTeachDisabledSpeechOrVibration() {
         List<ReminderGuide.Step> steps = build(CueRequest.CHANNEL_TONE, 0, 0, 0, false, false);
-        assertEquals(1, samples(steps, CueRequest.CHANNEL_TONE));
+        assertEquals(3, samples(steps, CueRequest.CHANNEL_TONE));
         assertEquals(0, samples(steps, CueRequest.CHANNEL_SPEECH));
         assertEquals(0, samples(steps, CueRequest.CHANNEL_HAPTIC));
         assertTrue(explanation(steps).contains("当前关闭了方位语音"));
@@ -38,6 +38,22 @@ public final class ReminderGuideTest {
         assertEquals(0, samples(steps, CueRequest.CHANNEL_HAPTIC));
         assertEquals(1, samples(steps, CueRequest.CHANNEL_SPEECH));
         assertFalse(explanation(steps).contains("偏左的短音"));
+    }
+
+    @Test public void stereoExamplesUseLiveNearToneAndOppositeChannelGains() {
+        List<ReminderGuide.Step> steps = build(CueRequest.CHANNEL_TONE, 0, 0, 0, false, false);
+        ReminderGuide.Step left = steps.stream().filter(step -> step.sample && step.pan == -1f)
+                .findFirst().get();
+        ReminderGuide.Step right = steps.stream().filter(step -> step.sample && step.pan == 1f)
+                .findFirst().get();
+        float[] leftGains = NearZoneRouting.stereoGains(left.request("left", 0).pan, 1f);
+        float[] rightGains = NearZoneRouting.stereoGains(right.request("right", 0).pan, 1f);
+        assertTrue(leftGains[0] > leftGains[1]);
+        assertTrue(rightGains[1] > rightGains[0]);
+        assertEquals(NearZoneRouting.TONE_NEAR, left.tone);
+        assertEquals(NearZoneRouting.TONE_NEAR, right.tone);
+        assertTrue(explanation(steps).contains("单声道"));
+        assertFalse(explanation(steps).contains("短音表示敌人在上方"));
     }
 
     @Test public void baselineFallbackTeachesNewPortraitWithoutInventingProximity() {

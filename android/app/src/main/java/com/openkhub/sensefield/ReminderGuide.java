@@ -80,7 +80,15 @@ final class ReminderGuide {
         }
         if (has(outputs.near, CueRequest.CHANNEL_TONE)) {
             say(steps, "耳机声音：区分左右",
-                    "戴立体声耳机时，偏左的短音表示敌人在左侧，偏右表示在右侧。短音不能区分上下方向。");
+                    "戴立体声耳机时，偏左的短音表示敌人在左侧，偏右表示在右侧。短音不能区分上下方向。接下来分别听左侧和右侧。");
+            say(steps, "左侧短音", "这是左侧的短音。");
+            sample(steps, "左侧附近敌人短音示例", CueRequest.CHANNEL_TONE,
+                    NearZoneRouting.TONE_NEAR, null, -1f);
+            say(steps, "右侧短音", "这是右侧的短音。");
+            sample(steps, "右侧附近敌人短音示例", CueRequest.CHANNEL_TONE,
+                    NearZoneRouting.TONE_NEAR, null, 1f);
+            say(steps, "确认左右是否能听清",
+                    "如果两边听起来一样，请检查耳机是否支持立体声，以及系统是否开启了单声道。声音左右相反时，请检查耳机佩戴。手机外放可能难以听出左右，可以使用方位语音。");
             if (!has(outputs.near, CueRequest.CHANNEL_SPEECH)) {
                 say(steps, "当前没有方位语音",
                         "你当前关闭了方位语音。需要听清上下方向，可以在声音与语音设置里开启。");

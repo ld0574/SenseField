@@ -6,6 +6,7 @@ import argparse
 import json
 import math
 import sys
+from collections import Counter
 from pathlib import Path
 
 
@@ -39,6 +40,7 @@ PLAYBACK_RESULTS = {
     "EXPIRED",
     "PREEMPTED",
     "QUEUE_EVICTED",
+    "QUEUE_REPLACED",
     "UNAVAILABLE",
     "SETTINGS_DISABLED",
     "COOLDOWN",
@@ -467,6 +469,15 @@ def parse_session_log(path: Path, session_id: str) -> dict[str, object]:
         [str(item["cue_id"]) for item in non_stale],
         "dispatches": dispatches,
         "playbacks": playbacks,
+        "playback_result_counts": dict(Counter(
+            str(item["result"]) for item in playbacks
+        )),
+        "queue_replaced_count": sum(
+            item["result"] == "QUEUE_REPLACED" for item in playbacks
+        ),
+        "queue_evicted_count": sum(
+            item["result"] == "QUEUE_EVICTED" for item in playbacks
+        ),
         "capture_health": capture_health,
         "native_p95_micros": _p95([
             int(item["native_micros"]) for item in non_stale

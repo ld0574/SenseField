@@ -1,6 +1,7 @@
 package com.openkhub.sensefield;
 
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 
 /** Copies a bounded thumbnail before ImageReader releases its buffer. */
 final class DiagnosticPixels {
@@ -30,13 +31,17 @@ final class DiagnosticPixels {
         int ow = Math.max(1, (int) Math.round(cw * scale));
         int oh = Math.max(1, (int) Math.round(ch * scale));
         int[] pixels = new int[ow * oh];
+        // Absolute getInt reads one RGBA pixel at a time with a single buffer access.
+        // Set byte order explicitly because the original three byte reads were order-neutral.
+        ByteBuffer source = rgba.duplicate().order(ByteOrder.BIG_ENDIAN);
         for (int y = 0; y < oh; y++) {
             int sy = y0 + (int) ((long) y * ch / oh);
             for (int x = 0; x < ow; x++) {
                 int sx = x0 + (int) ((long) x * cw / ow);
                 int at = sy * rowStride + sx * 4;
-                pixels[y * ow + x] = 0xff000000 | ((rgba.get(at) & 255) << 16)
-                        | ((rgba.get(at + 1) & 255) << 8) | (rgba.get(at + 2) & 255);
+                int rgbaPixel = source.getInt(at);
+                pixels[y * ow + x] = 0xff000000 | ((rgbaPixel >>> 24) << 16)
+                        | (((rgbaPixel >>> 16) & 255) << 8) | ((rgbaPixel >>> 8) & 255);
             }
         }
         return new DiagnosticPixels(ow, oh, pixels);

@@ -282,6 +282,28 @@ def test_parses_enhanced_dispatch_playback_and_capture_health(tmp_path: Path) ->
     assert parsed["capture_health"][0]["elapsed_since_processed_ms"] == 1180
 
 
+def test_counts_queue_replaced_playback_callback_from_producer(tmp_path: Path) -> None:
+    # CueDispatcher.enqueueSpeech reports QUEUE_REPLACED when a pending
+    # near-zone utterance is replaced by a newer one.
+    path = _write_log(
+        tmp_path,
+        _schema2_log(
+            _dispatch(
+                requested=2, accepted=2, category="VISION_MEMORY",
+                kind="VISION_APPEAR",
+            ),
+            _playback(channel="SPEECH", result="QUEUE_REPLACED"),
+        ),
+    )
+
+    parsed = parse_session_log(path, SESSION_ID)
+
+    assert parsed["playback_result_counts"]["QUEUE_REPLACED"] == 1
+    assert parsed["queue_replaced_count"] == 1
+    assert parsed["queue_evicted_count"] == 0
+    assert parsed["playbacks"][0]["result"] == "QUEUE_REPLACED"
+
+
 def test_rejects_schema2_session_with_missing_cue_dispatch(tmp_path: Path) -> None:
     path = _write_log(
         tmp_path,

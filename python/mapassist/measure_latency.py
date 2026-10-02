@@ -9,7 +9,12 @@ import math
 import sys
 from pathlib import Path
 
-from .evaluate import KINDS
+from .android_session_log import KIND_BY_CODE
+
+# Audible annotation follows the Android output vocabulary, not the older
+# three-class visual-detection evaluator. This includes current near-zone cues
+# without changing the independent quality gate's supported event schema.
+KINDS = tuple(dict.fromkeys(KIND_BY_CODE.values()))
 
 REQUIRED_COLUMNS = {
     "event_id", "cue_id", "kind", "evidence_ms", "audio_ms", "source_note",

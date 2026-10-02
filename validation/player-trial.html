@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="听野匿名玩家陪同试用记录表。离线使用，不自动保存或上传。">
+  <title>听野玩家试用记录（离线）</title>
+  <style>
+    :root{color-scheme:light;--paper:#f8f7f1;--card:#fffefa;--ink:#172f31;--muted:#455e60;--teal:#075f63;--mint:#e2f1ed;--line:#9aafac;--accent:#9b3900;--base:20px}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--paper);color:var(--ink);font:var(--base)/1.65 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;overflow-wrap:anywhere}body.large{--base:25px}
+    .shell{max-width:1050px;margin:0 auto;padding:22px 28px 60px}h1{font-size:clamp(2rem,5vw,3rem);line-height:1.2;margin:.5em 0}h2{font-size:1.45em;line-height:1.35;margin:.15em 0 .7em}h3{font-size:1.1em;margin:.1em 0 .6em}p{margin:.45em 0}.lede{font-size:1.08em;max-width:70ch}.skip{position:fixed;z-index:5;top:-100px;left:12px;padding:12px;background:white}.skip:focus{top:12px}
+    a{color:var(--teal);text-underline-offset:4px}a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+    button,input,select,textarea{font:inherit}button{min-height:48px;padding:9px 16px;border:1px solid #567476;border-radius:10px;background:#fff;color:var(--ink);font-weight:650;cursor:pointer}button:hover{background:var(--mint)}button.primary{background:var(--teal);color:white;border-color:var(--teal)}button.primary:hover{background:#03494c}button.danger{color:#752b13;border-color:#9e604a}
+    .toptools,.actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.toptools{margin:18px 0}.banner{border:2px solid #8b4c15;background:#fff4dc;border-radius:12px;padding:18px 20px;margin:18px 0 25px}.banner strong{display:block}.notice{color:var(--muted);font-size:.92em}.panel{margin:20px 0;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px;box-shadow:0 3px 12px #172f310a}.panel-header{display:flex;gap:14px;align-items:baseline;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:18px}.panel-header p{color:var(--muted);margin:0}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.field{min-width:0;margin:0 0 15px}.field>label,.field-label{display:block;font-weight:700;margin-bottom:5px}.field small,.hint{display:block;font-size:.86em;line-height:1.45;color:var(--muted);margin-top:5px}input[type=text],input[type=date],input[type=number],select,textarea{display:block;width:100%;min-height:48px;border:1px solid #6c8383;border-radius:8px;background:#fff;color:var(--ink);padding:9px 11px}textarea{min-height:92px;resize:vertical}input::placeholder,textarea::placeholder{color:#596b6c;opacity:1}.checks{display:flex;flex-wrap:wrap;gap:12px 20px;margin:7px 0}.check{display:flex;align-items:flex-start;gap:10px;min-height:44px;padding:3px 0}.check input{width:23px;height:23px;flex:0 0 auto;margin-top:6px;accent-color:var(--teal)}fieldset{min-width:0;border:1px solid var(--line);border-radius:12px;padding:16px;margin:15px 0}legend{font-weight:750;padding:0 7px}.two-col{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.event-card,.feedback-card,.latency-card{position:relative;border:1px solid #9aafac;background:#fcfcf8;border-radius:12px;padding:18px;margin:14px 0}.event-card legend,.feedback-card legend,.latency-card legend{font-weight:750}.remove-row{position:absolute;right:12px;top:11px;min-height:42px;padding:6px 10px;font-size:.85em}.row-actions{margin:14px 0}.callout{padding:12px 15px;border-left:5px solid var(--teal);background:var(--mint);border-radius:0 9px 9px 0}.warn{border-color:#8b4c15;background:#fff4dc}.status{min-height:1.7em;color:var(--teal);font-weight:650}.required-note{color:var(--accent);font-size:.9em}.footer{border-top:1px solid var(--line);margin-top:28px;padding-top:18px;color:var(--muted);font-size:.9em}.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.hidden{display:none!important}
+    @media(max-width:720px){.shell{padding:16px 17px 45px}.grid,.grid.three,.two-col{grid-template-columns:1fr}.panel{padding:19px}.event-card,.feedback-card,.latency-card{padding:15px}.remove-row{position:static;display:block;margin:0 0 12px auto}.toptools button,.actions button{flex:1 1 180px}}
+    @media(max-width:380px){.shell{padding:13px}.panel{padding:15px}fieldset{padding:12px}}
+    @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+    @media print{body{--base:12pt;background:white}.shell{max-width:none;padding:0}.toptools,.actions,.remove-row,.row-actions,.skip{display:none!important}.panel{break-inside:avoid;box-shadow:none;padding:12px}.event-card,.feedback-card{break-inside:avoid}input,select,textarea{border:0;border-bottom:1px solid #555;border-radius:0;background:white;padding:2px}.banner{background:white}}
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">跳到表单正文</a>
+  <main id="main" class="shell">
+    <header>
+      <p class="notice">听野 SenseField · 陪同试用记录</p>
+      <h1>玩家体验记录</h1>
+      <p class="lede">用于记录一次自愿的游戏辅助体验和后续改进。请由记录员填写，避免参与者边操作边记表。</p>
+      <div class="toptools" aria-label="阅读选项">
+        <button type="button" id="large-text" aria-pressed="false">大字阅读</button>
+        <button type="button" id="print-page">打印 / 保存 PDF</button>
+      </div>
+    </header>
+
+    <aside class="banner" role="note" aria-labelledby="privacy-title">
+      <strong id="privacy-title">隐私与保存：此表单不上传，也不自动保存在浏览器。</strong>
+      <p>刷新、关闭页面或浏览器崩溃会丢失尚未导出的内容。填写后请下载 JSON；可选延迟样本另行下载 CSV。离开前会提醒尚未导出的修改。导出文件只保存在你选择的位置，请勿上传到未批准的云服务。</p>
+      <p><strong>不要填写姓名、联系方式、游戏账号、诊断名称或证明、住址等身份信息。</strong>自由文本也请避免写入这些内容。本表只有匿名代号，不收录患者联系方式或病历。</p>
+    </aside>
+
+    <div class="callout">
+      <strong>本轮范围：</strong>优先招募自述有管状视野或周边视野缺损的人；探索其他类型低视力、仍能完成主要操作的人；不支持全盲，此轮不纳入。试用手机需为 Android 10 及以上；具体机型仍由负责人事先核对，不承诺全部兼容。报名可在线上或线下由负责人安排。报名联系：________________（留空，由负责人另行安排）。
+    </div>
+
+    <form id="trial-form" autocomplete="off">
+      <section class="panel" aria-labelledby="session-heading">
+        <div class="panel-header"><h2 id="session-heading">一、匿名场次与范围</h2><p>只填必要的功能信息。</p></div>
+        <div class="grid">
+          <div class="field"><label for="session-code">匿名场次代号</label><input id="session-code" data-key="session_code" type="text" inputmode="text" maxlength="16" placeholder="例如 P01（勿含姓名缩写或生日）"><small>由负责人随机编排，不使用个人信息生成。</small></div>
+          <div class="field"><label for="session-date">日期</label><input id="session-date" data-key="date" type="date"></div>
+          <div class="field"><label for="session-mode">体验安排</label><select id="session-mode" data-key="session_mode"><option value="">请选择</option><option value="online">线上</option><option value="offline">线下</option></select><small>由负责人协调。这里不记录联系信息。</small></div>
+          <div class="field"><label for="cohort">参与范围（本人自述）</label><select id="cohort" data-key="cohort"><option value="">请选择</option><option value="priority_tubular">优先：管状视野</option><option value="priority_peripheral">优先：周边视野缺损</option><option value="priority_both_or_unspecified">优先：上述情况 / 本人不细分</option><option value="exploratory_low_vision">探索：其他类型低视力（能完成主要操作）</option><option value="not_enrolled">不符合本轮范围 / 未入组</option></select><small>优先招募管状视野或周边视野缺损者；探索人群需仍能完成主要操作。全盲不在本轮范围，不要求记录病因、诊断或证明。</small></div>
+          <div class="field"><label for="operation-ability">能否用熟悉方式完成主要游戏操作？</label><select id="operation-ability" data-key="operation_ability"><option value="">请选择</option><option value="yes">可以</option><option value="with-help">部分需要协助</option><option value="no">目前不能</option><option value="not-asked">未询问</option></select></div>
+          <div class="field"><label for="main-difficulty">最希望补充的游戏信息（本人描述）</label><textarea id="main-difficulty" data-key="main_difficulty" maxlength="1200" placeholder="例如：小地图上容易漏掉附近敌方标记。请不要写诊断或身份资料。"></textarea></div>
+        </div>
+        <div class="grid three">
+          <div class="field"><label for="app-version">听野版本（记录设备实际版本）</label><select id="app-version" data-key="app_version"><option value="">请选择</option><option value="0.3.5">0.3.5（公开下载版）</option><option value="0.3.6">0.3.6（本地候选；待真机验证）</option><option value="other">其他 / 未确认</option></select><small>若选其他，请在下方备注准确版本；不要将本地候选称为公开或已验收。</small></div>
+          <div class="field"><label for="device">设备型号（自愿，可留空）</label><input id="device" data-key="device_model" type="text" maxlength="100" placeholder="勿填序列号或设备账户"></div>
+          <div class="field"><label for="android">Android 版本（自愿）</label><input id="android" data-key="android_version" type="text" maxlength="40" placeholder="例如 Android 10 或更新版本"><small>本轮要求 Android 10 及以上；记录实际版本并提前核对具体机型。</small></div>
+          <div class="field"><label for="version-note">实际版本补充（如选其他）</label><input id="version-note" data-key="version_note" type="text" maxlength="120"></div>
+        </div>
+        <fieldset>
+          <legend>知情与授权（分开记录）</legend>
+          <label class="check"><input data-key="participation_explained" type="checkbox"><span>已说明实验性质、自愿参与、随时可暂停或退出，参与者已同意本次体验。</span></label>
+          <div class="grid three">
+            <div class="field"><label for="consent-screen">屏幕 / 手部录像授权</label><select id="consent-screen" data-key="consent_screen_video"><option value="not-asked">未询问</option><option value="yes">同意，范围已另行说明</option><option value="no">不同意</option></select></div>
+            <div class="field"><label for="consent-audio">录制实际声音授权</label><select id="consent-audio" data-key="consent_audio_video"><option value="not-asked">未询问</option><option value="yes">同意，范围已另行说明</option><option value="no">不同意</option></select></div>
+            <div class="field"><label for="consent-logs">诊断日志保存 / 分享授权</label><select id="consent-logs" data-key="consent_logs"><option value="not-asked">未询问</option><option value="yes">同意，范围已另行说明</option><option value="no">不同意</option></select></div>
+          </div>
+          <p class="hint">参与同意不自动包含录音、录像、诊断日志、公开引用或对外分享授权。未取得单独同意时，不记录或分享相应内容。</p>
+        </fieldset>
+      </section>
+
+      <section class="panel" aria-labelledby="setup-heading">
+        <div class="panel-header"><h2 id="setup-heading">二、任务与实际设置</h2><p>用于解释事件，不代表兼容性承诺。</p></div>
+        <div class="grid">
+          <div class="field"><label for="comparison-type">对照类型</label><select id="comparison-type" data-key="comparison_type"><option value="">请选择</option><option value="user-off-on">玩家效用：A 辅助关闭 / B 辅助开启</option><option value="engineering-hands">工程诊断：A 双手操作 / B 双手离开操作区</option><option value="single-condition">单条件观察（说明原因）</option></select></div>
+          <div class="field"><label for="comparison-order">本场顺序</label><select id="comparison-order" data-key="comparison_order"><option value="">请选择</option><option value="AB">A 后 B</option><option value="BA">B 后 A</option><option value="partial">未完成 / 顺序不适用</option></select><small>场次之间轮换 AB / BA，避免顺序与温度、熟悉度混在一起。</small></div>
+          <div class="field"><label for="task">任务与场景</label><textarea id="task" data-key="task_description" maxlength="1200" placeholder="训练场、自定义场景或玩家自选任务；写明任务差异。"></textarea></div>
+          <div class="field"><label for="duration">体验时长（分钟）</label><input id="duration" data-key="duration_minutes" type="number" min="0" max="240" step="1" inputmode="numeric"></div>
+          <div class="field"><label for="sound-output">声音输出设备</label><select id="sound-output" data-key="sound_output"><option value="">请选择</option><option>手机扬声器</option><option>有线耳机</option><option>蓝牙耳机 / 音箱</option><option>骨传导设备</option><option>其他</option><option>未记录</option></select></div>
+          <div class="field"><label for="volume">音量与游戏模式备注</label><input id="volume" data-key="audio_settings" type="text" maxlength="240" placeholder="记录游戏/媒体音量、游戏模式；不必写账户信息"></div>
+        </div>
+        <fieldset>
+          <legend>本场实际开启的提示通道</legend>
+          <div class="checks">
+            <label class="check"><input data-channel="speech" type="checkbox"><span>语音 / TTS</span></label>
+            <label class="check"><input data-channel="directional-tone" type="checkbox"><span>方向提示音</span></label>
+            <label class="check"><input data-channel="haptic" type="checkbox"><span>震动 / 触觉</span></label>
+          </div>
+          <div class="field"><label for="channel-details">真实通道设置补充</label><input id="channel-details" data-key="channel_settings_note" type="text" maxlength="300" placeholder="例如：语音开、方向音关、震动开"></div>
+        </fieldset>
+        <fieldset>
+          <legend>设备热感记录（可选）</legend>
+          <div class="grid three">
+            <div class="field"><label for="temp-start">开始时设备电池温度（°C，可留空）</label><input id="temp-start" data-key="battery_temp_start_c" type="number" step="0.1" inputmode="decimal"></div>
+            <div class="field"><label for="temp-end">结束时设备电池温度（°C，可留空）</label><input id="temp-end" data-key="battery_temp_end_c" type="number" step="0.1" inputmode="decimal"></div>
+            <div class="field"><label for="heat-sensation">参与者主观感受</label><select id="heat-sensation" data-key="heat_sensation"><option value="">未记录</option><option value="comfortable">舒适</option><option value="slightly-warm">微温</option><option value="warm">明显发热</option><option value="uncomfortable">不适 / 要求停止</option><option value="unclear">不确定</option></select></div>
+          </div>
+          <p class="hint">电池温度不是外壳或芯片温度；温度数值和参与者主观感受分开报告。</p>
+        </fieldset>
+      </section>
+
+      <section class="panel" aria-labelledby="events-heading">
+        <div class="panel-header"><h2 id="events-heading">三、逐条提示与漏报观察</h2><p>保留无提示、偏移和不确定的事件。</p></div>
+        <p class="callout">每个事件尽量填应用日志中的原始 <span class="mono">cue_id</span>、游戏时间和外部原录像时间锚。日志中的 TTS / 播放回调只说明系统处理状态，不证明参与者实际听到或感觉到。</p>
+        <div id="event-list" aria-live="polite"></div>
+        <div class="row-actions"><button type="button" id="add-event">新增一条观察</button></div>
+        <template id="event-template">
+          <fieldset class="event-card" data-event>
+            <legend data-event-legend>观察事件</legend>
+            <button type="button" class="remove-row" data-remove-event>移除此事件</button>
+            <div class="grid three">
+              <div class="field"><label data-name="condition">条件</label><select data-event-key="condition"><option value="">未记</option><option value="A">A</option><option value="B">B</option><option value="other">其他</option></select></div>
+              <div class="field"><label data-name="cue_id">应用 cue_id（原样）</label><input data-event-key="cue_id" type="text" maxlength="120" placeholder="无提示时留空"></div>
+              <div class="field"><label data-name="kind">事件类型</label><select data-event-key="kind"><option value="">未分类</option><option value="near_zone">near_zone</option><option value="player_dead">player_dead</option><option value="player_alive">player_alive</option><option value="radar_status">radar_status</option><option value="main_enemy">main_enemy</option><option value="minimap_enemy">minimap_enemy</option><option value="danger_ping">danger_ping</option></select></div>
+              <div class="field"><label data-name="game_time">游戏 HUD 时间</label><input data-event-key="game_time" type="text" maxlength="40" placeholder="例如 04:31"></div>
+              <div class="field"><label data-name="video_anchor">外部原录像时间锚（自记）</label><input data-event-key="video_anchor" type="text" maxlength="60" placeholder="例如 00:04:31.400"></div>
+              <div class="field"><label data-name="evidence_ref">截图 / 日志引用</label><input data-event-key="evidence_ref" type="text" maxlength="160" placeholder="只写本地匿名编号"></div>
+            </div>
+            <div class="grid">
+              <div class="field"><label data-name="observer_event">记录员独立确认该提示条件？</label><select data-event-key="observer_event"><option value="">未判断</option><option value="yes">是</option><option value="no">否</option><option value="uncertain">不确定</option></select></div>
+              <div class="field"><label data-name="playback_callback">日志回调（仅系统状态）</label><select data-event-key="playback_callback"><option value="">未知 / 未查</option><option value="requested">请求已记录</option><option value="started">STARTED</option><option value="completed">COMPLETED</option><option value="failed">失败 / 未发出</option></select></div>
+            </div>
+            <fieldset><legend>参与者实际感知（逐通道）</legend>
+              <div class="grid three">
+                <div class="field"><label data-name="speech_perceived">语音 / TTS</label><select data-event-key="speech_perceived"><option value="">未记录</option><option value="yes">听见</option><option value="no">未听见</option><option value="unclear">不确定</option><option value="off">本场关闭</option></select></div>
+                <div class="field"><label data-name="tone_perceived">方向提示音</label><select data-event-key="tone_perceived"><option value="">未记录</option><option value="yes">听见</option><option value="no">未听见</option><option value="unclear">不确定</option><option value="off">本场关闭</option></select></div>
+                <div class="field"><label data-name="haptic_perceived">震动 / 触觉</label><select data-event-key="haptic_perceived"><option value="">未记录</option><option value="yes">感觉到</option><option value="no">未感觉到</option><option value="unclear">不确定</option><option value="off">本场关闭</option></select></div>
+              </div>
+            </fieldset>
+            <div class="grid three">
+              <div class="field"><label data-name="expected_direction">记录员按提示时画面核对的方位</label><input data-event-key="expected_direction" type="text" maxlength="80" placeholder="不确定就写不确定"></div>
+              <div class="field"><label data-name="heard_direction">参与者感觉到的方位 / 提示内容</label><input data-event-key="heard_direction" type="text" maxlength="120"></div>
+              <div class="field"><label data-name="direction_offset">偏移判断</label><select data-event-key="direction_offset"><option value="">未判断</option><option value="aligned">大致一致</option><option value="early">提示偏早</option><option value="late">提示偏晚</option><option value="direction-mismatch">方位不一致</option><option value="later-movement">可能是提示后目标移动，待核实</option><option value="uncertain">不确定</option></select></div>
+              <div class="field"><label data-name="helpfulness">对玩家有帮助吗？</label><select data-event-key="helpfulness"><option value="">未询问</option><option value="yes">有帮助</option><option value="no">没有帮助</option><option value="unclear">不确定</option></select></div>
+              <div class="field"><label data-name="interference">是否打断操作 / 交流？</label><select data-event-key="interference"><option value="">未询问</option><option value="no">没有</option><option value="yes">有</option><option value="unclear">不确定</option></select></div>
+              <div class="field"><label data-name="followup_time">后来观察到目标的时间锚</label><input data-event-key="followup_time" type="text" maxlength="60" placeholder="与提示时点分开记录"></div>
+            </div>
+            <div class="field"><label data-name="event_note">事件备注（勿含身份信息）</label><textarea data-event-key="event_note" maxlength="1200"></textarea></div>
+          </fieldset>
+        </template>
+      </section>
+
+      <section class="panel" aria-labelledby="debrief-heading">
+        <div class="panel-header"><h2 id="debrief-heading">四、结束反馈</h2><p>接受“没有帮助”或“还不确定”。</p></div>
+        <div class="grid three">
+          <div class="field"><label for="understood">参与者听懂提示了吗？</label><select id="understood" data-key="understood"><option value="">未询问</option><option value="yes">是</option><option value="partly">部分理解</option><option value="no">否</option><option value="uncertain">不确定</option></select></div>
+          <div class="field"><label for="noticed-missed">有发现原本容易漏看的信息吗？</label><select id="noticed-missed" data-key="noticed_missed_info"><option value="">未询问</option><option value="yes">有</option><option value="no">没有</option><option value="uncertain">不确定</option></select></div>
+          <div class="field"><label for="continue">参与者愿意继续试吗？</label><select id="continue" data-key="willing_to_continue"><option value="">未询问</option><option value="yes">愿意</option><option value="no">不愿意</option><option value="uncertain">不确定</option></select></div>
+        </div>
+        <div class="field"><label for="best-example">参与者认为最有帮助或最困扰的具体例子</label><textarea id="best-example" data-key="participant_example" maxlength="1600" placeholder="尽量对应一个事件和时间锚；避免身份或医疗信息。"></textarea></div>
+        <div class="field"><label for="change-request">参与者最希望改什么？</label><textarea id="change-request" data-key="requested_change" maxlength="1600"></textarea></div>
+        <div class="field"><label for="stop-reason">如提前结束，记录参与者同意提供的原因</label><textarea id="stop-reason" data-key="early_stop_note" maxlength="800"></textarea></div>
+      </section>
+
+      <section class="panel" aria-labelledby="loop-heading">
+        <div class="panel-header"><h2 id="loop-heading">五、反馈 → 决定 → 版本 → 复测</h2><p>不把待核实写成已修复。</p></div>
+        <p class="hint">可以在试用后补填。每条只围绕具体改进，不复制玩家身份资料或未经授权的原话。</p>
+        <div id="feedback-list" aria-live="polite"></div>
+        <div class="row-actions"><button type="button" id="add-feedback">新增反馈闭环</button></div>
+        <template id="feedback-template">
+          <fieldset class="feedback-card" data-feedback>
+            <legend data-feedback-legend>反馈项</legend>
+            <button type="button" class="remove-row" data-remove-feedback>移除此项</button>
+            <div class="grid three">
+              <div class="field"><label data-name="feedback_id">反馈编号</label><input data-feedback-key="feedback_id" type="text" maxlength="30" placeholder="例如 F01"></div>
+              <div class="field"><label data-name="linked_event">关联事件 cue_id / 场次</label><input data-feedback-key="linked_event" type="text" maxlength="120"></div>
+              <div class="field"><label data-name="priority">玩家认为的优先级</label><select data-feedback-key="priority"><option value="">未询问</option><option value="high">高</option><option value="medium">中</option><option value="low">低</option><option value="unclear">不确定</option></select></div>
+              <div class="field"><label data-name="decision">团队决定</label><select data-feedback-key="decision"><option value="">待决定</option><option value="implement">实现 / 调整</option><option value="defer">暂缓</option><option value="decline">不采纳</option><option value="needs-more-evidence">需要更多证据</option></select></div>
+              <div class="field"><label data-name="version">目标 / 实际版本</label><input data-feedback-key="version" type="text" maxlength="50" placeholder="例如 0.3.6 / 待定"></div>
+              <div class="field"><label data-name="retest_anchor">复测事件 / 外部视频时间锚</label><input data-feedback-key="retest_anchor" type="text" maxlength="120"></div>
+            </div>
+            <div class="field"><label data-name="feedback_theme">反馈主题与匿名摘要</label><textarea data-feedback-key="feedback_theme" maxlength="1200" placeholder="勿填可识别身份的原话"></textarea></div>
+            <div class="field"><label data-name="decision_reason">决定理由 / 改动链接或记录</label><textarea data-feedback-key="decision_reason" maxlength="1200"></textarea></div>
+            <div class="field"><label data-name="retest_result">复测结果或仍待核实之处</label><textarea data-feedback-key="retest_result" maxlength="1200"></textarea></div>
+          </fieldset>
+        </template>
+      </section>
+
+      <details class="panel" id="latency-details">
+        <summary><strong>外部影音延迟（可选高级记录）</strong></summary>
+        <p class="callout warn">这里的数据与反馈 JSON 分开导出。只用同一份未经剪辑的外部影音时间轴，不用用户回忆、系统时间、TTS 回调或 native 耗时代填实际发声。</p>
+        <p>列：<span class="mono">event_id,cue_id,kind,evidence_ms,audio_ms,source_note</span>。按原始影音起点计毫秒；事件应有独立画面证据。未实际听到或无法确认时，audio_ms 留空并说明原因。空白默认不生成样本。导出时会校验完整字段、非负有限时间和唯一编号；若 <span class="mono">source_note</span> 去掉前置空白后以 <span class="mono">= + - @</span> 开头，会加单引号作为文字前缀，原始 <span class="mono">cue_id</span> 保持不变以便与日志配对。</p>
+        <div id="latency-list" aria-live="polite"></div>
+        <div class="row-actions"><button type="button" id="add-latency">新增延迟样本</button><button type="button" id="export-csv">下载 CSV</button></div>
+        <template id="latency-template">
+          <fieldset class="latency-card" data-latency>
+            <legend data-latency-legend>延迟样本</legend>
+            <button type="button" class="remove-row" data-remove-latency>移除此样本</button>
+            <div class="grid three">
+              <div class="field"><label data-name="event_id">event_id（匿名）</label><input data-latency-key="event_id" type="text" maxlength="60"></div>
+              <div class="field"><label data-name="cue_id">cue_id（日志原值）</label><input data-latency-key="cue_id" type="text" maxlength="120"></div>
+              <div class="field"><label data-name="kind">kind</label><select data-latency-key="kind"><option value="">请选择</option><option value="near_zone">near_zone</option><option value="player_dead">player_dead</option><option value="player_alive">player_alive</option><option value="radar_status">radar_status</option><option value="main_enemy">main_enemy</option><option value="minimap_enemy">minimap_enemy</option><option value="danger_ping">danger_ping</option></select></div>
+              <div class="field"><label data-name="evidence_ms">evidence_ms（外部原片毫秒）</label><input data-latency-key="evidence_ms" type="number" min="0" step="1" inputmode="numeric"></div>
+              <div class="field"><label data-name="audio_ms">audio_ms（实际声音毫秒；没听见留空）</label><input data-latency-key="audio_ms" type="number" min="0" step="1" inputmode="numeric"></div>
+              <div class="field"><label data-name="source_note">source_note（来源/缺失原因）</label><input data-latency-key="source_note" type="text" maxlength="300" placeholder="例如：原片无可确认声音；勿填身份信息"></div>
+            </div>
+          </fieldset>
+        </template>
+      </details>
+
+      <section class="panel" aria-labelledby="actions-heading">
+        <div class="panel-header"><h2 id="actions-heading">六、导出与离开</h2><p>文件只下载到本机。</p></div>
+        <p class="notice">保存时请选团队批准的本地位置，并用匿名代号作为文件名。表单没有网络请求或浏览器持久存储。可导入本表导出的 JSON 继续补填；导入内容只放入当前页面，仍需重新下载。剪贴板按设备自身设置管理；敏感环境请使用下载。</p>
+        <div class="actions">
+          <button class="primary" type="button" id="export-json">下载反馈 JSON</button>
+          <button type="button" id="import-json-button">导入反馈 JSON</button>
+          <input id="import-json-file" class="hidden" type="file" accept="application/json,.json" aria-label="选择要导入的试用反馈 JSON 文件">
+          <button type="button" id="copy-text">复制匿名摘要文本</button>
+          <button class="danger" type="button" id="clear-form">清空本表</button>
+        </div>
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+      </section>
+    </form>
+
+    <footer class="footer">
+      <p><strong>试用范围提醒：</strong>500 ms 是当前开发试用目标，不能替代项目严格验收的 250 ms 实际发声门槛、平均 ≥8 FPS、最大处理间隔 ≤2 秒、独立留出和质量要求。0.3.5 已公开发布不代表这些严格验收条件已全部通过。TTS 或播放回调不证明人实际听到；方向判断必须锚定提示时点。</p>
+      <p>本表不代表临床效果验证，不作为诊断、治疗或保证适用性的工具。更多操作说明见 <a href="PLAYER_TRIAL_KIT.md">PLAYER_TRIAL_KIT.md</a>。</p>
+    </footer>
+  </main>
+
+  <script>
+    (() => {
+      const form = document.getElementById('trial-form');
+      const eventList = document.getElementById('event-list');
+      const feedbackList = document.getElementById('feedback-list');
+      const latencyList = document.getElementById('latency-list');
+      const status = document.getElementById('status');
+      let mainDirty = false;
+      let latencyDirty = false;
+      let nextCardId = 0;
+
+      const setStatus = (message) => { status.textContent = message; };
+      const markMainDirty = () => { mainDirty = true; };
+      const markLatencyDirty = () => { latencyDirty = true; };
+      const markFieldDirty = (event) => {
+        if (event.target.matches('#import-json-file')) return;
+        if (event.target.closest('#latency-details')) markLatencyDirty();
+        else markMainDirty();
+      };
+      form.addEventListener('input', markFieldDirty);
+      form.addEventListener('change', markFieldDirty);
+      window.addEventListener('beforeunload', (event) => {
+        if (!mainDirty && !latencyDirty) return;
+        event.preventDefault();
+        event.returnValue = '';
+      });
+
+      document.getElementById('large-text').addEventListener('click', (event) => {
+        const large = document.body.classList.toggle('large');
+        event.currentTarget.setAttribute('aria-pressed', String(large));
+        event.currentTarget.textContent = large ? '恢复字号' : '大字阅读';
+        setStatus(large ? '已启用大字阅读。' : '已恢复默认字号。');
+      });
+      document.getElementById('print-page').addEventListener('click', () => window.print());
+
+      function addCard(templateId, container, selector, removeSelector, numberSelector, labelText, markChanged, mark = true) {
+        const fragment = document.getElementById(templateId).content.cloneNode(true);
+        const card = fragment.querySelector(selector);
+        container.append(fragment);
+        const cards = container.querySelectorAll(selector);
+        const index = cards.length;
+        const uniqueId = ++nextCardId;
+        const legend = card.querySelector(numberSelector);
+        if (legend) legend.textContent = `${labelText} ${index}`;
+        card.querySelectorAll('[data-name]').forEach((label) => {
+          const suffix = label.dataset.name;
+          const input = label.parentElement.querySelector('input,select,textarea');
+          if (input) {
+            const id = `${templateId}-${uniqueId}-${suffix}`;
+            input.id = id;
+            label.htmlFor = id;
+          }
+        });
+        const removeButton = card.querySelector(removeSelector);
+        removeButton.addEventListener('click', () => {
+          card.remove();
+          renumber(container, selector, numberSelector, labelText);
+          markChanged();
+          setStatus(`${labelText}已移除。`);
+        });
+        if (mark) markChanged();
+        return card;
+      }
+
+      function renumber(container, selector, numberSelector, labelText) {
+        container.querySelectorAll(selector).forEach((card, index) => {
+          const legend = card.querySelector(numberSelector);
+          if (legend) legend.textContent = `${labelText} ${index + 1}`;
+        });
+      }
+
+      function addEvent(mark = true) {
+        const card = addCard('event-template', eventList, '[data-event]', '[data-remove-event]', '[data-event-legend]', '观察事件', markMainDirty, mark);
+        if (mark) card.querySelector('[data-event-key="cue_id"]').focus();
+      }
+      function addFeedback(mark = true) {
+        const card = addCard('feedback-template', feedbackList, '[data-feedback]', '[data-remove-feedback]', '[data-feedback-legend]', '反馈项', markMainDirty, mark);
+        if (mark) card.querySelector('[data-feedback-key="feedback_id"]').focus();
+      }
+      function addLatency(mark = true) {
+        const card = addCard('latency-template', latencyList, '[data-latency]', '[data-remove-latency]', '[data-latency-legend]', '延迟样本', markLatencyDirty, mark);
+        if (mark) card.querySelector('[data-latency-key="event_id"]').focus();
+      }
+
+      document.getElementById('add-event').addEventListener('click', addEvent);
+      document.getElementById('add-feedback').addEventListener('click', addFeedback);
+      document.getElementById('add-latency').addEventListener('click', addLatency);
+
+      function readMainFields() {
+        const out = {};
+        form.querySelectorAll('[data-key]').forEach((field) => {
+          out[field.dataset.key] = field.type === 'checkbox' ? field.checked : field.value.trim();
+        });
+        out.active_channels = Array.from(form.querySelectorAll('[data-channel]:checked')).map((field) => field.dataset.channel);
+        out.events = Array.from(eventList.querySelectorAll('[data-event]')).map((card) => {
+          const item = {};
+          card.querySelectorAll('[data-event-key]').forEach((field) => { item[field.dataset.eventKey] = field.value.trim(); });
+          return item;
+        });
+        out.feedback_loop = Array.from(feedbackList.querySelectorAll('[data-feedback]')).map((card) => {
+          const item = {};
+          card.querySelectorAll('[data-feedback-key]').forEach((field) => { item[field.dataset.feedbackKey] = field.value.trim(); });
+          return item;
+        });
+        return out;
+      }
+
+      function buildData() {
+        return {
+          schema_version: 'sensefield-player-trial-v1',
+          app_version_choices: '0.3.5 public; 0.3.6 local candidate pending physical-device validation',
+          local_export_time: new Date().toISOString(),
+          privacy_note: '匿名记录；未自动上传；参与者回调不等于实际感知。',
+          session: readMainFields()
+        };
+      }
+
+      function download(content, type, filename) {
+        const blob = new Blob([content], { type });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = filename;
+        document.body.append(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+
+      const mainFields = new Map(Array.from(form.querySelectorAll('[data-key]')).map((field) => [field.dataset.key, field]));
+      const eventFields = Array.from(document.getElementById('event-template').content.querySelectorAll('[data-event-key]'));
+      const feedbackFields = Array.from(document.getElementById('feedback-template').content.querySelectorAll('[data-feedback-key]'));
+      const MAX_IMPORT_BYTES = 2 * 1024 * 1024;
+      const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+
+      function isPlainObject(value) {
+        return value !== null && typeof value === 'object' && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+      }
+
+      function rejectUnknownKeys(value, allowedKeys, label) {
+        const allowed = new Set(allowedKeys);
+        const unexpected = Object.keys(value).filter((key) => !allowed.has(key));
+        if (unexpected.length) throw new Error(`${label} 含有未知字段：${unexpected.join(', ')}`);
+      }
+
+      function validateFieldValue(field, value, label) {
+        if (field.type === 'checkbox') {
+          if (typeof value !== 'boolean') throw new Error(`${label} 必须是布尔值。`);
+          return value;
+        }
+        if (typeof value !== 'string') throw new Error(`${label} 必须是文本。`);
+        const limit = field.maxLength > 0 ? field.maxLength : 5000;
+        if (value.length > limit) throw new Error(`${label} 超出允许长度。`);
+        if (field.tagName === 'SELECT' && value !== '') {
+          const options = Array.from(field.options).map((option) => option.value);
+          if (!options.includes(value)) throw new Error(`${label} 的选项不受支持。`);
+        }
+        if (field.type === 'number' && value !== '') {
+          const number = Number(value);
+          if (!Number.isFinite(number)) throw new Error(`${label} 必须是有效数字。`);
+          if (field.min !== '' && number < Number(field.min)) throw new Error(`${label} 小于允许的最小值。`);
+          if (field.max !== '' && number > Number(field.max)) throw new Error(`${label} 大于允许的最大值。`);
+        }
+        if (field.type === 'date' && value !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+          throw new Error(`${label} 的日期格式无效。`);
+        }
+        return value;
+      }
+
+      function validateRecordArray(value, templateFields, keyName, label) {
+        if (!Array.isArray(value) || value.length > 200) throw new Error(`${label} 格式无效或条数过多。`);
+        const fieldMap = new Map(templateFields.map((field) => [field.dataset[keyName], field]));
+        return value.map((record, index) => {
+          if (!isPlainObject(record)) throw new Error(`${label} 第 ${index + 1} 项格式无效。`);
+          rejectUnknownKeys(record, fieldMap.keys(), `${label} 第 ${index + 1} 项`);
+          const normalized = {};
+          fieldMap.forEach((field, key) => {
+            const inputValue = hasOwn(record, key) ? record[key] : '';
+            normalized[key] = validateFieldValue(field, inputValue, `${label} 第 ${index + 1} 项 ${key}`);
+          });
+          return normalized;
+        });
+      }
+
+      function validateTrialJson(value) {
+        if (!isPlainObject(value)) throw new Error('JSON 根节点必须是对象。');
+        rejectUnknownKeys(value, ['schema_version', 'app_version_choices', 'local_export_time', 'privacy_note', 'session'], 'JSON');
+        if (value.schema_version !== 'sensefield-player-trial-v1') throw new Error('只支持本表导出的 sensefield-player-trial-v1 格式。');
+        for (const key of ['app_version_choices', 'local_export_time', 'privacy_note']) {
+          if (typeof value[key] !== 'string') throw new Error(`JSON 缺少有效的 ${key}。`);
+        }
+        if (!isPlainObject(value.session)) throw new Error('JSON 缺少有效的 session 对象。');
+
+        const session = value.session;
+        rejectUnknownKeys(session, [...mainFields.keys(), 'active_channels', 'events', 'feedback_loop'], 'session');
+        const normalized = {};
+        mainFields.forEach((field, key) => {
+          const inputValue = hasOwn(session, key) ? session[key] : (field.type === 'checkbox' ? false : '');
+          normalized[key] = validateFieldValue(field, inputValue, key);
+        });
+
+        if (!Array.isArray(session.active_channels) || session.active_channels.some((channel) => !['speech', 'directional-tone', 'haptic'].includes(channel))) {
+          throw new Error('active_channels 格式无效。');
+        }
+        normalized.active_channels = [...new Set(session.active_channels)];
+        normalized.events = validateRecordArray(session.events ?? [], eventFields, 'eventKey', 'events');
+        normalized.feedback_loop = validateRecordArray(session.feedback_loop ?? [], feedbackFields, 'feedbackKey', 'feedback_loop');
+        return normalized;
+      }
+
+      function applyRecordToCard(card, record, attributeName) {
+        card.querySelectorAll(`[data-${attributeName}]`).forEach((field) => {
+          const key = field.dataset[attributeName.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())];
+          field.value = record[key] ?? '';
+        });
+      }
+
+      document.getElementById('import-json-button').addEventListener('click', () => {
+        const fileInput = document.getElementById('import-json-file');
+        fileInput.value = '';
+        fileInput.click();
+      });
+      document.getElementById('import-json-file').addEventListener('change', async (event) => {
+        const fileInput = event.currentTarget;
+        const file = fileInput.files[0];
+        if (!file) return;
+        if (file.size > MAX_IMPORT_BYTES) {
+          setStatus('导入失败：文件超过 2 MB。');
+          fileInput.value = '';
+          return;
+        }
+        if (mainDirty && !window.confirm('导入会替换当前主表、观察事件和反馈闭环；未导出的主表内容可能丢失。继续吗？')) {
+          fileInput.value = '';
+          return;
+        }
+        try {
+          const parsed = JSON.parse(await file.text());
+          const imported = validateTrialJson(parsed);
+          mainFields.forEach((field, key) => {
+            const value = imported[key];
+            if (field.type === 'checkbox') field.checked = value;
+            else field.value = value;
+          });
+          form.querySelectorAll('[data-channel]').forEach((field) => {
+            field.checked = imported.active_channels.includes(field.dataset.channel);
+          });
+          eventList.replaceChildren();
+          feedbackList.replaceChildren();
+          imported.events.forEach((record) => {
+            addEvent(false);
+            applyRecordToCard(eventList.lastElementChild, record, 'event-key');
+          });
+          imported.feedback_loop.forEach((record) => {
+            addFeedback(false);
+            applyRecordToCard(feedbackList.lastElementChild, record, 'feedback-key');
+          });
+          markMainDirty();
+          setStatus('JSON 已载入当前页面。它没有自动保存；下载主表 JSON 后才算导出。延迟 CSV 内容未改动。');
+        } catch (error) {
+          setStatus(`导入失败：${error instanceof Error ? error.message : '文件无法读取。'}`);
+        } finally {
+          fileInput.value = '';
+        }
+      });
+
+      document.getElementById('export-json').addEventListener('click', () => {
+        const data = buildData();
+        const code = String(data.session.session_code || 'blank').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 16) || 'blank';
+        download(JSON.stringify(data, null, 2), 'application/json;charset=utf-8', `player-trial-${code}.json`);
+        mainDirty = false;
+        setStatus('JSON 已导出到浏览器下载位置；文件未上传。请核对保存位置和匿名代号。');
+      });
+
+      function validateLatencyRows(records) {
+        const headers = ['event_id', 'cue_id', 'kind', 'evidence_ms', 'audio_ms', 'source_note'];
+        const requiredKinds = new Set(['near_zone', 'player_dead', 'player_alive', 'radar_status', 'main_enemy', 'minimap_enemy', 'danger_ping']);
+        const seenEventIds = new Set();
+        const seenCueIds = new Set();
+        const rows = [];
+        const issues = [];
+        const addIssue = (row, field, message) => issues.push({ row, field, message });
+        const csvText = (value) => /^\s*[=+\-@]/.test(value) ? `'${value}` : value;
+
+        records.forEach((record, index) => {
+          const row = index + 1;
+          const values = Object.fromEntries(headers.map((key) => [key, String(record[key] ?? '')]));
+          if (!headers.some((key) => values[key].trim() !== '')) return;
+
+          const eventId = values.event_id.trim();
+          const cueId = values.cue_id;
+          const kind = values.kind.trim();
+          const evidenceText = values.evidence_ms.trim();
+          const audioText = values.audio_ms.trim();
+          const sourceNote = values.source_note;
+          const sourceNotePresent = sourceNote.trim() !== '';
+
+          if (!eventId) addIssue(row, 'event_id', '必填');
+          else if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(eventId)) addIssue(row, 'event_id', '仅允许 ASCII 字母、数字、_ . : -，且首字符须为字母或数字');
+          else if (seenEventIds.has(eventId)) addIssue(row, 'event_id', '重复');
+          else seenEventIds.add(eventId);
+
+          if (!cueId.trim()) addIssue(row, 'cue_id', '必填');
+          else if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(cueId)) addIssue(row, 'cue_id', '请原样填写日志中的 ID，不含空白或表格公式字符');
+          else if (seenCueIds.has(cueId)) addIssue(row, 'cue_id', '重复');
+          else seenCueIds.add(cueId);
+
+          if (!kind) addIssue(row, 'kind', '必填');
+          else if (!requiredKinds.has(kind)) addIssue(row, 'kind', '类型不受支持');
+
+          let evidence = null;
+          if (!evidenceText) addIssue(row, 'evidence_ms', '必填');
+          else {
+            evidence = Number(evidenceText);
+            if (!Number.isFinite(evidence) || evidence < 0) {
+              addIssue(row, 'evidence_ms', '必须是非负有限数值');
+              evidence = null;
+            }
+          }
+
+          if (!sourceNotePresent) addIssue(row, 'source_note', '必填：注明外部原片来源；未听到时说明原因');
+          let audio = null;
+          if (audioText) {
+            audio = Number(audioText);
+            if (!Number.isFinite(audio) || audio < 0) {
+              addIssue(row, 'audio_ms', '必须是非负有限数值');
+              audio = null;
+            } else if (evidence !== null && audio < evidence) {
+              addIssue(row, 'audio_ms', '不能早于 evidence_ms');
+            }
+          }
+
+          if (issues.some((issue) => issue.row === row)) return;
+          rows.push({
+            event_id: eventId,
+            cue_id: cueId,
+            kind,
+            evidence_ms: String(evidence),
+            audio_ms: audio === null ? '' : String(audio),
+            source_note: csvText(sourceNote)
+          });
+        });
+
+        return { rows, issues };
+      }
+
+      function csvQuote(value) {
+        const text = String(value ?? '');
+        return `"${text.replaceAll('"', '""')}"`;
+      }
+      document.getElementById('export-csv').addEventListener('click', () => {
+        const cards = Array.from(latencyList.querySelectorAll('[data-latency]'));
+        const records = cards.map((card) => {
+          const row = {};
+          card.querySelectorAll('[data-latency-key]').forEach((field) => { row[field.dataset.latencyKey] = field.value; });
+          return row;
+        });
+        const result = validateLatencyRows(records);
+        if (result.issues.length) {
+          const shown = result.issues.slice(0, 5).map((issue) => `第 ${issue.row} 行 ${issue.field}：${issue.message}`);
+          const more = result.issues.length > shown.length ? `；另有 ${result.issues.length - shown.length} 项` : '';
+          setStatus(`CSV 未导出，请修正：${shown.join('；')}${more}。`);
+          const firstIssue = result.issues[0];
+          cards[firstIssue.row - 1]?.querySelector(`[data-latency-key="${firstIssue.field}"]`)?.focus();
+          return;
+        }
+        const headers = ['event_id', 'cue_id', 'kind', 'evidence_ms', 'audio_ms', 'source_note'];
+        const content = '\uFEFF' + [headers, ...result.rows.map((row) => headers.map((key) => row[key] ?? ''))]
+          .map((line) => line.map(csvQuote).join(',')).join('\r\n') + '\r\n';
+        download(content, 'text/csv;charset=utf-8', 'player-trial-latency.csv');
+        latencyDirty = false;
+        setStatus(result.rows.length ? `已导出 ${result.rows.length} 条外部影音延迟样本 CSV。` : '已导出仅含表头的空白 CSV；没有测量样本。');
+      });
+
+      function plainTextSummary() {
+        const data = buildData().session;
+        const lines = [
+          '听野匿名玩家试用记录',
+          `场次代号：${data.session_code || '未填'}`,
+          `日期：${data.date || '未填'}`,
+          `人群：${data.cohort || '未填'}`,
+          `游戏主要操作：${data.operation_ability || '未填'}`,
+          `对照：${data.comparison_type || '未填'}；顺序 ${data.comparison_order || '未填'}`,
+          `实际通道：${(data.active_channels || []).join('、') || '未填'}`,
+          `时长：${data.duration_minutes || '未填'} 分钟`,
+          `提示听懂：${data.understood || '未填'}；发现漏看信息：${data.noticed_missed_info || '未填'}；愿意继续：${data.willing_to_continue || '未填'}`,
+          `最希望改进：${data.requested_change || '未填'}`,
+          `观察事件数：${data.events.length}；反馈闭环项数：${data.feedback_loop.length}`,
+          '外部影音和回调证据需独立核对；此摘要不证明实际发声或效果。'
+        ];
+        return lines.join('\n');
+      }
+
+      document.getElementById('copy-text').addEventListener('click', async () => {
+        const value = plainTextSummary();
+        try {
+          if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(value);
+          else {
+            const area = document.createElement('textarea');
+            area.value = value; area.setAttribute('aria-hidden', 'true'); area.style.position = 'fixed'; area.style.left = '-9999px';
+            document.body.append(area); area.focus(); area.select();
+            const ok = document.execCommand('copy'); area.remove();
+            if (!ok) throw new Error('copy failed');
+          }
+          setStatus('匿名摘要已复制到剪贴板；剪贴板是否同步由设备设置决定。');
+        } catch {
+          setStatus('浏览器未允许复制。请使用“下载反馈 JSON”，或手动选中需要复制的内容。');
+        }
+      });
+
+      document.getElementById('clear-form').addEventListener('click', () => {
+        if (!window.confirm('清空当前页面中尚未导出的记录？此操作无法恢复。')) return;
+        form.reset();
+        eventList.replaceChildren(); feedbackList.replaceChildren(); latencyList.replaceChildren();
+        mainDirty = false;
+        latencyDirty = false;
+        setStatus('当前页面记录已清空。');
+      });
+    })();
+  </script>
+</body>
+</html>
