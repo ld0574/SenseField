@@ -4,7 +4,7 @@
 
 ## 当前构建：0.3.5 公开体验版
 
-当前 Android 配置为 `versionName 0.3.5`、`versionCode 13`，用于有界事件前后采样与同机发热复测，已于 2026-10-02 以 [GitHub 预发布](https://github.com/ld0574/SenseField/releases/tag/v0.3.5)交付公开体验。玩家说明见[0.3.5 发布说明](RELEASE_NOTES_0.3.5.md)。所有新版本遵守[版本命名规范](版本命名规范.md)：内部和外部共用 `a.b.c` 序列，每次新交付都递增；下一版为 `0.3.6`。本轮证据见[诊断取舍](../validation/DIAGNOSTIC_CONTEXT_0.3.5_2026-10-02.md)，此前修复见[漏报排查](../validation/TOUCH_ALERT_DIAG_2026-10-02.md)。历史发布草稿 [0.3.0-alpha.1 Release notes](RELEASE_NOTES_0.3.0-alpha.1.md) 和[版本检查清单](RELEASE_CHECKLIST_0.3.0-alpha.1.md)保留原始版本与证据，不能直接作为本次发布说明。本构建只支持 `arm64-v8a`，实验小地图模型尚未通过独立留出验收，公共默认 profile 关闭主画面边缘候选分支且上下文分类器尚未接入。README 和 Release body 必须说明 `MediaProjection`、悬浮窗、通知权限的用途，以及识别在本地处理。
+当前 Android 配置为 `versionName 0.3.5`、`versionCode 13`，用于有界事件前后采样与同机发热复测，已于 2026-10-02 以 [GitHub Release](https://github.com/ld0574/SenseField/releases/tag/v0.3.5)交付公开体验。玩家说明见[0.3.5 发布说明](RELEASE_NOTES_0.3.5.md)。所有新版本遵守[版本命名规范](版本命名规范.md)：内部和外部共用 `a.b.c` 序列，每次新交付都递增；下一版为 `0.3.6`。本轮证据见[诊断取舍](../validation/DIAGNOSTIC_CONTEXT_0.3.5_2026-10-02.md)，此前修复见[漏报排查](../validation/TOUCH_ALERT_DIAG_2026-10-02.md)。历史发布草稿 [0.3.0-alpha.1 Release notes](RELEASE_NOTES_0.3.0-alpha.1.md) 和[版本检查清单](RELEASE_CHECKLIST_0.3.0-alpha.1.md)保留原始版本与证据，不能直接作为本次发布说明。本构建只支持 `arm64-v8a`，实验小地图模型尚未通过独立留出验收，公共默认 profile 关闭主画面边缘候选分支且上下文分类器尚未接入。README 和 Release body 必须说明 `MediaProjection`、悬浮窗、通知权限的用途，以及识别在本地处理。
 
 构建优先使用 `bash scripts/build_android_preview.sh`。四个 `SENSEFIELD_KEYSTORE_PATH`、`SENSEFIELD_KEY_ALIAS`、`SENSEFIELD_KEYSTORE_PASSWORD`、`SENSEFIELD_KEY_PASSWORD` 环境变量全部提供时才构建签名 candidate；缺少签名参数时只构建文件名含 `debug-candidate` 的 Debug APK，并沿用 Android Gradle 的标准 debug signing。脚本不生成或上传发布 keystore，不发布 GitHub Release。
 
