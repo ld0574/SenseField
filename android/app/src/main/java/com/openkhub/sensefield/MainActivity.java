@@ -75,6 +75,10 @@ public final class MainActivity extends Activity {
         settings.setOnClickListener(view ->
                 startActivity(new Intent(this, AppSettingsActivity.class)));
         UiKit.add(content, settings, 14);
+        Button judgmentTest = largeButton("判定自测", false);
+        judgmentTest.setOnClickListener(view ->
+                startActivity(new Intent(this, JudgmentSelfTestActivity.class)));
+        UiKit.add(content, judgmentTest, 14);
         Button gameSelection = largeButton("返回游戏选择", false);
         gameSelection.setOnClickListener(view -> {
             Intent selection = new Intent(this, GameSelectionActivity.class);
