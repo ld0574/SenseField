@@ -357,4 +357,32 @@ public final class CueDispatcherTest {
 
         assertEquals(List.of("active", "first", "second"), renderer.started);
     }
+
+    @Test public void latestNearSpeechReplacesOlderPendingNearSpeech() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        renderer.autoStartSpeech = false;
+        Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+
+        dispatcher.submit(near("active", 1, 10000, -0.7f));
+        clock.now = 10;
+        dispatcher.submit(near("old-pending", 2, 10000, 0f));
+        clock.now = 20;
+        dispatcher.submit(near("new-pending", 3, 10000, 0.7f));
+
+        assertFalse(dispatcher.pendingCueIdsForTest().contains("old-pending"));
+        assertTrue(dispatcher.pendingCueIdsForTest().contains("new-pending"));
+        assertTrue(events.events.contains("old-pending:SPEECH:QUEUE_REPLACED"));
+    }
+
+    @Test public void nearSpeechDoesNotUseOldStartedCooldown() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(),
+                new Events(), clock);
+        assertTrue(dispatcher.submit(near("first", 1, 10000, 0f)).audioQueued());
+        clock.now = 10;
+        assertTrue(dispatcher.submit(near("second", 2, 10000, 0f)).audioQueued());
+    }
 }

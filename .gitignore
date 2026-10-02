@@ -33,6 +33,10 @@ android/**/.cxx/
 android/local.properties
 android/**/build/
 
+# Local slide decks contain supplied screenshots and generated presentation media.
+output/presentations/
+output/releases/
+
 # Credentials and signing material
 .env
 .env.*

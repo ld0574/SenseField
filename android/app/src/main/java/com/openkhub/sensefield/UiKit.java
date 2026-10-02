@@ -105,12 +105,12 @@ final class UiKit {
     }
 
     static TextView heading(Context context, CharSequence value) {
-        TextView title = text(context, value, 18, INK, true);
+        TextView title = text(context, value, 22, INK, true);
         return title;
     }
 
     static TextView body(Context context, CharSequence value) {
-        return text(context, value, 16, MUTED, false);
+        return text(context, value, 20, MUTED, false);
     }
 
     static void add(LinearLayout parent, View child, float bottomDp) {
@@ -134,24 +134,27 @@ final class UiKit {
     static Button button(Context context, CharSequence label, boolean primary) {
         Button button = new Button(context);
         button.setText(label);
-        button.setTextSize(16);
+        button.setTextSize(22);
         button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         button.setAllCaps(false);
-        button.setMinHeight(dp(context, 52));
-        button.setMinimumHeight(dp(context, 52));
+        button.setMinHeight(dp(context, 68));
+        button.setMinimumHeight(dp(context, 68));
         button.setGravity(Gravity.CENTER);
         button.setPadding(dp(context, 16), dp(context, 8), dp(context, 16), dp(context, 8));
         button.setBackground(ripple(context, primary ? PRIMARY : SURFACE,
                 primary ? Color.TRANSPARENT : BORDER, 15,
                 primary ? 0x33FFFFFF : 0x18000000));
-        button.setTextColor(primary ? Color.WHITE : INK);
+        button.setTextColor(new ColorStateList(
+                new int[][] {new int[] {-android.R.attr.state_enabled}, new int[] {}},
+                new int[] {primary ? Color.rgb(207, 220, 222) : MUTED,
+                        primary ? Color.WHITE : INK}));
         button.setStateListAnimator(null);
         button.setElevation(dp(context, 0));
         return button;
     }
 
     static void styleCheckable(View view, Context context) {
-        view.setMinimumHeight(dp(context, 48));
+        view.setMinimumHeight(dp(context, 64));
         if (view instanceof android.widget.CompoundButton) {
             ((android.widget.CompoundButton) view).setButtonTintList(
                     ColorStateList.valueOf(PRIMARY));
@@ -183,8 +186,8 @@ final class UiKit {
 
         LinearLayout labels = vertical(context);
         labels.setPadding(dp(context, 12), 0, 0, 0);
-        labels.addView(text(context, "听野", 16, INK, true));
-        labels.addView(text(context, contextLabel, 16, MUTED, false));
+        labels.addView(text(context, "听野", 20, INK, true));
+        labels.addView(text(context, contextLabel, 20, MUTED, false));
         row.addView(labels, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         add(parent, row, 24);

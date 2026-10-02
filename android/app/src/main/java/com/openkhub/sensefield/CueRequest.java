@@ -11,7 +11,7 @@ final class CueRequest {
         DANGER,
         PLAYER_STATE,
         SYSTEM,
-        /** An enemy marker entered the player's minimap near zone, or the radar paused/resumed. */
+        /** An enemy marker entered the player's minimap near zone. */
         NEAR_ZONE
     }
 

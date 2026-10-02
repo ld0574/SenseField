@@ -2,6 +2,7 @@ package com.openkhub.sensefield;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.util.Base64;
@@ -28,7 +29,7 @@ final class GameProfile {
     static final boolean DEFAULT_ALLOW_EXPERIMENTAL = true;
     static final String PREF_VISION_MEMORY = "vision_memory";
     static final boolean DEFAULT_VISION_MEMORY = true;
-    /** Opt back into the frozen 320 enemy-only profile, which has no near-zone cues. */
+    /** Legacy developer preference; patient/release builds always auto-select. */
     static final String PREF_BASELINE_MODEL = "use_baseline_model";
 
     // The frozen 320 enemy-only profile stays the release baseline and test
@@ -225,21 +226,27 @@ final class GameProfile {
     }
 
     /**
-     * Resolve the active profile: an imported profile wins; otherwise the
-     * dual-class near-zone profile unless the user chose the baseline or its
-     * private weights are absent, in which case the frozen 320 profile runs.
+     * Resolve the active profile without requiring a patient to understand
+     * model variants. Development-only imports and the legacy baseline switch
+     * remain available to local debug builds; release builds always choose the
+     * bundled dual-class profile and fall back to the 320 profile when its
+     * private weights are unavailable.
      */
     static Loaded loadResolved(Context context) throws IOException, JSONException {
         SharedPreferences preferences = settings(context);
+        boolean debugBuild = (context.getApplicationInfo().flags
+                & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
         File imported = new File(context.getFilesDir(), IMPORTED_FILE);
-        if (imported.exists()) {
+        if (debugBuild && imported.exists()) {
             try (InputStream stream = new FileInputStream(imported)) {
                 return new Loaded(bind(context, readText(stream), preferences),
                         SOURCE_IMPORTED, null);
             }
         }
-        String fallbackReason = "baseline_selected_in_settings";
-        if (!preferences.getBoolean(PREF_BASELINE_MODEL, false)) {
+        String fallbackReason = null;
+        if (debugBuild && preferences.getBoolean(PREF_BASELINE_MODEL, false)) {
+            fallbackReason = "baseline_selected_in_legacy_debug_setting";
+        } else {
             try {
                 return new Loaded(bindAsset(context, NEAR_ZONE_PROFILE_ASSET, preferences),
                         SOURCE_NEAR_ZONE_ASSET, null);

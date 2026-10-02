@@ -109,6 +109,10 @@ struct Session {
     ma_player_state_matcher *player_state_matcher = nullptr;
     ma_rect player_state_roi{};
     ma_relation *relation = nullptr;
+    // Read-only diagnostics: retained before temporal/age filtering. Never
+    // fed back into the recognizer, tracker or cue policy.
+    std::vector<ma_observation> diagnostic_observations;
+    int64_t diagnostic_engine_at_ms = -1;
     ncnn::Net yolox;
 
     ~Session() {
@@ -240,6 +244,9 @@ bool load_yolox(AAssetManager *assets, Session &session) {
     }
     session.yolox.opt.lightmode = true;
     session.yolox.opt.num_threads = 2;
+    // Sampled inference has idle gaps. Let OpenMP workers sleep immediately
+    // instead of spending the default 20 ms busy-waiting after each layer.
+    session.yolox.opt.openmp_blocktime = 0;
     session.yolox.opt.use_packing_layout = true;
     session.yolox.opt.use_fp16_packed = false;
     session.yolox.opt.use_fp16_storage = false;
@@ -603,6 +610,10 @@ Java_com_openkhub_sensefield_NativeBridge_nativeProcess(
     result[20] = -1000;
     auto *session = reinterpret_cast<Session *>(handle);
     auto *rgba = frame ? static_cast<uint8_t *>(env->GetDirectBufferAddress(frame)) : nullptr;
+    if (session) {
+        session->diagnostic_observations.clear();
+        session->diagnostic_engine_at_ms = -1;
+    }
     const jlong capacity = frame ? env->GetDirectBufferCapacity(frame) : -1;
     const int64_t required = static_cast<int64_t>(height - 1) * row_stride +
                              static_cast<int64_t>(width) * 4;
@@ -678,6 +689,8 @@ Java_com_openkhub_sensefield_NativeBridge_nativeProcess(
         const auto detected = std::chrono::steady_clock::now();
         const int64_t processing_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 detected - start).count();
+        session->diagnostic_observations = observations;
+        session->diagnostic_engine_at_ms = processing_now_ms + processing_ms;
         ma_cue cue{};
         const int cue_count = ma_engine_step(
                 session->engine, observations.data(), static_cast<int>(observations.size()),
@@ -771,10 +784,37 @@ Java_com_openkhub_sensefield_NativeBridge_nativeConfigureRelation(
     return JNI_TRUE;
 }
 
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_com_openkhub_sensefield_NativeBridge_nativeReadDiagnosticSnapshot(
+        JNIEnv *env, jclass, jlong handle) {
+    auto *session = reinterpret_cast<Session *>(handle);
+    const size_t count = session ? session->diagnostic_observations.size() : 0;
+    std::vector<jlong> packed(2 + count * 8);
+    packed[0] = session ? session->diagnostic_engine_at_ms : -1;
+    packed[1] = static_cast<jlong>(count);
+    for (size_t i = 0; i < count; ++i) {
+        const ma_observation &o = session->diagnostic_observations[i];
+        const size_t base = 2 + i * 8;
+        packed[base] = o.kind;
+        packed[base + 1] = o.direction;
+        packed[base + 2] = std::lround(o.bbox.x * 1000000.0f);
+        packed[base + 3] = std::lround(o.bbox.y * 1000000.0f);
+        packed[base + 4] = std::lround(o.bbox.w * 1000000.0f);
+        packed[base + 5] = std::lround(o.bbox.h * 1000000.0f);
+        packed[base + 6] = std::lround(o.confidence * 1000.0f);
+        packed[base + 7] = o.timestamp_ms;
+    }
+    jlongArray out = env->NewLongArray(static_cast<jsize>(packed.size()));
+    if (out) env->SetLongArrayRegion(out, 0, static_cast<jsize>(packed.size()), packed.data());
+    return out;
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_openkhub_sensefield_NativeBridge_nativeReset(JNIEnv *, jclass, jlong handle) {
     auto *session = reinterpret_cast<Session *>(handle);
     if (session) {
+        session->diagnostic_observations.clear();
+        session->diagnostic_engine_at_ms = -1;
         ma_engine_reset(session->engine);
         ma_minimap_locator_reset(session->minimap_locator);
         ma_relation_reset(session->relation);

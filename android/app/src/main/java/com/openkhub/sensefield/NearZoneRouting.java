@@ -36,7 +36,7 @@ final class NearZoneRouting {
     static final long NEAR_SPEECH_DEDUPE_MS = 1000;
 
     private static final String[] SECTOR_NAMES = {
-            null, "右", "右上", "上", "左上", "左", "左下", "下", "右下"};
+            null, "右方", "右上", "上方", "左上", "左方", "左下", "下方", "右下"};
     private static final String[] STATE_NAMES = {
             "UNKNOWN", "CLEAR", "PENDING", "OCCUPIED", "REARM"};
 
@@ -44,7 +44,7 @@ final class NearZoneRouting {
 
     /** Short factual phrase; no “danger”, “safe” or intent words. */
     static String speech(int sector) {
-        if (sector >= 1 && sector <= 8) return SECTOR_NAMES[sector] + "，敌人";
+        if (sector >= 1 && sector <= 8) return SECTOR_NAMES[sector] + "有敌人";
         return "附近有敌人";
     }
 
@@ -54,13 +54,21 @@ final class NearZoneRouting {
         return hapticEnabled ? channels | CueRequest.CHANNEL_HAPTIC : channels;
     }
 
+    /** Standard mode carries the same event through speech, tone and haptic output. */
+    static int nearChannels(boolean hapticEnabled, int enabledChannels) {
+        return nearChannels(hapticEnabled, enabledChannels, false);
+    }
+
     /**
-     * Radar status is tone-only in every preset. Speech here would start the
-     * category speech cooldown and could swallow a near-zone phrase that
-     * follows a respawn within a second.
+     * Apply the selected channels. The preference flag remains for old callers
+     * and compact/custom experiments; the standard path keeps all three
+     * near-zone outputs so speech is not the only semantic channel.
      */
-    static int radarChannels() {
-        return CueRequest.CHANNEL_TONE;
+    static int nearChannels(boolean hapticEnabled, int enabledChannels, boolean preferSpeech) {
+        int channels = nearChannels(hapticEnabled);
+        if (preferSpeech && (enabledChannels & CueRequest.CHANNEL_SPEECH) != 0)
+            channels &= ~CueRequest.CHANNEL_TONE;
+        return channels & enabledChannels;
     }
 
     /**

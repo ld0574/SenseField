@@ -7,11 +7,13 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.os.VibrationAttributes;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
+import android.speech.tts.Voice;
 import android.util.Log;
 
 import java.io.File;
@@ -25,9 +27,14 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 final class CuePlayer implements CueDispatcher.Renderer {
+    static final String PREF_TTS_ENGINE = "cue_tts_engine";
+    static final String PREF_TTS_RATE = "cue_speech_rate_percent";
+    static final int DEFAULT_TTS_RATE_PERCENT = 180;
+    static final long NEAR_HAPTIC_ON_MS = 100;
+    static final long NEAR_HAPTIC_GAP_MS = 140;
     private static final String TAG = "MapAssistAudio";
     private static final long TONE_DURATION_MS = 90;
-    private static final long RADAR_TONE_DURATION_MS = 160;
+    private static final long SPEECH_TIMEOUT_MS = 4000;
 
     private final Context context;
     private final SoundPool pool;
@@ -47,7 +54,8 @@ final class CuePlayer implements CueDispatcher.Renderer {
     CuePlayer(Context context) {
         this.context = context.getApplicationContext();
         AudioAttributes attributes = new AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                // Game cues follow media volume, including when the ringer is silent.
+                .setUsage(AudioAttributes.USAGE_GAME)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .build();
         pool = new SoundPool.Builder().setMaxStreams(2).setAudioAttributes(attributes).build();
@@ -76,14 +84,8 @@ final class CuePlayer implements CueDispatcher.Renderer {
             loadTone(3, "ping", 1100);
             loadTone(4, "death", 360);
             loadTone(5, "respawn", 920);
-            // Near-zone sounds: a short bright steady tone for an entering
-            // enemy, and falling/rising sweeps for radar pause and resume.
-            // All stay clear of the 360 Hz death tone.
-            loadTone(NearZoneRouting.TONE_NEAR, "near", 760, 760, TONE_DURATION_MS);
-            loadTone(NearZoneRouting.TONE_RADAR_PAUSED, "radar_paused", 420, 260,
-                    RADAR_TONE_DURATION_MS);
-            loadTone(NearZoneRouting.TONE_RADAR_RESUMED, "radar_resumed", 330, 520,
-                    RADAR_TONE_DURATION_MS);
+            // With speech off, the bright double beep means a nearby enemy.
+            loadTone(NearZoneRouting.TONE_NEAR, "near", 900, 900, 240, 2);
         } catch (IOException error) {
             Log.e(TAG, "Cannot prepare cue tones", error);
         }
@@ -96,7 +98,12 @@ final class CuePlayer implements CueDispatcher.Renderer {
 
     private void loadTone(int kind, String name, int startFrequency, int endFrequency,
                           long durationMs) throws IOException {
-        int sample = pool.load(writeTone(name, startFrequency, endFrequency, durationMs)
+        loadTone(kind, name, startFrequency, endFrequency, durationMs, 1);
+    }
+
+    private void loadTone(int kind, String name, int startFrequency, int endFrequency,
+                          long durationMs, int pulses) throws IOException {
+        int sample = pool.load(writeTone(name, startFrequency, endFrequency, durationMs, pulses)
                 .getAbsolutePath(), 1);
         if (sample == 0) Log.e(TAG, "SoundPool rejected cue tone kind=" + kind);
         else {
@@ -106,7 +113,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
     }
 
     private File writeTone(String name, int startFrequency, int endFrequency,
-                           long durationMs) throws IOException {
+                           long durationMs, int pulses) throws IOException {
         final int sampleRate = 48000;
         final int samples = (int) (sampleRate * durationMs / 1000);
         final int dataBytes = samples * 2;
@@ -127,9 +134,13 @@ final class CuePlayer implements CueDispatcher.Renderer {
             // Integrate the instantaneous frequency so a sweep stays click-free;
             // equal start/end frequencies reproduce the original steady tone.
             double phase = 0.0;
+            int gap = pulses > 1 ? sampleRate * 65 / 1000 : 0;
+            int pulseSamples = (samples - gap * (pulses - 1)) / pulses;
             for (int i = 0; i < samples; i++) {
-                double envelope = Math.min(1.0, i / 400.0)
-                        * Math.min(1.0, (samples - i) / 800.0);
+                int inPulse = i % (pulseSamples + gap);
+                double envelope = inPulse >= pulseSamples ? 0.0
+                        : Math.min(1.0, inPulse / 400.0)
+                        * Math.min(1.0, (pulseSamples - inPulse) / 800.0);
                 double frequency = startFrequency
                         + (endFrequency - startFrequency) * (double) i / samples;
                 short value = (short) (Math.sin(phase) * 13000 * envelope);
@@ -152,6 +163,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
 
     private void prepareVoices() {
         try {
+            String selectedEngine = GameProfile.settings(context).getString(PREF_TTS_ENGINE, "");
             tts = new TextToSpeech(context, status -> mainHandler.post(() -> {
                 synchronized (audioLock) {
                     if (closed || status != TextToSpeech.SUCCESS || tts == null) return;
@@ -161,7 +173,26 @@ final class CuePlayer implements CueDispatcher.Renderer {
                             Log.w(TAG, "Chinese TTS voice unavailable; short tones remain active");
                             return;
                         }
-                        tts.setSpeechRate(1.25f);
+                        int speechRate = GameProfile.settings(context).getInt(PREF_TTS_RATE,
+                                DEFAULT_TTS_RATE_PERCENT);
+                        tts.setSpeechRate(Math.max(80, Math.min(240, speechRate)) / 100f);
+                        tts.setAudioAttributes(new AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_GAME)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
+                        // Prefer an installed Chinese voice that does not require a
+                        // network request. Keep the user's engine and language fallback.
+                        Set<Voice> voices = tts.getVoices();
+                        if (voices != null) {
+                            Voice offline = voices.stream()
+                                    .filter(value -> "zh".equals(value.getLocale().getLanguage())
+                                            && !value.isNetworkConnectionRequired())
+                                    .sorted(java.util.Comparator.comparing(Voice::getName))
+                                    .findFirst().orElse(null);
+                            if (offline != null) tts.setVoice(offline);
+                        }
+                        Log.i(TAG, "TTS prepared engine=" + (selectedEngine.isEmpty()
+                                ? tts.getDefaultEngine() : selectedEngine)
+                                + " voice=" + tts.getVoice());
                         ttsReady = true;
                         tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                             @Override public void onStart(String id) {
@@ -192,7 +223,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
                         Log.w(TAG, "Could not prepare optional TTS; short tones remain active", error);
                     }
                 }
-            }));
+            }), selectedEngine.isEmpty() ? null : selectedEngine);
         } catch (RuntimeException error) {
             tts = null;
             ttsReady = false;
@@ -266,7 +297,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
     @Override public boolean vibrate(CueRequest request) {
         synchronized (audioLock) {
             return !closed && SystemClock.elapsedRealtime() <= request.expiresAtMs
-                    && vibrate(request.hapticCode);
+                    && vibrateEffect(request);
         }
     }
 
@@ -289,13 +320,28 @@ final class CuePlayer implements CueDispatcher.Renderer {
             int result = voice.speak(request.speech,
                     interrupt ? TextToSpeech.QUEUE_FLUSH : TextToSpeech.QUEUE_ADD,
                     parameters, utteranceId);
-            if (result == TextToSpeech.SUCCESS) return true;
+            if (result == TextToSpeech.SUCCESS) {
+                mainHandler.postDelayed(() -> {
+                    // A remote engine can report onStart while waiting tens of
+                    // seconds for synthesis. Bound that wait and release the queue.
+                    if (!speechCallbacks.remove(utteranceId, callback)) return;
+                    Log.w(TAG, "TTS timed out for " + utteranceId);
+                    try { voice.stop(); }
+                    catch (RuntimeException error) {
+                        Log.w(TAG, "Could not stop timed-out speech", error);
+                    }
+                    callback.onFinished(SystemClock.elapsedRealtime(), false);
+                }, SPEECH_TIMEOUT_MS);
+                return true;
+            }
         } catch (RuntimeException error) {
             Log.w(TAG, "Could not queue accessibility speech", error);
         }
         speechCallbacks.remove(utteranceId, callback);
         return false;
     }
+
+    boolean speechReady() { return ttsReady && !closed; }
 
     @Override public void stopSpeech() {
         TextToSpeech voice;
@@ -332,7 +378,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
         }
     }
 
-    private boolean vibrate(int direction) {
+    private boolean vibrateEffect(CueRequest request) {
         try {
             Vibrator vibrator;
             if (android.os.Build.VERSION.SDK_INT >= 31) {
@@ -341,17 +387,40 @@ final class CuePlayer implements CueDispatcher.Renderer {
             } else {
                 vibrator = context.getSystemService(Vibrator.class);
             }
-            if (vibrator == null || !vibrator.hasVibrator()) return false;
+            if (vibrator == null || !vibrator.hasVibrator()) {
+                Log.w(TAG, "HapticRequest unavailable=no_vibrator cueId=" + request.cueId);
+                return false;
+            }
+            int direction = request.hapticCode;
             long[] pattern;
-            if (direction == 1) pattern = new long[]{0, 35, 45, 80};
+            if (request.category == CueRequest.Category.NEAR_ZONE)
+                pattern = new long[]{0, NEAR_HAPTIC_ON_MS, NEAR_HAPTIC_GAP_MS,
+                        NEAR_HAPTIC_ON_MS};
+            else if (direction == 1) pattern = new long[]{0, 35, 45, 80};
             else if (direction == 2) pattern = new long[]{0, 80, 45, 35};
             else if (direction == 3) pattern = new long[]{0, 35};
             else if (direction == 4) pattern = new long[]{0, 35, 45, 35};
             else pattern = new long[]{0, 45};
-            vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1));
+            VibrationEffect effect = VibrationEffect.createWaveform(pattern, -1);
+            // Untagged short effects become TOUCH and are silently suppressed
+            // when touch feedback is off. These are accessibility cues, not
+            // taps; keep all system interruption settings in force.
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                vibrator.vibrate(effect, VibrationAttributes.createForUsage(
+                        VibrationAttributes.USAGE_ACCESSIBILITY));
+            } else {
+                vibrator.vibrate(effect, new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+            }
+            long durationMs = 0;
+            for (long part : pattern) durationMs += part;
+            // The API is void: submission is not proof the user felt vibration.
+            Log.i(TAG, "HapticRequest cueId=" + request.cueId
+                    + " usage=ACCESSIBILITY durationMs=" + durationMs);
             return true;
         } catch (RuntimeException error) {
-            Log.w(TAG, "Could not play vision-memory haptic", error);
+            Log.w(TAG, "Could not request accessibility haptic", error);
             return false;
         }
     }

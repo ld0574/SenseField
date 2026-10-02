@@ -33,6 +33,9 @@ final class NativeBridge {
                                       int width, int height, int rowStride,
                                       long frameTimestampMs, long processingNowMs);
 
+    /** Same worker/processing lock as nativeProcess; read before the next frame. */
+    static native long[] nativeReadDiagnosticSnapshot(long session);
+
     static NativeFrameResult parseFrameResult(int[] packed, long frameTimestampMs) {
         return NativeFrameResult.parse(packed, frameTimestampMs);
     }

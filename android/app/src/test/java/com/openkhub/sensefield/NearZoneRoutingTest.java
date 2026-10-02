@@ -8,10 +8,10 @@ import org.junit.Test;
 
 public final class NearZoneRoutingTest {
     @Test public void speechNamesEightMinimapSectorsFactually() {
-        assertEquals("右，敌人", NearZoneRouting.speech(1));
-        assertEquals("上，敌人", NearZoneRouting.speech(3));
-        assertEquals("左上，敌人", NearZoneRouting.speech(4));
-        assertEquals("右下，敌人", NearZoneRouting.speech(8));
+        assertEquals("右方有敌人", NearZoneRouting.speech(1));
+        assertEquals("上方有敌人", NearZoneRouting.speech(3));
+        assertEquals("左上有敌人", NearZoneRouting.speech(4));
+        assertEquals("右下有敌人", NearZoneRouting.speech(8));
         assertEquals("附近有敌人", NearZoneRouting.speech(0));
         assertEquals("附近有敌人", NearZoneRouting.speech(9));
         for (int sector = 0; sector <= 8; sector++) {
@@ -19,6 +19,18 @@ public final class NearZoneRoutingTest {
             assertFalse(phrase.contains("危险"));
             assertFalse(phrase.contains("安全"));
         }
+    }
+
+    @Test public void standardNearCueCarriesSpeechToneAndHapticTogether() {
+        assertEquals(CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH,
+                NearZoneRouting.nearChannels(false, CueRequest.CHANNEL_TONE
+                        | CueRequest.CHANNEL_SPEECH | CueRequest.CHANNEL_HAPTIC));
+        assertEquals(CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH
+                        | CueRequest.CHANNEL_HAPTIC,
+                NearZoneRouting.nearChannels(true, 15));
+        assertEquals(CueRequest.CHANNEL_TONE,
+                NearZoneRouting.nearChannels(false, CueRequest.CHANNEL_TONE));
+        assertEquals(0, NearZoneRouting.nearChannels(false, CueRequest.CHANNEL_VISUAL));
     }
 
     @Test public void stereoGainsKeepLegacyHardPanAndCentre() {
@@ -39,16 +51,32 @@ public final class NearZoneRoutingTest {
         assertEquals(1f, invalid[1], 1e-6f);
     }
 
+    @Test public void detailedHonorsToneSpeechAndHapticTogether() {
+        assertEquals(CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH
+                        | CueRequest.CHANNEL_HAPTIC,
+                NearZoneRouting.nearChannels(true, 15, false));
+        assertEquals(CueRequest.CHANNEL_SPEECH | CueRequest.CHANNEL_HAPTIC,
+                NearZoneRouting.nearChannels(true,
+                        CueRequest.CHANNEL_SPEECH | CueRequest.CHANNEL_HAPTIC, false));
+        assertEquals(CueRequest.CHANNEL_TONE,
+                NearZoneRouting.nearChannels(false, CueRequest.CHANNEL_TONE, false));
+    }
+
     @Test public void channelsAndFarAppearRule() {
         assertEquals(CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH,
                 NearZoneRouting.nearChannels(false));
         assertEquals(CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH
                 | CueRequest.CHANNEL_HAPTIC, NearZoneRouting.nearChannels(true));
-        assertEquals(CueRequest.CHANNEL_TONE, NearZoneRouting.radarChannels());
         assertTrue(NearZoneRouting.farAppearAudible(false, true, false));
         assertFalse(NearZoneRouting.farAppearAudible(true, true, false));
         assertTrue(NearZoneRouting.farAppearAudible(true, true, true));
         assertTrue(NearZoneRouting.farAppearAudible(true, false, false));
+    }
+
+    @Test public void nearOutputDefaultsMatchAccessibleBaseline() {
+        assertEquals(180, CuePlayer.DEFAULT_TTS_RATE_PERCENT);
+        assertEquals(100, CuePlayer.NEAR_HAPTIC_ON_MS);
+        assertEquals(140, CuePlayer.NEAR_HAPTIC_GAP_MS);
     }
 
     @Test public void logNamesMatchTheParserVocabulary() {

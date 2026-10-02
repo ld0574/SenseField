@@ -153,7 +153,8 @@ final class CueDispatcher implements AutoCloseable {
         if ((accepted & CueRequest.CHANNEL_SPEECH) != 0 && request.speech != null
                 && !request.speech.isEmpty()) {
             Long last = lastSpeech.get(request.category);
-            if (request.priority != 100 && last != null &&
+            if (request.priority != 100 && request.category != CueRequest.Category.NEAR_ZONE
+                    && last != null &&
                     now - last < policy.dedupeWindowMs(request.category)) {
                 accepted &= ~CueRequest.CHANNEL_SPEECH;
                 suppressionReason = "speech_cooldown";
@@ -177,12 +178,29 @@ final class CueDispatcher implements AutoCloseable {
     }
 
     private boolean enqueueSpeech(CueRequest request) {
-        if (request.priority == 100 && speaking != null && speaking.priority < request.priority) {
+        if (request.priority >= 90 && speaking != null && speaking.priority < request.priority) {
             CueRequest preempted = speaking;
             cancelledSpeech.add(preempted.cueId);
             renderer.stopSpeech();
             speaking = null;
             listener.onPlayback(preempted, "SPEECH", clock.nowMs(), "PREEMPTED");
+        }
+        if (request.category == CueRequest.Category.NEAR_ZONE) {
+            // A near-zone phrase becomes stale quickly. Keep one pending
+            // near-zone utterance and replace it with the newest episode.
+            Pending replaced = null;
+            for (Pending candidate : speechQueue) {
+                if (candidate.request.category == CueRequest.Category.NEAR_ZONE) {
+                    if (replaced == null || candidate.sequence < replaced.sequence) {
+                        replaced = candidate;
+                    }
+                }
+            }
+            if (replaced != null) {
+                speechQueue.remove(replaced);
+                listener.onPlayback(replaced.request, "SPEECH", clock.nowMs(),
+                        "QUEUE_REPLACED");
+            }
         }
         if (speechQueue.size() >= MAX_PENDING) {
             Pending worst = null;
@@ -234,14 +252,15 @@ final class CueDispatcher implements AutoCloseable {
                 continue;
             }
             Long lastStarted = lastSpeechStarted.get(next.category);
-            if (next.priority != 100 && lastStarted != null &&
+            if (next.priority != 100 && next.category != CueRequest.Category.NEAR_ZONE
+                    && lastStarted != null &&
                     clock.nowMs() - lastStarted < policy.dedupeWindowMs(next.category)) {
                 listener.onPlayback(next, "SPEECH", clock.nowMs(), "COOLDOWN");
                 continue;
             }
             final long playbackEpoch = speechEpoch;
             speaking = next;
-            boolean accepted = renderer.speak(next, next.priority == 100,
+            boolean accepted = renderer.speak(next, next.priority >= 90,
                     new PlaybackCallback() {
                         @Override public void onStarted(long atMs) {
                             synchronized (CueDispatcher.this) {

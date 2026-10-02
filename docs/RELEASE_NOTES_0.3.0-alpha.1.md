@@ -1,78 +1,39 @@
 # 听野 SenseField 0.3.0-alpha.1
 
-> GitHub pre-release developer preview 草稿。发布前请由团队逐项核对[检查清单](RELEASE_CHECKLIST_0.3.0-alpha.1.md)，并在 GitHub 上勾选 **pre-release**。
+2026-10-01 团队测试版（GitHub pre-release）。[下载入口](https://github.com/ld0574/SenseField/releases/tag/v0.3.0-alpha.1)。
 
-## 这是什么
+## 本次变化
 
-`0.3.0-alpha.1` 是用于审阅端侧链路、提示交互和公开仓库边界的 Android developer preview，版本号为 `versionCode 7`。它仍是实验原型，不是最终验收版本，也不代表对目标游戏的官方支持。
+- 标准模式直接播报“上方有敌人”等附近敌人方位，并默认开启两次短震动。
+- 去掉定位失效／恢复的提示音和语音，这些变化只记后台日志。关闭方位语音时，附近敌人用清楚的双音提示。
+- 修正震动被系统归为触摸反馈而忽略的问题，明确使用无障碍提示用途；配置中增加“测试震动”。不更改手机全局震动设置。
+- 配置中可选择 TTS 引擎、调节语速和测试提醒；默认 1.6 倍，已有引擎与语速保留。
+- 主页的开始／停止互斥，设置与返回游戏选择位于底部；设置页底部提供返回辅助主页。统一授权菜单，大字号、大按钮。
+- 详细模式开启全部提示通道与事件开关。自定义设置、识别选项、音量和语音引擎不被预设升级覆盖。
+- Android 14+ 请求整屏共享。遇到黑帧先等待并移除本应用悬浮层；黑帧不做识别，持续 30 秒无画面才停止。
 
-## 本候选包含
+## 给队友的测试步骤
 
-- 用户主动授权后的 Android `MediaProjection` 整屏采集。
-- 设备本地的小地图实验识别、事件筛选以及声音、触觉和可选视觉提示链路。
-- 运行状态通知和可选的非交互悬浮提示层。
-- 当前 APK 只构建 `arm64-v8a`，最低 Android API 29，目标 API 35。
+1. 安装下方 APK，进入王者荣耀 → 设置 → 授权与运行设置，检查通知及后台运行设置。
+2. 配置与调参中选择可用中文语音引擎，调高媒体音量，分别点击“测试提醒”和“测试震动”。
+3. 返回主页点击开始，确认系统整屏共享；进入游戏。结束后停止辅助。
+4. 反馈：是否听到方位语音、是否感觉到震动、方向是否正确、有无附近实际没人却提醒、是否卡顿／发热。误报尽量记下对局时间。
 
-## 权限用途和数据边界
+消消乐方向由队友继续完善；当前入口标为即将适配。
 
-- `MediaProjection`：每次截屏会话由用户在系统对话框明确授权，用于获取整屏帧；停止共享后服务应停止处理。
-- `SYSTEM_ALERT_WINDOW`：仅用于获得用户允许后显示非交互的悬浮提示层；它不接收触控，也不代替游戏输入。
-- `POST_NOTIFICATIONS`：用于前台截屏服务的运行状态、暂停和健康提示，不用于上传内容。
-- 屏幕帧、模型推理和事件筛选在设备本地完成；项目不读取游戏进程或内存，也不上传屏幕画面。
+## 文件与签名
 
-## 已知限制
+- APK：`sensefield-0.3.0-alpha.1-arm64-v8a-release-debug-signed-candidate.apk`，14,775,158 bytes；SHA-256：`8638eca6695444b1526f91013e07b879ecc178bc01a7dc32c497d4fb705d6286`。
+- 包名 `com.openkhub.sensefield`；versionName `0.3.0-alpha.1`，versionCode `7`。
+- Release 构建，debuggable=false；arm64-v8a，最低 Android 10 / API 29，目标 API 35。
+- 沿用既有 Android Debug 证书，v2 核验通过；证书 SHA-256：`5a42a53a8f06850e89c46ea193931e9853e3ce7cff99551b42e8b414a1eaaf68`。这是供团队测试的预发布包，不是生产证书签名。
 
-- 内置 HD 小地图模型是实验候选，尚未通过独立留出对局验收。当前开发评估不能写成独立测试成绩。v6 512 双类模型已完成 ONNX/TorchScript/ncnn 导出，产物和报告位于忽略目录 `build/ignored/v6-512-export`；ONNX raw 严格门禁失败（最大误差 `0.0006387 > 0.0005`），但 12 张图的最终 detection arrays 全部一致；ncnn Android 等价严格门禁通过。2 线程桌面 preprocess+inference P95 为 `28.9552 ms`。本次未改 Android assets/profile，当前 release APK 仍绑定单类 `minimap_enemy`；test 为空且尚无独立测试对局或 Android 真机验证，仍未达到 release-ready。
-- 主画面边缘复核批次已完成人工复核：160 张中 47 张 `corrected`、113 张 `negative`，共 114 个框；完成审计见 `data/private/main-edge-review-v1/review-batch-v1/review-completion-audit.json`。这些红色候选和困难负样本只用于诊断，不能作为 `enemy hero` 真值，因为小兵、野怪也可能有相似血条，且镜头会漂移。主画面边缘分支默认关闭，发布版不启用。后续必须先做上下文英雄分类和玩家相关性门；详见[主画面边缘复核记录](../validation/MAIN_EDGE_REVIEW.md)。
-- 当前仅支持 `arm64-v8a`。发布页面必须同时写明这一限制，并提供 APK SHA-256。
-- Android 14 首轮实体机只证明了部分授权、横屏采集、ncnn 和提示播放链路；端到端 P95、连续 15 分钟会话和目标玩家体验尚未完成最终验收。
-- 首装实验开关和新头像提醒的默认状态仍可在应用设置中关闭；实验模型不应被表述为已验证的游戏识别能力。
+## 验证与已知限制
 
-## 构建和签名
+JVM 93/93、Debug/Release 构建与 lint 通过，lint 仅有既有 mipmap 警告；Python 全量 449 通过、1 既有条件跳过，日志解析回归 22/22；原生 Debug CTest 3/3。公开仓库检查和 APK 模型／profile 哈希检查通过。
 
-从仓库根目录运行：
+上一份包完成一局记录（含准备阶段共 11 分 34 秒）：18 次方位语音完成回调；测试者实际听到语音，反馈方向正确、好用，同时报告 1～2 次疑似误报、未感觉到震动。系统记录这 18 次震动因触摸反馈设置而被忽略。本包加入了后续震动和声音修正，交由队友继续整局复测。[真机记录](../validation/ANDROID_LIVE_SMOKE_2026-10-01.md)保留不同 APK 的证据边界。
 
-```sh
-bash scripts/build_android_preview.sh
-```
+双类 v6 512 近区模型仍为实验版，confidence=0.57、R_enter=0.20 未标定、verified=false；开发 val 参与选模，test 为空。冻结的 320 基线未变，双类权重缺失时回退。主画面边缘候选分支关闭。至少 15 分钟连续运行、真实发声端到端延迟、近区误报／漏报逐条标定、发热对照和目标玩家试玩尚未完成，不宣称通过最终验收。
 
-未提供完整签名环境变量时，脚本只构建并核验 Debug candidate，输出名称为：
-
-```text
-sensefield-0.3.0-alpha.1-arm64-v8a-debug-candidate.apk
-```
-
-需要签名的 release candidate 时，由发布者在构建环境中提供以下四个变量：
-
-```text
-SENSEFIELD_KEYSTORE_PATH
-SENSEFIELD_KEY_ALIAS
-SENSEFIELD_KEYSTORE_PASSWORD
-SENSEFIELD_KEY_PASSWORD
-```
-
-四个变量必须同时存在；脚本只读取已有发布 keystore，不生成、复制或提交发布 keystore，不把密码写入仓库，也不会调用 GitHub Release。没有签名变量时，Debug candidate 沿用 Android Gradle 的标准 debug signing。签名 candidate 应使用：
-
-```text
-sensefield-0.3.0-alpha.1-arm64-v8a-signed-candidate.apk
-```
-
-脚本会在 APK 旁生成同名 `.sha256` 文件，并输出文件大小、SHA-256 和签名证书摘要。发布附件前重新核对这些值，并在 GitHub Release body 中保留上述限制。
-
-## 当前已核验候选
-
-2026-09-30 在本地构建的 Debug candidate：
-
-```text
-android/app/build/outputs/preview/sensefield-0.3.0-alpha.1-arm64-v8a-debug-candidate.apk
-17,156,242 bytes
-SHA-256 49043142158a360abb7bb3c5d8c9c7ed24828374f67bdb888e9eedcb445a6b0a
-```
-
-`apksigner` 确认 v2 签名有效，signer 为 Android Debug，证书 SHA-256 为 `5a42a53a8f06850e89c46ea193931e9853e3ce7cff99551b42e8b414a1eaaf68`。`aapt` 确认包名 `com.openkhub.sensefield`、versionCode 7、versionName `0.3.0-alpha.1`、minSdk 29 和 targetSdk 35；APK 仅包含 `arm64-v8a`。如重新构建，必须以新产物的大小、哈希和签名输出替换这组值。
-
-## 发布文案建议
-
-可以把下面这段作为 GitHub pre-release 摘要：
-
-> 听野 SenseField `0.3.0-alpha.1` 是 Android arm64-v8a developer preview，用于审阅用户授权的整屏采集、端侧实验识别和提示链路。实验小地图模型尚未通过独立留出验收，公共默认 profile 关闭主画面边缘候选分支且上下文分类器尚未接入；MediaProjection、悬浮窗和通知权限的用途见 README。请把它视为研究原型，先阅读已知限制并核对 APK SHA-256。
+屏幕采集、推理和筛选在设备本地运行，不上传画面，不读取游戏进程或内存。MediaProjection 用于每次明确授权后的整屏帧，POST_NOTIFICATIONS 用于运行状态，SYSTEM_ALERT_WINDOW 用于可选视觉提示。安装包不包含私有日志、录像、玩家资料或签名材料。

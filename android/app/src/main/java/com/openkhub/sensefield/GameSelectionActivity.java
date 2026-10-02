@@ -97,7 +97,7 @@ public final class GameSelectionActivity extends Activity {
         labelsParams.rightMargin = UiKit.dp(this, 12);
         button.addView(labels, labelsParams);
 
-        TextView status = UiKit.text(this, available ? "开始辅助" : "即将适配", 18,
+        TextView status = UiKit.text(this, available ? "开始辅助" : "即将适配", 20,
                 available ? UiKit.PRIMARY : UiKit.MUTED, true);
         status.setGravity(Gravity.CENTER);
         status.setPadding(UiKit.dp(this, 10), UiKit.dp(this, 8),

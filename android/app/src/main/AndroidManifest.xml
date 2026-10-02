@@ -21,6 +21,21 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:usesCleartextTraffic="false">
+        <provider
+            android:name=".DiagnosticFileProvider"
+            android:authorities="${applicationId}.diagnostics"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/diagnostic_paths" />
+        </provider>
+        <activity android:name=".DiagnosticsActivity" android:exported="false" />
+        <activity
+            android:name=".AppSettingsActivity"
+            android:exported="false" />
+        <activity
+            android:name=".CapturePermissionsActivity"
+            android:exported="false" />
         <activity
             android:name=".AlertSettingsActivity"
             android:exported="false" />

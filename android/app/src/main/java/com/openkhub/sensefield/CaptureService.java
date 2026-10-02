@@ -31,6 +31,8 @@ import java.util.List;
 import java.util.UUID;
 
 public final class CaptureService extends Service {
+    private static volatile boolean running;
+    static boolean isRunning() { return running; }
     static final String ACTION_START = "com.openkhub.sensefield.START";
     static final String ACTION_TOGGLE_PAUSE = "com.openkhub.sensefield.TOGGLE_PAUSE";
     static final String ACTION_STOP = "com.openkhub.sensefield.STOP";
@@ -42,8 +44,6 @@ public final class CaptureService extends Service {
     private static final int NOTIFICATION_ID = 104;
     private static final long FRAME_PERIOD_MS = 83; // About 12 sampled frames per second.
     private static final long DISPLAY_CHECK_PERIOD_MS = 500;
-    private static final long BLACK_FRAME_GRACE_MS = 5000;
-    private static final long BLACK_STOP_AFTER_MS = 10000;
     private final Object processingLock = new Object();
     private HandlerThread workerThread;
     private Handler worker;
@@ -54,6 +54,7 @@ public final class CaptureService extends Service {
     private MinimapOverlay minimapOverlay;
     private final OverlayCaptureGuard overlayCaptureGuard = new OverlayCaptureGuard();
     private final CueArbiter cueArbiter = new CueArbiter();
+    private final NearZoneCombatPolicy nearZoneCombat = new NearZoneCombatPolicy();
     private final CueArbiter.DirectCueOutput directCueOutput =
             new CueArbiter.DirectCueOutput() {
                 @Override public boolean categoryEnabled(CueRequest.Category category) {
@@ -82,7 +83,7 @@ public final class CaptureService extends Service {
     private long startedAtMs;
     private long lastProcessedAtMs;
     private long lastNotificationAtMs;
-    private long blackSinceMs;
+    private final BlackFrameMonitor blackFrameMonitor = new BlackFrameMonitor();
     private int processedFrames;
     private int detectedCues;
     private int queuedCues;
@@ -102,6 +103,7 @@ public final class CaptureService extends Service {
     private boolean visionMemoryEnabled;
     private String auditSessionId;
     private long auditSessionStartedAtMs;
+    private DiagnosticRecorder diagnostics;
     private long nextCueId;
     private int landscapeProcessedFrames;
     private long firstLandscapeProcessedAtMs;
@@ -127,11 +129,11 @@ public final class CaptureService extends Service {
     private int nearZoneSuppressed;
     private int radarPauses;
     private int radarResumes;
-    private long nextRadarSequence;
 
     @Override
     public void onCreate() {
         super.onCreate();
+        running = true;
         notificationManager = getSystemService(NotificationManager.class);
         notificationManager.createNotificationChannel(new NotificationChannel(
                 CHANNEL, "游戏画面采集", NotificationManager.IMPORTANCE_LOW));
@@ -152,7 +154,12 @@ public final class CaptureService extends Service {
                         // Rotation can stop frame callbacks before the old reader
                         // reaches its next periodic size check.
                         resizeIfNeeded();
-                        if (captureHealth.check(SystemClock.elapsedRealtime()) ==
+                        boolean expectFrames = frameWidth > frameHeight;
+                        if (!expectFrames && recoveryRunnable != null) {
+                            worker.removeCallbacks(recoveryRunnable);
+                            recoveryRunnable = null;
+                        }
+                        if (captureHealth.check(SystemClock.elapsedRealtime(), expectFrames) ==
                                 CaptureHealthMonitor.State.STARVED) {
                             starvationCount++;
                             scheduleRecoveryLocked(expectedSessionGeneration);
@@ -289,7 +296,10 @@ public final class CaptureService extends Service {
                 }
                 if (loaded.fallbackReason != null) {
                     Log.w(TAG, "Near-zone profile not in use: " + loaded.fallbackReason);
+                    if (diagnostics != null) diagnostics.audit("ProfileFallback reason="
+                            + loaded.fallbackReason);
                 }
+                if (diagnostics != null) diagnostics.profile(profile, loaded.source, cueSettings);
                 Log.i(TAG, "SessionConfig sessionId=" + auditSessionId
                         + " profileSource=" + loaded.source
                         + " nearZone=" + nearZoneActive
@@ -337,6 +347,7 @@ public final class CaptureService extends Service {
                         GameProfile.settings(CaptureService.this).edit()
                                 .putBoolean("capture_active", false)
                                 .putBoolean("capture_paused", false)
+                                .putBoolean("capture_waiting_for_image", false)
                                 .putString("last_capture_status", "系统截屏授权已结束").apply();
                         // Do not let a delayed callback from an older capture
                         // session stop a newer start command.
@@ -354,6 +365,7 @@ public final class CaptureService extends Service {
                 GameProfile.settings(this).edit()
                         .putBoolean("capture_active", true)
                         .putBoolean("capture_paused", false)
+                        .putBoolean("capture_waiting_for_image", false)
                         .apply();
                 captureHealth.start(SystemClock.elapsedRealtime());
                 scheduleDisplayWatchdogLocked(sessionGeneration);
@@ -404,6 +416,7 @@ public final class CaptureService extends Service {
         // The next confirmed appearance must be eligible for a fresh cue, but
         // a stale overlay marker or suppressed frame must never survive it.
         cueArbiter.reset();
+        nearZoneCombat.reset();
         clearCueCategoriesLocked();
         if (minimapOverlay != null) minimapOverlay.clear();
         overlayCaptureGuard.clearMarkers();
@@ -471,9 +484,11 @@ public final class CaptureService extends Service {
             if (minimapOverlay != null) minimapOverlay.clear();
             lastFrameLandscape = frameWidth > frameHeight;
             discardFrameAfterRotation = true;
-            blackSinceMs = 0;
+            blackFrameMonitor.reset();
             Log.i(TAG, "Capture rotation changed to " + rotation
                     + " without a size change; temporal state reset");
+            if (diagnostics != null) diagnostics.audit("CaptureRotation rotation=" + rotation
+                    + " sizeChanged=false");
             return;
         }
         boolean recoveryPending =
@@ -497,10 +512,12 @@ public final class CaptureService extends Service {
         if (minimapOverlay != null) minimapOverlay.clear();
         lastFrameLandscape = frameWidth > frameHeight;
         discardFrameAfterRotation = rotationChanged;
-        blackSinceMs = 0;
+        blackFrameMonitor.reset();
         if (recoveryPending)
             captureHealth.recoveryRebuilt(SystemClock.elapsedRealtime());
         Log.i(TAG, "Capture resized to " + frameWidth + "x" + frameHeight);
+        if (diagnostics != null) diagnostics.audit("CaptureResized width=" + frameWidth
+                + " height=" + frameHeight + " rotation=" + rotation);
     }
 
     private void scheduleRecoveryLocked(long expectedSessionGeneration) {
@@ -536,7 +553,7 @@ public final class CaptureService extends Service {
                     virtualDisplay.setSurface(reader.getSurface());
                     resetNativeLocked();
                     if (minimapOverlay != null) minimapOverlay.clear();
-                    blackSinceMs = 0;
+                    blackFrameMonitor.reset();
                     captureHealth.recoveryRebuilt(SystemClock.elapsedRealtime());
                     logCaptureHealth(captureHealth.state().name(), "reader_rebuilt_waiting_for_frame");
                     refreshNotification();
@@ -564,6 +581,12 @@ public final class CaptureService extends Service {
                 + " state=" + state
                 + " reason=" + reason
                 + " attempt=" + captureHealth.attempts()
+                + " readerGeneration=" + readerGeneration
+                + " elapsedSinceFrameMs=" + (last < 0 ? -1 : Math.max(0, now - last))
+                + " elapsedSinceProcessedMs=" + (lastProcessed < 0 ? -1 :
+                        Math.max(0, now - lastProcessed)));
+        if (diagnostics != null) diagnostics.audit("CaptureHealth state=" + state
+                + " reason=" + reason + " attempt=" + captureHealth.attempts()
                 + " readerGeneration=" + readerGeneration
                 + " elapsedSinceFrameMs=" + (last < 0 ? -1 : Math.max(0, now - last))
                 + " elapsedSinceProcessedMs=" + (lastProcessed < 0 ? -1 :
@@ -620,7 +643,7 @@ public final class CaptureService extends Service {
                     if (minimapOverlay != null) minimapOverlay.clear();
                     lastFrameLandscape = landscape;
                     discardFrameAfterRotation = true;
-                    blackSinceMs = 0;
+                    blackFrameMonitor.reset();
                     Log.i(TAG, "Capture rotation changed to " + rotation
                             + " on frame; temporal state reset");
                 }
@@ -643,14 +666,41 @@ public final class CaptureService extends Service {
                 if (stopping || source != reader || generation != readerGeneration) return;
                 processedFrames++;
                 resizeAfterClose = processedFrames % 12 == 0;
-                if (!landscape || !blackFrame) {
-                    blackSinceMs = 0;
-                } else if (blackSinceMs == 0) {
-                    blackSinceMs = now;
+                boolean wasBlack = blackFrameMonitor.isBlack();
+                BlackFrameMonitor.Action blackAction = blackFrameMonitor.update(
+                        blackFrame, minimapOverlay != null, now);
+                if (blackFrame && !wasBlack) {
+                    resetNativeLocked();
+                    GameProfile.settings(this).edit()
+                            .putBoolean("capture_waiting_for_image", true).apply();
+                    Log.w(TAG, "CaptureBlackFrame sessionId=" + auditSessionId
+                            + " state=WAITING");
+                    if (diagnostics != null) diagnostics.audit("CaptureBlackFrame state=WAITING");
+                    refreshNotification();
+                } else if (!blackFrame && wasBlack) {
+                    GameProfile.settings(this).edit()
+                            .putBoolean("capture_waiting_for_image", false).apply();
+                    Log.i(TAG, "CaptureBlackFrame sessionId=" + auditSessionId
+                            + " state=RECOVERED overlaySuppressed="
+                            + overlayCaptureGuard.isSuppressed());
+                    if (diagnostics != null) diagnostics.audit("CaptureBlackFrame state=RECOVERED"
+                            + " overlaySuppressed=" + overlayCaptureGuard.isSuppressed());
+                    refreshNotification();
                 }
-                if (landscape && now - startedAtMs > BLACK_FRAME_GRACE_MS
-                        && blackSinceMs > 0 && now - blackSinceMs >= BLACK_STOP_AFTER_MS) {
+                if (blackAction == BlackFrameMonitor.Action.DISABLE_OVERLAY) {
+                    // Close only our own secure window. Never try to bypass
+                    // protection on game or other application content.
+                    overlayCaptureGuard.suppressForBlackFrames();
+                    minimapOverlay.close();
+                    minimapOverlay = null;
+                    Log.w(TAG, "CaptureBlackFrame sessionId=" + auditSessionId
+                            + " state=OVERLAY_DISABLED");
+                    if (diagnostics != null) diagnostics.audit(
+                            "CaptureBlackFrame state=OVERLAY_DISABLED");
+                }
+                if (blackAction == BlackFrameMonitor.Action.STOP) {
                     Log.w(TAG, "Capture is consistently black; protected or unavailable content");
+                    finishAuditSessionLocked("black_frames");
                     stopWithStatus("画面持续黑屏，采集已停止；可能是受保护内容或系统限制");
                     return;
                 }
@@ -660,7 +710,7 @@ public final class CaptureService extends Service {
                     if (!landscape) latestNativeMicros = 0;
                 }
                 lastFrameLandscape = landscape;
-                if (landscape && !paused && nativeSession != 0) {
+                if (landscape && !blackFrame && !paused && nativeSession != 0) {
                     syncVisionMemoryOutputsLocked();
                     if (minimapOverlay != null && overlayCaptureGuard.observeFrame(
                             pixels, width, height, plane.getRowStride())) {
@@ -672,11 +722,18 @@ public final class CaptureService extends Service {
                     }
                     long processingAtMs = SystemClock.elapsedRealtime();
                     captureHealth.frameProcessed(processingAtMs);
-                    recordLandscapeProcessedFrameLocked(processingAtMs);
+                    recordLandscapeProcessedFrameLocked(processingAtMs, observedAtMs);
                     int[] result = NativeBridge.nativeProcess(nativeSession, pixels,
                             width, height, plane.getRowStride(), observedAtMs, now);
                     if (result != null && result.length >= 5) {
                         NativeFrameResult frame = NativeBridge.parseFrameResult(result, observedAtMs);
+                        if (diagnostics != null) {
+                            DiagnosticSnapshot raw = DiagnosticSnapshot.parse(
+                                    NativeBridge.nativeReadDiagnosticSnapshot(nativeSession));
+                            diagnostics.frame(frame, raw, pixels, width, height,
+                                    plane.getRowStride(), observedAtMs,
+                                    SystemClock.elapsedRealtime(), maxObservationAgeMs);
+                        }
                         if (frame.observationCount < 0) Log.e(TAG, "Invalid direct image buffer");
                         latestNativeMicros = frame.processingMicros;
                         latestLocatorState = frame.locatorState;
@@ -706,14 +763,24 @@ public final class CaptureService extends Service {
                         // dispatcher policy used by all other output. A
                         // minimap APPEAR is suppressed only after that direct
                         // submission is actually accepted.
+                        NearZoneCombatPolicy.Decision combat = nearZoneActive
+                                ? nearZoneCombat.observe(frame, observedAtMs, maxObservationAgeMs)
+                                : null;
+                        logCombatModeLocked(combat, observedAtMs);
                         CueArbiter.Decision decision = cueArbiter.arbitrate(
                                 frame, SystemClock.elapsedRealtime(), minimapAppearMinGapMs,
                                 directCueOutput, observedAtMs);
                         playVisionMemoryTransitions(frame, decision.minimapAppearances,
-                                observedAtMs, decision.suppressedMinimap);
+                                observedAtMs, decision.suppressedMinimap, combat);
                         // Near-zone events bypass the minimap APPEAR cooldown:
                         // native occupancy episodes and REARM are their dedupe.
-                        handleNearZone(frame, observedAtMs);
+                        handleNearZone(frame, observedAtMs, combat);
+                    } else if (diagnostics != null) {
+                        diagnostics.frame(NativeFrameResult.empty(), DiagnosticSnapshot.parse(null),
+                                pixels, width, height, plane.getRowStride(), observedAtMs,
+                                SystemClock.elapsedRealtime(), maxObservationAgeMs);
+                        diagnostics.audit("NativeFrameInvalid resultLength="
+                                + (result == null ? -1 : result.length));
                     }
                 }
                 if (now - lastNotificationAtMs > 5000) {
@@ -766,7 +833,8 @@ public final class CaptureService extends Service {
     private void playVisionMemoryTransitions(NativeFrameResult frame,
                                               List<TrackedEntity> appearances,
                                               long observedAtMs,
-                                              List<CueArbiter.Suppressed> suppressed) {
+                                              List<CueArbiter.Suppressed> suppressed,
+                                              NearZoneCombatPolicy.Decision combat) {
         for (CueArbiter.Suppressed item : suppressed) {
             TrackedEntity entity = item.entity;
             Log.i(TAG, "VisionMemoryEvent sessionId=" + auditSessionId
@@ -775,6 +843,16 @@ public final class CaptureService extends Service {
                     + " cueSuppressed=true suppression=" + item.reason);
         }
         if (cueDispatcher == null || appearances == null || appearances.isEmpty()) return;
+        if (combat != null && combat.dense) {
+            for (TrackedEntity entity : appearances) {
+                Log.i(TAG, "VisionMemoryEvent sessionId=" + auditSessionId
+                        + " event=APPEAR trackId=" + entity.trackId
+                        + " cueSuppressed=true suppression=dense_combat");
+                if (diagnostics != null) diagnostics.audit("CombatSuppressed kind=VISION_APPEAR"
+                        + " trackId=" + entity.trackId + " mode=dense");
+            }
+            return;
+        }
         boolean audible = cueSettings == null || NearZoneRouting.farAppearAudible(
                 nearZoneActive, cueSettings.categoryEnabled(CueRequest.Category.NEAR_ZONE),
                 cueSettings.farAppearPreference());
@@ -798,6 +876,10 @@ public final class CaptureService extends Service {
             if (cueSettings != null && cueSettings.speakAppear()) {
                 channels |= CueRequest.CHANNEL_SPEECH;
                 speech = CueRouting.unlocatedMinimapEnemySpeech();
+            }
+            if (cueSettings != null && (cueSettings.enabledChannels(
+                    CueRequest.Category.VISION_MEMORY) & CueRequest.CHANNEL_HAPTIC) != 0) {
+                channels |= CueRequest.CHANNEL_HAPTIC;
             }
             int event = entity.transition;
             String cueId = auditSessionId + ":" + nextCueId++;
@@ -830,7 +912,8 @@ public final class CaptureService extends Service {
     }
 
     /** Route one frame of native near-zone relation output. Called under processingLock. */
-    private void handleNearZone(NativeFrameResult frame, long observedAtMs) {
+    private void handleNearZone(NativeFrameResult frame, long observedAtMs,
+                                NearZoneCombatPolicy.Decision combat) {
         NativeFrameResult.Relation relation = frame.relation;
         if (!nearZoneActive || !relation.available()) return;
         if (relation.state >= 0 && relation.state < nearZoneStateFrames.length) {
@@ -848,13 +931,15 @@ public final class CaptureService extends Service {
         switch (relation.event) {
             case NearZoneRouting.EVENT_NEAR_ENTER:
                 nearZoneEnters++;
-                dispatchNearZoneCue(relation, observedAtMs);
+                dispatchNearZoneCue(relation, observedAtMs, combat);
                 break;
             case NearZoneRouting.EVENT_RADAR_PAUSED:
             case NearZoneRouting.EVENT_RADAR_RESUMED:
                 if (relation.event == NearZoneRouting.EVENT_RADAR_PAUSED) radarPauses++;
                 else radarResumes++;
-                dispatchRadarTone(relation, observedAtMs);
+                // Internal availability changes are kept for diagnosis;
+                // they do not interrupt the player's game with status sounds.
+                logNearZoneEvent(relation, observedAtMs, "-", "SUPPRESSED");
                 break;
             case NearZoneRouting.EVENT_SUPPRESSED:
                 nearZoneSuppressed++;
@@ -865,44 +950,35 @@ public final class CaptureService extends Service {
         }
     }
 
-    private void dispatchNearZoneCue(NativeFrameResult.Relation relation, long observedAtMs) {
+    private void dispatchNearZoneCue(NativeFrameResult.Relation relation, long observedAtMs,
+                                     NearZoneCombatPolicy.Decision combat) {
         if (cueDispatcher == null || cueSettings == null) return;
         if (!cueSettings.categoryEnabled(CueRequest.Category.NEAR_ZONE)) {
             logNearZoneEvent(relation, observedAtMs, "-", "CATEGORY_DISABLED");
             return;
         }
+        int channels = cueSettings.nearRequestedChannels();
+        if (combat != null && combat.dense && !combat.allowSpeech) {
+            channels &= ~CueRequest.CHANNEL_SPEECH;
+            if (diagnostics != null) diagnostics.audit("CombatSuppressed kind=NEAR_ZONE"
+                    + " reason=lower_priority score=" + combat.score);
+        }
+        int priority = combat == null ? NearZoneRouting.NEAR_PRIORITY : combat.priority;
         String cueId = auditSessionId + ":" + nextCueId++;
         CueRequest request = new CueRequest(auditSessionId, cueId,
                 CueEventKeys.nearZone(nativeResetGeneration, relation.episodeId),
-                "NEAR_ZONE", CueRequest.Category.NEAR_ZONE, NearZoneRouting.NEAR_PRIORITY,
+                "NEAR_ZONE", CueRequest.Category.NEAR_ZONE, priority,
                 observedAtMs, observedAtMs + NearZoneRouting.NEAR_TTL_MS,
-                NearZoneRouting.nearChannels(cueSettings.nearHapticEnabled()),
+                channels,
                 NearZoneRouting.TONE_NEAR, 0, 0, NearZoneRouting.speech(relation.sector),
                 relation.pan);
-        submitRelationCue(request, NearZoneRouting.KIND_NEAR_ZONE, relation, observedAtMs);
-    }
-
-    private void dispatchRadarTone(NativeFrameResult.Relation relation, long observedAtMs) {
-        if (cueDispatcher == null || cueSettings == null) return;
-        if (!cueSettings.categoryEnabled(CueRequest.Category.NEAR_ZONE)) {
-            logNearZoneEvent(relation, observedAtMs, "-", "CATEGORY_DISABLED");
-            return;
-        }
-        boolean paused = relation.event == NearZoneRouting.EVENT_RADAR_PAUSED;
-        String cueId = auditSessionId + ":" + nextCueId++;
-        CueRequest request = new CueRequest(auditSessionId, cueId,
-                CueEventKeys.radarStatus(nativeResetGeneration, nextRadarSequence++,
-                        relation.event),
-                paused ? "RADAR_PAUSED" : "RADAR_RESUMED", CueRequest.Category.NEAR_ZONE,
-                NearZoneRouting.RADAR_PRIORITY, observedAtMs,
-                observedAtMs + NearZoneRouting.RADAR_TTL_MS, NearZoneRouting.radarChannels(),
-                paused ? NearZoneRouting.TONE_RADAR_PAUSED : NearZoneRouting.TONE_RADAR_RESUMED,
-                0, 0, null, 0f);
-        submitRelationCue(request, NearZoneRouting.KIND_RADAR_STATUS, relation, observedAtMs);
+        submitRelationCue(request, NearZoneRouting.KIND_NEAR_ZONE, relation, observedAtMs,
+                combat);
     }
 
     private void submitRelationCue(CueRequest request, int kind,
-                                   NativeFrameResult.Relation relation, long observedAtMs) {
+                                   NativeFrameResult.Relation relation, long observedAtMs,
+                                   NearZoneCombatPolicy.Decision combat) {
         long frameAgeMs = Math.max(0, SystemClock.elapsedRealtime() - observedAtMs);
         CueDispatcher.DispatchResult dispatched = cueDispatcher.submit(request);
         boolean stale = recordCueDispatch(dispatched);
@@ -913,9 +989,27 @@ public final class CaptureService extends Service {
                 + " observedAtMs=" + observedAtMs
                 + " frameAgeMs=" + frameAgeMs
                 + " nativeMicros=" + latestNativeMicros
+                + " priority=" + request.priority
+                + " freshEnemies=" + (combat == null ? -1 : combat.freshEnemyCount)
+                + " combatMode=" + (combat != null && combat.dense)
                 + " stale=" + stale
                 + " audioQueued=" + dispatched.audioQueued());
         logNearZoneEvent(relation, observedAtMs, request.cueId, dispatched.outcome);
+    }
+
+    private void logCombatModeLocked(NearZoneCombatPolicy.Decision combat, long observedAtMs) {
+        if (combat == null || (!combat.enteredDense && !combat.exitedDense)) return;
+        String transition = combat.enteredDense ? "ENTER" : "EXIT";
+        Log.i(TAG, "CombatMode sessionId=" + auditSessionId
+                + " transition=" + transition
+                + " reason=" + combat.denseReason
+                + " freshEnemies=" + combat.freshEnemyCount
+                + " score=" + combat.score
+                + " atMs=" + observedAtMs);
+        if (diagnostics != null) diagnostics.audit("CombatMode transition=" + transition
+                + " reason=" + combat.denseReason + " freshEnemies="
+                + combat.freshEnemyCount + " score=" + combat.score
+                + " atMs=" + observedAtMs);
     }
 
     private void logNearZoneEvent(NativeFrameResult.Relation relation, long observedAtMs,
@@ -930,6 +1024,10 @@ public final class CaptureService extends Service {
                 + " cueId=" + cueId
                 + " outcome=" + outcome
                 + " atMs=" + observedAtMs);
+        if (diagnostics != null) diagnostics.audit("NearZoneEvent event="
+                + NearZoneRouting.eventName(relation.event) + " episode=" + relation.episodeId
+                + " sector=" + relation.sector + " suppression="
+                + NearZoneRouting.suppressionName(relation.suppression) + " outcome=" + outcome);
     }
 
     private boolean dispatchNativeCue(int kind, int direction, int nativePriority,
@@ -940,6 +1038,16 @@ public final class CaptureService extends Service {
         }
         boolean peripheralThreat = CueRouting.isPeripheralThreat(kind, direction);
         CueRequest.Category category = CueRouting.directCueCategory(kind, direction);
+        if (nearZoneCombat.isDense()
+                && (category == CueRequest.Category.PERIPHERAL_THREAT
+                || category == CueRequest.Category.VISION_MEMORY)) {
+            Log.i(TAG, "CombatSuppressed sessionId=" + auditSessionId
+                    + " kind=" + kind + " category=" + category
+                    + " reason=non_critical_dense");
+            if (diagnostics != null) diagnostics.audit("CombatSuppressed kind=" + kind
+                    + " category=" + category + " reason=non_critical_dense");
+            return false;
+        }
         int priority = kind == 4 ? 100 : kind == 5 ? 60
                 : kind == 3 ? 80 : Math.max(40, nativePriority);
         long ttl = kind == 4 ? 2000 : kind == 5 ? 2500
@@ -1011,6 +1119,17 @@ public final class CaptureService extends Service {
                     + " acceptedMask=" + result.acceptedChannels
                     + " outcome=" + result.outcome
                     + " dropReason=" + result.reason);
+            if (diagnostics != null) {
+                long dispatchAtMs = SystemClock.elapsedRealtime();
+                diagnostics.audit("CueDispatch cueId=" + request.cueId
+                    + " kind=" + request.kind + " category=" + request.category
+                    + " createdAtMs=" + request.createdAtMs
+                    + " dispatchAtMs=" + dispatchAtMs
+                    + " dispatchDelayMs=" + Math.max(0, dispatchAtMs - request.createdAtMs)
+                    + " requestedMask=" + request.requestedChannels
+                    + " acceptedMask=" + result.acceptedChannels
+                    + " outcome=" + result.outcome + " dropReason=" + result.reason);
+            }
         }
 
         @Override public void onPlayback(CueRequest request, String channel,
@@ -1019,6 +1138,10 @@ public final class CaptureService extends Service {
                     + " cueId=" + request.cueId
                     + " channel=" + channel
                     + " atMs=" + atMs
+                    + " result=" + result);
+            if (diagnostics != null) diagnostics.audit("CuePlayback cueId=" + request.cueId
+                    + " channel=" + channel + " atMs=" + atMs
+                    + " playbackDelayMs=" + Math.max(0, atMs - request.createdAtMs)
                     + " result=" + result);
         }
     }
@@ -1078,7 +1201,8 @@ public final class CaptureService extends Service {
     private void refreshNotification() {
         String healthState = captureHealth.state() == CaptureHealthMonitor.State.RECOVERING
                 ? "恢复截屏 " + captureHealth.attempts() + "/3"
-                : captureHealth.state() == CaptureHealthMonitor.State.STARVED
+                : blackFrameMonitor.isBlack()
+                        || captureHealth.state() == CaptureHealthMonitor.State.STARVED
                 ? "等待画面恢复" : null;
         notificationManager.notify(NOTIFICATION_ID,
                 notification(healthState != null ? healthState : paused ? "提示已暂停" :
@@ -1103,12 +1227,13 @@ public final class CaptureService extends Service {
             GameProfile.settings(this).edit()
                     .putBoolean("capture_active", false)
                     .putBoolean("capture_paused", false)
+                    .putBoolean("capture_waiting_for_image", false)
                     .remove("last_capture_status")
                     .apply();
             startedAtMs = SystemClock.elapsedRealtime();
             lastProcessedAtMs = 0;
             lastNotificationAtMs = 0;
-            blackSinceMs = 0;
+            blackFrameMonitor.reset();
             processedFrames = 0;
             detectedCues = 0;
             queuedCues = 0;
@@ -1120,6 +1245,7 @@ public final class CaptureService extends Service {
             readerGeneration = 0;
             nativeResetGeneration = 0;
             cueArbiter.reset();
+            nearZoneCombat.reset();
             cueArbiter.setVisualMemoryEnabled(false);
             latestNativeMicros = 0;
             latestLocatorState = -1;
@@ -1135,11 +1261,11 @@ public final class CaptureService extends Service {
             nearZoneSuppressed = 0;
             radarPauses = 0;
             radarResumes = 0;
-            nextRadarSequence = 0;
             overlayCaptureGuard.reset();
             profileName = "";
             auditSessionId = UUID.randomUUID().toString();
             auditSessionStartedAtMs = startedAtMs;
+            diagnostics = DiagnosticRecorder.start(this, auditSessionId, startedAtMs);
             nextCueId = 1;
             landscapeProcessedFrames = 0;
             firstLandscapeProcessedAtMs = -1;
@@ -1152,7 +1278,7 @@ public final class CaptureService extends Service {
         }
     }
 
-    private void recordLandscapeProcessedFrameLocked(long processedAtMs) {
+    private void recordLandscapeProcessedFrameLocked(long processedAtMs, long observedAtMs) {
         if (firstLandscapeProcessedAtMs < 0) {
             firstLandscapeProcessedAtMs = processedAtMs;
         } else {
@@ -1161,6 +1287,11 @@ public final class CaptureService extends Service {
         }
         lastLandscapeProcessedAtMs = processedAtMs;
         landscapeProcessedFrames++;
+        if (diagnostics != null) diagnostics.checkpoint(processedAtMs,
+                paused ? "paused" : "capturing", observedAtMs, processedAtMs,
+                processedFrames, detectedCues, queuedCues, staleCues, audioQueueFailures,
+                starvationCount, latestLocatorState, latestLocatorScoreMilli,
+                NearZoneRouting.stateName(lastRelationState), nearZoneCombat.isDense());
     }
 
     private void finishAuditSessionLocked(String reason) {
@@ -1179,6 +1310,12 @@ public final class CaptureService extends Service {
                     + " suppressed=" + nearZoneSuppressed
                     + " radarPauses=" + radarPauses
                     + " radarResumes=" + radarResumes);
+            if (diagnostics != null) diagnostics.audit("NearZoneSummary unknownFrames="
+                    + nearZoneStateFrames[0] + " clearFrames=" + nearZoneStateFrames[1]
+                    + " pendingFrames=" + nearZoneStateFrames[2] + " occupiedFrames="
+                    + nearZoneStateFrames[3] + " rearmFrames=" + nearZoneStateFrames[4]
+                    + " nearEnters=" + nearZoneEnters + " suppressed=" + nearZoneSuppressed
+                    + " radarPauses=" + radarPauses + " radarResumes=" + radarResumes);
         }
         Log.i(TAG, "SessionSummary sessionId=" + auditSessionId
                 + " durationMs=" + Math.max(0, endedAtMs - auditSessionStartedAtMs)
@@ -1197,6 +1334,23 @@ public final class CaptureService extends Service {
                 + " locatorState=" + locatorStateName(latestLocatorState)
                 + " locatorScoreMilli=" + latestLocatorScoreMilli
                 + " reason=" + reason);
+        if (diagnostics != null) {
+            diagnostics.audit("SessionSummary durationMs="
+                    + Math.max(0, endedAtMs - auditSessionStartedAtMs)
+                    + " processedFrames=" + processedFrames
+                    + " landscapeProcessedFrames=" + landscapeProcessedFrames
+                    + " maxProcessedGapMs=" + maxLandscapeProcessedGapMs
+                    + " detected=" + detectedCues + " queued=" + queuedCues
+                    + " stale=" + staleCues + " audioFailures=" + audioQueueFailures
+                    + " starvationCount=" + starvationCount
+                    + " recoveryAttempts=" + recoveryAttempts
+                    + " recoverySuccesses=" + recoverySuccesses
+                    + " locatorState=" + locatorStateName(latestLocatorState)
+                    + " locatorScoreMilli=" + latestLocatorScoreMilli
+                    + " reason=" + reason);
+            diagnostics.finish(reason);
+            diagnostics = null;
+        }
         auditSessionActive = false;
     }
 
@@ -1224,6 +1378,7 @@ public final class CaptureService extends Service {
                 GameProfile.settings(this).edit()
                         .putBoolean("capture_active", false)
                         .putBoolean("capture_paused", false)
+                        .putBoolean("capture_waiting_for_image", false)
                         .putString("last_capture_status", status).apply();
             }
             stopThroughStartId = latestServiceStartId;
@@ -1278,6 +1433,7 @@ public final class CaptureService extends Service {
 
     @Override
     public void onDestroy() {
+        running = false;
         synchronized (processingLock) {
             finishAuditSessionLocked("destroyed");
             releaseCapture();
@@ -1285,6 +1441,7 @@ public final class CaptureService extends Service {
         GameProfile.settings(this).edit()
                 .putBoolean("capture_active", false)
                 .putBoolean("capture_paused", false)
+                .putBoolean("capture_waiting_for_image", false)
                 .apply();
         // stopSelf() normally removes the notification with the service, but
         // make the foreground-service lifecycle explicit for projection and

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="tuning_voice_engine_selected">已选择“%1$s”，请点击测试提醒试听。</string>
+    <string name="tuning_speech_rate_value">语速：%1$.1f 倍</string>
     <string name="app_name">听野</string>
     <string name="capture_notification_title">听野 · %1$s</string>
     <string name="tuning_volume_value">提示音量：%1$d%%</string>
