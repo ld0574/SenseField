@@ -37,6 +37,7 @@ public final class DiagnosticsActivity extends Activity {
     private String selected;
     private File prepared;
     private boolean busy;
+    private String recoveryError = "";
     private final Runnable refresh = new Runnable() {
         @Override public void run() {
             refreshState();
@@ -110,7 +111,7 @@ public final class DiagnosticsActivity extends Activity {
 
     private boolean recording() {
         DiagnosticRecorder recorder = DiagnosticRecorder.current;
-        return GameProfile.settings(this).getBoolean("capture_active", false)
+        return CaptureService.isRunning()
                 || (recorder != null && !recorder.finished);
     }
 
@@ -122,18 +123,36 @@ public final class DiagnosticsActivity extends Activity {
         if (busy) return;
         DiagnosticRecorder recorder = DiagnosticRecorder.current;
         if (recorder != null && !recorder.failure.isEmpty()) status.setText(recorder.failure);
+        else if (!active && !recoveryError.isEmpty()) status.setText(recoveryError);
         else status.setText(active ? "正在记录，请结束后停止辅助再导出"
                 : selected == null ? "还没有记录，请先开始一局辅助" : "选择一局，导出诊断包");
     }
 
     private void loadSessions() {
         DiagnosticRecorder.IO.execute(() -> {
+            String recoveryFailure = "";
+            String activeDirectory = DiagnosticRecorder.activeDirectory();
+            try { DiagnosticRecovery.recover(DiagnosticRecorder.root(this), activeDirectory,
+                    System.currentTimeMillis()); }
+            catch (IOException error) { recoveryFailure = "部分记录未能恢复，请检查手机存储空间。"; }
             File[] found = DiagnosticArchive.sessions(DiagnosticRecorder.root(this));
+            String[] suffixes = new String[found.length];
+            for (int i = 0; i < found.length; i++) {
+                switch (DiagnosticRecovery.status(found[i], activeDirectory)) {
+                    case ACTIVE: suffixes[i] = " · 正在记录"; break;
+                    case FINISHED: suffixes[i] = " · 已结束"; break;
+                    case INTERRUPTED: suffixes[i] = " · 记录中断（已恢复）"; break;
+                    default: suffixes[i] = " · 记录未完整保存";
+                }
+            }
+            final String loadError = recoveryFailure;
             runOnUiThread(() -> {
                 if (isFinishing() || isDestroyed()) return;
                 sessions.removeAllViews();
                 selected = null;
-                for (File f : found) {
+                recoveryError = loadError;
+                for (int i = 0; i < found.length; i++) {
+                    File f = found[i];
                     RadioButton b = new RadioButton(this);
                     b.setId(android.view.View.generateViewId());
                     b.setTextSize(24);
@@ -142,10 +161,7 @@ public final class DiagnosticsActivity extends Activity {
                     try { timestamp = Long.parseLong(f.getName().split("-")[1]); }
                     catch (RuntimeException ignored) { timestamp = f.lastModified(); }
                     String date = new SimpleDateFormat("MM-dd HH:mm", Locale.CHINA).format(new Date(timestamp));
-                    String suffix = new File(f, "summary.json").isFile() ? " · 已结束"
-                            : new File(f, "checkpoint.json").isFile()
-                            ? " · 异常中断（保留最后状态）" : " · 未正常结束或记录中";
-                    b.setText(date + suffix);
+                    b.setText(getString(R.string.diagnostic_session_label, date, suffixes[i]));
                     b.setTag(f.getName());
                     sessions.addView(b);
                     if (selected == null) { selected = f.getName(); b.setChecked(true); }

@@ -47,10 +47,7 @@ final class DiagnosticArchive implements AutoCloseable {
     /** Keep the last known state on disk even if the service is killed later. */
     void checkpoint(String json) throws IOException {
         if (closed || json == null) return;
-        File temporary = new File(directory, "checkpoint.json.part");
-        Files.write(temporary.toPath(), json.getBytes(StandardCharsets.UTF_8));
-        Files.move(temporary.toPath(), new File(directory, "checkpoint.json").toPath(),
-                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        writeJson(directory, "checkpoint.json", json);
     }
 
     boolean image(String name, byte[] jpeg) throws IOException {
@@ -66,9 +63,26 @@ final class DiagnosticArchive implements AutoCloseable {
     void finish(String summary) throws IOException {
         if (closed) return;
         close();
+        writeJson(directory, "summary.json", summary);
         Files.deleteIfExists(new File(directory, "checkpoint.json").toPath());
         Files.deleteIfExists(new File(directory, "checkpoint.json.part").toPath());
-        Files.write(new File(directory, "summary.json").toPath(), summary.getBytes(StandardCharsets.UTF_8));
+    }
+
+    static void writeJson(File directory, String name, String json) throws IOException {
+        File temporary = new File(directory, name + ".part");
+        if (Files.isSymbolicLink(temporary.toPath())) throw new IOException("诊断文件路径无效");
+        try (FileOutputStream out = new FileOutputStream(temporary)) {
+            out.write(json.getBytes(StandardCharsets.UTF_8));
+            out.getFD().sync();
+        }
+        try {
+            Files.move(temporary.toPath(), new File(directory, name).toPath(),
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (java.nio.file.AtomicMoveNotSupportedException error) {
+            Files.move(temporary.toPath(), new File(directory, name).toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     @Override public void close() throws IOException {
@@ -123,7 +137,8 @@ final class DiagnosticArchive implements AutoCloseable {
         File temporary = new File(zip.getParentFile(), zip.getName() + ".part");
         try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(temporary))) {
             for (String name : new String[]{"metadata.json", "events.jsonl", "summary.json",
-                    "checkpoint.json"}) {
+                    "checkpoint.json", "events-truncated-tail.txt", "metadata-incomplete.txt",
+                    "summary-incomplete.txt"}) {
                 File file = new File(directory, name);
                 if (file.isFile()) entry(out, directory, file, name);
             }

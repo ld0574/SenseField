@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="diagnostic_session_label">%1$s%2$s</string>
     <string name="tuning_voice_engine_selected">已选择“%1$s”，请点击测试提醒试听。</string>
     <string name="tuning_speech_rate_value">语速：%1$.1f 倍</string>
     <string name="app_name">听野</string>

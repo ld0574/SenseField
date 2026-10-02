@@ -104,6 +104,10 @@ public final class CaptureService extends Service {
     private String auditSessionId;
     private long auditSessionStartedAtMs;
     private DiagnosticRecorder diagnostics;
+    private long lastDiagnosticFrameArrivedAtMs = -1;
+    private long lastDiagnosticFrameObservedAtMs = -1;
+    private long lastDiagnosticFrameCompletedAtMs = -1;
+    private boolean diagnosticProcessing;
     private long nextCueId;
     private int landscapeProcessedFrames;
     private long firstLandscapeProcessedAtMs;
@@ -164,6 +168,7 @@ public final class CaptureService extends Service {
                             starvationCount++;
                             scheduleRecoveryLocked(expectedSessionGeneration);
                         }
+                        publishDiagnosticStateLocked();
                     } catch (RuntimeException error) {
                         Log.e(TAG, "Could not resize capture after display change", error);
                         stopWithStatus("横屏切换后无法继续截屏");
@@ -213,6 +218,7 @@ public final class CaptureService extends Service {
                 GameProfile.settings(this).edit().putBoolean("capture_paused", paused).apply();
                 resetNativeLocked();
                 captureHealth.pause(paused, SystemClock.elapsedRealtime());
+                publishDiagnosticStateLocked();
                 if (paused && minimapOverlay != null) minimapOverlay.clear();
                 if (cueDispatcher != null) {
                     if (paused) cueDispatcher.pause();
@@ -368,6 +374,7 @@ public final class CaptureService extends Service {
                         .putBoolean("capture_waiting_for_image", false)
                         .apply();
                 captureHealth.start(SystemClock.elapsedRealtime());
+                publishDiagnosticStateLocked();
                 scheduleDisplayWatchdogLocked(sessionGeneration);
                 refreshNotification();
             } catch (IOException | JSONException | RuntimeException error) {
@@ -574,6 +581,7 @@ public final class CaptureService extends Service {
     }
 
     private void logCaptureHealth(String state, String reason) {
+        publishDiagnosticStateLocked();
         long now = SystemClock.elapsedRealtime();
         long last = captureHealth.lastFrameAtMs();
         long lastProcessed = captureHealth.lastProcessedAtMs();
@@ -605,6 +613,7 @@ public final class CaptureService extends Service {
                 if (stopping || source != reader || generation != readerGeneration) return;
                 CaptureHealthMonitor.State previous = captureHealth.state();
                 captureHealth.frameArrived(now);
+                lastDiagnosticFrameArrivedAtMs = now;
                 if (previous == CaptureHealthMonitor.State.RECOVERING ||
                         previous == CaptureHealthMonitor.State.STARVED) {
                     recoverySuccesses++;
@@ -720,9 +729,8 @@ public final class CaptureService extends Service {
                         minimapOverlay.close();
                         minimapOverlay = null;
                     }
-                    long processingAtMs = SystemClock.elapsedRealtime();
-                    captureHealth.frameProcessed(processingAtMs);
-                    recordLandscapeProcessedFrameLocked(processingAtMs, observedAtMs);
+                    diagnosticProcessing = true;
+                    publishDiagnosticStateLocked();
                     int[] result = NativeBridge.nativeProcess(nativeSession, pixels,
                             width, height, plane.getRowStride(), observedAtMs, now);
                     if (result != null && result.length >= 5) {
@@ -782,6 +790,9 @@ public final class CaptureService extends Service {
                         diagnostics.audit("NativeFrameInvalid resultLength="
                                 + (result == null ? -1 : result.length));
                     }
+                    long completedAtMs = SystemClock.elapsedRealtime();
+                    captureHealth.frameProcessed(completedAtMs);
+                    recordLandscapeProcessedFrameLocked(completedAtMs, observedAtMs);
                 }
                 if (now - lastNotificationAtMs > 5000) {
                     lastNotificationAtMs = now;
@@ -797,6 +808,12 @@ public final class CaptureService extends Service {
             Log.w(TAG, "A stale ImageReader frame was dropped", error);
         } finally {
             if (image != null) image.close();
+            synchronized (processingLock) {
+                if (source == reader && generation == readerGeneration) {
+                    diagnosticProcessing = false;
+                    publishDiagnosticStateLocked();
+                }
+            }
             if (resizeAfterClose) {
                 try {
                     synchronized (processingLock) {
@@ -961,7 +978,9 @@ public final class CaptureService extends Service {
         if (combat != null && combat.dense && !combat.allowSpeech) {
             channels &= ~CueRequest.CHANNEL_SPEECH;
             if (diagnostics != null) diagnostics.audit("CombatSuppressed kind=NEAR_ZONE"
-                    + " reason=lower_priority score=" + combat.score);
+                    + " reason=lower_priority_in_window score=" + combat.score
+                    + " bestWindowScore=" + combat.bestWindowScore
+                    + " windowMs=" + NearZoneCombatPolicy.DENSE_WINDOW_MS);
         }
         int priority = combat == null ? NearZoneRouting.NEAR_PRIORITY : combat.priority;
         String cueId = auditSessionId + ":" + nextCueId++;
@@ -1232,6 +1251,10 @@ public final class CaptureService extends Service {
                     .apply();
             startedAtMs = SystemClock.elapsedRealtime();
             lastProcessedAtMs = 0;
+            lastDiagnosticFrameArrivedAtMs = -1;
+            lastDiagnosticFrameObservedAtMs = -1;
+            lastDiagnosticFrameCompletedAtMs = -1;
+            diagnosticProcessing = false;
             lastNotificationAtMs = 0;
             blackFrameMonitor.reset();
             processedFrames = 0;
@@ -1272,6 +1295,7 @@ public final class CaptureService extends Service {
             lastLandscapeProcessedAtMs = -1;
             maxLandscapeProcessedGapMs = 0;
             auditSessionActive = true;
+            publishDiagnosticStateLocked();
             Log.i(TAG, "SessionStart sessionId=" + auditSessionId
                     + " startId=" + startId
                     + " startedElapsedRealtimeMs=" + auditSessionStartedAtMs);
@@ -1279,6 +1303,8 @@ public final class CaptureService extends Service {
     }
 
     private void recordLandscapeProcessedFrameLocked(long processedAtMs, long observedAtMs) {
+        lastDiagnosticFrameObservedAtMs = observedAtMs;
+        lastDiagnosticFrameCompletedAtMs = processedAtMs;
         if (firstLandscapeProcessedAtMs < 0) {
             firstLandscapeProcessedAtMs = processedAtMs;
         } else {
@@ -1287,15 +1313,40 @@ public final class CaptureService extends Service {
         }
         lastLandscapeProcessedAtMs = processedAtMs;
         landscapeProcessedFrames++;
-        if (diagnostics != null) diagnostics.checkpoint(processedAtMs,
-                paused ? "paused" : "capturing", observedAtMs, processedAtMs,
-                processedFrames, detectedCues, queuedCues, staleCues, audioQueueFailures,
-                starvationCount, latestLocatorState, latestLocatorScoreMilli,
-                NearZoneRouting.stateName(lastRelationState), nearZoneCombat.isDense());
+    }
+
+    /** Snapshot publication is cheap; periodic disk writes never acquire processingLock. */
+    private void publishDiagnosticStateLocked() {
+        if (diagnostics == null) return;
+        boolean expected = projection != null && !paused && frameWidth > frameHeight;
+        String state = stopping ? "stopping" : projection == null ? "starting"
+                : paused ? "paused" : blackFrameMonitor.isBlack() ? "waiting_for_image"
+                : frameWidth <= frameHeight ? "waiting_for_landscape"
+                : diagnosticProcessing ? "processing"
+                : captureHealth.state() == CaptureHealthMonitor.State.HEALTHY ? "capturing"
+                : captureHealth.state().name().toLowerCase(java.util.Locale.ROOT);
+        diagnostics.publishState(DiagnosticRecorder.object("state", state,
+                "snapshot_at_ms", SystemClock.elapsedRealtime(), "frames_expected", expected,
+                "last_frame_arrived_at_ms", lastDiagnosticFrameArrivedAtMs,
+                "last_frame_observed_at_ms", lastDiagnosticFrameObservedAtMs,
+                "last_frame_completed_at_ms", lastDiagnosticFrameCompletedAtMs,
+                "processed_frames", processedFrames, "landscape_processed_frames", landscapeProcessedFrames,
+                "first_processed_at_ms", firstLandscapeProcessedAtMs,
+                "last_processed_at_ms", lastLandscapeProcessedAtMs,
+                "max_processed_gap_ms", maxLandscapeProcessedGapMs,
+                "detected_cues", detectedCues, "queued_cues", queuedCues,
+                "stale_cues", staleCues, "audio_failures", audioQueueFailures,
+                "starvation_count", starvationCount, "recovery_attempts", recoveryAttempts,
+                "recovery_successes", recoverySuccesses,
+                "locator_state", latestLocatorState, "locator_score_milli", latestLocatorScoreMilli,
+                "relation_state", lastRelationState == Integer.MIN_VALUE
+                        ? "RESET" : NearZoneRouting.stateName(lastRelationState),
+                "dense_combat", nearZoneCombat.isDense()));
     }
 
     private void finishAuditSessionLocked(String reason) {
         if (!auditSessionActive) return;
+        publishDiagnosticStateLocked();
         long endedAtMs = SystemClock.elapsedRealtime();
         if (nearZoneActive) {
             // Frame counts per relation state give evidence coverage without

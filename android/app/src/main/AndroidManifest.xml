@@ -12,6 +12,7 @@
     </queries>
 
     <application
+        android:name=".SenseFieldApplication"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/full_backup_content"

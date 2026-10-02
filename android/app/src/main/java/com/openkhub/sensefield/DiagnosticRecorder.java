@@ -23,6 +23,9 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -35,6 +38,11 @@ final class DiagnosticRecorder {
         return thread;
     });
     static volatile DiagnosticRecorder current;
+    private static final ScheduledExecutorService HEARTBEATS = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread thread = new Thread(r, "SenseFieldDiagnosticHeartbeat");
+        thread.setDaemon(true);
+        return thread;
+    });
     final String sessionId;
     final File directory;
     final long startedAtMs;
@@ -51,13 +59,27 @@ final class DiagnosticRecorder {
     private long nextImageAtMs;
     private long nextDeviceSampleAtMs;
     private long lastFlushAtMs;
-    private long nextCheckpointAtMs;
-    private long frameSequence;
-    private long imageCount;
+    private volatile long frameSequence;
+    private volatile long imageCount;
     private boolean markerPending;
     private volatile JSONObject lastDeviceSample;
+    private volatile JSONObject latestState;
+    private ScheduledFuture<?> heartbeat;
 
     static File root(Context context) { return new File(context.getFilesDir(), "diagnostics"); }
+
+    static String activeDirectory() {
+        DiagnosticRecorder recorder = current;
+        return recorder != null && !recorder.finished ? recorder.directory.getName() : null;
+    }
+
+    static void recoverIncomplete(Context context) {
+        File directory = root(context);
+        IO.execute(() -> {
+            try { DiagnosticRecovery.recover(directory, activeDirectory(), System.currentTimeMillis()); }
+            catch (IOException error) { Log.w("SenseFieldDiagnostics", "Could not recover all records", error); }
+        });
+    }
 
     static boolean imagesEnabledPreference(Context context) {
         android.content.SharedPreferences settings = GameProfile.settings(context);
@@ -74,6 +96,10 @@ final class DiagnosticRecorder {
         context = supplied.getApplicationContext();
         this.sessionId = sessionId;
         this.startedAtMs = startedAtMs;
+        latestState = object("state", "starting", "snapshot_at_ms", startedAtMs,
+                "frames_expected", false, "last_frame_arrived_at_ms", -1,
+                "last_frame_observed_at_ms", -1, "last_frame_completed_at_ms", -1,
+                "processed_frames", 0, "landscape_processed_frames", 0);
         imagesEnabled = imagesEnabledPreference(context);
         directory = new File(root(context), "diag-" + System.currentTimeMillis() + "-" + sessionId);
         DisplayMetrics display = context.getResources().getDisplayMetrics();
@@ -98,6 +124,9 @@ final class DiagnosticRecorder {
             try { archive = new DiagnosticArchive(root(context), directory.getName(), metadata.toString(2)); }
             catch (Exception error) { failed(error); }
         });
+        checkpoint(SystemClock.elapsedRealtime());
+        heartbeat = HEARTBEATS.scheduleWithFixedDelay(() -> checkpoint(SystemClock.elapsedRealtime()),
+                DiagnosticCheckpoint.PERIOD_MS, DiagnosticCheckpoint.PERIOD_MS, TimeUnit.MILLISECONDS);
     }
 
     static JSONObject object(Object... fields) {
@@ -174,7 +203,6 @@ final class DiagnosticRecorder {
                         "event", NearZoneRouting.eventName(r.event), "reliable", r.reliable,
                         "distance", r.nearestDistance, "sector", r.sector, "episode_id", r.episodeId,
                         "suppression", NearZoneRouting.suppressionName(r.suppression))));
-        sampleDevice(completedAtMs);
         boolean force = markerPending || r.event == NearZoneRouting.EVENT_NEAR_ENTER;
         if (!imagesEnabled || imageLimit || width <= height || completedAtMs - startedAtMs > 1200000
                 || (completedAtMs < nextImageAtMs && !force)) return;
@@ -223,7 +251,7 @@ final class DiagnosticRecorder {
                 "source_bounds_xywh", sourceBounds == null ? JSONObject.NULL : array(sourceBounds)).toString());
     }
 
-    private void sampleDevice(long now) {
+    private synchronized void sampleDevice(long now) {
         if (now < nextDeviceSampleAtMs) return;
         nextDeviceSampleAtMs = now + 10000;
         try {
@@ -275,45 +303,41 @@ final class DiagnosticRecorder {
         });
     }
 
-    /**
-     * Write a bounded periodic state marker. The marker is intentionally
-     * separate from summary.json so a killed process leaves a useful, exportable
-     * checkpoint instead of an apparently empty session.
-     */
-    void checkpoint(long nowMs, String captureState, long lastFrameObservedAtMs,
-                    long lastFrameCompletedAtMs, int processedFrames, int detectedCues,
-                    int queuedCues, int staleCues, int audioFailures, int starvationCount,
-                    int locatorState, int locatorScoreMilli, String relationState,
-                    boolean denseCombat) {
-        if (finished || !failure.isEmpty() || nowMs < nextCheckpointAtMs) return;
-        nextCheckpointAtMs = nowMs + 5000;
-        sampleDevice(nowMs);
-        JSONObject data = object("state", captureState, "last_frame_observed_at_ms",
-                lastFrameObservedAtMs, "last_frame_completed_at_ms", lastFrameCompletedAtMs,
-                "processed_frames", processedFrames, "detected_cues", detectedCues,
-                "queued_cues", queuedCues, "stale_cues", staleCues,
-                "audio_failures", audioFailures, "starvation_count", starvationCount,
-                "locator_state", locatorState, "locator_score_milli", locatorScoreMilli,
-                "relation_state", relationState, "dense_combat", denseCombat,
-                "last_device", lastDeviceSample == null ? JSONObject.NULL : lastDeviceSample);
-        record("checkpoint", data);
-        IO.execute(() -> {
-            try {
-                if (archive != null) archive.checkpoint(object("session_id", sessionId,
-                        "at_ms", nowMs, "data", data).toString(2));
-            } catch (Exception error) { failed(error); }
-        });
+    /** Published snapshots are immutable and never require the processing lock to read. */
+    void publishState(JSONObject state) { if (!finished) latestState = state; }
+
+    private void checkpoint(long nowMs) {
+        if (finished || !failure.isEmpty()) return;
+        try {
+            sampleDevice(nowMs);
+            JSONObject data = DiagnosticCheckpoint.at(latestState, nowMs);
+            data.put("frame_count", frameSequence);
+            data.put("image_count", imageCount);
+            data.put("dropped_events", dropped.get());
+            data.put("dropped_image_requests", imageDrops.get());
+            data.put("last_device", lastDeviceSample == null ? JSONObject.NULL : lastDeviceSample);
+            record("checkpoint", data);
+            IO.execute(() -> {
+                try {
+                    if (archive != null) archive.checkpoint(object("session_id", sessionId,
+                            "at_ms", nowMs, "data", data).toString(2));
+                } catch (Exception error) { failed(error); }
+            });
+        } catch (Exception error) { failed(error); }
     }
 
     void finish(String reason) {
         if (finished) return;
         finished = true;
+        if (heartbeat != null) heartbeat.cancel(false);
         long at = SystemClock.elapsedRealtime();
+        JSONObject finalState = latestState;
         IO.execute(() -> {
             try {
                 if (archive != null) archive.finish(object("session_id", sessionId,
                         "ended_at_ms", at, "duration_ms", Math.max(0, at - startedAtMs),
                         "reason", reason, "frame_count", frameSequence, "image_count", imageCount,
+                        "interrupted", false, "end_observed", true, "last_state", finalState,
                         "images_limited", imageLimit, "dropped_events", dropped.get(),
                         "dropped_image_requests", imageDrops.get(), "diagnostic_error", failure,
                         "playback_note", "TTS callbacks and vibration requests do not prove actual sound/haptic delivery.").toString(2));
