@@ -148,6 +148,7 @@ def workspace_candidates(root: Path) -> list[str]:
     """Safe fallback before git init; mirrors the repository's private exclusions."""
     allowed_docs = {
         "docs/团队协作与本地运行.md",
+        "docs/版本命名规范.md",
         "docs/GITHUB发布检查清单.md",
         "docs/RELEASE_NOTES_0.3.0-alpha.1.md",
         "docs/RELEASE_CHECKLIST_0.3.0-alpha.1.md",

@@ -30,6 +30,7 @@
                 android:resource="@xml/diagnostic_paths" />
         </provider>
         <activity android:name=".DiagnosticsActivity" android:exported="false" />
+        <activity android:name=".ReminderGuideActivity" android:exported="false" />
         <activity
             android:name=".AppSettingsActivity"
             android:exported="false" />

@@ -67,7 +67,7 @@ public final class MainActivity extends Activity {
         actions.addView(stop, right);
         UiKit.add(content, actions, 14);
         UiKit.add(content, UiKit.body(this,
-                "首次使用请到设置中完成授权，并在配置与调参中测试语音。"), 0);
+                "提醒含义可以在下方设置中重听，授权与声音配置也在设置中。"), 0);
         android.view.View spacer = new android.view.View(this);
         content.addView(spacer, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, UiKit.dp(this, 28), 1f));
@@ -96,6 +96,11 @@ public final class MainActivity extends Activity {
     }
 
     private void requestStart() {
+        if (GameProfile.settings(this).getBoolean(ReminderGuide.PREF_READ_BEFORE_START, true)) {
+            startActivityForResult(new Intent(this, ReminderGuideActivity.class)
+                    .putExtra(ReminderGuideActivity.EXTRA_START, true), REQUEST_START);
+            return;
+        }
         boolean ready = CapturePermissionsActivity.requiredSettingsReady(this);
         status.setText(ready ? "等待本次截屏授权" : "请先完成必要授权");
         Intent authorization = new Intent(this, CapturePermissionsActivity.class);

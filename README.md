@@ -27,7 +27,7 @@
 
 本项目由参赛团队独立开发，是非官方作品，与腾讯、天美工作室群及《王者荣耀》官方无隶属、合作或认可关系。相关名称、商标和游戏内容归各自权利人所有。
 
-当前预发布目标为 `0.3.0-alpha.1`（Android `versionCode 7`），定位为 GitHub pre-release developer preview。它用于审阅端侧链路和实验交互，不代表最终验收或稳定发布。
+当前构建为 `0.3.1`（Android `versionCode 9`），用于内部诊断和提醒语音说明测试，尚未对外发布。内部和外部交付共用递增的 `a.b.c` 序列，详见[版本命名规范](docs/版本命名规范.md)。它用于审阅端侧链路和实验交互，不代表最终验收或稳定发布。
 
 ## 为什么做听野
 
@@ -55,14 +55,14 @@
 - 私有录像、抽帧、标注数据和实验产物不纳入公开仓库。
 - 这是尚未完成最终实体机与玩家验收的研究原型；实际使用前请核实游戏条款和赛事规则。
 
-## 0.3.0-alpha.1 Developer Preview 边界
+## 开发版本边界
 
 - 当前 HD 小地图模型尚未通过独立留出验收。主画面红色候选不能直接代表附近的敌方英雄，该分支默认关闭且不进入本次发布；原因和后续门控见[主画面边缘复核记录](validation/MAIN_EDGE_REVIEW.md)。
 - Android APK 当前只构建 `arm64-v8a`，最低 Android API 为 29，目标 API 为 35。没有 arm64-v8a 的设备不在本候选支持范围内。
 - `MediaProjection` 用于在用户每次明确授权后取得整屏帧；悬浮窗权限（`SYSTEM_ALERT_WINDOW`）只用于显示可选的非交互提示层；通知权限用于前台截屏服务的运行状态和健康提示。识别、事件筛选和模型推理在设备本地完成，不上传屏幕画面。
-- 没有完整签名环境变量时，发布脚本只生成名称含 `debug-candidate` 的 Debug APK，并沿用 Android Gradle 的标准 debug signing；签名材料必须由发布者通过环境变量提供，脚本不会生成或上传发布 keystore。候选构建和 GitHub Release 发布仍需按[发布说明草稿](docs/RELEASE_NOTES_0.3.0-alpha.1.md)与[检查清单](docs/RELEASE_CHECKLIST_0.3.0-alpha.1.md)复核。
+- 没有完整签名环境变量时，发布脚本只生成名称含 `debug-candidate` 的 Debug APK，并沿用 Android Gradle 的标准 debug signing；签名材料必须由发布者通过环境变量提供，脚本不会生成或上传发布 keystore。候选构建和 GitHub Release 发布按[发布检查清单](docs/GITHUB发布检查清单.md)复核，发布说明必须对应实际构建版本。
 
-2026-10-01 团队测试版已完成 Release 构建：方位语音、无障碍震动、统一授权与底部大按钮，定位状态仅日志。[预发布下载](https://github.com/ld0574/SenseField/releases/tag/v0.3.0-alpha.1)；[真机反馈](validation/ANDROID_LIVE_SMOKE_2026-10-01.md)和[发布说明](docs/RELEASE_NOTES_0.3.0-alpha.1.md)保留实验模型与验收边界。
+历史 2026-10-01 团队测试版已完成 Release 构建：方位语音、无障碍震动、统一授权与底部大按钮，定位状态仅日志。[历史预发布下载](https://github.com/ld0574/SenseField/releases/tag/v0.3.0-alpha.1)；[真机反馈](validation/ANDROID_LIVE_SMOKE_2026-10-01.md)和[发布说明](docs/RELEASE_NOTES_0.3.0-alpha.1.md)保留实验模型与验收边界。
 
 ## 当前进度
 

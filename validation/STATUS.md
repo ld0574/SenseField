@@ -1,4 +1,12 @@
-# 原型验证状态（更新于 2026-10-01）
+# 原型验证状态（更新于 2026-10-02）
+
+## 2026-10-02 当前内部版本 0.3.1
+
+已提交上一轮近区调度与诊断改造，新增开始前 TTS 提醒说明：解释当前开启的短音、方向语句和震动含义，穿插输出示例；可跳过、在设置重听或关闭。页面采用大字和可滚动的大按钮，停止／离开会清理播放，说明不启动截屏或识别。详细流程和证据见[提醒说明与试听记录](REMINDER_GUIDE_2026-10-02.md)。
+
+当前 `versionName=0.3.1`、`versionCode=9`，内部和外部版本统一遵守[版本命名规范](../docs/版本命名规范.md)，下一次新交付递增为 `0.3.2`。JVM 113 项通过，`assembleDebug`、`lintDebug` 通过；Android 14 模拟器验证了开始说明、跳过授权、设置重听与 150% 字体布局。模拟器缺少中文 TTS，未验证真实发声、耳机或震动感知。
+
+当前 APK：`android/app/build/outputs/preview/sensefield-0.3.1-arm64-v8a-debug-candidate.apk`；SHA-256 `3656c70ce14fda17bbe2a5b514c589d4c9a94b2e434cea8f19a9046d260c3537`。这是 Debug candidate，未对外发布。独立真机准确性、持续运行、实际发声延迟和发热门禁仍待完成。
 
 ## 2026-10-01 最新真机与团队测试版
 
@@ -95,9 +103,9 @@ SHA-256：`49043142158a360abb7bb3c5d8c9c7ed24828374f67bdb888e9eedcb445a6b0a`
 
 ### 2026-10-02 端侧收敛记录
 
-已完成代码回归：标准近区提示的语音／短音／震动联动、短话术与 1.8 倍默认语速、单个最新近区 TTS 待播项、密集战斗优先级与降级、周期性异常会话 checkpoint，以及 locator/实际 ROI 诊断字段。`testDebugUnitTest` 当前 100 项通过，`lintDebug` 与 `assembleDebug` 通过。最新 debug candidate 为 `android/app/build/outputs/preview/sensefield-0.3.0-alpha.1-diagnostics-arm64-v8a-debug-candidate.apk`，SHA-256 `49f03ed1e0046e943c527b15f90cba1670ed344d5af7b9c8e349aa6115da231a`；它仍是 Debug candidate，不是正式签名 release。真机实际听感、震动可感知性、端到端延迟、漏报／误报和热量仍未通过独立门禁。
+上一轮已完成代码回归：标准近区提示的语音／短音／震动联动、短话术与 1.8 倍默认语速、单个最新近区 TTS 待播项、密集战斗优先级与降级、周期性异常会话 checkpoint，以及 locator/实际 ROI 诊断字段。当时 `testDebugUnitTest` 100 项通过，`lintDebug` 与 `assembleDebug` 通过。该轮 debug candidate 文件名为 `sensefield-0.3.0-alpha.1-diagnostics-arm64-v8a-debug-candidate.apk`，SHA-256 `49f03ed1e0046e943c527b15f90cba1670ed344d5af7b9c8e349aa6115da231a`；保留原始命名和哈希作为历史证据。本轮当前包见页面顶部。真机实际听感、震动可感知性、端到端延迟、漏报／误报和热量仍未通过独立门禁。
 
-患者代表提出的新手引导列为下一阶段产品项：首次使用语音引导和大字流程、测试提醒、一次可跳过的教学局，确认患者能理解方向话术并完成授权。它不改变本轮实时识别链路和 release 门禁。
+患者代表提出的新手需求已先落实为开始前的语音释义与试听；完整游戏操作教学和游戏内新手任务识别继续列为后续产品项。本次不以播放回调代替患者实际理解与感知，也不改变实时识别链路和 release 门禁。
 
 1. 完成 video7-edge 的人工复核，并核对队列 ROI 与 provenance；尚未复核的数据不得加入训练或验证。video10/11 已完成并纳入 v2 split。
 2. 当前 HD bootstrap v2 仅供开发辅助：train 为 video1+8+3+4+5+10 的 664 图／1211 框，val 为 video2-HD+11 的 230 图／400 框，bootstrap test 仍为空，不能报告 bootstrap 最终成绩。video13 已作为跨来源开发诊断（121 图／211 框）；此前训练阶段 confidence `0.49` 的准确率门槛未过、召回与方向已过。首轮真机反馈后曾检查多档阈值，当前部署 confidence 为 `0.67`，video13 不能用于独立门禁。低清 video2–6 与其旧模型、checkpoint、指标均已退役。

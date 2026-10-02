@@ -331,7 +331,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
                         Log.w(TAG, "Could not stop timed-out speech", error);
                     }
                     callback.onFinished(SystemClock.elapsedRealtime(), false);
-                }, SPEECH_TIMEOUT_MS);
+                }, speechTimeoutMs(request));
                 return true;
             }
         } catch (RuntimeException error) {
@@ -342,6 +342,12 @@ final class CuePlayer implements CueDispatcher.Renderer {
     }
 
     boolean speechReady() { return ttsReady && !closed; }
+
+    static long speechTimeoutMs(CueRequest request) {
+        return request.category == CueRequest.Category.SYSTEM
+                && ReminderGuide.NARRATION_KIND.equals(request.kind)
+                ? ReminderGuide.NARRATION_TIMEOUT_MS : SPEECH_TIMEOUT_MS;
+    }
 
     @Override public void stopSpeech() {
         TextToSpeech voice;

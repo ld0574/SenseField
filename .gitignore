@@ -65,6 +65,7 @@ validation/private/
 # Keep project-authored public documentation explicitly allowlisted.
 docs/*
 !docs/团队协作与本地运行.md
+!docs/版本命名规范.md
 !docs/GITHUB发布检查清单.md
 !docs/赛题背景.md
 !docs/外部数据引入与预训练.md

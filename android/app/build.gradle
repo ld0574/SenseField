@@ -40,8 +40,8 @@ android {
         applicationId 'com.openkhub.sensefield'
         minSdk 29
         targetSdk 35
-        versionCode 8
-        versionName '0.3.0-alpha.1-diagnostics'
+        versionCode 9
+        versionName '0.3.1'
         ndk {
             abiFilters 'arm64-v8a'
         }

@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-readonly PREVIEW_VERSION_NAME='0.3.0-alpha.1-diagnostics'
-readonly PREVIEW_VERSION_CODE='8'
+readonly PREVIEW_VERSION_NAME='0.3.1'
+readonly PREVIEW_VERSION_CODE='9'
 readonly PREVIEW_ABI='arm64-v8a'
 readonly PREVIEW_MIN_SDK='29'
 readonly PREVIEW_TARGET_SDK='35'
@@ -55,6 +55,8 @@ configured_version_code="$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]+([0-9]
 configured_version_name="$(sed -nE "s/^[[:space:]]*versionName[[:space:]]+['\"]([^'\"]+)['\"].*/\1/p" "$build_gradle" | head -n 1)"
 configured_min_sdk="$(sed -nE 's/^[[:space:]]*minSdk[[:space:]]+([0-9]+).*/\1/p' "$build_gradle" | head -n 1)"
 configured_target_sdk="$(sed -nE 's/^[[:space:]]*targetSdk[[:space:]]+([0-9]+).*/\1/p' "$build_gradle" | head -n 1)"
+[[ "$configured_version_name" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail \
+  "versionName 必须使用 a.b.c 三段数字；用途标签请写在交付说明中。"
 [[ "$configured_version_code" == "$PREVIEW_VERSION_CODE" ]] || fail \
   "android/app/build.gradle 的 versionCode 为 ${configured_version_code:-空值}，预期为 $PREVIEW_VERSION_CODE。"
 [[ "$configured_version_name" == "$PREVIEW_VERSION_NAME" ]] || fail \

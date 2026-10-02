@@ -76,6 +76,16 @@ public final class GameTuningActivity extends Activity {
         hapticTest = button("测试震动", false);
         hapticTest.setOnClickListener(view -> testHaptic());
         UiKit.add(voices, hapticTest, 10);
+        CheckBox introduction = checkBox("每次开始前朗读提醒说明");
+        introduction.setChecked(GameProfile.settings(this)
+                .getBoolean(ReminderGuide.PREF_READ_BEFORE_START, true));
+        introduction.setOnCheckedChangeListener((view, checked) -> GameProfile.settings(this)
+                .edit().putBoolean(ReminderGuide.PREF_READ_BEFORE_START, checked).apply());
+        UiKit.add(voices, introduction, 10);
+        Button guide = button("提醒说明与试听", false);
+        guide.setOnClickListener(view ->
+                startActivity(new Intent(this, ReminderGuideActivity.class)));
+        UiKit.add(voices, guide, 0);
         UiKit.add(content, voices, 14);
 
         LinearLayout recognition = UiKit.card(this);
