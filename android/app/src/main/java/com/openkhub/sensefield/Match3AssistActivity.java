@@ -8,13 +8,15 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Typeface;
+import android.media.projection.MediaProjectionManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
-import android.provider.MediaStore;
+import android.view.View;
 import android.view.ViewGroup;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
@@ -25,19 +27,19 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 开心消消乐（北京乐元素）辅助 · 体验版。
- * v1 识别路线：玩家截一张游戏棋盘截图 → 选图 → 按标定网格采样颜色 → 颜色矩阵
- * → 本地三连/交换检测 → 语音播报 → 可选发 Jev 判定。连续截屏实时识别在路线图。
- * 无障碍优先：所有结果都走 TTS 出声，界面上同步显示文字。
+ * 开心消消乐（北京乐元素）辅助 · 实时版。
+ * 三条识别链路：①截图式（选图→标定采样→播报）②实时式（MediaProjection 每秒采样，局面变化即播报）
+ * ③示例判定（Jev 真请求）。特殊棋子：颜色判不出的格子可与标注模板比对，不再一律显示「.」。
+ * 启动游戏：扫描全机 happyelements 系应用（覆盖各渠道服），不再依赖固定包名列表。
  */
 public class Match3AssistActivity extends Activity {
     private static final String[] ANIPOP_PACKAGES = {
@@ -47,6 +49,7 @@ public class Match3AssistActivity extends Activity {
             "com.happyelements.AndroidAnimal.wdj"
     };
     private static final int REQ_PICK_IMAGE = 2001;
+    private static final int REQ_PROJECTION = 2002;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Bitmap screenshot;
@@ -57,7 +60,14 @@ public class Match3AssistActivity extends Activity {
     private EditText topIn;
     private EditText rightIn;
     private EditText bottomIn;
+    private Spinner markRowSpin;
+    private Spinner markColSpin;
+    private EditText markNameIn;
     private TextView output;
+    private final CueDispatcher.Listener silentListener = new CueDispatcher.Listener() {
+        @Override public void onDispatch(CueRequest request, CueDispatcher.DispatchResult result) { }
+        @Override public void onPlayback(CueRequest request, String channel, long atMs, String result) { }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -69,26 +79,37 @@ public class Match3AssistActivity extends Activity {
         setContentView(scroll);
 
         TextView title = new TextView(this);
-        title.setText("开心消消乐辅助 · 体验版");
+        title.setText("开心消消乐辅助 · 实时版");
         title.setTextSize(20);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         page.addView(title);
-        page.addView(note("v1 识别路线：在游戏里截一张棋盘图 → 回来选图 → 标定棋盘范围 → 采样颜色 → 播报可消除位置，并可发 Jev 判定。实时连续识别在路线图。"));
+        page.addView(note("三条链路：实时识别（录屏每秒采样，局面变化即播报）｜截图识别（选图→标定→采样）｜示例判定（Jev 真请求）。识别与标定共用一套参数。"));
 
+        /* ---------- 启动 + 实时识别 ---------- */
         LinearLayout actions = UiKit.card(this);
         Button launch = UiKit.button(this, "启动开心消消乐", true);
         launch.setOnClickListener(v -> launchGame());
         actions.addView(launch);
-        Button pick = UiKit.button(this, "选择游戏截图（相册）", false);
+        Button liveStart = UiKit.button(this, "开始实时识别（录屏授权）", true);
+        liveStart.setOnClickListener(v -> startLive());
+        actions.addView(liveStart);
+        Button liveStop = UiKit.button(this, "停止实时识别", false);
+        liveStop.setOnClickListener(v -> {
+            stopService(new Intent(this, Match3LiveService.class));
+            toast("实时识别已停止");
+        });
+        actions.addView(liveStop);
+        Button pick = UiKit.button(this, "选择游戏截图（相册，截图式识别）", false);
         pick.setOnClickListener(v -> pickScreenshot());
         actions.addView(pick);
-        Button demo = UiKit.button(this, "判定示例局面（无需截图，走 Jev 真请求）", false);
+        Button demo = UiKit.button(this, "判定示例局面（Jev 真请求）", false);
         demo.setOnClickListener(v -> judgeSample());
         actions.addView(demo);
         page.addView(actions);
 
+        /* ---------- 标定 ---------- */
         LinearLayout calib = UiKit.card(this);
-        calib.addView(sectionLabel("棋盘标定（按截图百分比填，一次标定后自动记住）"));
+        calib.addView(sectionLabel("棋盘标定（按屏幕百分比，实时与截图共用；一次标定自动记住）"));
         LinearLayout grid = UiKit.horizontal(this);
         briefLabel(grid, "行数");
         rowsSpin = spinner(grid, "行数", new String[]{"6", "7", "8", "9"}, 2);
@@ -104,10 +125,28 @@ public class Match3AssistActivity extends Activity {
         bottomIn = pctInput(pct2, "右下Y%", 82);
         calib.addView(pct2);
         loadCalibration();
-        Button sample = UiKit.button(this, "采样棋盘并播报可消除位置", false);
+        Button sample = UiKit.button(this, "采样截图并播报可消除位置", false);
         sample.setOnClickListener(v -> sampleAndAnnounce());
         calib.addView(sample);
         page.addView(calib);
+
+        /* ---------- 特殊棋子模板库 ---------- */
+        LinearLayout special = UiKit.card(this);
+        special.addView(sectionLabel("特殊棋子模板库（颜色判不出的格子与模板比对，不再显示「.」）"));
+        LinearLayout mark = UiKit.horizontal(this);
+        briefLabel(mark, "行");
+        markRowSpin = spinner(mark, "行", new String[]{"1", "2", "3", "4", "5", "6", "7", "8", "9"}, 0);
+        briefLabel(mark, "列");
+        markColSpin = spinner(mark, "列", new String[]{"1", "2", "3", "4", "5", "6", "7", "8", "9"}, 0);
+        special.addView(mark);
+        markNameIn = new EditText(this);
+        markNameIn.setHint("棋子名称，如：炸弹 / 魔法石");
+        markNameIn.setSingleLine(true);
+        special.addView(markNameIn);
+        Button markSave = UiKit.button(this, "从当前截图裁剪该格，保存为模板", false);
+        markSave.setOnClickListener(v -> saveSpecialTemplate());
+        special.addView(markSave);
+        page.addView(special);
 
         preview = new ImageView(this);
         preview.setAdjustViewBounds(true);
@@ -121,23 +160,65 @@ public class Match3AssistActivity extends Activity {
         page.addView(output);
     }
 
-    /* ---------- 启动游戏 ---------- */
+    /* ---------- 启动游戏：扫描全机 happyelements 系（覆盖各渠道服），不再依赖固定列表 ---------- */
 
     private void launchGame() {
-        for (String pkg : ANIPOP_PACKAGES) {
-            Intent launch = getPackageManager().getLaunchIntentForPackage(pkg);
+        List<android.content.pm.ResolveInfo> launchables = getPackageManager()
+                .queryIntentActivities(new Intent(Intent.ACTION_MAIN)
+                        .addCategory(Intent.CATEGORY_LAUNCHER), 0);
+        String picked = null;
+        List<String> found = new ArrayList<>();
+        for (android.content.pm.ResolveInfo info : launchables) {
+            String pkg = info.activityInfo == null ? null : info.activityInfo.packageName;
+            if (pkg == null || !pkg.toLowerCase().contains("happyelements")) continue;
+            String version;
+            try {
+                version = getPackageManager().getPackageInfo(pkg, 0).versionName;
+            } catch (Exception e) {
+                version = "?";
+            }
+            found.add(pkg + " v" + version);
+            if (picked == null || pkg.equals(ANIPOP_PACKAGES[0])) picked = pkg;
+        }
+        if (picked != null) {
+            Intent launch = getPackageManager().getLaunchIntentForPackage(picked);
             if (launch != null) {
                 startActivity(launch);
+                announce("已启动开心消消乐。");
+                output.setText("检测到已安装：\n  " + join(found) + "\n已启动：" + picked);
                 return;
             }
         }
         try {
             startActivity(new Intent(Intent.ACTION_VIEW,
                     Uri.parse("market://details?id=" + ANIPOP_PACKAGES[0])));
-            toast("未检测到已安装的开心消消乐，已打开应用商店");
+            announce("未检测到开心消消乐，请先安装。");
+            output.setText("未检测到 happyelements 系已安装应用，已尝试打开应用商店。");
         } catch (Exception e) {
-            toast("未检测到开心消消乐，请先安装（乐元素官方版或各渠道版）");
+            announce("未检测到开心消消乐，请先安装。");
+            output.setText("未检测到 happyelements 系已安装应用，且本机没有可用应用商店。");
         }
+    }
+
+    private static String join(List<String> list) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < list.size(); i++) {
+            sb.append(list.get(i));
+            if (i < list.size() - 1) sb.append('\n').append("  ");
+        }
+        return sb.toString();
+    }
+
+    /* ---------- 实时识别：录屏授权 → 前台服务 ---------- */
+
+    private void startLive() {
+        MediaProjectionManager manager =
+                (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
+        if (manager == null) {
+            toast("本机不支持录屏");
+            return;
+        }
+        startActivityForResult(manager.createScreenCaptureIntent(), REQ_PROJECTION);
     }
 
     /* ---------- 选截图 ---------- */
@@ -151,6 +232,19 @@ public class Match3AssistActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_PROJECTION) {
+            if (resultCode != RESULT_OK || data == null) {
+                announce("录屏授权被取消，实时识别未开启。");
+                return;
+            }
+            Intent service = new Intent(this, Match3LiveService.class)
+                    .setAction(Match3LiveService.ACTION_START)
+                    .putExtra(Match3LiveService.EXTRA_RESULT_CODE, resultCode)
+                    .putExtra(Match3LiveService.EXTRA_DATA, data);
+            startForegroundService(service);
+            output.setText("实时识别已启动：约每秒采样一次，局面变化时自动播报。切到游戏全屏即可。\n停止：回本页点「停止实时识别」。");
+            return;
+        }
         if (requestCode != REQ_PICK_IMAGE || resultCode != RESULT_OK || data == null || data.getData() == null) {
             return;
         }
@@ -171,7 +265,7 @@ public class Match3AssistActivity extends Activity {
                 return;
             }
             drawPreview();
-            toast("截图已载入，检查标定后点「采样棋盘并播报」");
+            toast("截图已载入，检查标定后点「采样截图并播报」");
         } catch (Exception e) {
             toast("图片读取异常: " + e.getMessage());
         }
@@ -189,14 +283,10 @@ public class Match3AssistActivity extends Activity {
         bottomIn.setText(String.valueOf(prefs.getInt("match3_b", 82)));
     }
 
-    private static int intToIndex(int value, int min, int max) {
-        return Math.max(0, Math.min(max - min, value - min));
-    }
-
     private void saveCalibration() {
         GameProfile.settings(this).edit()
-                .putInt("match3_rows", indexToInt(rowsSpin))
-                .putInt("match3_cols", indexToInt(colsSpin))
+                .putInt("match3_rows", 6 + rowsSpin.getSelectedItemPosition())
+                .putInt("match3_cols", 6 + colsSpin.getSelectedItemPosition())
                 .putInt("match3_l", parseInt(leftIn, 4))
                 .putInt("match3_t", parseInt(topIn, 18))
                 .putInt("match3_r", parseInt(rightIn, 96))
@@ -204,8 +294,8 @@ public class Match3AssistActivity extends Activity {
                 .apply();
     }
 
-    private static int indexToInt(Spinner spinner) {
-        return 6 + spinner.getSelectedItemPosition();
+    private static int intToIndex(int value, int min, int max) {
+        return Math.max(0, Math.min(max - min, value - min));
     }
 
     private static int parseInt(EditText input, int fallback) {
@@ -223,7 +313,8 @@ public class Match3AssistActivity extends Activity {
         Paint paint = new Paint();
         paint.setColor(Color.rgb(0, 200, 120));
         paint.setStrokeWidth(Math.max(2, marked.getWidth() / 300));
-        int rows = indexToInt(rowsSpin), cols = indexToInt(colsSpin);
+        int rows = 6 + rowsSpin.getSelectedItemPosition();
+        int cols = 6 + colsSpin.getSelectedItemPosition();
         int l = marked.getWidth() * parseInt(leftIn, 4) / 100;
         int t = marked.getHeight() * parseInt(topIn, 18) / 100;
         int r = marked.getWidth() * parseInt(rightIn, 96) / 100;
@@ -239,7 +330,7 @@ public class Match3AssistActivity extends Activity {
         preview.setImageBitmap(marked);
     }
 
-    /* ---------- 采样 + 检测 + 播报 ---------- */
+    /* ---------- 截图式识别 ---------- */
 
     private void sampleAndAnnounce() {
         if (screenshot == null) {
@@ -248,7 +339,7 @@ public class Match3AssistActivity extends Activity {
         }
         saveCalibration();
         drawPreview();
-        char[][] board = sampleBoard(screenshot);
+        char[][] board = sampler().sample(screenshot);
         StringBuilder sb = new StringBuilder("识别矩阵（. 表示未识别/空格）：\n");
         for (char[] row : board) sb.append(String.valueOf(row)).append('\n');
         List<Match3Board.Swap> swaps = Match3Board.findSwaps(board);
@@ -267,55 +358,68 @@ public class Match3AssistActivity extends Activity {
                 sb.append("  ").append(line).append('\n');
             }
         }
-        sb.append("\n提示：错格多半是标定不准或特殊棋子，微调百分比后重新采样。");
+        sb.append("\n提示：错格多半是标定不准或特殊棋子，微调百分比或标注模板后重新采样。");
         output.setText(sb.toString());
     }
 
-    /** 按标定切格，取每格中心 16×16 平均色 → HSV → 六色字母（. 表示未识别）。 */
-    private char[][] sampleBoard(Bitmap bitmap) {
-        int rows = indexToInt(rowsSpin), cols = indexToInt(colsSpin);
-        int l = bitmap.getWidth() * parseInt(leftIn, 4) / 100;
-        int t = bitmap.getHeight() * parseInt(topIn, 18) / 100;
-        int r = bitmap.getWidth() * parseInt(rightIn, 96) / 100;
-        int b = bitmap.getHeight() * parseInt(bottomIn, 82) / 100;
-        char[][] board = new char[rows][cols];
+    private Match3Sampler sampler() {
+        var prefs = GameProfile.settings(this);
+        return new Match3Sampler(this,
+                6 + rowsSpin.getSelectedItemPosition(),
+                6 + colsSpin.getSelectedItemPosition(),
+                parseInt(leftIn, 4), parseInt(topIn, 18),
+                parseInt(rightIn, 96), parseInt(bottomIn, 82));
+    }
+
+    /* ---------- 特殊棋子模板 ---------- */
+
+    private void saveSpecialTemplate() {
+        if (screenshot == null) {
+            toast("先选一张截图再标注");
+            return;
+        }
+        String name = markNameIn.getText().toString().trim();
+        if (name.isEmpty()) {
+            toast("先填棋子名称");
+            return;
+        }
+        saveCalibration();
+        int row = markRowSpin.getSelectedItemPosition();
+        int col = markColSpin.getSelectedItemPosition();
+        int rows = 6 + rowsSpin.getSelectedItemPosition();
+        int cols = 6 + colsSpin.getSelectedItemPosition();
+        int l = screenshot.getWidth() * parseInt(leftIn, 4) / 100;
+        int t = screenshot.getHeight() * parseInt(topIn, 18) / 100;
+        int r = screenshot.getWidth() * parseInt(rightIn, 96) / 100;
+        int b = screenshot.getHeight() * parseInt(bottomIn, 82) / 100;
         int cellW = (r - l) / cols, cellH = (b - t) / rows;
-        int half = Math.max(3, Math.min(cellW, cellH) / 8);
-        for (int row = 0; row < rows; row++) {
-            for (int col = 0; col < cols; col++) {
-                int cx = l + cellW * col + cellW / 2;
-                int cy = t + cellH * row + cellH / 2;
-                board[row][col] = classifyCell(bitmap, cx, cy, half);
-            }
+        int cx = l + cellW * col + cellW / 2, cy = t + cellH * row + cellH / 2;
+        int side = Math.max(8, Math.min(cellW, cellH) / 2);
+        int cl = Math.max(0, cx - side), ct = Math.max(0, cy - side);
+        int cr = Math.min(screenshot.getWidth(), cx + side), cb = Math.min(screenshot.getHeight(), cy + side);
+        if (cr - cl < 8 || cb - ct < 8) {
+            toast("裁剪区域无效");
+            return;
         }
-        return board;
+        try {
+            Match3Sampler.saveTemplate(this, name,
+                    Bitmap.createBitmap(screenshot, cl, ct, cr - cl, cb - ct));
+            int count = Match3Sampler.loadTemplates(this).size();
+            announce("特殊棋子模板已保存：" + name + "，当前共 " + count + " 个模板。");
+            output.setText("已保存模板「" + name + "」，共 " + count + " 个。下次采样时颜色判不出的格子会自动与模板比对。");
+            hideKeyboard();
+        } catch (Exception e) {
+            toast("保存失败: " + e.getMessage());
+        }
     }
 
-    private static char classifyCell(Bitmap bitmap, int cx, int cy, int half) {
-        long sumR = 0, sumG = 0, sumB = 0, n = 0;
-        for (int y = Math.max(0, cy - half); y <= Math.min(bitmap.getHeight() - 1, cy + half); y++) {
-            for (int x = Math.max(0, cx - half); x <= Math.min(bitmap.getWidth() - 1, cx + half); x++) {
-                int px = bitmap.getPixel(x, y);
-                sumR += Color.red(px);
-                sumG += Color.green(px);
-                sumB += Color.blue(px);
-                n++;
-            }
-        }
-        if (n == 0) return '.';
-        float[] hsv = new float[3];
-        Color.colorToHSV(Color.rgb((int) (sumR / n), (int) (sumG / n), (int) (sumB / n)), hsv);
-        if (hsv[1] < 0.18f || hsv[2] < 0.15f) return '.';   // 低饱和/过暗 → 棋盘底或空格
-        float h = hsv[0];
-        if (h >= 345 || h < 14) return 'R';
-        if (h < 38) return 'O';
-        if (h < 68) return 'Y';
-        if (h < 165) return 'G';
-        if (h < 262) return 'B';
-        return 'P';
+    private void hideKeyboard() {
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        View focus = getCurrentFocus();
+        if (imm != null && focus != null) imm.hideSoftInputFromWindow(focus.getWindowToken(), 0);
     }
 
-    /* ---------- Jev 判定 ---------- */
+    /* ---------- Jev 示例判定 ---------- */
 
     private void judgeSample() {
         final JevClient client = JevSettings.clientOrNull(this);
@@ -361,25 +465,26 @@ public class Match3AssistActivity extends Activity {
         }
     }
 
-    /* ---------- 播报（复用演示播报的宽容策略真链路） ---------- */
+    /* ---------- 播报（宽容策略真链路，与演示播报一致） ---------- */
+
+    private CuePlayer player;
+    private CueDispatcher dispatcher;
+    private String session;
+    private int seq;
 
     private void announce(String speech) {
         long t = SystemClock.elapsedRealtime();
-        if (session == null) {
+        if (dispatcher == null) {
             player = new CuePlayer(this);
             session = "m3-" + t;
-            dispatcher = new CueDispatcher(player, permissivePolicy(), listener(), SystemClock::elapsedRealtime);
+            dispatcher = new CueDispatcher(player, permissivePolicy(), silentListener,
+                    SystemClock::elapsedRealtime);
         }
         dispatcher.submit(new CueRequest(session, session + ":a" + (seq++), "m3:announce", "消消乐播报",
                 CueRequest.Category.SYSTEM, 70, t, t + 10000,
                 CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH | CueRequest.CHANNEL_HAPTIC,
                 0, 0, 0, speech));
     }
-
-    private CuePlayer player;
-    private CueDispatcher dispatcher;
-    private String session;
-    private int seq;
 
     private CueDispatcher.Policy permissivePolicy() {
         return new CueDispatcher.Policy() {
@@ -388,17 +493,6 @@ public class Match3AssistActivity extends Activity {
                 return CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH | CueRequest.CHANNEL_HAPTIC;
             }
             @Override public long dedupeWindowMs(CueRequest.Category category) { return 0; }
-        };
-    }
-
-    private CueDispatcher.Listener listener() {
-        return new CueDispatcher.Listener() {
-            @Override public void onDispatch(CueRequest request, CueDispatcher.DispatchResult result) {
-                // 播报结果以语音为准，分发详情不打扰界面
-            }
-            @Override public void onPlayback(CueRequest request, String channel, long atMs, String result) {
-                // 同上
-            }
         };
     }
 

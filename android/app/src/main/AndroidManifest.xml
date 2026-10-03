@@ -13,6 +13,11 @@
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
+        <!-- 包可见性：扫描各渠道服的 happyelements 系应用（开心消消乐启动/已装检测） -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
     </queries>
 
     <application
@@ -54,6 +59,10 @@
             android:name=".Match3AssistActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize|stateHidden" />
+        <service
+            android:name=".Match3LiveService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
         <activity
             android:name=".GameTuningActivity"
             android:exported="false" />
