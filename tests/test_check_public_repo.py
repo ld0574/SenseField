@@ -84,16 +84,39 @@ def test_git_scan_checks_tracked_ignored_and_unignored_model_files(tmp_path: Pat
     assert any("weights/unignored.onnx" in error for error in errors)
 
 
-def test_workspace_fallback_includes_release_documents(tmp_path: Path) -> None:
-    release_docs = [
-        "docs/RELEASE_NOTES_0.3.0-alpha.1.md",
-        "docs/RELEASE_CHECKLIST_0.3.0-alpha.1.md",
+def test_workspace_fallback_includes_public_docs_but_excludes_local_sources(tmp_path: Path) -> None:
+    public_docs = [
+        "docs/README.md",
+        "docs/公开文档范围.md",
+        "docs/research/游戏无障碍案例与需求验证.md",
+        "docs/requirements/README.md",
+        "docs/requirements/为视力障碍玩家打造识别全屏地图的工具.pdf",
+        "docs/requirements/赛题背景知识文档：为视力障碍玩家打造识别全屏地图的工具.pdf",
+        "docs/requirements/【必看】视力障碍玩家全屏地图识别工具_产品需求书_V1.0.pdf",
+        "docs/requirements/符合度评估书03_听野_项目6_符合度53.0pct.pdf",
+        "docs/requirements/罕见无界黑客松赛手手册.md",
+        "docs/releases/README.md",
+        "docs/releases/0.3.0-alpha.1/RELEASE_NOTES.md",
+        "docs/releases/0.3.0-alpha.1/CHECKLIST.md",
+        "docs/releases/0.3.5/RELEASE_NOTES.md",
+        "docs/releases/0.3.8/RELEASE_NOTES.md",
     ]
-    for name in release_docs:
+    for name in public_docs:
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("release document\n", encoding="utf-8")
+        path.write_text("public document\n", encoding="utf-8")
+
+    local_sources = [
+        "docs/references/meetings/source.md",
+        "docs/references/research/original.md",
+        "docs/requirements/source.pdf",
+    ]
+    for name in local_sources:
+        reference = tmp_path / name
+        reference.parent.mkdir(parents=True, exist_ok=True)
+        reference.write_text("local reference\n", encoding="utf-8")
 
     candidates = workspace_candidates(tmp_path)
 
-    assert all(name in candidates for name in release_docs)
+    assert all(name in candidates for name in public_docs)
+    assert all(name not in candidates for name in local_sources)

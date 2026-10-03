@@ -120,7 +120,7 @@ PYTHONPATH=python .venv/bin/python -m mapassist.calibrate_minimap_anchor \
   --output build/minimap-locator-dev.json
 ```
 
-`profiles/hok_minimap_adaptive.experimental.android.json` 是绑定已退役 dense checkpoint 的历史实验配置。布局回放通过后做的检测联合诊断发现旧 YOLOX 在扩大后的动态裁剪上退化；hard-FP 固定 ROI 候选及其权重、阈值也已退役。两类旧 profile 均不应导入当前 APK；当前 APK 内置的是 HD bootstrap v2 固定 ROI 实验 profile，并在首装时默认启用识别。实现、历史对照和限制见[团队协作与本地运行](../docs/团队协作与本地运行.md)。
+`profiles/hok_minimap_adaptive.experimental.android.json` 是绑定已退役 dense checkpoint 的历史实验配置。布局回放通过后做的检测联合诊断发现旧 YOLOX 在扩大后的动态裁剪上退化；hard-FP 固定 ROI 候选及其权重、阈值也已退役。两类旧 profile 均不应导入当前 APK；当前 APK 内置的是 HD bootstrap v2 固定 ROI 实验 profile，并在首装时默认启用识别。实现、历史对照和限制见[团队协作与本地运行](../docs/development/团队协作与本地运行.md)。
 
 定位层可独立回放，不执行 YOLOX：
 

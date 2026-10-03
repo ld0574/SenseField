@@ -73,7 +73,7 @@ source annotations SHA-256 `eeff2b1fff5ae1b2bb365fe5651f144477d2e2b977ad6140edde
 3. 继续按整场录像分组，使用新的开发验证对局比较模型，避免依赖已经反复用于选模的 video6；
 4. video8 旧敌人检测数据因裁剪缺陷不再是有效留出证据。v3 安全 ROI 的 119 张／211 框已用于下面的 safe-ROI 合并训练，不能再作为留出评测；历史 hard-FP 权重仍绑定 legacy crop，Android 端 ROI／权重不变，检测器默认关闭。video8 上旧权重的结果只作 same-match development diagnostic。
 
-密集队列和多人标注命令见 [`docs/团队协作与本地运行.md`](../docs/团队协作与本地运行.md)。
+密集队列和多人标注命令见 [`docs/development/团队协作与本地运行.md`](../docs/development/团队协作与本地运行.md)。
 
 同一批低分辨率数据还做了 640×640 输入微调对照：从 320 最佳权重继续训练 60 轮，最佳点为 epoch 30，precision 91.49%、recall 48.86%、F1 63.70%。它低于 320 基线，说明单纯放大已经只有 `104×108` 的小地图裁剪没有解决问题。该实验只排除“直接增大输入即可修复”的假设，不代表高分辨率原始录像或重新设计过的 640 训练一定无效。
 

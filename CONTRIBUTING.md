@@ -1,6 +1,6 @@
 # 参与开发
 
-感谢参与地图感知助手。先阅读 [团队协作与本地运行](docs/团队协作与本地运行.md) 和 [当前验证状态](validation/STATUS.md)。
+感谢参与地图感知助手。先阅读 [团队协作与本地运行](docs/development/团队协作与本地运行.md) 和 [当前验证状态](validation/STATUS.md)。
 
 ## 开发流程
 
@@ -26,4 +26,4 @@
 
 ## 发布要求
 
-公开前运行 `python3 scripts/check_public_repo.py` 并完成 [GitHub 发布检查清单](docs/GITHUB发布检查清单.md)。新增第三方代码、模型、图片、音效或文档时，需要记录来源和许可证。
+公开前运行 `python3 scripts/check_public_repo.py` 并完成 [GitHub 发布检查清单](docs/releases/GITHUB发布检查清单.md)。新增第三方代码、模型、图片、音效或文档时，需要记录来源和许可证。

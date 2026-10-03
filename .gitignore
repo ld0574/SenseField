@@ -60,21 +60,56 @@ validation/private/
 *.avi
 *.webm
 
-# Supplied competition/reference material needs publication permission first.
-# Keep project-authored public documentation explicitly allowlisted.
-docs/*
-!docs/团队协作与本地运行.md
-!docs/版本命名规范.md
-!docs/GITHUB发布检查清单.md
-!docs/赛题背景.md
-!docs/外部数据引入与预训练.md
-!docs/视野记忆.md
-!docs/技术方案.md
-!docs/黑客松方案收敛与实施路线.md
-!docs/端侧事件感知与可靠性增强技术方案.md
-!docs/RELEASE_NOTES_0.3.0-alpha.1.md
-!docs/RELEASE_NOTES_0.3.5.md
-!docs/RELEASE_CHECKLIST_0.3.0-alpha.1.md
+# Allowlist public documentation, including the shared requirement originals.
+# Original meeting records and research drafts stay local.
+docs/**
+!docs/design/
+!docs/development/
+!docs/plans/
+!docs/references/
+!docs/requirements/
+!docs/research/
+!docs/releases/
+!docs/releases/0.3.0-alpha.1/
+!docs/releases/0.3.1/
+!docs/releases/0.3.2/
+!docs/releases/0.3.3/
+!docs/releases/0.3.4/
+!docs/releases/0.3.5/
+!docs/releases/0.3.6/
+!docs/releases/0.3.7/
+!docs/releases/0.3.8/
+!docs/README.md
+!docs/公开文档范围.md
+!docs/design/技术方案.md
+!docs/design/端侧事件感知与可靠性增强技术方案.md
+!docs/design/视野记忆.md
+!docs/design/赛题背景.md
+!docs/development/团队协作与本地运行.md
+!docs/development/外部数据引入与预训练.md
+!docs/plans/黑客松方案收敛与实施路线.md
+!docs/references/README.md
+!docs/requirements/README.md
+!docs/requirements/为视力障碍玩家打造识别全屏地图的工具.pdf
+!docs/requirements/赛题背景知识文档：为视力障碍玩家打造识别全屏地图的工具.pdf
+!docs/requirements/【必看】视力障碍玩家全屏地图识别工具_产品需求书_V1.0.pdf
+!docs/requirements/符合度评估书03_听野_项目6_符合度53.0pct.pdf
+!docs/requirements/罕见无界黑客松赛手手册.md
+!docs/research/游戏无障碍案例与需求验证.md
+!docs/releases/0.3.0-alpha.1/CHECKLIST.md
+!docs/releases/0.3.0-alpha.1/RELEASE_NOTES.md
+!docs/releases/0.3.1/RELEASE_NOTES.md
+!docs/releases/0.3.2/RELEASE_NOTES.md
+!docs/releases/0.3.3/RELEASE_NOTES.md
+!docs/releases/0.3.4/RELEASE_NOTES.md
+!docs/releases/0.3.5/RELEASE_NOTES.md
+!docs/releases/0.3.5/复测说明.md
+!docs/releases/0.3.6/RELEASE_NOTES.md
+!docs/releases/0.3.7/RELEASE_NOTES.md
+!docs/releases/0.3.8/RELEASE_NOTES.md
+!docs/releases/GITHUB发布检查清单.md
+!docs/releases/README.md
+!docs/releases/版本命名规范.md
 
 # Private model weights and training checkpoints stay local.
 *.pt

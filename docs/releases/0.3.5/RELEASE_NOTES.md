@@ -30,3 +30,18 @@
 识别在手机本地进行。游戏画面是否保存由你选择，记录不会自动上传。若希望留存问题线索，可先在设置开启「保存游戏画面」，异常发生后及时点通知中的「标记问题」，并记下游戏时间；结束后导出记录，交给协助体验的负责人核对。采样记录可能不完整。
 
 当前为公开体验版，提醒仍可能漏报或出现方向偏差。建议先试听、短时体验，观察提示是否有帮助、手机温度是否舒适，再决定是否继续使用。
+
+## 交付文件与来源
+
+APK、ZIP 和校验文件保存在本地 `output/releases/0.3.5/`，不纳入文档目录。
+
+| 项目 | 记录 |
+| --- | --- |
+| APK | `sensefield-0.3.5-arm64-v8a.apk` |
+| Android versionCode | `13` |
+| APK 大小 | 19,776,517 bytes |
+| APK SHA-256 | `475b5cccf6102a339e7c2da4f84298e703711459102bd2d36b6b0976bddb3239` |
+
+说明来源：`output/releases/0.3.5/RELEASE_NOTES.md`。 发布元数据来源：同目录 `github-release.json` 和 `release-asset-manifest.json`。公开附件中的 APK 名为 `sensefield-0.3.5-arm64-v8a-debug-candidate.apk`，与本地留存 APK 的 SHA-256 相同；GitHub 将此版标记为 pre-release。
+
+后续验证与证据边界见[0.3.5 真机复测](../../../validation/HEAT_RETEST_0.3.5_2026-10-02.md)。

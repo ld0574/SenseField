@@ -2,16 +2,20 @@
 
 本清单用于公开仓库和比赛提交前的最后检查。自有代码已采用 Apache License 2.0；题方资料、录像、游戏画面、模型数据来源和第三方组件仍需分别核对授权边界。
 
-## 当前构建：0.3.5 公开体验版
+## 交付状态与构建版本
 
-当前 Android 配置为 `versionName 0.3.5`、`versionCode 13`，用于有界事件前后采样与同机发热复测，已于 2026-10-02 以 [GitHub Release](https://github.com/ld0574/SenseField/releases/tag/v0.3.5)交付公开体验。玩家说明见[0.3.5 发布说明](RELEASE_NOTES_0.3.5.md)。所有新版本遵守[版本命名规范](版本命名规范.md)：内部和外部共用 `a.b.c` 序列，每次新交付都递增；下一版为 `0.3.6`。本轮证据见[诊断取舍](../validation/DIAGNOSTIC_CONTEXT_0.3.5_2026-10-02.md)，此前修复见[漏报排查](../validation/TOUCH_ALERT_DIAG_2026-10-02.md)。历史发布草稿 [0.3.0-alpha.1 Release notes](RELEASE_NOTES_0.3.0-alpha.1.md) 和[版本检查清单](RELEASE_CHECKLIST_0.3.0-alpha.1.md)保留原始版本与证据，不能直接作为本次发布说明。本构建只支持 `arm64-v8a`，实验小地图模型尚未通过独立留出验收，公共默认 profile 关闭主画面边缘候选分支且上下文分类器尚未接入。README 和 Release body 必须说明 `MediaProjection`、悬浮窗、通知权限的用途，以及识别在本地处理。
+截至 2026-10-03，公开下载为 [0.3.5 体验版](https://github.com/ld0574/SenseField/releases/tag/v0.3.5)（`versionCode 13`、GitHub pre-release）；最新本地交付为 [0.3.8 候选](0.3.8/RELEASE_NOTES.md)（`versionCode 16`）。下一阶段版本目标为 `0.4.0 / versionCode 17`，尚无对应的 `output/releases/` 交付记录。完整历史见[发布索引](README.md)。所有新交付遵守[版本命名规范](版本命名规范.md)，内部和外部共用 `a.b.c` 序列。
+
+发布前核对 `android/app/build.gradle`、`scripts/build_android_preview.sh` 和实际 APK 的版本、升级序号与签名，准备新版本交付时同步配置与脚本。发布说明必须对应实际 APK 和该版本的验证证据。历史 [0.3.0-alpha.1 发布说明](0.3.0-alpha.1/RELEASE_NOTES.md)与[检查记录](0.3.0-alpha.1/CHECKLIST.md)保留原始信息。
+
+已交付候选只支持 Android 10（API 29）及以上的 `arm64-v8a` 设备。实验小地图模型尚未通过独立留出验收，主画面边缘候选分支默认关闭；按[当前验证状态](../../validation/STATUS.md)复核功能与证据边界。README 和 Release body 必须说明 `MediaProjection`、悬浮窗、通知权限的用途，以及识别在本地处理。
 
 构建优先使用 `bash scripts/build_android_preview.sh`。四个 `SENSEFIELD_KEYSTORE_PATH`、`SENSEFIELD_KEY_ALIAS`、`SENSEFIELD_KEYSTORE_PASSWORD`、`SENSEFIELD_KEY_PASSWORD` 环境变量全部提供时才构建签名 candidate；缺少签名参数时只构建文件名含 `debug-candidate` 的 Debug APK，并沿用 Android Gradle 的标准 debug signing。脚本不生成或上传发布 keystore，不发布 GitHub Release。
 
 ## 1. 权利和隐私
 
 - [x] 团队已在根目录加入 Apache License 2.0，并填写 2026 年团队版权信息。
-- [ ] 确认题方 PDF、赛手手册、启动会逐字稿和调研材料是否允许公开。目前 `.gitignore` 默认排除现有 `docs/` 参考资料，只放行项目自写的运行和发布文档。
+- [ ] 按[公开文档范围](../公开文档范围.md)复核本次提交。`requirements/` 的题方 PDF 与赛手手册、项目自写方案、开发与发布文档及整理后的调研摘要按文件放行；原始会议与完整检索稿继续保留本地。
 - [ ] 确认录像中所有玩家、账号名、语音和聊天内容的授权范围。原始录像默认永久留在 `video/` 或 `data/private/`，不进入公开仓库。
 - [ ] 检查截图、演示视频和 README 图片，遮盖玩家昵称、账号、群号及其他个人信息。
 - [ ] 不提交标注数据库、私有 profile、预测结果、训练数据、签名密钥、`.env` 或 `local.properties`。
@@ -86,9 +90,10 @@ git push -u origin main
 
 ## 5. Release 和比赛交付
 
-- [ ] 用 Git tag 标记演示版本，例如 `v0.2.0-demo`。
-- [ ] APK 放到 GitHub Release 附件，不把 `android/app/build/` 提交到源码仓库。
+- [ ] 需要公开 Release 时，用对应版本的 Git tag 标记，例如 `v0.3.5`；本地候选交付不要求创建 tag。
+- [ ] APK、ZIP 和校验文件保存在 `output/releases/<版本>/`，公开交付时上传到 GitHub Release 附件；`docs/` 只保存说明和发布记录。
+- [ ] 在 `docs/releases/<版本>/RELEASE_NOTES.md` 记录变化、使用方式、验证边界、文件名、大小与 SHA-256，并更新[发布索引](README.md)。
 - [ ] 同时发布 APK 的 SHA-256、Android 最低版本、测试设备和已知限制。
 - [ ] Release 不包含私有 profile；如需演示配置，只发布不含玩家数据、经过复核的配置。
 - [ ] 保留一段可复现的合成演示；真实录像只有在取得授权后才能作为公开演示。
-- [ ] 核对 [当前验证状态](../validation/STATUS.md)，避免把待验证项目写成已完成。
+- [ ] 核对 [当前验证状态](../../validation/STATUS.md)，避免把待验证项目写成已完成。

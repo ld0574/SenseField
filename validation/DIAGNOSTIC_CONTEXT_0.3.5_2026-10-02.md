@@ -33,7 +33,7 @@
 
 JVM 回归共 153 项通过：新增 7 项验证采样间隔、前窗时长／帧数限制、窗口合并与硬截止、自动限流、人工绕过、时钟回退和清理；新增 4 项验证图片任务的重量预算、错误释放和并发压力。`assembleDebug`、`lintDebug` 首轮通过，独立 Luna max 只读复核后修正手动标记的预算预留及当帧窗口关联，再完成最终构建核验。
 
-交付 APK：[sensefield-0.3.5-arm64-v8a-debug-candidate.apk](../output/releases/0.3.5/sensefield-0.3.5-arm64-v8a-debug-candidate.apk)，19,776,517 bytes。SHA-256：`475b5cccf6102a339e7c2da4f84298e703711459102bd2d36b6b0976bddb3239`。v2 签名有效，Android Debug 证书 SHA-256 为 `5a42a53a8f06850e89c46ea193931e9853e3ce7cff99551b42e8b414a1eaaf68`，可覆盖此前同签名候选。实际版本 0.3.5 / 13，仅 arm64-v8a，minSdk 29 / targetSdk 35；APK 中两个 profile、双类与回退模型权重以及全部原生 `.so` 与保留的 0.3.4 逐字节一致，新诊断类与标记入口已打包。初次本地交付时尚未发布 GitHub Release 或创建 tag。
+交付 APK：[sensefield-0.3.5-arm64-v8a-debug-candidate.apk](https://github.com/ld0574/SenseField/releases/download/v0.3.5/sensefield-0.3.5-arm64-v8a-debug-candidate.apk)，19,776,517 bytes。SHA-256：`475b5cccf6102a339e7c2da4f84298e703711459102bd2d36b6b0976bddb3239`。v2 签名有效，Android Debug 证书 SHA-256 为 `5a42a53a8f06850e89c46ea193931e9853e3ce7cff99551b42e8b414a1eaaf68`，可覆盖此前同签名候选。实际版本 0.3.5 / 13，仅 arm64-v8a，minSdk 29 / targetSdk 35；APK 中两个 profile、双类与回退模型权重以及全部原生 `.so` 与保留的 0.3.4 逐字节一致，新诊断类与标记入口已打包。初次本地交付时尚未发布 GitHub Release 或创建 tag。
 
 交付前实体手机未连接。Android 14 arm64 模拟器已验证从 0.3.2 覆盖升级到 0.3.5／13、开始页、提醒说明、悬浮窗授权和系统截屏授权，CaptureService／VirtualDisplay 已启动；已有诊断会话未清除。该 AVD 在旋转设置及临时显示尺寸调整后仍未提供横屏帧，新会话检查点为 `waiting_for_landscape`，横屏处理帧与图片数量均为 0。因此当时事件前后图片保存、图片开关取消和真实游戏提示没有得到运行时验证，不能以采集服务启动代替这些结果。模拟器不能替代真实游戏场景、热量或实际发声验证。
 

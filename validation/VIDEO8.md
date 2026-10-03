@@ -25,7 +25,7 @@
 - 敌人重标队列 v2 `blind-review-v2-roi-recalibrated` 的帧为 348×344 crop，但 manifest ROI 仍使用全屏坐标，坐标系错配；该队列保留为无效产物证据，不能启动。v1 标注与冻结历史原样保留。
 - 新 v3 安全 ROI 队列位于 `data/private/minimap-video8-holdout-v1/blind-review-v3-safe-roi`：沿用 v1 的 120 个时间点，帧和 overlay 均为 `2376×1080`。小地图控件为 `[106,0,454,344]`；检测裁剪向外扩 27 px 后为 `[79,0,481,371]`（`402×371`），全屏归一化 ROI 为 `[0.03324915824915825,0,0.1691919191919192,0.3435185185185185]`。标注只纳入图标中心位于控件内的敌方英雄；安全边距内、控件外的 HUD 头像不标。120 条任务现已全部完成：102 `corrected`／211 框、17 `negative`、1 `excluded`，0 `pending`、0 `accepted`、0 `skip`，0 活动租约。task59 的蓝圈误标已删除。
 - 方向参考必须继续使用控件框 `[106,0,454,344]`（`widget_roi`），不能使用安全检测裁剪中心：两者 x 中心都是 280 px，但 y 中心分别是 172 px 和 185.5 px。review evaluator 与 COCO 裁剪导出会保留／映射 `widget_roi`；生成新 Android profile 时用 `rois.minimap_direction` 声明全屏方向参考。旧 profile 缺少该字段时保留历史行为，按检测 ROI 定方向。已退役 hard-FP profile／权重仍绑定 legacy fixed ROI，因此此处不生成可部署 profile；新安全 ROI 模型完成重训后需为对应显示布局设置方向参考并重跑方向评估。
-- `AnnotationStore` 会拦截 `display_size` 不匹配的帧。最终 review manifest 由标注服务 `/api/export` 刷新；`finalize_review` 生成的 detection manifest 带源录像 SHA-256，COCO 导出器会在抽帧前核验该哈希。v3 还未用于安全 ROI 权重重训；现有模型结果仅为下面的 same-match 诊断。启动方式见[团队协作与本地运行](../docs/团队协作与本地运行.md)。本节布局定位器评测是单独的全屏边界任务。
+- `AnnotationStore` 会拦截 `display_size` 不匹配的帧。最终 review manifest 由标注服务 `/api/export` 刷新；`finalize_review` 生成的 detection manifest 带源录像 SHA-256，COCO 导出器会在抽帧前核验该哈希。v3 还未用于安全 ROI 权重重训；现有模型结果仅为下面的 same-match 诊断。启动方式见[团队协作与本地运行](../docs/development/团队协作与本地运行.md)。本节布局定位器评测是单独的全屏边界任务。
 
 ## 修正边界后的布局定位器 v2 评测
 
