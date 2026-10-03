@@ -5,9 +5,18 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Jev 判定层（可选云端/本地通道）：仅在用户于「判定自测」页显式启用并配置渠道后
+         才会发起网络请求；默认关闭，不改变"本地处理、不上传"的产品承诺。
+         明文 HTTP 仅对本机回环地址放行（见 xml/network_security_config.xml）。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <queries>
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+        <!-- 包可见性：扫描各渠道服的 happyelements 系应用（开心消消乐启动/已装检测） -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
         </intent>
     </queries>
 
@@ -21,7 +30,8 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
-        android:usesCleartextTraffic="false">
+        android:usesCleartextTraffic="false"
+        android:networkSecurityConfig="@xml/network_security_config">
         <provider
             android:name=".DiagnosticFileProvider"
             android:authorities="${applicationId}.diagnostics"
@@ -41,6 +51,18 @@
         <activity
             android:name=".AlertSettingsActivity"
             android:exported="false" />
+        <activity
+            android:name=".JudgmentSelfTestActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
+        <activity
+            android:name=".Match3AssistActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
+        <service
+            android:name=".Match3LiveService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
         <activity
             android:name=".GameTuningActivity"
             android:exported="false" />

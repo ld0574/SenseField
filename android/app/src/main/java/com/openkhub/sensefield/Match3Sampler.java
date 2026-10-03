@@ -1,0 +1,184 @@
+package com.openkhub.sensefield;
+
+import android.graphics.Bitmap;
+import android.graphics.Color;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+
+/** 消消乐识别采样器：Bitmap＋标定 → 颜色矩阵；含特殊棋子模板匹配。
+ *  Activity（截图式）与 Match3LiveService（实时式）共用，保证两条链路行为一致。 */
+final class Match3Sampler {
+    static final char UNKNOWN = '.';
+
+    /** 特殊棋子模板：一张 32×32 裁剪图＋名字。 */
+    static final class SpecialTemplate {
+        final String name;
+        final Bitmap thumb;
+
+        SpecialTemplate(String name, Bitmap thumb) {
+            this.name = name;
+            this.thumb = thumb;
+        }
+    }
+
+    /* ---------- 实例封装：Activity/Service 持有一个实例，模板只加载一次 ---------- */
+
+    private final android.content.Context context;
+    private final int rows;
+    private final int cols;
+    private final int lPct;
+    private final int tPct;
+    private final int rPct;
+    private final int bPct;
+    private final List<SpecialTemplate> templates;
+
+    Match3Sampler(android.content.Context context, int rows, int cols,
+                  int lPct, int tPct, int rPct, int bPct) {
+        this.context = context;
+        this.rows = rows;
+        this.cols = cols;
+        this.lPct = lPct;
+        this.tPct = tPct;
+        this.rPct = rPct;
+        this.bPct = bPct;
+        this.templates = loadTemplates(context);
+    }
+
+    /** 按实例标定采样整盘（含特殊棋子模板匹配）。 */
+    char[][] sample(Bitmap bitmap) {
+        return sample(bitmap, rows, cols, lPct, tPct, rPct, bPct, templates);
+    }
+
+    /** 按标定采样整个棋盘。templates 可为 null/空。 */
+    static char[][] sample(Bitmap bitmap, int rows, int cols,
+                           int lPct, int tPct, int rPct, int bPct,
+                           List<SpecialTemplate> templates) {
+        int l = bitmap.getWidth() * lPct / 100;
+        int t = bitmap.getHeight() * tPct / 100;
+        int r = bitmap.getWidth() * rPct / 100;
+        int b = bitmap.getHeight() * bPct / 100;
+        char[][] board = new char[rows][cols];
+        int cellW = (r - l) / cols, cellH = (b - t) / rows;
+        int half = Math.max(3, Math.min(cellW, cellH) / 8);
+        for (int row = 0; row < rows; row++) {
+            for (int col = 0; col < cols; col++) {
+                int cx = l + cellW * col + cellW / 2;
+                int cy = t + cellH * row + cellH / 2;
+                board[row][col] = classifyCell(bitmap, cx, cy, half, templates);
+            }
+        }
+        return board;
+    }
+
+    static char classifyCell(Bitmap bitmap, int cx, int cy, int half,
+                             List<SpecialTemplate> templates) {
+        long sumR = 0, sumG = 0, sumB = 0, n = 0;
+        for (int y = Math.max(0, cy - half); y <= Math.min(bitmap.getHeight() - 1, cy + half); y++) {
+            for (int x = Math.max(0, cx - half); x <= Math.min(bitmap.getWidth() - 1, cx + half); x++) {
+                int px = bitmap.getPixel(x, y);
+                sumR += Color.red(px);
+                sumG += Color.green(px);
+                sumB += Color.blue(px);
+                n++;
+            }
+        }
+        if (n == 0) return UNKNOWN;
+        int rgb = Color.rgb((int) (sumR / n), (int) (sumG / n), (int) (sumB / n));
+        float[] hsv = new float[3];
+        Color.colorToHSV(rgb, hsv);
+        if (hsv[1] < 0.18f || hsv[2] < 0.15f) {
+            return matchTemplate(bitmap, cx, cy, half, templates);
+        }
+        float h = hsv[0];
+        if (h >= 345 || h < 14) return 'R';
+        if (h < 38) return 'O';
+        if (h < 68) return 'Y';
+        if (h < 165) return 'G';
+        if (h < 262) return 'B';
+        return 'P';
+    }
+
+    /** 颜色判不出的格子 → 与特殊棋子模板比对（16×16 缩放后平均绝对差），阈值内取最像的。 */
+    private static char matchTemplate(Bitmap bitmap, int cx, int cy, int half,
+                                      List<SpecialTemplate> templates) {
+        if (templates == null || templates.isEmpty()) return UNKNOWN;
+        Bitmap cell = cropSquare(bitmap, cx, cy, half * 4);
+        if (cell == null) return UNKNOWN;
+        Bitmap small = Bitmap.createScaledBitmap(cell, 16, 16, true);
+        char code = UNKNOWN;
+        float best = Float.MAX_VALUE;
+        for (SpecialTemplate t : templates) {
+            float diff = meanAbsDiff(small, t.thumb);
+            if (diff < best) {
+                best = diff;
+                code = templateCode(t.name);
+            }
+        }
+        if (best > 30f) return UNKNOWN;   // 都不像 → 未识别，不硬猜
+        return code;
+    }
+
+    /** 模板名 → 矩阵字母（'1'..'9' 供扩展矩阵用；名字在播报层还原）。 */
+    static char templateCode(String name) {
+        int idx = Math.abs(name.hashCode()) % 9;
+        return (char) ('1' + idx);
+    }
+
+    private static Bitmap cropSquare(Bitmap bitmap, int cx, int cy, int halfSide) {
+        int side = Math.max(8, halfSide);
+        int l = Math.max(0, cx - side), t = Math.max(0, cy - side);
+        int r = Math.min(bitmap.getWidth(), cx + side), b = Math.min(bitmap.getHeight(), cy + side);
+        if (r - l < 8 || b - t < 8) return null;
+        return Bitmap.createBitmap(bitmap, l, t, r - l, b - t);
+    }
+
+    private static float meanAbsDiff(Bitmap a, Bitmap b) {
+        Bitmap bb = (b.getWidth() != 16 || b.getHeight() != 16)
+                ? Bitmap.createScaledBitmap(b, 16, 16, true) : b;
+        long diff = 0;
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 16; x++) {
+                int pa = a.getPixel(x, y), pb = bb.getPixel(x, y);
+                diff += Math.abs(Color.red(pa) - Color.red(pb))
+                        + Math.abs(Color.green(pa) - Color.green(pb))
+                        + Math.abs(Color.blue(pa) - Color.blue(pb));
+            }
+        }
+        return diff / (16f * 16f * 3f);
+    }
+
+    /* ---------- 特殊棋子模板存取（app 私有目录 special_templates/） ---------- */
+
+    static File templateDir(android.content.Context context) {
+        File dir = new File(context.getFilesDir(), "special_templates");
+        if (!dir.exists()) dir.mkdirs();
+        return dir;
+    }
+
+    static List<SpecialTemplate> loadTemplates(android.content.Context context) {
+        List<SpecialTemplate> out = new ArrayList<>();
+        File dir = templateDir(context);
+        File[] files = dir.listFiles();
+        if (files == null) return out;
+        for (File f : files) {
+            if (!f.getName().endsWith(".png")) continue;
+            String name = f.getName().substring(0, f.getName().length() - 4);
+            Bitmap bmp = android.graphics.BitmapFactory.decodeFile(f.getAbsolutePath());
+            if (bmp != null) out.add(new SpecialTemplate(name, bmp));
+        }
+        return out;
+    }
+
+    static void saveTemplate(android.content.Context context, String name, Bitmap cell) throws IOException {
+        Bitmap thumb = Bitmap.createScaledBitmap(cell, 32, 32, true);
+        File out = new File(templateDir(context), name + ".png");
+        try (FileOutputStream fos = new FileOutputStream(out)) {
+            thumb.compress(Bitmap.CompressFormat.PNG, 100, fos);
+        }
+    }
+}
