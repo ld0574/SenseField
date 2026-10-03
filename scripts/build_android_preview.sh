@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-readonly PREVIEW_VERSION_NAME='0.3.8'
-readonly PREVIEW_VERSION_CODE='16'
+readonly PREVIEW_VERSION_NAME='0.4.0'
+readonly PREVIEW_VERSION_CODE='17'
 readonly PREVIEW_ABI='arm64-v8a'
 readonly PREVIEW_MIN_SDK='29'
 readonly PREVIEW_TARGET_SDK='35'
@@ -50,6 +50,8 @@ gradle_wrapper="$android_dir/gradlew"
 
 [[ -x "$gradle_wrapper" ]] || fail "找不到可执行的 android/gradlew。"
 [[ -f "$build_gradle" ]] || fail "找不到 Android 版本配置：$build_gradle"
+[[ ! -f "$android_dir/app/src/debug/res/raw/assistant_transport_test_ca.crt" ]] || fail \
+  "助手传输测试的临时 CA 仍在，请停止测试并清理后再构建交付包。"
 
 configured_version_code="$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]+([0-9]+).*/\1/p' "$build_gradle" | head -n 1)"
 configured_version_name="$(sed -nE "s/^[[:space:]]*versionName[[:space:]]+['\"]([^'\"]+)['\"].*/\1/p" "$build_gradle" | head -n 1)"
@@ -65,8 +67,8 @@ configured_target_sdk="$(sed -nE 's/^[[:space:]]*targetSdk[[:space:]]+([0-9]+).*
   "android/app/build.gradle 的 minSdk 为 ${configured_min_sdk:-空值}，预期为 $PREVIEW_MIN_SDK。"
 [[ "$configured_target_sdk" == "$PREVIEW_TARGET_SDK" ]] || fail \
   "android/app/build.gradle 的 targetSdk 为 ${configured_target_sdk:-空值}，预期为 $PREVIEW_TARGET_SDK。"
-grep -Eq "abiFilters[[:space:]]+'$PREVIEW_ABI'" "$build_gradle" || fail \
-  "android/app/build.gradle 未声明当前预览需要的 ABI：$PREVIEW_ABI。"
+grep -Eq "abiFilters.*(sensefieldAbi|'$PREVIEW_ABI')" "$build_gradle" || fail \
+  "android/app/build.gradle 未声明当前预览需要的 ABI 配置。"
 
 signing_values=(
   "${SENSEFIELD_KEYSTORE_PATH:-}"
@@ -165,7 +167,7 @@ fi
 
 (
   cd "$android_dir"
-  ./gradlew --no-daemon "$gradle_task"
+  ./gradlew --no-daemon "-PsensefieldAbi=$PREVIEW_ABI" "$gradle_task"
 )
 
 [[ -f "$source_apk" ]] || fail "Gradle 完成但没有生成预期 APK：$source_apk"

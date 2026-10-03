@@ -1,10 +1,18 @@
-# 原型验证状态（更新于 2026-10-03）
+# 原型验证状态（更新于 2026-10-04）
 
 ## 2026-10-04 公开发布 0.3.8
 
 已按用户要求发布为 [GitHub 0.3.8 公开体验版](https://github.com/ld0574/SenseField/releases/tag/v0.3.8)（普通 Release，Latest）。标签 `v0.3.8` 指向 `408f32a44a7ff58c5d69c5be8efa3d8d352afa9f`；APK 沿用 2026-10-03 的交付，未重新构建。实际版本为 0.3.8 / versionCode 16、minSdk29、target35、arm64-v8a；v2 签名有效，与既有体验包同为 Android Debug 证书。
 
 附件包含 APK、安装 ZIP、使用说明和 APK SHA-256 校验文件。APK 为 19,780,113 bytes，SHA-256 `86f026fe253f0d2c6ce37787cfc7e7d75d443785d9005bb46b29a2e823c58e6f`；GitHub 附件大小和摘要已与本地核对。安装 ZIP 仅含同一 APK、校验文件与更新后的玩家使用说明；未上传原始诊断或游戏截图。公开发布不改变 `verified=false` / `release_ready=false`，本版真机温升、实际发声时延和长时稳定性仍待验证。
+
+## 2026-10-04 0.4.0 助手工程状态
+
+GitHub `Latest` 为 0.3.8 普通 Release 体验版（2026-10-04 只读核对）；当前源码目标为 0.4.0 / Android `versionCode 17`。0.4.0 仍是未公开发布的工程候选。合并后通过 JVM 204 项、Python 530 项（1 项跳过）、native CTest 4/4、arm64/x86_64 Debug 构建与 lint。Android 14 arm64 模拟器 12 项本地 instrumentation 通过；额外 2 项正式客户端真实 HTTPS/WSS 合成输入测试通过，未配置 fixture 的普通设备套件会跳过它们。
+
+ASR 后端为 CPU Python FunASR；Paraformer streaming 固定快照的 Apache-2.0 许可、revision 和模型文件 SHA-256 已核对。一次合成输入“请读出当前比分”的 smoke 在 2,510 ms 后得到 final，是单一样本服务管线结果，不是 P95、识别质量或外部录像端到端延迟。外部录像 ASR final-recognition P95（目标 ≤1,000 ms）仍待测，不能判定 SLA 通过。真实 GLM 合成截图读取正确，单次 API 请求 1,089 ms；Android 正式客户端已经 HTTPS/WSS 跑通真实 GLM、固定 CPU ASR 与 generation reset。Linux 隔离 HTTPS/WSS 合成测试也通过，单次音频结束至 final 为 199 ms、GLM 网关请求为 1,804 ms，见[部署记录](../docs/development/assistant-gateway-test-deployment.md)；未测 Android→Linux 或实体麦克风，均非 P95。目标设备麦克风并发、SpeexDSP AEC 实际效果、外部实声延迟、3 组 15 分钟热/负载对照和玩家验收仍待完成。
+
+合并的开心消消乐体验入口提供截图标定与约 1 Hz 的授权实时采样，使用颜色矩阵枚举可形成三连的相邻交换并播报坐标；另有需单独配置渠道凭据的 Jev 示例判定。识别依赖手动棋盘标定与启发式颜色采样，未证明实局准确率或特殊棋子规则完整性，也不会替玩家操作。合并时修复了消消乐绕过声音设置、旧投影关闭新会话、节流前未排空 ImageReader 与截图位图未回收问题，两款游戏采集互斥。王者荣耀端的实验性空间声像、距离触觉与两字方位选项默认关闭。连续语音路由门槛为 Android 10/API 29+ 的本应用静音 `USAGE_GAME` 探测轨道；BLE 路由识别从 API 31 起可用。用户须先确认游戏声在耳机中，其他录音活动或未知/失败路由时暂停上传；耳机并发、回声与静音探测负载仍待真机验证。详细边界见[0.4.0 工程候选说明](../docs/releases/0.4.0/RELEASE_NOTES.md)与[0.4.0 Goal](GOAL_0.4.0_2026-10-03.md)。
 
 ## 2026-10-03 本地候选0.3.8：两局热反馈后的降载
 

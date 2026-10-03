@@ -79,11 +79,11 @@ public class Match3AssistActivity extends Activity {
         setContentView(scroll);
 
         TextView title = new TextView(this);
-        title.setText("开心消消乐辅助 · 实时版");
+        title.setText("开心消消乐辅助 · 体验版");
         title.setTextSize(20);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         page.addView(title);
-        page.addView(note("三条链路：实时识别（录屏每秒采样，局面变化即播报）｜截图识别（选图→标定→采样）｜示例判定（Jev 真请求）。识别与标定共用一套参数。"));
+        page.addView(note("识别棋盘并提示可以消除的交换位置。首次使用请校准棋盘；可先用截图试读，再开启实时辅助。识别可能有误，请核对游戏画面。"));
 
         /* ---------- 启动 + 实时识别 ---------- */
         LinearLayout actions = UiKit.card(this);
@@ -99,10 +99,10 @@ public class Match3AssistActivity extends Activity {
             toast("实时识别已停止");
         });
         actions.addView(liveStop);
-        Button pick = UiKit.button(this, "选择游戏截图（相册，截图式识别）", false);
+        Button pick = UiKit.button(this, "选择游戏截图", false);
         pick.setOnClickListener(v -> pickScreenshot());
         actions.addView(pick);
-        Button demo = UiKit.button(this, "判定示例局面（Jev 真请求）", false);
+        Button demo = UiKit.button(this, "测试示例棋盘（需配置服务）", false);
         demo.setOnClickListener(v -> judgeSample());
         actions.addView(demo);
         page.addView(actions);
@@ -132,7 +132,7 @@ public class Match3AssistActivity extends Activity {
 
         /* ---------- 特殊棋子模板库 ---------- */
         LinearLayout special = UiKit.card(this);
-        special.addView(sectionLabel("特殊棋子模板库（颜色判不出的格子与模板比对，不再显示「.」）"));
+        special.addView(sectionLabel("特殊棋子示例（保存截图，辅助识别看不清的棋子）"));
         LinearLayout mark = UiKit.horizontal(this);
         briefLabel(mark, "行");
         markRowSpin = spinner(mark, "行", new String[]{"1", "2", "3", "4", "5", "6", "7", "8", "9"}, 0);
@@ -424,10 +424,10 @@ public class Match3AssistActivity extends Activity {
     private void judgeSample() {
         final JevClient client = JevSettings.clientOrNull(this);
         if (client == null) {
-            output.setText("【未运行】判定层未启用或配置不完整：先在「判定自测」页启用并保存渠道与 Key。\n低置信绝不静默——配置不齐也不悄悄失败。");
+            output.setText("示例测试尚未配置。请在「判定自测」页配置并启用服务；截图识别与实时辅助仍可在本机使用。");
             return;
         }
-        output.setText("示例判定：载入创作工具消消乐模板，发 Jev 真请求…\n");
+        output.setText("正在读取示例棋盘…\n");
         new Thread(() -> {
             try {
                 JSONObject asset = readAsset("jev/match3.json");
@@ -473,27 +473,26 @@ public class Match3AssistActivity extends Activity {
     private int seq;
 
     private void announce(String speech) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            runOnUiThread(() -> announce(speech));
+            return;
+        }
+        if (isFinishing() || isDestroyed()) return;
+        if (CaptureService.isRunning() || Match3LiveService.isRunning()) {
+            toast("请先停止实时辅助，再试听截图或示例");
+            return;
+        }
         long t = SystemClock.elapsedRealtime();
         if (dispatcher == null) {
             player = new CuePlayer(this);
             session = "m3-" + t;
-            dispatcher = new CueDispatcher(player, permissivePolicy(), silentListener,
+            dispatcher = new CueDispatcher(player, new Match3LiveCuePolicy(new CueSettings(this)), silentListener,
                     SystemClock::elapsedRealtime);
         }
         dispatcher.submit(new CueRequest(session, session + ":a" + (seq++), "m3:announce", "消消乐播报",
                 CueRequest.Category.SYSTEM, 70, t, t + 10000,
-                CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH | CueRequest.CHANNEL_HAPTIC,
+                Match3LiveCuePolicy.REQUESTED_CHANNELS,
                 0, 0, 0, speech));
-    }
-
-    private CueDispatcher.Policy permissivePolicy() {
-        return new CueDispatcher.Policy() {
-            @Override public boolean categoryEnabled(CueRequest.Category category) { return true; }
-            @Override public int enabledChannels() {
-                return CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH | CueRequest.CHANNEL_HAPTIC;
-            }
-            @Override public long dedupeWindowMs(CueRequest.Category category) { return 0; }
-        };
     }
 
     @Override

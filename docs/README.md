@@ -28,6 +28,8 @@
 | 文档 | 内容 |
 | --- | --- |
 | [黑客松方案收敛与实施路线](plans/黑客松方案收敛与实施路线.md) | 已定决策、工作包、日程与实施记录 |
+| [符合度复核与 0.4.0 证据计划](plans/符合度改造方案.md) | 35 项历史评估的证据边界与 0.4.0 网络数据路径 |
+| [0.4.0 目标、接口与验收记录](../validation/GOAL_0.4.0_2026-10-03.md) | 开发中的语音与画面助手目标、接口和待验证条件 |
 
 ## 开发与数据 · `development/`
 
@@ -35,10 +37,12 @@
 | --- | --- |
 | [团队协作与本地运行](development/团队协作与本地运行.md) | 环境安装、标注、回放、Android 构建与协作约定 |
 | [外部数据引入与预训练](development/外部数据引入与预训练.md) | 来源审计、导入要求与训练顺序 |
+| [Android 真实助手传输测试](development/assistant-android-transport-test.md) | 合成输入、临时证书、真实 GLM/CPU ASR 与正式客户端联调 |
+| [Linux 测试网关部署](development/assistant-gateway-test-deployment.md) | 隔离测试部署、CPU 依赖、HTTPS/WSS 与未覆盖门禁 |
 
 ## 发布记录 · `releases/`
 
-[发布索引](releases/README.md)汇总 0.3.0-alpha.1 与 0.3.1–0.3.8 的交付说明，并提供[版本命名规范](releases/版本命名规范.md)和[GitHub 发布检查清单](releases/GITHUB发布检查清单.md)。公开体验版、本地候选和开发中的源码版本分别记录。
+[发布索引](releases/README.md)汇总 0.3.0-alpha.1、0.3.1–0.3.8 与 0.4.0 工程候选的交付说明，并提供[版本命名规范](releases/版本命名规范.md)和[GitHub 发布检查清单](releases/GITHUB发布检查清单.md)。公开体验版、本地候选和开发中的源码版本分别记录。
 
 ## 需求与赛事资料 · `requirements/`
 

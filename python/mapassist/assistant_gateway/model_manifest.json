@@ -1,0 +1,22 @@
+{
+  "repo_id": "funasr/paraformer-zh-streaming",
+  "tag": "apache-2.0-20260804",
+  "revision": "fd2af606b37d7fb8b3b8a218c5be5b07b53ef6ba",
+  "license": "Apache-2.0",
+  "resolved_from": "https://huggingface.co/api/models/funasr/paraformer-zh-streaming/revision/apache-2.0-20260804",
+  "files": {
+    "model.pt": {
+      "size": 880716041,
+      "sha256": "4fdfb48ed4471777c9a511e96a2acae17f77cac9d709cc756634622769192a64"
+    },
+    "LICENSE": {
+      "size": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "git_blob_sha1": "d645695673349e3947e8e5ae42332d0ac3164cd7"
+    },
+    "README.md": {
+      "size": 3159,
+      "sha256": "d24e63307ab08112836f3f8c2be89ec014898064f4aa3145a8d16b18b71fe40a"
+    }
+  }
+}

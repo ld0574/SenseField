@@ -100,16 +100,23 @@ def test_workspace_fallback_includes_public_docs_but_excludes_local_sources(tmp_
         "docs/releases/0.3.0-alpha.1/CHECKLIST.md",
         "docs/releases/0.3.5/RELEASE_NOTES.md",
         "docs/releases/0.3.8/RELEASE_NOTES.md",
+        "docs/plans/符合度改造方案.md",
+        "docs/development/assistant-android-transport-test.md",
+        "docs/development/assistant-gateway-test-deployment.md",
+        "docs/releases/0.4.0/RELEASE_NOTES.md",
     ]
     for name in public_docs:
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("public document\n", encoding="utf-8")
+        path.write_text("release document\n", encoding="utf-8")
 
     local_sources = [
         "docs/references/meetings/source.md",
         "docs/references/research/original.md",
         "docs/requirements/source.pdf",
+        "output/research/source.pdf",
+        "deps/private/source.pdf",
+        "models_cache/export.bin",
     ]
     for name in local_sources:
         reference = tmp_path / name
@@ -120,3 +127,50 @@ def test_workspace_fallback_includes_public_docs_but_excludes_local_sources(tmp_
 
     assert all(name in candidates for name in public_docs)
     assert all(name not in candidates for name in local_sources)
+
+
+def test_public_check_ignores_auth_variable_flow_and_key_name_constants(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("Project", encoding="utf-8")
+    (tmp_path / "LICENSE").write_text("License", encoding="utf-8")
+    source = tmp_path / "auth.py"
+    source.write_text(
+        'TOKEN = "assistant_device_token"\n'
+        'token = preferences.getString(TOKEN, "").strip()\n'
+        'scheme, separator, token = header.partition(" ")\n'
+        'TOKEN = "test-device-token-not-a-secret"\n',
+        encoding="utf-8",
+    )
+
+    errors, _ = scan(tmp_path, ["README.md", "LICENSE", "auth.py"])
+
+    assert errors == []
+
+
+def test_public_check_ignores_password_input_type_ternary(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("Project", encoding="utf-8")
+    (tmp_path / "LICENSE").write_text("License", encoding="utf-8")
+    source = tmp_path / "Settings.java"
+    source.write_text(
+        "field.setInputType(secret\n"
+        "    ? InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD\n"
+        "    : InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);\n",
+        encoding="utf-8",
+    )
+
+    errors, _ = scan(tmp_path, ["README.md", "LICENSE", "Settings.java"])
+
+    assert errors == []
+
+
+def test_public_check_scans_secrets_throughout_files_under_the_size_limit(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("Project", encoding="utf-8")
+    (tmp_path / "LICENSE").write_text("License", encoding="utf-8")
+    key = "a1b2c3d4e5f6g7h8i9j0k1l2m3n4"
+    source = tmp_path / "large_config.py"
+    source.write_text("#" + "x" * (2 * 1024 * 1024 + 16) + f"\nZHIPU_API_KEY={key}\n",
+                      encoding="utf-8")
+
+    errors, _ = scan(tmp_path, ["README.md", "LICENSE", "large_config.py"])
+
+    assert any("model-service API key: large_config.py" in error for error in errors)
+    assert key not in "\n".join(errors)

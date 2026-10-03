@@ -17,6 +17,8 @@ __pycache__/
 .coverage
 .coverage.*
 htmlcov/
+__pypackages__/
+pip-wheel-metadata/
 
 # Native and local build outputs
 build/
@@ -35,11 +37,24 @@ android/**/build/
 
 # Local generated documents, recruitment media, presentations and release packages.
 output/
+deps/
 
 # Credentials and signing material
+开发环境参数.md
 .env
 .env.*
 !.env.example
+*.env
+*.secret
+*.secrets
+envsecrets/
+secrets/
+.secrets/
+model-cache/
+model_cache/
+modelcache/
+models-cache/
+models_cache/
 *.jks
 *.keystore
 keystore.properties
@@ -79,6 +94,7 @@ docs/**
 !docs/releases/0.3.6/
 !docs/releases/0.3.7/
 !docs/releases/0.3.8/
+!docs/releases/0.4.0/
 !docs/README.md
 !docs/公开文档范围.md
 !docs/design/技术方案.md
@@ -87,7 +103,10 @@ docs/**
 !docs/design/赛题背景.md
 !docs/development/团队协作与本地运行.md
 !docs/development/外部数据引入与预训练.md
+!docs/development/assistant-android-transport-test.md
+!docs/development/assistant-gateway-test-deployment.md
 !docs/plans/黑客松方案收敛与实施路线.md
+!docs/plans/符合度改造方案.md
 !docs/references/README.md
 !docs/requirements/README.md
 !docs/requirements/为视力障碍玩家打造识别全屏地图的工具.pdf
@@ -107,6 +126,7 @@ docs/**
 !docs/releases/0.3.6/RELEASE_NOTES.md
 !docs/releases/0.3.7/RELEASE_NOTES.md
 !docs/releases/0.3.8/RELEASE_NOTES.md
+!docs/releases/0.4.0/RELEASE_NOTES.md
 !docs/releases/GITHUB发布检查清单.md
 !docs/releases/README.md
 !docs/releases/版本命名规范.md

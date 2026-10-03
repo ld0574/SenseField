@@ -1,0 +1,23 @@
+[Unit]
+Description=MapAssist self-hosted assistant gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mapassist
+Group=mapassist
+WorkingDirectory=/opt/mapassist
+EnvironmentFile=/etc/mapassist/assistant-gateway.env
+ExecStart=/opt/mapassist/.venv/bin/mapassist-assistant-gateway
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/mapassist
+
+[Install]
+WantedBy=multi-user.target

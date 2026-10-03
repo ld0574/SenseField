@@ -34,9 +34,13 @@ final class NearZoneRouting {
     static final int RADAR_PRIORITY = 20;
     static final long RADAR_TTL_MS = 2000;
     static final long NEAR_SPEECH_DEDUPE_MS = 1000;
+    /** Presentation distance scale in map-short-edge units; this does not alter native thresholds. */
+    static final float PRESENTATION_DISTANCE_SCALE = 0.20f;
 
     private static final String[] SECTOR_NAMES = {
             null, "右方", "右上", "上方", "左上", "左方", "左下", "下方", "右下"};
+    private static final String[] TWO_WORD_SECTORS = {
+            null, "右侧", "右上", "上方", "左上", "左侧", "左下", "下方", "右下"};
     private static final String[] STATE_NAMES = {
             "UNKNOWN", "CLEAR", "PENDING", "OCCUPIED", "REARM"};
 
@@ -46,6 +50,17 @@ final class NearZoneRouting {
     static String speech(int sector) {
         if (sector >= 1 && sector <= 8) return SECTOR_NAMES[sector] + "有敌人";
         return "附近有敌人";
+    }
+
+    /** Short, factual sector-plus-target wording for the opt-in speech style. */
+    static String twoWordSpeech(int sector) {
+        if (sector >= 1 && sector <= 8) return TWO_WORD_SECTORS[sector];
+        return "附近";
+    }
+
+    static float presentationDistanceLevel(float distance) {
+        if (!Float.isFinite(distance)) return 0f;
+        return Math.max(0f, Math.min(1f, distance / PRESENTATION_DISTANCE_SCALE));
     }
 
     /** Channels requested before the preset and global switches are applied. */

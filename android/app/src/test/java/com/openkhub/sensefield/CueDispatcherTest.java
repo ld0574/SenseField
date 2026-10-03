@@ -5,7 +5,9 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.Test;
 
@@ -20,28 +22,37 @@ public final class CueDispatcherTest {
         CueDispatcher.PlaybackCallback toneCallback;
         boolean stopped;
         boolean autoStartSpeech = true;
+        boolean autoStartTone = true;
+        boolean acceptHaptics = true;
         int tones;
         int haptics;
+        int assistantCancels;
         final List<String> started = new ArrayList<>();
+        final Map<String, CueDispatcher.PlaybackCallback> speechCallbacks = new HashMap<>();
         @Override public boolean playTone(CueRequest request,
                                           CueDispatcher.PlaybackCallback callback) {
             tones++;
             toneCallback = callback;
-            callback.onStarted(request.createdAtMs);
+            if (autoStartTone) callback.onStarted(request.createdAtMs);
             return true;
         }
         @Override public boolean vibrate(CueRequest request) {
             haptics++;
-            return true;
+            return acceptHaptics;
         }
         @Override public boolean speak(CueRequest request, boolean interrupt,
                                        CueDispatcher.PlaybackCallback callback) {
             this.callback = callback;
+            speechCallbacks.put(request.cueId, callback);
             started.add(request.cueId);
             if (autoStartSpeech) callback.onStarted(request.createdAtMs);
             return true;
         }
         @Override public void stopSpeech() { stopped = true; }
+        @Override public void cancelAssistantSpeech() {
+            assistantCancels++;
+            stopped = true;
+        }
     }
 
     private static final class FakePolicy implements CueDispatcher.Policy {
@@ -81,6 +92,19 @@ public final class CueDispatcherTest {
                 CueRequest.Category.NEAR_ZONE, NearZoneRouting.NEAR_PRIORITY, 0, expires,
                 NearZoneRouting.nearChannels(false), NearZoneRouting.TONE_NEAR, 0, 0,
                 NearZoneRouting.speech(4), pan);
+    }
+
+    private static CueRequest assistant(String id, long expires, java.util.function.BooleanSupplier guard) {
+        return new CueRequest("session", id, id, "ASSISTANT",
+                CueRequest.Category.ASSISTANT, 30, 0, expires,
+                CueRequest.CHANNEL_SPEECH, 0, 0, 0, "回答", Float.NaN,
+                Float.NaN, 0f, 0, guard);
+    }
+
+    private static CueRequest alert(String id, CueRequest.Category category, int priority,
+                                    long expires) {
+        return new CueRequest("session", id, id, "ALERT", category, priority,
+                0, expires, CueRequest.CHANNEL_SPEECH, 0, 0, 0, "警报");
     }
 
     @Test public void nearZoneCuesAreNotReplayedAndDistinctEpisodesBothPlay() {
@@ -166,6 +190,84 @@ public final class CueDispatcherTest {
         dispatcher.submit(request("critical", "critical", 100, 1000));
         assertTrue(renderer.stopped);
         assertFalse(dispatcher.pendingCueIdsForTest().contains("critical"));
+    }
+
+    @Test public void nearPeripheralAndDangerAlertsPreemptAssistantRegardlessOfPriority() {
+        for (CueRequest.Category category : List.of(CueRequest.Category.NEAR_ZONE,
+                CueRequest.Category.PERIPHERAL_THREAT, CueRequest.Category.DANGER)) {
+            MutableClock clock = new MutableClock();
+            FakeRenderer renderer = new FakeRenderer();
+            renderer.autoStartSpeech = false;
+            Events events = new Events();
+            CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+            dispatcher.submit(assistant("assistant", 5000, () -> true));
+            assertTrue(dispatcher.isSpeaking());
+
+            dispatcher.submit(alert("alert", category, 1, 5000));
+
+            assertEquals(1, renderer.assistantCancels);
+            assertEquals(List.of("assistant", "alert"), renderer.started);
+            assertTrue(dispatcher.isSpeaking());
+            assertTrue(events.events.contains("assistant:SPEECH:PREEMPTED"));
+            renderer.speechCallbacks.get("assistant").onFinished(10, true);
+            assertTrue("late assistant callback must not clear the alert", dispatcher.isSpeaking());
+            renderer.speechCallbacks.get("alert").onFinished(11, true);
+            assertFalse(dispatcher.isSpeaking());
+        }
+    }
+
+    @Test public void assistantFreshnessIsCheckedAtTheActualPlaybackStart() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        renderer.autoStartSpeech = false;
+        Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+        boolean[] valid = {true};
+        dispatcher.submit(assistant("stale", 5000, () -> valid[0]));
+        valid[0] = false;
+
+        renderer.speechCallbacks.get("stale").onStarted(100);
+
+        assertFalse(dispatcher.isSpeaking());
+        assertTrue(renderer.stopped);
+        assertTrue(events.events.contains("stale:SPEECH:EXPIRED"));
+        renderer.speechCallbacks.get("stale").onFinished(101, true);
+        assertFalse(events.events.contains("stale:SPEECH:COMPLETED"));
+    }
+
+    @Test public void userBargeCancelsOnlyAssistantSpeechAndOldCallbacksStayDiscarded() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        renderer.autoStartSpeech = false;
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(),
+                new Events(), clock);
+        dispatcher.submit(assistant("assistant", 5000, () -> true));
+        CueDispatcher.PlaybackCallback old = renderer.speechCallbacks.get("assistant");
+
+        dispatcher.cancelAssistantSpeech();
+
+        assertFalse(dispatcher.isSpeaking());
+        assertEquals(1, renderer.assistantCancels);
+        old.onStarted(10);
+        old.onFinished(11, true);
+        assertFalse(dispatcher.isSpeaking());
+    }
+
+    @Test public void sensoryAlertPreemptsAssistantWhenAlertSpeechIsDisabled() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        renderer.autoStartSpeech = false;
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(),
+                new Events(), clock);
+        dispatcher.submit(assistant("assistant-tone", 5000, () -> true));
+        CueRequest toneOnlyNear = new CueRequest("session", "near-tone", "near-tone",
+                "NEAR_ZONE", CueRequest.Category.NEAR_ZONE, NearZoneRouting.NEAR_PRIORITY,
+                0, 5000, CueRequest.CHANNEL_TONE, NearZoneRouting.TONE_NEAR, 0, 0, null);
+
+        dispatcher.submit(toneOnlyNear);
+
+        assertEquals(1, renderer.assistantCancels);
+        assertFalse(dispatcher.isSpeaking());
     }
 
     @Test public void criticalHapticBypassesCooldown() {
@@ -304,6 +406,49 @@ public final class CueDispatcherTest {
         renderer.toneCallback.onFinished(101, true);
 
         assertEquals(beforeClear, events.events.size());
+    }
+
+    @Test public void toneOnlyAndHapticAlertsStartTheAssistantQuietPeriod() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(),
+                new Events(), clock);
+
+        CueRequest toneOnlyNear = request("near-tone", "near-tone", "NEAR_ZONE",
+                CueRequest.Category.NEAR_ZONE, CueRequest.CHANNEL_TONE, 1000, "");
+        assertEquals(CueRequest.CHANNEL_TONE, dispatcher.submit(toneOnlyNear).acceptedChannels);
+        assertEquals(0, dispatcher.recentAlertAtMs());
+
+        clock.now = 100;
+        CueRequest hapticOnlyPeripheral = request("edge-haptic", "edge-haptic",
+                "PERIPHERAL_THREAT", CueRequest.Category.PERIPHERAL_THREAT,
+                CueRequest.CHANNEL_HAPTIC, 1000, "");
+        assertEquals(CueRequest.CHANNEL_HAPTIC,
+                dispatcher.submit(hapticOnlyPeripheral).acceptedChannels);
+        assertEquals(100, dispatcher.recentAlertAtMs());
+    }
+
+    @Test public void suppressedOrStaleToneDoesNotStartTheAssistantQuietPeriod() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        renderer.autoStartTone = false;
+        FakePolicy policy = new FakePolicy();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, policy, new Events(), clock);
+        CueRequest toneOnlyNear = request("near-tone", "near-tone", "NEAR_ZONE",
+                CueRequest.Category.NEAR_ZONE, CueRequest.CHANNEL_TONE, 1000, "");
+
+        policy.channels = 0;
+        assertEquals(0, dispatcher.submit(toneOnlyNear).acceptedChannels);
+        assertEquals(Long.MIN_VALUE, dispatcher.recentAlertAtMs());
+
+        policy.channels = 15;
+        assertEquals(CueRequest.CHANNEL_TONE, dispatcher.submit(toneOnlyNear).acceptedChannels);
+        assertEquals(Long.MIN_VALUE, dispatcher.recentAlertAtMs());
+        CueDispatcher.PlaybackCallback lateStart = renderer.toneCallback;
+        dispatcher.clearCategory(CueRequest.Category.NEAR_ZONE);
+        lateStart.onStarted(10);
+
+        assertEquals(Long.MIN_VALUE, dispatcher.recentAlertAtMs());
     }
 
     @Test public void speechStartingAfterExpiryIsLoggedAsExpiredAndCannotComplete() {

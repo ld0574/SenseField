@@ -11,6 +11,25 @@ dependencies = ["Pillow>=10,<13", "numpy>=1.26,<3"]
 
 [project.optional-dependencies]
 test = ["pytest>=8,<10"]
+assistant-gateway = [
+    "fastapi==0.142.2",
+    "uvicorn==0.54.0",
+    "websockets==15.0.1",
+    "httpx==0.28.1",
+    "funasr==1.4.16",
+    "modelscope==1.40.1",
+    "huggingface-hub==0.36.0",
+    "transformers==4.57.6",
+    "torch==2.8.0+cpu; sys_platform == 'linux'",
+    "torch==2.8.0; sys_platform != 'linux'",
+    "kaldi-native-fbank==1.22.3",
+]
+assistant-gateway-test = [
+    "pytest>=8,<10",
+    "fastapi==0.142.2",
+    "websockets==15.0.1",
+    "httpx==0.28.1",
+]
 
 [project.scripts]
 mapassist-replay = "mapassist.replay:main"
@@ -30,6 +49,7 @@ mapassist-apply-label-shards = "mapassist.apply_label_shards:main"
 mapassist-combine-detection-manifests = "mapassist.combine_detection_manifests:main"
 mapassist-annotation-server = "mapassist.annotation_server:main"
 mapassist-measure-latency = "mapassist.measure_latency:main"
+mapassist-measure-assistant-latency = "mapassist.measure_assistant_latency:main"
 mapassist-validation-gate = "mapassist.validation_gate:main"
 mapassist-android-session-log = "mapassist.android_session_log:main"
 mapassist-diagnostic-report = "mapassist.diagnostic_report:main"
@@ -39,9 +59,12 @@ mapassist-evaluate-minimap-locator = "mapassist.minimap_locator_evaluate:main"
 mapassist-audit-coco-dataset = "mapassist.coco_dataset_audit:main"
 mapassist-prepare-external-minimap = "mapassist.prepare_external_minimap:main"
 mapassist-safe-roi-manifest = "mapassist.safe_roi_manifest:main"
+mapassist-assistant-gateway = "mapassist.assistant_gateway.cli:main"
+mapassist-assistant-gateway-download-model = "mapassist.assistant_gateway.download_model:main"
+mapassist-assistant-gateway-smoke = "mapassist.assistant_gateway.smoke:main"
 
 [tool.setuptools.packages.find]
 where = ["python"]
 
 [tool.setuptools.package-data]
-mapassist = ["annotation_web/*.html", "annotation_web/*.css", "annotation_web/*.js", "annotation_web/*.png"]
+mapassist = ["annotation_web/*.html", "annotation_web/*.css", "annotation_web/*.js", "annotation_web/*.png", "assistant_gateway/*.json"]

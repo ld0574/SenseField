@@ -27,6 +27,8 @@ public final class AppSettingsActivity extends Activity {
                 startActivity(new Intent(this, GameTuningActivity.class)));
         button(content, "提醒说明与试听").setOnClickListener(view ->
                 startActivity(new Intent(this, ReminderGuideActivity.class)));
+        button(content, "语音与画面助手（实验）").setOnClickListener(view ->
+                startActivity(new Intent(this, AssistantSettingsActivity.class)));
         button(content, "测试记录与反馈").setOnClickListener(view ->
                 startActivity(new Intent(this, DiagnosticsActivity.class)));
         android.view.View spacer = new android.view.View(this);

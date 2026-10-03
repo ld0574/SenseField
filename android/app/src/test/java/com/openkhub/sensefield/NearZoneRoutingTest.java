@@ -2,6 +2,8 @@ package com.openkhub.sensefield;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -19,6 +21,60 @@ public final class NearZoneRoutingTest {
             assertFalse(phrase.contains("危险"));
             assertFalse(phrase.contains("安全"));
         }
+    }
+
+    @Test public void twoWordStyleNamesEightSectorsAndKeepsUnknownsAmbiguous() {
+        assertEquals("右侧", NearZoneRouting.twoWordSpeech(1));
+        assertEquals("右上", NearZoneRouting.twoWordSpeech(2));
+        assertEquals("上方", NearZoneRouting.twoWordSpeech(3));
+        assertEquals("左上", NearZoneRouting.twoWordSpeech(4));
+        assertEquals("左侧", NearZoneRouting.twoWordSpeech(5));
+        assertEquals("左下", NearZoneRouting.twoWordSpeech(6));
+        assertEquals("下方", NearZoneRouting.twoWordSpeech(7));
+        assertEquals("右下", NearZoneRouting.twoWordSpeech(8));
+        assertEquals("附近", NearZoneRouting.twoWordSpeech(0));
+        assertEquals("附近", NearZoneRouting.twoWordSpeech(9));
+    }
+
+    @Test public void presentationDistanceBinsStayInsideTheCurrentNearZoneScale() {
+        assertEquals(0f, NearZoneRouting.presentationDistanceLevel(0f), 1e-6f);
+        assertEquals(0.5f, NearZoneRouting.presentationDistanceLevel(0.10f), 1e-6f);
+        assertEquals(1f, NearZoneRouting.presentationDistanceLevel(0.20f), 1e-6f);
+        assertEquals(1f, NearZoneRouting.presentationDistanceLevel(0.40f), 1e-6f);
+        assertEquals(0f, NearZoneRouting.presentationDistanceLevel(Float.NaN), 1e-6f);
+    }
+
+    @Test public void spatialCacheMissIsReadOnlyAndPrewarmedStereoBinsAreReused() {
+        CuePlayer.SpatialToneCache cache = new CuePlayer.SpatialToneCache();
+        assertFalse(cache.isReady());
+        assertNull(cache.get(-1f, 0.5f, 1f));
+        assertEquals(0, cache.entryCountForTest());
+
+        cache.prewarm();
+        assertTrue(cache.isReady());
+        assertEquals(108, cache.entryCountForTest());
+        short[] left = cache.get(-1f, 0.5f, 1f);
+        short[] right = cache.get(1f, 0.5f, 1f);
+        assertEquals(left.length, right.length);
+        assertSame(left, cache.get(-1f, 0.5f, 1f));
+        for (int i = 0; i < left.length; i += 2) {
+            assertEquals("swapped stereo samples at frame " + (i / 2), left[i], right[i + 1]);
+            assertEquals("swapped stereo samples at frame " + (i / 2), left[i + 1], right[i]);
+        }
+        assertEquals(48_000 * 240 / 1000 * 2, left.length);
+    }
+
+    @Test public void experimentalPresentationOptionsDefaultOffAndHapticsScaleMonotonically() {
+        PresentationAudioPolicy defaults = PresentationAudioPolicy.defaults();
+        assertFalse(defaults.spatial);
+        assertFalse(defaults.distanceHaptic);
+        assertFalse(defaults.nearTwoWord);
+        assertTrue(PresentationAudioPolicy.distanceHapticAmplitude(0f, 2f)
+                > PresentationAudioPolicy.distanceHapticAmplitude(0.20f, 0f));
+        assertTrue(PresentationAudioPolicy.distanceHapticDurationMs(0f, 2f)
+                > PresentationAudioPolicy.distanceHapticDurationMs(0.20f, 0f));
+        assertEquals(110, PresentationAudioPolicy.distanceHapticDurationMs(0f, 2f));
+        assertEquals(65, PresentationAudioPolicy.distanceHapticDurationMs(0.20f, 0f));
     }
 
     @Test public void standardNearCueCarriesSpeechToneAndHapticTogether() {

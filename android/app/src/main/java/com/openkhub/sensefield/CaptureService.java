@@ -6,7 +6,10 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Activity;
 import android.app.Service;
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
 import android.graphics.PixelFormat;
 import android.hardware.display.DisplayManager;
@@ -19,6 +22,8 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.SystemClock;
+import android.os.Build;
+import android.os.Looper;
 import android.util.Log;
 import android.view.Display;
 import android.graphics.Point;
@@ -57,6 +62,15 @@ public final class CaptureService extends Service {
     private CuePlayer cuePlayer;
     private CueDispatcher cueDispatcher;
     private CueSettings cueSettings;
+    private volatile AssistantController assistant;
+    private volatile String assistantStatus = "";
+    private volatile NativeFrameResult.Relation assistantRelation = NativeFrameResult.Relation.UNAVAILABLE;
+    private volatile long assistantRelationAtMs = -1;
+    private final SharedPreferences.OnSharedPreferenceChangeListener assistantPreferences = (preferences, key) -> {
+        if (key == null || !key.startsWith("assistant_")) return;
+        AssistantController current = assistant;
+        if (current != null) current.settingsChanged(AssistantSettings.from(this));
+    };
     private MinimapOverlay minimapOverlay;
     private final OverlayCaptureGuard overlayCaptureGuard = new OverlayCaptureGuard();
     private final CueArbiter cueArbiter = new CueArbiter();
@@ -150,6 +164,7 @@ public final class CaptureService extends Service {
         workerThread = new HandlerThread("MapAssistFrames");
         workerThread.start();
         worker = new Handler(workerThread.getLooper());
+        GameProfile.settings(this).registerOnSharedPreferenceChangeListener(assistantPreferences);
     }
 
     /** Schedule a watchdog tied to one capture session. Must be called under processingLock. */
@@ -202,6 +217,12 @@ public final class CaptureService extends Service {
         if (!ACTION_START.equals(action) && !ACTION_STOP.equals(action)
                 && !ACTION_TOGGLE_PAUSE.equals(action)
                 && !ACTION_MARK_ISSUE.equals(action)) return START_NOT_STICKY;
+        if (ACTION_START.equals(action) && Match3LiveService.isRunning()) {
+            android.widget.Toast.makeText(this, "请先停止消消乐实时辅助，再启动王者辅助",
+                    android.widget.Toast.LENGTH_LONG).show();
+            stopWithStatus("消消乐实时辅助运行中，请先停止");
+            return START_NOT_STICKY;
+        }
         long expectedSessionGeneration = 0;
         synchronized (processingLock) {
             latestServiceStartId = startId;
@@ -243,6 +264,7 @@ public final class CaptureService extends Service {
                     else cueDispatcher.resume();
                 }
             }
+            if (assistant != null) assistant.pause(paused);
             refreshNotification();
             return START_NOT_STICKY;
         }
@@ -263,12 +285,26 @@ public final class CaptureService extends Service {
             try {
                 // startForegroundService() has a short system deadline. Enter
                 // foreground state before loading the model or preparing audio.
-                startForeground(NOTIFICATION_ID, notification("正在准备截屏"),
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
+                AssistantSettings assistantConfig = AssistantSettings.from(this);
+                int foregroundTypes = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION;
+                if (Build.VERSION.SDK_INT >= 30 && assistantConfig.enabled() && assistantConfig.voice
+                        && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+                    foregroundTypes |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+                startForeground(NOTIFICATION_ID, notification("正在准备截屏"), foregroundTypes);
                 if (cuePlayer == null) cuePlayer = new CuePlayer(this);
                 cueSettings = new CueSettings(this);
                 cueDispatcher = new CueDispatcher(cuePlayer, cueSettings,
                         new CueAuditListener(), SystemClock::elapsedRealtime);
+                if (assistantConfig.enabled()) {
+                    assistant = new AssistantController(this, auditSessionId, assistantConfig, new AssistantHost());
+                    cuePlayer.setAssistantPlaybackListener(pcm -> {
+                        AssistantController current = assistant;
+                        if (current != null) current.feedRender(pcm);
+                    });
+                    assistant.start();
+                } else {
+                    assistantStatus = assistantConfig.voice || assistantConfig.vision ? "助手未配置服务器" : "";
+                }
                 GameProfile.Loaded loaded = GameProfile.loadResolved(this);
                 GameProfile profile = loaded.profile;
                 profileName = profile.name + " · " + profile.version;
@@ -433,6 +469,9 @@ public final class CaptureService extends Service {
 
     /** Reset native tracking while recording the generation used for cue dedupe. */
     private void resetNativeLocked() {
+        if (assistant != null) assistant.captureInvalidated("capture_reset");
+        assistantRelation = NativeFrameResult.Relation.UNAVAILABLE;
+        assistantRelationAtMs = -1;
         if (nativeSession != 0) {
             NativeBridge.nativeReset(nativeSession);
             nativeResetGeneration++;
@@ -627,6 +666,7 @@ public final class CaptureService extends Service {
         boolean resizeAfterClose = false;
         boolean refreshAfterFrame = false;
         long processingStartedAtMs = -1;
+        boolean assistantFrameEligible = false;
         try {
             image = source.acquireLatestImage();
             if (image == null) return;
@@ -764,6 +804,8 @@ public final class CaptureService extends Service {
                             width, height, plane.getRowStride(), observedAtMs, now);
                     if (result != null && result.length >= 5) {
                         NativeFrameResult frame = NativeBridge.parseFrameResult(result, observedAtMs);
+                        assistantRelation = frame.relation;
+                        assistantRelationAtMs = observedAtMs;
                         if (diagnostics != null) {
                             DiagnosticSnapshot raw = DiagnosticSnapshot.parse(
                                     NativeBridge.nativeReadDiagnosticSnapshot(nativeSession));
@@ -822,11 +864,18 @@ public final class CaptureService extends Service {
                     long completedAtMs = SystemClock.elapsedRealtime();
                     captureHealth.frameProcessed(completedAtMs);
                     recordLandscapeProcessedFrameLocked(completedAtMs, observedAtMs);
+                    assistantFrameEligible = true;
                 }
                 if (now - lastNotificationAtMs > 5000) {
                     lastNotificationAtMs = now;
                     refreshAfterFrame = true;
                 }
+            }
+            AssistantController currentAssistant = assistant;
+            if (assistantFrameEligible && currentAssistant != null) {
+                currentAssistant.thermal(frameProcessing.mode());
+                currentAssistant.offerFrame(pixels, width, height, plane.getRowStride(),
+                        landscapeProcessedFrames, observedAtMs);
             }
             if (refreshAfterFrame) {
                 synchronized (processingLock) {
@@ -1045,8 +1094,11 @@ public final class CaptureService extends Service {
                 "NEAR_ZONE", CueRequest.Category.NEAR_ZONE, priority,
                 observedAtMs, observedAtMs + NearZoneRouting.NEAR_TTL_MS,
                 channels,
-                NearZoneRouting.TONE_NEAR, 0, 0, NearZoneRouting.speech(relation.sector),
-                relation.pan);
+                NearZoneRouting.TONE_NEAR, 0, 0,
+                GameProfile.settings(this).getBoolean("near_two_word", false)
+                        ? NearZoneRouting.twoWordSpeech(relation.sector) : NearZoneRouting.speech(relation.sector),
+                relation.pan, relation.nearestDistance, combat != null && combat.dense ? 2f : 1f,
+                combat == null ? -1 : combat.freshEnemyCount, () -> true);
         submitRelationCue(request, NearZoneRouting.KIND_NEAR_ZONE, relation, observedAtMs,
                 combat);
     }
@@ -1221,6 +1273,37 @@ public final class CaptureService extends Service {
         }
     }
 
+    private final class AssistantHost implements AssistantController.Host {
+        @Override public boolean speechReady() { CuePlayer player = cuePlayer; return player != null && player.assistantSpeechReady(); }
+        @Override public void speak(AssistantReply reply) {
+            CueDispatcher dispatcher = cueDispatcher;
+            AssistantController current = assistant;
+            if (dispatcher == null || current == null || !current.allows(reply)) return;
+            String cueId = auditSessionId + ":assistant:" + reply.turnId;
+            dispatcher.submit(new CueRequest(auditSessionId, cueId, cueId, "ASSISTANT",
+                    CueRequest.Category.ASSISTANT, 20, SystemClock.elapsedRealtime(), reply.expiresAtMs(),
+                    CueRequest.CHANNEL_SPEECH, 0, 0, 0, reply.answer, Float.NaN,
+                    Float.NaN, 0f, -1, () -> assistant == current && current.allows(reply)));
+        }
+        @Override public void cancelSpeech() { CueDispatcher dispatcher = cueDispatcher; if (dispatcher != null) dispatcher.cancelAssistantSpeech(); }
+        @Override public boolean speaking() { CueDispatcher dispatcher = cueDispatcher; return dispatcher != null && dispatcher.isSpeaking(); }
+        @Override public long lastAlertAtMs() { CueDispatcher dispatcher = cueDispatcher; return dispatcher == null ? -1 : dispatcher.recentAlertAtMs(); }
+        @Override public String nearby() {
+            NativeFrameResult.Relation relation = assistantRelation;
+            long age = SystemClock.elapsedRealtime() - assistantRelationAtMs;
+            if (age < 0 || age > 500 || !relation.reliable) return "当前观察不够新鲜，无法判断附近情况。";
+            if (relation.state == NearZoneRouting.STATE_OCCUPIED) return NearZoneRouting.speech(relation.sector);
+            return "这一帧没有识别到近区敌方标记，不能据此判断安全。";
+        }
+        @Override public void mark() { startService(actionIntent(ACTION_MARK_ISSUE)); }
+        @Override public void status(String value) { assistantStatus = value; }
+        @Override public void audit(String metadata) {
+            Log.i(TAG, metadata);
+            DiagnosticRecorder current = diagnostics;
+            if (current != null && !current.finished) current.audit(metadata);
+        }
+    }
+
     private static String kindName(int kind) {
         if (kind == 1) return "MAIN_ENEMY";
         if (kind == 2) return "MINIMAP_ENEMY";
@@ -1253,6 +1336,7 @@ public final class CaptureService extends Service {
                 new Intent(this, MainActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         String help = "展开通知可标记问题、暂停或停止";
         String detail = "遇到漏报或误报，请尽快点“标记问题”，帮助保存问题附近的记录。";
+        if (!assistantStatus.isEmpty()) detail += "\n助手：" + assistantStatus;
         if (frameProcessing.mode() != FrameProcessingPolicy.Mode.NORMAL) {
             help = "温度较高，提醒可能变慢；展开可标记问题";
             detail = "温度较高，已降低识别频率；提醒可能变慢。\n" + detail;
@@ -1510,6 +1594,12 @@ public final class CaptureService extends Service {
 
     private void releaseCapture() {
         stopping = true;
+        AssistantController oldAssistant = assistant;
+        assistant = null;
+        if (oldAssistant != null) oldAssistant.close();
+        assistantStatus = "";
+        assistantRelation = NativeFrameResult.Relation.UNAVAILABLE;
+        assistantRelationAtMs = -1;
         cueArbiter.reset();
         if (cueDispatcher != null) {
             cueDispatcher.close();
@@ -1555,6 +1645,7 @@ public final class CaptureService extends Service {
     @Override
     public void onDestroy() {
         running = false;
+        GameProfile.settings(this).unregisterOnSharedPreferenceChangeListener(assistantPreferences);
         synchronized (processingLock) {
             finishAuditSessionLocked("destroyed");
             releaseCapture();

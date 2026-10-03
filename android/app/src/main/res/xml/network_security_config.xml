@@ -2,9 +2,16 @@
 <!-- 判定层（可选）专用：明文流量仅对本机回环与模拟器宿主机地址放行，
      供 local 渠道访问本机薄适配服务；云端渠道仍强制 HTTPS。 -->
 <network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors><certificates src="system" /></trust-anchors>
+    </base-config>
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">localhost</domain>
         <domain includeSubdomains="false">127.0.0.1</domain>
         <domain includeSubdomains="false">10.0.2.2</domain>
     </domain-config>
+    <!-- Only debug candidates trust a deliberately installed development CA. -->
+    <debug-overrides>
+        <trust-anchors><certificates src="user" /></trust-anchors>
+    </debug-overrides>
 </network-security-config>

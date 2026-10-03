@@ -79,6 +79,9 @@ final class CueSettings implements CueDispatcher.Policy {
     }
 
     @Override public boolean categoryEnabled(CueRequest.Category category) {
+        if (category == CueRequest.Category.ASSISTANT)
+            return preferences.getBoolean(AssistantSettings.VOICE, false)
+                    || preferences.getBoolean(AssistantSettings.VISION, false);
         if (category == CueRequest.Category.VISION_MEMORY)
             return preferences.getBoolean("cue_category_vision", true);
         if (category == CueRequest.Category.PERIPHERAL_THREAT)
@@ -122,6 +125,7 @@ final class CueSettings implements CueDispatcher.Policy {
     }
 
     static int presetCategoryChannels(String preset, CueRequest.Category category) {
+        if (category == CueRequest.Category.ASSISTANT) return CueRequest.CHANNEL_SPEECH;
         if (category == CueRequest.Category.VISION_MEMORY) {
             if (PRESET_COMPACT.equals(preset)) return CueRequest.CHANNEL_VISUAL;
             // Standard visual memory is deliberately quiet: the overlay and

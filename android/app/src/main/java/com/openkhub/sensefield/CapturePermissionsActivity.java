@@ -28,6 +28,7 @@ public final class CapturePermissionsActivity extends Activity {
     static final String EXTRA_START = "start_capture_after_permissions";
     private static final int REQUEST_PROJECTION = 1101;
     private static final int REQUEST_NOTIFICATIONS = 1102;
+    private static final int REQUEST_MICROPHONE = 1103;
     private TextView screenStatus;
     private TextView notificationStatus;
     private TextView overlayStatus;
@@ -166,6 +167,10 @@ public final class CapturePermissionsActivity extends Activity {
     }
 
     private void requestCapture() {
+        if (Match3LiveService.isRunning()) {
+            toast("请先停止消消乐实时辅助，再启动王者辅助");
+            return;
+        }
         if (!requiredSettingsReady(this)) {
             toast("请先完成运行通知和已开启视觉提示所需的授权");
             refreshPermissions();
@@ -173,6 +178,12 @@ public final class CapturePermissionsActivity extends Activity {
         }
         if (GameProfile.settings(this).getBoolean("capture_active", false)
                 && CaptureService.isRunning()) return;
+        AssistantSettings assistant = AssistantSettings.from(this);
+        if (assistant.enabled() && assistant.voice && checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_MICROPHONE);
+            return;
+        }
         CueSettings cues = new CueSettings(this);
         int channels = cues.nearRequestedChannels();
         AudioManager audio = getSystemService(AudioManager.class);
@@ -206,6 +217,13 @@ public final class CapturePermissionsActivity extends Activity {
         refreshPermissions();
         if (requestCode == REQUEST_NOTIFICATIONS && !notificationGranted(this))
             toast("未开启运行通知，可以在系统通知设置中继续授权");
+        if (requestCode == REQUEST_MICROPHONE) {
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                GameProfile.settings(this).edit().putBoolean(AssistantSettings.VOICE, false).apply();
+                toast("未授权麦克风，连续语音关闭；本地预警仍可使用");
+            }
+            requestCapture();
+        }
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {

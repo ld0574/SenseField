@@ -2,13 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Jev 判定层（可选云端/本地通道）：仅在用户于「判定自测」页显式启用并配置渠道后
          才会发起网络请求；默认关闭，不改变"本地处理、不上传"的产品承诺。
          明文 HTTP 仅对本机回环地址放行（见 xml/network_security_config.xml）。 -->
-    <uses-permission android:name="android.permission.INTERNET" />
     <queries>
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
@@ -30,8 +32,8 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
-        android:usesCleartextTraffic="false"
-        android:networkSecurityConfig="@xml/network_security_config">
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:usesCleartextTraffic="false">
         <provider
             android:name=".DiagnosticFileProvider"
             android:authorities="${applicationId}.diagnostics"
@@ -41,6 +43,7 @@
                 android:resource="@xml/diagnostic_paths" />
         </provider>
         <activity android:name=".DiagnosticsActivity" android:exported="false" />
+        <activity android:name=".AssistantSettingsActivity" android:exported="false" />
         <activity android:name=".ReminderGuideActivity" android:exported="false" />
         <activity
             android:name=".AppSettingsActivity"
@@ -83,6 +86,6 @@
         <service
             android:name=".CaptureService"
             android:exported="false"
-            android:foregroundServiceType="mediaProjection" />
+            android:foregroundServiceType="mediaProjection|microphone" />
     </application>
 </manifest>

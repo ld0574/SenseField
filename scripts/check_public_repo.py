@@ -11,22 +11,34 @@ from pathlib import Path, PurePosixPath
 
 
 MAX_FILE_BYTES = 10 * 1024 * 1024
-MAX_SECRET_SCAN_BYTES = 2 * 1024 * 1024
+MAX_SECRET_SCAN_BYTES = MAX_FILE_BYTES
 FORBIDDEN_PREFIXES = (
+    "output/",
+    "deps/",
     "data/private/",
     "data/raw/",
     "video/",
     "validation/private/",
+    "envsecrets/",
+    ".secrets/",
+    "secrets/",
+    "model-cache/",
+    "model_cache/",
+    "modelcache/",
+    "models-cache/",
+    "models_cache/",
     "build/",
     "android/.gradle/",
     "android/.idea/",
 )
 FORBIDDEN_NAMES = {
+    "开发环境参数.md",
     ".DS_Store",
     ".Rhistory",
     "annotations.sqlite3",
     "local.properties",
     "keystore.properties",
+    "credentials.json",
 }
 FORBIDDEN_SUFFIXES = {
     ".mp4",
@@ -40,6 +52,9 @@ FORBIDDEN_SUFFIXES = {
     ".p12",
     ".pfx",
     ".pkcs12",
+    ".secret",
+    ".secrets",
+    ".env",
 }
 MODEL_WEIGHT_SUFFIXES = {
     ".pth",
@@ -93,7 +108,53 @@ SECRET_PATTERNS = (
     ("GitHub token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{30,}\b")),
     ("AWS access key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
     ("Google API key", re.compile(r"\bAIza[0-9A-Za-z_-]{30,}\b")),
+    (
+        "model-service API key",
+        re.compile(
+            r"(?im)\b(?:ZHIPU|BIGMODEL|GLM|DASHSCOPE|QWEN|ALIYUN|OPENAI|ANTHROPIC|"
+            r"GEMINI|GOOGLE|DEEPSEEK|MOONSHOT|SILICONFLOW|VOLCENGINE|ARK|MODEL|LLM)"
+            r"[A-Z0-9_]*(?:API[_-]?KEY|SECRET[_-]?KEY)\s*[:=]\s*['\"]?"
+            r"(?!\$\{|<|your[_-]|example\b|placeholder\b|change[_-]?me\b|"
+            r"replace[_-]?me\b|insert[_-]?key\b|set[_-]?your\b|"
+            r"dummy\b|xxx\b|redacted\b|none\b|null\b|false\b|true\b)"
+            r"[A-Z0-9_./+=-]{16,}"
+        ),
+    ),
+    (
+        "device or gateway auth secret",
+        re.compile(
+            r"(?m)(?:\b[A-Z][A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API[_-]?KEY)|"
+            r"(?i:device|gateway|client|assistant)[_-](?i:auth[_-]?)?"
+            r"(?i:token|secret|password|api[_-]?key))['\"]?[ \t]*[:=][ \t]*['\"]?"
+            r"(?!\$\{|<|your[_-]|example\b|placeholder\b|change[_-]?me\b|"
+            r"replace[_-]?me\b|insert[_-]?key\b|set[_-]?your\b|"
+            r"dummy\b|xxx\b|redacted\b|none\b|null\b|false\b|true\b|"
+            r"test(?:[_-]|token)|not[_-]?a[_-]?(?:secret|token))"
+            r"(?i:[A-Z0-9_./+=-]{24,})"
+        ),
+    ),
+    (
+        "Bearer token",
+        re.compile(
+            r"(?im)\b(?:Authorization|Proxy-Authorization)['\"]?\s*[:=]\s*['\"]?Bearer\s+"
+            r"(?!<|your[_-]|example\b|placeholder\b|redacted\b|test(?:[_-]|token))"
+            r"[A-Z0-9._~+/-]{24,}={0,2}"
+        ),
+    ),
 )
+
+
+def is_secret_file(rel: str) -> bool:
+    """Recognize environment and secret files, allowing a safe template."""
+    path = PurePosixPath(rel.replace("\\", "/"))
+    name = path.name.lower()
+    if name == ".env.example":
+        return False
+    if name == ".env" or name.startswith(".env."):
+        return True
+    if path.suffix.lower() in {".env", ".secret", ".secrets"}:
+        return True
+    return False
 
 
 def is_model_artifact(rel: str, candidates: set[str]) -> bool:
@@ -155,7 +216,10 @@ def workspace_candidates(root: Path) -> list[str]:
         "docs/design/赛题背景.md",
         "docs/development/团队协作与本地运行.md",
         "docs/development/外部数据引入与预训练.md",
+        "docs/development/assistant-android-transport-test.md",
+        "docs/development/assistant-gateway-test-deployment.md",
         "docs/plans/黑客松方案收敛与实施路线.md",
+        "docs/plans/符合度改造方案.md",
         "docs/references/README.md",
         "docs/requirements/README.md",
         "docs/requirements/为视力障碍玩家打造识别全屏地图的工具.pdf",
@@ -175,6 +239,7 @@ def workspace_candidates(root: Path) -> list[str]:
         "docs/releases/0.3.6/RELEASE_NOTES.md",
         "docs/releases/0.3.7/RELEASE_NOTES.md",
         "docs/releases/0.3.8/RELEASE_NOTES.md",
+        "docs/releases/0.4.0/RELEASE_NOTES.md",
         "docs/releases/GITHUB发布检查清单.md",
         "docs/releases/README.md",
         "docs/releases/版本命名规范.md",
@@ -182,7 +247,9 @@ def workspace_candidates(root: Path) -> list[str]:
     result: list[str] = []
     skip_dirs = {
         ".git", ".gradle", ".idea", ".pytest_cache", ".venv", ".vscode",
-        "__pycache__", "build", "video",
+        "__pycache__", "build", "output", "deps", "video", "envsecrets",
+        ".secrets", "secrets", "model-cache", "model_cache", "modelcache",
+        "models-cache", "models_cache",
     }
     for path in root.rglob("*"):
         if not path.is_file():
@@ -192,6 +259,8 @@ def workspace_candidates(root: Path) -> list[str]:
         if parts & skip_dirs:
             continue
         if rel.startswith(("data/private/", "data/raw/", "validation/private/")):
+            continue
+        if is_secret_file(rel):
             continue
         if rel.startswith("docs/") and rel not in allowed_docs:
             continue
@@ -216,6 +285,8 @@ def scan(root: Path, candidates: list[str]) -> tuple[list[str], list[str]]:
             errors.append(f"private/generated path is public: {rel}")
         if path.name in FORBIDDEN_NAMES or path.suffix.lower() in FORBIDDEN_SUFFIXES:
             errors.append(f"private or binary artifact is public: {rel}")
+        if is_secret_file(normalized):
+            errors.append(f"secret or environment file is public: {rel}")
         if is_model_artifact(normalized, normalized_candidates):
             errors.append(f"model weight or graph is public: {rel}")
         size = path.stat().st_size
