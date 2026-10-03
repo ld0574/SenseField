@@ -1,6 +1,6 @@
 # 听野 0.3.5
 
-2026-10-02 公开体验版。[下载入口](https://github.com/ld0574/SenseField/releases/tag/v0.3.5)。
+2026-10-02 公开体验版。[历史下载入口](https://github.com/ld0574/SenseField/releases/tag/v0.3.5)；最新公开版见 [0.3.8](../0.3.8/RELEASE_NOTES.md)。
 
 听野通过方位语音、提示音和震动，帮助低视力玩家留意《王者荣耀》里的附近敌人信息。当前优先面向中央视野仍能支持游戏操作、但周边视野受限的玩家。
 
@@ -42,6 +42,6 @@ APK、ZIP 和校验文件保存在本地 `output/releases/0.3.5/`，不纳入文
 | APK 大小 | 19,776,517 bytes |
 | APK SHA-256 | `475b5cccf6102a339e7c2da4f84298e703711459102bd2d36b6b0976bddb3239` |
 
-说明来源：`output/releases/0.3.5/RELEASE_NOTES.md`。 发布元数据来源：同目录 `github-release.json` 和 `release-asset-manifest.json`。公开附件中的 APK 名为 `sensefield-0.3.5-arm64-v8a-debug-candidate.apk`，与本地留存 APK 的 SHA-256 相同；GitHub 将此版标记为 pre-release。
+说明来源：`output/releases/0.3.5/RELEASE_NOTES.md`。 发布元数据来源：同目录 `github-release.json` 和 `release-asset-manifest.json`。公开附件中的 APK 名为 `sensefield-0.3.5-arm64-v8a-debug-candidate.apk`，与本地留存 APK 的 SHA-256 相同；GitHub 当前将此版作为普通 Release 发布（`prerelease=false`）。
 
 后续验证与证据边界见[0.3.5 真机复测](../../../validation/HEAT_RETEST_0.3.5_2026-10-02.md)。

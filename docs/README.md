@@ -9,8 +9,8 @@
 | 需要做什么 | 从这里开始 |
 | --- | --- |
 | 了解玩家问题与产品边界 | [赛题背景](design/赛题背景.md) |
-| 安装公开体验版 | [0.3.5 安装与使用说明](releases/0.3.5/RELEASE_NOTES.md) |
-| 查看最新本地交付 | [0.3.8 体验候选](releases/0.3.8/RELEASE_NOTES.md) |
+| 安装公开体验版 | [0.3.8 安装与使用说明](releases/0.3.8/RELEASE_NOTES.md) |
+| 查看最新版本变化 | [0.3.8 公开体验版](releases/0.3.8/RELEASE_NOTES.md) |
 | 参与开发或标注 | [团队协作与本地运行](development/团队协作与本地运行.md) |
 | 查看版本历史与发布要求 | [发布索引](releases/README.md) |
 
