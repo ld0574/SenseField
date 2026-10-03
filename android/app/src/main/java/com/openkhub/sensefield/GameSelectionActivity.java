@@ -13,6 +13,7 @@ import android.widget.TextView;
 
 /** First screen: choose the game adapter to use. */
 public final class GameSelectionActivity extends Activity {
+    private AppUpdateController updater;
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         UiKit.configureWindow(this);
@@ -33,9 +34,36 @@ public final class GameSelectionActivity extends Activity {
             UiKit.gap(page, 14);
         }
 
+        Object retained = getLastNonConfigurationInstance();
+        updater = retained instanceof AppUpdateController
+                ? (AppUpdateController) retained : new AppUpdateController(this);
+        updater.attach(this, page);
         addCommunityLogo(page);
 
         setContentView(scroll);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (updater != null) updater.resume();
+    }
+
+    @Override protected void onPause() {
+        if (updater != null) updater.pause();
+        super.onPause();
+    }
+
+    @Override public Object onRetainNonConfigurationInstance() {
+        if (updater != null) updater.detach();
+        return updater;
+    }
+
+    @Override protected void onDestroy() {
+        if (updater != null) {
+            if (isChangingConfigurations()) updater.detach();
+            else updater.close();
+        }
+        super.onDestroy();
     }
 
     private void addCommunityLogo(LinearLayout page) {
@@ -108,7 +136,10 @@ public final class GameSelectionActivity extends Activity {
         button.addView(status);
 
         if (available) {
-            button.setOnClickListener(view -> game.open(this));
+            button.setOnClickListener(view -> {
+                if (updater != null) updater.beforeGame();
+                game.open(this);
+            });
             button.setOnFocusChangeListener((view, focused) ->
                     view.setBackground(UiKit.ripple(this,
                             focused ? UiKit.PRIMARY_SOFT : UiKit.SURFACE,

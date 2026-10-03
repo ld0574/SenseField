@@ -8,10 +8,15 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Jev 判定层（可选云端/本地通道）：仅在用户于「判定自测」页显式启用并配置渠道后
          才会发起网络请求；默认关闭，不改变"本地处理、不上传"的产品承诺。
          明文 HTTP 仅对本机回环地址放行（见 xml/network_security_config.xml）。 -->
     <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="application/vnd.android.package-archive" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
@@ -34,6 +39,14 @@
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:networkSecurityConfig="@xml/network_security_config"
         android:usesCleartextTraffic="false">
+        <provider
+            android:name=".AppUpdateFileProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/app_update_paths" />
+        </provider>
         <provider
             android:name=".DiagnosticFileProvider"
             android:authorities="${applicationId}.diagnostics"

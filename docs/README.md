@@ -11,6 +11,7 @@
 | 了解玩家问题与产品边界 | [赛题背景](design/赛题背景.md) |
 | 安装公开体验版 | [0.3.8 安装与使用说明](releases/0.3.8/RELEASE_NOTES.md) |
 | 查看最新版本变化 | [0.3.8 公开体验版](releases/0.3.8/RELEASE_NOTES.md) |
+| 查看当前源码候选 | [0.4.1 自动更新候选说明](releases/0.4.1/RELEASE_NOTES.md)（未发布、自动更新专项验证通过） |
 | 参与开发或标注 | [团队协作与本地运行](development/团队协作与本地运行.md) |
 | 查看版本历史与发布要求 | [发布索引](releases/README.md) |
 
@@ -39,10 +40,11 @@
 | [外部数据引入与预训练](development/外部数据引入与预训练.md) | 来源审计、导入要求与训练顺序 |
 | [Android 真实助手传输测试](development/assistant-android-transport-test.md) | 合成输入、临时证书、真实 GLM/CPU ASR 与正式客户端联调 |
 | [Linux 测试网关部署](development/assistant-gateway-test-deployment.md) | 隔离测试部署、CPU 依赖、HTTPS/WSS 与未覆盖门禁 |
+| [Android 自动更新](development/app-update.md) | GitHub 普通稳定 Release、同源 HTTPS 清单与 loopback HTTPS fixture |
 
 ## 发布记录 · `releases/`
 
-[发布索引](releases/README.md)汇总 0.3.0-alpha.1、0.3.1–0.3.8 与 0.4.0 工程候选的交付说明，并提供[版本命名规范](releases/版本命名规范.md)和[GitHub 发布检查清单](releases/GITHUB发布检查清单.md)。公开体验版、本地候选和开发中的源码版本分别记录。
+[发布索引](releases/README.md)汇总 0.3.0-alpha.1、0.3.1–0.3.8、0.4.0 历史工程候选与 0.4.1 自动更新候选说明，并提供[版本命名规范](releases/版本命名规范.md)和[GitHub 发布检查清单](releases/GITHUB发布检查清单.md)。公开体验版、本地候选和开发中的源码版本分别记录。
 
 ## 需求与赛事资料 · `requirements/`
 

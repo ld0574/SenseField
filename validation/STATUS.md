@@ -6,9 +6,15 @@
 
 附件包含 APK、安装 ZIP、使用说明和 APK SHA-256 校验文件。APK 为 19,780,113 bytes，SHA-256 `86f026fe253f0d2c6ce37787cfc7e7d75d443785d9005bb46b29a2e823c58e6f`；GitHub 附件大小和摘要已与本地核对。安装 ZIP 仅含同一 APK、校验文件与更新后的玩家使用说明；未上传原始诊断或游戏截图。公开发布不改变 `verified=false` / `release_ready=false`，本版真机温升、实际发声时延和长时稳定性仍待验证。
 
-## 2026-10-04 0.4.0 助手工程状态
+## 2026-10-04 0.4.1 自动更新工程候选状态（专项完成，整体门禁未通过）
 
-GitHub `Latest` 为 0.3.8 普通 Release 体验版（2026-10-04 只读核对）；当前源码目标为 0.4.0 / Android `versionCode 17`。0.4.0 仍是未公开发布的工程候选。合并后通过 JVM 204 项、Python 530 项（1 项跳过）、native CTest 4/4、arm64/x86_64 Debug 构建与 lint。Android 14 arm64 模拟器 12 项本地 instrumentation 通过；额外 2 项正式客户端真实 HTTPS/WSS 合成输入测试通过，未配置 fixture 的普通设备套件会跳过它们。
+GitHub `Latest` 仍为 0.3.8 普通 Release 体验版；当前源码配置为 0.4.1 / Android `versionCode 18`。0.4.1 自动更新专项验证已完成，本地 arm64 Debug 候选 APK、说明和 SHA-256 已生成并核对，但 0.4.1 尚未发布，整体 `verified=false`、`release_ready=false`。更新源默认是 GitHub `/repos/ld0574/SenseField/releases/latest`；每次冷启动最多自动检查一次，用户可关闭自动检查或手动重试。用户确认后才下载到应用私有目录，完成字节数、SHA-256、包名、版本和同签名检查后交给 Android 系统安装器；首次安装可能需要来源安装权限。游戏辅助运行中不开始下载或安装，更新失败不阻断本地辅助。更新元数据不包含画面、语音或助手凭据。
+
+JVM 全套 217 项（含 updater 新增 13 项）、Python fixture 子集 13 项、全 Python 套件 543 项通过/1 项跳过、Android updater instrumentation 4 项通过；arm64 Debug build 和 lint 通过。GitHub stable Release 解析器使用合成 stable metadata 验证；工作站对 GitHub Latest 的直接 API 请求遇到匿名 API 限流，应用显示可重试状态且游戏入口仍可用，因此没有验证该工作站上的实时 GitHub 检查或下载。Linux loopback TLS fixture 经受限 SSH 本地转发收到 3 次清单请求与 2 次 APK 下载，共传输 42,685,346 bytes，0 次 404；下载内容的字节数、SHA-256 和包信息核对通过。UI 实测从“下载并安装”开始，完成来源安装权限设置后返回应用并进入系统 UPDATE 流程；隔离的未来测试 APK 实际安装为 0.4.2 / `versionCode 19`，不是用 `adb install` 替代升级。之后 Android 14 arm64 模拟器恢复干净的 0.4.1/code18 APK 并成功完成冷启动。包内扫描确认默认 GitHub 更新源存在，未发现 fixture CA、测试端口 URL 或测试凭据。没有公开自托管更新站点，正式更新源仍是 GitHub。冷启动检查与旋转/权限设置返回行为经代码审查确认，没有专门的生命周期 instrumentation。候选状态保持 `verified=false`、`release_ready=false`。脱敏测试方法、证据及本地候选 APK 信息见[0.4.1 自动更新验证记录](APP_UPDATE_0.4.1_2026-10-04.md)，更新接口与复现步骤见[开发说明](../docs/development/app-update.md)。
+
+## 2026-10-04 0.4.0 助手工程状态（历史候选记录）
+
+当时 GitHub `Latest` 为 0.3.8 普通 Release 体验版（2026-10-04 只读核对），0.4.0 的源码版本为 Android `versionCode 17`。0.4.0 未公开发布，以下测试数据仅记录该历史候选，不是 0.4.1 的验证证据。合并后通过 JVM 204 项、Python 530 项（1 项跳过）、native CTest 4/4、arm64/x86_64 Debug 构建与 lint。Android 14 arm64 模拟器 12 项本地 instrumentation 通过；额外 2 项正式客户端真实 HTTPS/WSS 合成输入测试通过，未配置 fixture 的普通设备套件会跳过它们。
 
 ASR 后端为 CPU Python FunASR；Paraformer streaming 固定快照的 Apache-2.0 许可、revision 和模型文件 SHA-256 已核对。一次合成输入“请读出当前比分”的 smoke 在 2,510 ms 后得到 final，是单一样本服务管线结果，不是 P95、识别质量或外部录像端到端延迟。外部录像 ASR final-recognition P95（目标 ≤1,000 ms）仍待测，不能判定 SLA 通过。真实 GLM 合成截图读取正确，单次 API 请求 1,089 ms；Android 正式客户端已经 HTTPS/WSS 跑通真实 GLM、固定 CPU ASR 与 generation reset。Linux 隔离 HTTPS/WSS 合成测试也通过，单次音频结束至 final 为 199 ms、GLM 网关请求为 1,804 ms，见[部署记录](../docs/development/assistant-gateway-test-deployment.md)；未测 Android→Linux 或实体麦克风，均非 P95。目标设备麦克风并发、SpeexDSP AEC 实际效果、外部实声延迟、3 组 15 分钟热/负载对照和玩家验收仍待完成。
 

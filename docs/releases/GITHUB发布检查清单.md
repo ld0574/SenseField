@@ -4,7 +4,7 @@
 
 ## 交付状态与构建版本
 
-截至 2026-10-04，公开下载为 [0.3.8 体验版](https://github.com/ld0574/SenseField/releases/tag/v0.3.8)（`versionCode 16`、GitHub 普通 Release，Latest）。`0.4.0 / versionCode 17` 已完成本地 Debug 构建，尚无对应的 `output/releases/` 交付记录。完整历史见[发布索引](README.md)。所有新交付遵守[版本命名规范](版本命名规范.md)，内部和外部共用 `a.b.c` 序列。
+截至 2026-10-04，公开下载为 [0.3.8 体验版](https://github.com/ld0574/SenseField/releases/tag/v0.3.8)（`versionCode 16`、GitHub 普通 Release，Latest）。`0.4.0 / versionCode 17` 与 `0.4.1 / versionCode 18` 均已有本地 Debug 测试交付，但都尚未公开发布；0.4.1 自动更新专项已完成，整体验收门禁仍未通过。完整历史见[发布索引](README.md)。所有新交付遵守[版本命名规范](版本命名规范.md)，内部和外部共用 `a.b.c` 序列。
 
 发布前核对 `android/app/build.gradle`、`scripts/build_android_preview.sh` 和实际 APK 的版本、升级序号与签名，准备新版本交付时同步配置与脚本。发布说明必须对应实际 APK 和该版本的验证证据。历史 [0.3.0-alpha.1 发布说明](0.3.0-alpha.1/RELEASE_NOTES.md)与[检查记录](0.3.0-alpha.1/CHECKLIST.md)保留原始信息。
 

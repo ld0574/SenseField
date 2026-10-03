@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-readonly PREVIEW_VERSION_NAME='0.4.0'
-readonly PREVIEW_VERSION_CODE='17'
+readonly PREVIEW_VERSION_NAME='0.4.1'
+readonly PREVIEW_VERSION_CODE='18'
 readonly PREVIEW_ABI='arm64-v8a'
 readonly PREVIEW_MIN_SDK='29'
 readonly PREVIEW_TARGET_SDK='35'
@@ -52,6 +52,10 @@ gradle_wrapper="$android_dir/gradlew"
 [[ -f "$build_gradle" ]] || fail "找不到 Android 版本配置：$build_gradle"
 [[ ! -f "$android_dir/app/src/debug/res/raw/assistant_transport_test_ca.crt" ]] || fail \
   "助手传输测试的临时 CA 仍在，请停止测试并清理后再构建交付包。"
+[[ ! -f "$android_dir/app/src/debug/res/raw/app_update_test_ca.crt" ]] || fail \
+  "升级测试的临时 CA 仍在，请停止测试并清理后再构建交付包。"
+[[ -z "${ORG_GRADLE_PROJECT_sensefieldTestVersionCode:-}${ORG_GRADLE_PROJECT_sensefieldTestVersionName:-}${ORG_GRADLE_PROJECT_sensefieldUpdateManifestUrl:-}" ]] || fail \
+  "交付构建不能继承升级测试的版本或更新源覆盖参数。"
 
 configured_version_code="$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]+([0-9]+).*/\1/p' "$build_gradle" | head -n 1)"
 configured_version_name="$(sed -nE "s/^[[:space:]]*versionName[[:space:]]+['\"]([^'\"]+)['\"].*/\1/p" "$build_gradle" | head -n 1)"

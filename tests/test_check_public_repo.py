@@ -103,7 +103,9 @@ def test_workspace_fallback_includes_public_docs_but_excludes_local_sources(tmp_
         "docs/plans/符合度改造方案.md",
         "docs/development/assistant-android-transport-test.md",
         "docs/development/assistant-gateway-test-deployment.md",
+        "docs/development/app-update.md",
         "docs/releases/0.4.0/RELEASE_NOTES.md",
+        "docs/releases/0.4.1/RELEASE_NOTES.md",
     ]
     for name in public_docs:
         path = tmp_path / name

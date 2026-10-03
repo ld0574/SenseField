@@ -31,6 +31,14 @@ if (releaseSigningConfigured && !file(releaseSigningInputs.keystorePath).isFile(
     )
 }
 
+def updateMetadataUrl = (findProperty('sensefieldUpdateManifestUrl')
+        ?: 'https://api.github.com/repos/ld0574/SenseField/releases/latest').toString()
+def updateMetadataUri = new URI(updateMetadataUrl)
+if (updateMetadataUri.scheme != 'https' || !updateMetadataUri.host
+        || updateMetadataUri.userInfo || updateMetadataUri.query || updateMetadataUri.fragment) {
+    throw new GradleException('Update metadata must be an HTTPS URL without credentials, query or fragment.')
+}
+
 android {
     namespace 'com.openkhub.sensefield'
     compileSdk 36
@@ -40,8 +48,9 @@ android {
         applicationId 'com.openkhub.sensefield'
         minSdk 29
         targetSdk 35
-        versionCode 17
-        versionName '0.4.0'
+        versionCode 18
+        versionName '0.4.1'
+        buildConfigField 'String', 'APP_UPDATE_METADATA_URL', groovy.json.JsonOutput.toJson(updateMetadataUrl)
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         ndk {
             // 默认仅 arm64-v8a（真机）；构建模拟器变体用 -PsensefieldAbi=x86_64
@@ -52,6 +61,10 @@ android {
                 cppFlags '-std=c++17'
             }
         }
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     signingConfigs {
@@ -89,6 +102,20 @@ android {
     testOptions {
         unitTests.returnDefaultValues = true
     }
+}
+
+// Isolated upgrade tests build a future APK without changing the delivered version.
+if (findProperty('sensefieldTestVersionCode') || findProperty('sensefieldTestVersionName')) {
+    if (!findProperty('sensefieldTestVersionCode') || !findProperty('sensefieldTestVersionName')) {
+        throw new GradleException('An upgrade fixture needs both test version properties.')
+    }
+    def fixtureCode = findProperty('sensefieldTestVersionCode').toString().toInteger()
+    def fixtureName = findProperty('sensefieldTestVersionName').toString()
+    if (fixtureCode <= 18 || !(fixtureName ==~ /[0-9]+\.[0-9]+\.[0-9]+/)) {
+        throw new GradleException('The isolated upgrade fixture must use a future version.')
+    }
+    android.defaultConfig.versionCode = fixtureCode
+    android.defaultConfig.versionName = fixtureName
 }
 
 dependencies {
