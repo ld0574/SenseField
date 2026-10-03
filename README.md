@@ -25,11 +25,11 @@
 
 **听野（SenseField）** 是面向视野狭窄和低视力玩家的 Android 实验原型。它尝试把游戏画面中玩家可能难以持续观察的信息，转译成方向短音、语音和触觉，补充信息而不代替操作。优先邀请管状视野、周边视野缺损的玩家；其他类型低视力、仍能完成主要操作的玩家可探索试用；当前不支持全盲。
 
-**下载与使用：[听野 0.3.5 公开体验版](https://github.com/ld0574/SenseField/releases/tag/v0.3.5) · [安装与使用说明](docs/releases/0.3.5/RELEASE_NOTES.md)**
+**下载与使用：[听野 0.3.8 公开体验版](https://github.com/ld0574/SenseField/releases/tag/v0.3.8) · [安装与使用说明](docs/releases/0.3.8/RELEASE_NOTES.md)**
 
 本项目由参赛团队独立开发，是非官方作品，与腾讯、天美工作室群及《王者荣耀》官方无隶属、合作或认可关系。相关名称、商标和游戏内容归各自权利人所有。
 
-最新本地交付为 `0.3.8`（Android `versionCode 16`），公开下载仍为上面的 `0.3.5`。这一版提前温控降载，并说明热状态下提醒可能变慢及通知标记入口；已有发热体感改善反馈，量化温升、长时稳定性与提醒时效仍需真机验证。下一阶段版本目标为 `0.4.0 / versionCode 17`，尚无对应交付记录。版本与使用说明见[发布索引](docs/releases/README.md)，证据见[0.3.8记录](validation/NEXT_VERSION_0.3.8_2026-10-03.md)、[评审补强Goal](validation/SCORE_RECOVERY_GOAL_2026-10-03.md)。
+最新公开交付为 `0.3.8`（Android `versionCode 16`），公开下载为上面的 `0.3.8`。这一版提前温控降载，并说明热状态下提醒可能变慢及通知标记入口；已有发热体感改善反馈，量化温升、长时稳定性与提醒时效仍需真机验证。下一阶段版本目标为 `0.4.0 / versionCode 17`，尚无对应交付记录。版本与使用说明见[发布索引](docs/releases/README.md)，证据见[0.3.8记录](validation/NEXT_VERSION_0.3.8_2026-10-03.md)、[评审补强Goal](validation/SCORE_RECOVERY_GOAL_2026-10-03.md)。
 
 ## 为什么做听野
 

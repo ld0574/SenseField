@@ -4,7 +4,7 @@
 
 ## 交付状态与构建版本
 
-截至 2026-10-03，公开下载为 [0.3.5 体验版](https://github.com/ld0574/SenseField/releases/tag/v0.3.5)（`versionCode 13`、GitHub pre-release）；最新本地交付为 [0.3.8 候选](0.3.8/RELEASE_NOTES.md)（`versionCode 16`）。下一阶段版本目标为 `0.4.0 / versionCode 17`，尚无对应的 `output/releases/` 交付记录。完整历史见[发布索引](README.md)。所有新交付遵守[版本命名规范](版本命名规范.md)，内部和外部共用 `a.b.c` 序列。
+截至 2026-10-04，公开下载为 [0.3.8 体验版](https://github.com/ld0574/SenseField/releases/tag/v0.3.8)（`versionCode 16`、GitHub 普通 Release，Latest）。下一阶段版本目标为 `0.4.0 / versionCode 17`，尚无对应的 `output/releases/` 交付记录。完整历史见[发布索引](README.md)。所有新交付遵守[版本命名规范](版本命名规范.md)，内部和外部共用 `a.b.c` 序列。
 
 发布前核对 `android/app/build.gradle`、`scripts/build_android_preview.sh` 和实际 APK 的版本、升级序号与签名，准备新版本交付时同步配置与脚本。发布说明必须对应实际 APK 和该版本的验证证据。历史 [0.3.0-alpha.1 发布说明](0.3.0-alpha.1/RELEASE_NOTES.md)与[检查记录](0.3.0-alpha.1/CHECKLIST.md)保留原始信息。
 
@@ -90,7 +90,7 @@ git push -u origin main
 
 ## 5. Release 和比赛交付
 
-- [ ] 需要公开 Release 时，用对应版本的 Git tag 标记，例如 `v0.3.5`；本地候选交付不要求创建 tag。
+- [ ] 需要公开 Release 时，用对应版本的 Git tag 标记，例如 `v0.3.8`；本地候选交付不要求创建 tag。
 - [ ] APK、ZIP 和校验文件保存在 `output/releases/<版本>/`，公开交付时上传到 GitHub Release 附件；`docs/` 只保存说明和发布记录。
 - [ ] 在 `docs/releases/<版本>/RELEASE_NOTES.md` 记录变化、使用方式、验证边界、文件名、大小与 SHA-256，并更新[发布索引](README.md)。
 - [ ] 同时发布 APK 的 SHA-256、Android 最低版本、测试设备和已知限制。

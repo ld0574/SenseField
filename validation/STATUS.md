@@ -1,5 +1,11 @@
 # 原型验证状态（更新于 2026-10-03）
 
+## 2026-10-04 公开发布 0.3.8
+
+已按用户要求发布为 [GitHub 0.3.8 公开体验版](https://github.com/ld0574/SenseField/releases/tag/v0.3.8)（普通 Release，Latest）。标签 `v0.3.8` 指向 `408f32a44a7ff58c5d69c5be8efa3d8d352afa9f`；APK 沿用 2026-10-03 的交付，未重新构建。实际版本为 0.3.8 / versionCode 16、minSdk29、target35、arm64-v8a；v2 签名有效，与既有体验包同为 Android Debug 证书。
+
+附件包含 APK、安装 ZIP、使用说明和 APK SHA-256 校验文件。APK 为 19,780,113 bytes，SHA-256 `86f026fe253f0d2c6ce37787cfc7e7d75d443785d9005bb46b29a2e823c58e6f`；GitHub 附件大小和摘要已与本地核对。安装 ZIP 仅含同一 APK、校验文件与更新后的玩家使用说明；未上传原始诊断或游戏截图。公开发布不改变 `verified=false` / `release_ready=false`，本版真机温升、实际发声时延和长时稳定性仍待验证。
+
 ## 2026-10-03 本地候选0.3.8：两局热反馈后的降载
 
 当前源码0.3.8/code16，公开Release仍为0.3.5。0.3.7同机两局分别6:05/8:25，仅间隔约21秒，电池温度37.4→41.3及42.2→43.9°C；系统thermal均为none、均未充电。缩略复制平均约4ms，但native帧处理平均296/317ms。第二局270.980秒才进入旧WARM，用户反馈烫手。见[两局反馈](HEAT_RETEST_0.3.7_2026-10-03.md)。

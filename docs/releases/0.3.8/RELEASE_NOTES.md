@@ -1,6 +1,6 @@
-# 听野 0.3.8 本地体验候选
+# 听野 0.3.8 公开体验版
 
-2026-10-03，版本 `0.3.8 / versionCode 16`。这是当前最新的本地交付候选，公开 Release 仍为 [0.3.5](https://github.com/ld0574/SenseField/releases/tag/v0.3.5)。
+构建交付日期：2026-10-03；公开发布日期：2026-10-04。版本 `0.3.8 / versionCode 16`，已发布为 [GitHub 公开体验版](https://github.com/ld0574/SenseField/releases/tag/v0.3.8)（普通 Release，Latest）。公开发布不代表最终稳定性验收通过。
 
 ## 本版变化
 
@@ -10,6 +10,10 @@
 ## 安装与使用
 
 支持 Android 10 及以上、arm64-v8a，可覆盖安装已有同签名版本。
+
+下载：[APK](https://github.com/ld0574/SenseField/releases/download/v0.3.8/sensefield-0.3.8-arm64-v8a-debug-candidate.apk) · [安装 ZIP](https://github.com/ld0574/SenseField/releases/download/v0.3.8/sensefield-0.3.8-install.zip) · [使用说明](https://github.com/ld0574/SenseField/releases/download/v0.3.8/installation-guide.txt) · [SHA-256 校验文件](https://github.com/ld0574/SenseField/releases/download/v0.3.8/sensefield-0.3.8-arm64-v8a-debug-candidate.apk.sha256)。
+
+屏幕采集每次需要用户明确授权；悬浮窗权限用于可选提示层；通知用于运行状态以及标记、暂停和停止。识别在本机完成，记录不会自动上传，画面保存由设置控制。
 
 1. 开始辅助前，先试听并确认媒体音量与语音。短音区分左右，上下方位请听语音，震动提醒附近情况。
 2. 遇到漏报或误报，下拉通知栏，点听野通知右侧箭头或向下展开，再点「标记问题」。按钮在展开后显示。
@@ -22,15 +26,17 @@
 
 ## 交付文件与来源
 
-APK、ZIP 和校验文件保存在本地 `output/releases/0.3.8/`，不纳入文档目录。
+公开附件从 `output/releases/0.3.8/` 上传；APK、ZIP 和校验文件仍保存在该目录，`docs/` 只保存说明。安装 ZIP 仅含同一 APK、校验文件及更新后的使用说明，未上传诊断或截图。
 
 | 项目 | 记录 |
 | --- | --- |
-| APK | `听野v0.3.8 安卓安装包.apk` |
+| 公开 APK | `sensefield-0.3.8-arm64-v8a-debug-candidate.apk`（与中文本地安装包字节相同） |
 | Android versionCode | `16` |
 | APK 大小 | 19,780,113 bytes |
 | APK SHA-256 | `86f026fe253f0d2c6ce37787cfc7e7d75d443785d9005bb46b29a2e823c58e6f` |
 
-说明来源：`output/releases/0.3.8/听野v0.3.8 使用说明.txt`。 构建元数据来源：同目录 `handoff.json`。
+说明来源：`output/releases/0.3.8/听野v0.3.8 使用说明.txt`，公开使用说明为同目录 `installation-guide.txt`。构建元数据：`handoff.json`；发布元数据：`github-release.json`、`release-asset-manifest.json`。
+
+标签 `v0.3.8` 指向 `408f32a44a7ff58c5d69c5be8efa3d8d352afa9f`。APK 未重建；实际 Manifest、v2 签名、大小及 SHA-256 已复核，采用与既有体验版相同的 Android Debug 签名。
 
 后续验证与证据边界见[0.3.8 改造、验证与交付后反馈](../../../validation/NEXT_VERSION_0.3.8_2026-10-03.md)。
