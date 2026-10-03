@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-readonly PREVIEW_VERSION_NAME='0.3.6'
-readonly PREVIEW_VERSION_CODE='14'
+readonly PREVIEW_VERSION_NAME='0.3.7'
+readonly PREVIEW_VERSION_CODE='15'
 readonly PREVIEW_ABI='arm64-v8a'
 readonly PREVIEW_MIN_SDK='29'
 readonly PREVIEW_TARGET_SDK='35'

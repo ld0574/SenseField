@@ -1,8 +1,14 @@
 # 原型验证状态（更新于 2026-10-03）
 
+## 2026-10-03 本地候选0.3.7：复制性能续阶段
+
+当前源码0.3.7/code15，公开下载仍为0.3.5。direct buffer诊断复制改为单次JNI填充，保留Java fallback；YOLOX通过stride-aware ROI resize省去临时RGBA crop。9个模型/profile等assets与0.3.6逐字节一致，native库仅JNI库变化；模型、阈值、采样窗口、提示频率和热档策略未改。
+
+160项JVM、构建/lint、4项Android14 arm64模拟器instrumentation通过；96组合成ncnn预处理tensor bit-identical。新的host复制测试含5,000组随机对照，ASAN/UBSAN通过。最终基准断言对应尺寸JNI复制成功，模拟器480/960px全屏缩略图P50为0.364/1.406ms，Java对照为2.731/10.678ms；仅是合成复制微基准，不证明真机降温或游戏FPS。诊断对照工具保留重复来源、条件差异、中断和缺失图片等信息，不能代替完整独立实测。交付与复现见[0.3.7记录](NEXT_VERSION_0.3.7_2026-10-03.md)。
+
 ## 2026-10-03 本地候选0.3.6与评审补强
 
-当前源码 `versionName=0.3.6`、`versionCode=14`，公开下载仍为0.3.5。本轮优化诊断像素读取、增加开始前左右短音试听；模型、profile、native、近区提示规则、500 ms观测预算与热档策略保持0.3.5。新增离线ZIP报告及匿名玩家试用记录工具，修正QUEUE_REPLACED审计词表与近区实声CSV测量类型。当前模型接入记录已补齐v6 512，35项历史需求对照见[Goal记录](SCORE_RECOVERY_GOAL_2026-10-03.md)。
+该轮源码 `versionName=0.3.6`、`versionCode=14`，公开下载仍为0.3.5。本轮优化诊断像素读取、增加开始前左右短音试听；模型、profile、native、近区提示规则、500 ms观测预算与热档策略保持0.3.5。新增离线ZIP报告及匿名玩家试用记录工具，修正QUEUE_REPLACED审计词表与近区实声CSV测量类型。模型接入记录已补齐v6 512，35项历史需求对照见[Goal记录](SCORE_RECOVERY_GOAL_2026-10-03.md)。
 
 Android JVM 160项全部通过，`assembleDebug`、`lintDebug`通过。APK实际版本14/0.3.6、minSdk29、target35、arm64-v8a已核验；v2签名有效，证书与0.3.5一致；11个assets/native条目逐字节一致。候选：`output/releases/0.3.6/sensefield-0.3.6-arm64-v8a-debug-candidate.apk`，SHA-256 `ad6baabf4856ae3d80442c29ddaa2f4d3177b43f008f6828dd3bec681c685662`，19,445,501 bytes。本轮没有连接实体设备，因此没有新的手机温升、真实声音、震动或患者效果结论。复制host微基准差异小，不能当作真机降热依据。
 

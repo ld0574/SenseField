@@ -14,9 +14,11 @@
 #include <vector>
 
 #include "layer.h"
+#include "diagnostic_pixels.h"
 #include "mapassist.h"
 #include "net.h"
 #include "yolox_contract.h"
+#include "yolox_preprocess.h"
 
 namespace {
 
@@ -289,21 +291,13 @@ void append_yolox_observations(Session &session, const uint8_t *rgba,
     const int crop_height = area.y1 - area.y0;
     if (crop_width < 2 || crop_height < 2) return;
 
-    std::vector<uint8_t> crop(static_cast<size_t>(crop_width) * crop_height * 4);
-    for (int y = 0; y < crop_height; ++y) {
-        const uint8_t *source = rgba + static_cast<size_t>(area.y0 + y) * row_stride +
-                                static_cast<size_t>(area.x0) * 4;
-        std::memcpy(crop.data() + static_cast<size_t>(y) * crop_width * 4,
-                    source, static_cast<size_t>(crop_width) * 4);
-    }
-
     const int target = session.yolox_input_size;
     const float scale = std::min(static_cast<float>(target) / crop_width,
                                  static_cast<float>(target) / crop_height);
     const int resized_width = std::max(1, static_cast<int>(crop_width * scale));
     const int resized_height = std::max(1, static_cast<int>(crop_height * scale));
-    ncnn::Mat resized = ncnn::Mat::from_pixels_resize(
-            crop.data(), ncnn::Mat::PIXEL_RGBA2BGR,
+    ncnn::Mat resized = mapassist_yolox::resize_roi_rgba_to_bgr(
+            rgba, width, height, row_stride, area.x0, area.y0,
             crop_width, crop_height, resized_width, resized_height);
     if (resized.empty()) return;
     ncnn::Mat input;
@@ -824,4 +818,39 @@ Java_com_openkhub_sensefield_NativeBridge_nativeReset(JNIEnv *, jclass, jlong ha
 extern "C" JNIEXPORT void JNICALL
 Java_com_openkhub_sensefield_NativeBridge_nativeDestroy(JNIEnv *, jclass, jlong handle) {
     delete reinterpret_cast<Session *>(handle);
+}
+
+// Diagnostic thumbnail conversion is deliberately a standalone JNI entry
+// point. It shares the loaded library but does not participate in recognition.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_openkhub_sensefield_NativeDiagnosticPixels_nativeCopy(
+        JNIEnv *env, jclass, jobject rgba, jint buffer_limit,
+        jint width, jint height, jint row_stride,
+        jint crop_x, jint crop_y, jint crop_width, jint crop_height,
+        jint output_width, jint output_height, jintArray argb) {
+    if (!rgba || !argb || buffer_limit < 0 || width <= 0 || height <= 0 ||
+        row_stride <= 0 || crop_x < 0 || crop_y < 0 || crop_width <= 0 ||
+        crop_height <= 0 || output_width <= 0 || output_height <= 0) return JNI_FALSE;
+
+    const jlong capacity = env->GetDirectBufferCapacity(rgba);
+    if (capacity < 0 || static_cast<jlong>(buffer_limit) > capacity) return JNI_FALSE;
+    auto *source = static_cast<const uint8_t *>(env->GetDirectBufferAddress(rgba));
+    if (!source) return JNI_FALSE;
+
+    const jsize output_length = env->GetArrayLength(argb);
+    if (output_length < 0) return JNI_FALSE;
+    jint *elements = env->GetIntArrayElements(argb, nullptr);
+    if (!elements) return JNI_FALSE;
+
+    const bool copied = diagnostic_pixels::copy_rgba_to_argb(
+            source, static_cast<uint64_t>(capacity),
+            static_cast<uint64_t>(buffer_limit),
+            static_cast<uint64_t>(width), static_cast<uint64_t>(height),
+            static_cast<uint64_t>(row_stride), static_cast<uint64_t>(crop_x),
+            static_cast<uint64_t>(crop_y), static_cast<uint64_t>(crop_width),
+            static_cast<uint64_t>(crop_height), static_cast<uint64_t>(output_width),
+            static_cast<uint64_t>(output_height), static_cast<uint64_t>(output_length),
+            reinterpret_cast<uint32_t *>(elements));
+    env->ReleaseIntArrayElements(argb, elements, 0);
+    return copied ? JNI_TRUE : JNI_FALSE;
 }

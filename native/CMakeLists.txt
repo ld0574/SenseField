@@ -33,4 +33,13 @@ if(BUILD_TESTING AND NOT ANDROID)
                                PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     add_test(NAME mapassist_yolox_contract
              COMMAND mapassist_yolox_contract_test)
+
+    add_executable(mapassist_diagnostic_pixels_test tests/diagnostic_pixels_test.cpp)
+    target_compile_features(mapassist_diagnostic_pixels_test PRIVATE cxx_std_17)
+    target_compile_options(mapassist_diagnostic_pixels_test
+                           PRIVATE -Wall -Wextra -Wpedantic -UNDEBUG)
+    target_include_directories(mapassist_diagnostic_pixels_test
+                               PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    add_test(NAME mapassist_diagnostic_pixels
+             COMMAND mapassist_diagnostic_pixels_test)
 endif()

@@ -30,7 +30,12 @@ final class DiagnosticPixels {
         double scale = Math.min(1.0, (double) Math.min(maxEdge, 1280) / Math.max(cw, ch));
         int ow = Math.max(1, (int) Math.round(cw * scale));
         int oh = Math.max(1, (int) Math.round(ch * scale));
-        int[] pixels = new int[ow * oh];
+        int[] pixels = new int[Math.multiplyExact(ow, oh)];
+        if (rgba.isDirect() && NativeDiagnosticPixels.isAvailable()
+                && NativeDiagnosticPixels.copy(rgba, width, height, rowStride,
+                        x0, y0, cw, ch, ow, oh, pixels)) {
+            return new DiagnosticPixels(ow, oh, pixels);
+        }
         // Absolute getInt reads one RGBA pixel at a time with a single buffer access.
         // Set byte order explicitly because the original three byte reads were order-neutral.
         ByteBuffer source = rgba.duplicate().order(ByteOrder.BIG_ENDIAN);
