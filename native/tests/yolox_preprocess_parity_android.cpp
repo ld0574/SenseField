@@ -22,6 +22,14 @@ static bool identical(const ncnn::Mat &left, const ncnn::Mat &right) {
 int main() {
     std::mt19937 random(7307);
     constexpr int cases = 96;
+    ncnn::Option inference_options;
+    inference_options.num_threads = 2;
+    inference_options.openmp_blocktime = 0;
+    inference_options.use_packing_layout = true;
+    inference_options.use_fp16_packed = false;
+    inference_options.use_fp16_storage = false;
+    inference_options.use_fp16_arithmetic = false;
+    inference_options.use_vulkan_compute = false;
     for (int trial = 0; trial < cases; ++trial) {
         const int width = 40 + random() % 661, height = 32 + random() % 389;
         const int stride = width * 4 + (trial % 3 == 0 ? 0 : 4 * (1 + random() % 32));
@@ -45,16 +53,21 @@ int main() {
         const ncnn::Mat candidate = mapassist_yolox::resize_roi_rgba_to_bgr(pixels.data(),
                 width, height, stride, x0, y0,
                 crop_width, crop_height, resized_width, resized_height);
-        ncnn::Mat legacy_padded, candidate_padded;
+        ncnn::Mat legacy_padded;
         ncnn::copy_make_border(legacy, legacy_padded, 0, target - resized_height,
                 0, target - resized_width, ncnn::BORDER_CONSTANT, 114.0f);
-        ncnn::copy_make_border(candidate, candidate_padded, 0, target - resized_height,
-                0, target - resized_width, ncnn::BORDER_CONSTANT, 114.0f);
+        const ncnn::Mat candidate_padded = mapassist_yolox::pad_resized_to_square(
+                candidate, target, inference_options);
         if (!identical(legacy, candidate) || !identical(legacy_padded, candidate_padded)) {
             std::fprintf(stderr, "Preprocess parity mismatch in synthetic case %d\n", trial);
             return 1;
         }
     }
-    std::printf("YOLOX_PREPROCESS_PARITY cases=%d bit_identical=true synthetic=true\n", cases);
+    if (!mapassist_yolox::pad_resized_to_square(ncnn::Mat(), 512, inference_options).empty())
+        return 1;
+    const ncnn::Mat too_large(513, 512, 3);
+    if (!mapassist_yolox::pad_resized_to_square(too_large, 512, inference_options).empty())
+        return 1;
+    std::printf("YOLOX_PREPROCESS_PARITY cases=%d bit_identical=true synthetic=true explicit_load_options=true\n", cases);
     return 0;
 }

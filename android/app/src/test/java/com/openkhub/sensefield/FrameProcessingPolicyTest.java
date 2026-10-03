@@ -27,30 +27,30 @@ public final class FrameProcessingPolicyTest {
         assertEquals(83, normal.nextAllowedAtMs());
 
         FrameProcessingPolicy warm = new FrameProcessingPolicy();
-        warm.updateDevice(430, -1);
+        warm.updateDevice(400, -1);
         warm.recordProcessed(0, 10);
         assertEquals(FrameProcessingPolicy.Mode.WARM, warm.mode());
-        assertEquals(80, warm.lastRestMs());
+        assertEquals(120, warm.lastRestMs());
 
         FrameProcessingPolicy hot = new FrameProcessingPolicy();
-        hot.updateDevice(450, -1);
+        hot.updateDevice(420, -1);
         hot.recordProcessed(0, 10);
         assertEquals(FrameProcessingPolicy.Mode.HOT, hot.mode());
-        assertEquals(100, hot.lastRestMs());
+        assertEquals(180, hot.lastRestMs());
 
         FrameProcessingPolicy normalCap = new FrameProcessingPolicy();
         normalCap.recordProcessed(0, 2000);
         assertEquals(150, normalCap.lastRestMs());
 
         FrameProcessingPolicy warmCap = new FrameProcessingPolicy();
-        warmCap.updateDevice(430, -1);
+        warmCap.updateDevice(400, -1);
         warmCap.recordProcessed(0, 2000);
-        assertEquals(250, warmCap.lastRestMs());
+        assertEquals(400, warmCap.lastRestMs());
 
         FrameProcessingPolicy hotCap = new FrameProcessingPolicy();
-        hotCap.updateDevice(450, -1);
+        hotCap.updateDevice(420, -1);
         hotCap.recordProcessed(0, 2000);
-        assertEquals(350, hotCap.lastRestMs());
+        assertEquals(600, hotCap.lastRestMs());
     }
 
     @Test public void twoHundredEightyOneMillisecondRunUsesCostAwareRestAtEachMode() {
@@ -60,36 +60,36 @@ public final class FrameProcessingPolicyTest {
         assertEquals(351, normal.nextAllowedAtMs());
 
         FrameProcessingPolicy warm = new FrameProcessingPolicy();
-        warm.updateDevice(430, -1);
+        warm.updateDevice(400, -1);
         warm.recordProcessed(0, 281);
-        assertEquals(140, warm.lastRestMs());
+        assertEquals(210, warm.lastRestMs());
 
         FrameProcessingPolicy hot = new FrameProcessingPolicy();
-        hot.updateDevice(450, -1);
+        hot.updateDevice(420, -1);
         hot.recordProcessed(0, 281);
-        assertEquals(210, hot.lastRestMs());
+        assertEquals(281, hot.lastRestMs());
     }
 
     @Test public void batteryThresholdsHaveOneDegreeHysteresis() {
         FrameProcessingPolicy policy = new FrameProcessingPolicy();
-        policy.updateDevice(429, -1);
+        policy.updateDevice(399, -1);
         assertEquals(FrameProcessingPolicy.Mode.NORMAL, policy.mode());
-        policy.updateDevice(430, -1);
+        policy.updateDevice(400, -1);
         assertEquals(FrameProcessingPolicy.Mode.WARM, policy.mode());
-        policy.updateDevice(429, -1);
+        policy.updateDevice(399, -1);
         assertEquals(FrameProcessingPolicy.Mode.WARM, policy.mode());
-        policy.updateDevice(420, -1);
+        policy.updateDevice(390, -1);
         assertEquals(FrameProcessingPolicy.Mode.NORMAL, policy.mode());
 
-        policy.updateDevice(450, -1);
-        assertEquals(FrameProcessingPolicy.Mode.HOT, policy.mode());
-        policy.updateDevice(441, -1);
-        assertEquals(FrameProcessingPolicy.Mode.HOT, policy.mode());
-        policy.updateDevice(440, -1);
-        assertEquals(FrameProcessingPolicy.Mode.WARM, policy.mode());
-        policy.updateDevice(421, -1);
-        assertEquals(FrameProcessingPolicy.Mode.WARM, policy.mode());
         policy.updateDevice(420, -1);
+        assertEquals(FrameProcessingPolicy.Mode.HOT, policy.mode());
+        policy.updateDevice(411, -1);
+        assertEquals(FrameProcessingPolicy.Mode.HOT, policy.mode());
+        policy.updateDevice(410, -1);
+        assertEquals(FrameProcessingPolicy.Mode.WARM, policy.mode());
+        policy.updateDevice(391, -1);
+        assertEquals(FrameProcessingPolicy.Mode.WARM, policy.mode());
+        policy.updateDevice(390, -1);
         assertEquals(FrameProcessingPolicy.Mode.NORMAL, policy.mode());
     }
 
@@ -110,17 +110,17 @@ public final class FrameProcessingPolicyTest {
 
     @Test public void independentSignalsUseTheHotterKnownMode() {
         FrameProcessingPolicy policy = new FrameProcessingPolicy();
-        policy.updateDevice(430, FrameProcessingPolicy.THERMAL_STATUS_SEVERE);
+        policy.updateDevice(400, FrameProcessingPolicy.THERMAL_STATUS_SEVERE);
         assertEquals(FrameProcessingPolicy.Mode.HOT, policy.mode());
-        policy.updateDevice(430, 2);
+        policy.updateDevice(400, 2);
         assertEquals(FrameProcessingPolicy.Mode.WARM, policy.mode());
         policy.updateDevice(-1, FrameProcessingPolicy.THERMAL_STATUS_NONE);
         // The known warm battery signal remains when that sensor is missing,
         // even if the other sensor now reports thermal NONE.
         assertEquals(FrameProcessingPolicy.Mode.WARM, policy.mode());
-        policy.updateDevice(420, FrameProcessingPolicy.THERMAL_STATUS_NONE);
+        policy.updateDevice(390, FrameProcessingPolicy.THERMAL_STATUS_NONE);
         assertEquals(FrameProcessingPolicy.Mode.NORMAL, policy.mode());
-        policy.updateDevice(450, FrameProcessingPolicy.THERMAL_STATUS_NONE);
+        policy.updateDevice(420, FrameProcessingPolicy.THERMAL_STATUS_NONE);
         policy.updateDevice(-1, FrameProcessingPolicy.THERMAL_STATUS_NONE);
         assertEquals(FrameProcessingPolicy.Mode.HOT, policy.mode());
     }
@@ -130,17 +130,17 @@ public final class FrameProcessingPolicyTest {
         policy.recordProcessed(100, 381);
         assertEquals(451, policy.nextAllowedAtMs());
 
-        policy.updateDevice(450, -1);
+        policy.updateDevice(420, -1);
         assertEquals(FrameProcessingPolicy.Mode.HOT, policy.mode());
-        assertEquals(210, policy.lastRestMs());
-        assertEquals(591, policy.nextAllowedAtMs());
-        assertFalse(policy.canProcess(590));
-        assertTrue(policy.canProcess(591));
+        assertEquals(281, policy.lastRestMs());
+        assertEquals(662, policy.nextAllowedAtMs());
+        assertFalse(policy.canProcess(661));
+        assertTrue(policy.canProcess(662));
     }
 
     @Test public void resetAllowsANewSessionImmediatelyAndRetainsHotDeviceState() {
         FrameProcessingPolicy policy = new FrameProcessingPolicy();
-        policy.updateDevice(450, -1);
+        policy.updateDevice(420, -1);
         policy.recordProcessed(100, 381);
         policy.reset();
 
@@ -176,5 +176,38 @@ public final class FrameProcessingPolicyTest {
         starved.start(0);
         starved.frameArrived(2000);
         assertEquals(CaptureHealthMonitor.State.STARVED, starved.check(3000));
+    }
+
+    @Test public void realSecondSessionStartsHotEvenWhenAndroidReportsNone() {
+        FrameProcessingPolicy policy = new FrameProcessingPolicy();
+        // 0.3.7 feedback: second session began at 42.2 C, thermal NONE.
+        policy.updateDevice(422, FrameProcessingPolicy.THERMAL_STATUS_NONE);
+        assertEquals(FrameProcessingPolicy.Mode.HOT, policy.mode());
+        policy.recordProcessed(100, 420);
+        assertFalse(policy.canProcess(739));
+        assertTrue(policy.canProcess(740));
+        // A transient missing reading must not return this phone to NORMAL.
+        policy.updateDevice(-1, FrameProcessingPolicy.THERMAL_STATUS_NONE);
+        assertEquals(FrameProcessingPolicy.Mode.HOT, policy.mode());
+    }
+
+    @Test public void firstSessionReducesLoadBeforeTheFormer43DegreeTrigger() {
+        FrameProcessingPolicy policy = new FrameProcessingPolicy();
+        policy.recordProcessed(0, 300);
+        policy.updateDevice(409, FrameProcessingPolicy.THERMAL_STATUS_NONE);
+        assertEquals(FrameProcessingPolicy.Mode.WARM, policy.mode());
+        assertEquals(525, policy.nextAllowedAtMs());
+        assertFalse(policy.canProcess(524));
+    }
+
+    @Test public void largeProcessingCostsCannotOverflowRestOrDeadline() {
+        FrameProcessingPolicy policy = new FrameProcessingPolicy();
+        policy.updateDevice(400, -1);
+        policy.recordProcessed(0, Long.MAX_VALUE);
+        assertEquals(400, policy.lastRestMs());
+        assertEquals(Long.MAX_VALUE, policy.nextAllowedAtMs());
+        policy.updateDevice(420, -1);
+        assertEquals(600, policy.lastRestMs());
+        assertEquals(Long.MAX_VALUE, policy.nextAllowedAtMs());
     }
 }

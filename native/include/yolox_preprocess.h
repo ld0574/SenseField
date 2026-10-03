@@ -19,5 +19,17 @@ inline ncnn::Mat resize_roi_rgba_to_bgr(const unsigned char *rgba,
             resized_width, resized_height);
 }
 
+// Padding must share the inference load options instead of constructing a
+// default Option with an unrelated CPU thread count and OpenMP wait policy.
+inline ncnn::Mat pad_resized_to_square(const ncnn::Mat &resized,
+        int target, const ncnn::Option &options) {
+    if (resized.empty() || resized.dims != 3 || target <= 0 ||
+        resized.w > target || resized.h > target) return {};
+    ncnn::Mat padded;
+    ncnn::copy_make_border(resized, padded, 0, target - resized.h,
+            0, target - resized.w, ncnn::BORDER_CONSTANT, 114.0f, options);
+    return padded;
+}
+
 }  // namespace mapassist_yolox
 #endif

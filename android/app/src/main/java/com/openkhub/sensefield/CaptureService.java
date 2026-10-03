@@ -442,8 +442,9 @@ public final class CaptureService extends Service {
         // a stale overlay marker or suppressed frame must never survive it.
         cueArbiter.reset();
         nearZoneCombat.reset();
-        frameProcessing.reset();
-        lastLoadSampleAtMs = -1;
+        // Recognition resets do not cancel the idle interval earned by the
+        // last processing run. Rotation, recovery and pause may reset tracks
+        // while the same capture session still needs its load cooldown.
         clearCueCategoriesLocked();
         if (minimapOverlay != null) minimapOverlay.clear();
         overlayCaptureGuard.clearMarkers();
@@ -1250,21 +1251,21 @@ public final class CaptureService extends Service {
                 actionIntent(ACTION_STOP), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         PendingIntent open = PendingIntent.getActivity(this, 3,
                 new Intent(this, MainActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        String help = "展开通知可标记问题、暂停或停止";
+        String detail = "遇到漏报或误报，请尽快点“标记问题”，帮助保存问题附近的记录。";
+        if (frameProcessing.mode() != FrameProcessingPolicy.Mode.NORMAL) {
+            help = "温度较高，提醒可能变慢；展开可标记问题";
+            detail = "温度较高，已降低识别频率；提醒可能变慢。\n" + detail;
+        }
         return new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentTitle(getString(R.string.capture_notification_title, state))
-                .setContentText(profileName + " · 已采样 " + processedFrames
-                        + " 帧 · 音频排队 " + queuedCues + "/检测 " + detectedCues
-                        + (staleCues == 0 ? "" : " · 过期 " + staleCues)
-                        + (audioQueueFailures == 0 ? "" : " · 音频失败 " + audioQueueFailures)
-                        + (latestLocatorState < 0 ? "" : " · 地图"
-                        + locatorStateName(latestLocatorState)
-                        + locatorScoreText(latestLocatorScoreMilli))
-                        + " · 识别 " + latestNativeMicros / 1000 + " ms")
+                .setContentText(help)
+                .setStyle(new Notification.BigTextStyle().bigText(detail))
                 .setContentIntent(open)
                 .setOngoing(true)
-                .addAction(android.R.drawable.ic_media_pause, paused ? "继续" : "暂停", pause)
                 .addAction(android.R.drawable.ic_menu_edit, "标记问题", markIssue)
+                .addAction(android.R.drawable.ic_media_pause, paused ? "继续" : "暂停", pause)
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel, "停止", stop)
                 .build();
     }

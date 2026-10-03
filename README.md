@@ -91,6 +91,7 @@
 
 - [离线诊断报告](validation/DIAGNOSTIC_REPORT.md)：从应用导出的ZIP生成本地HTML/JSON，逐条检查提示、事件截图和运行负载。播放回调与实际听到分开记录。
 - [离线诊断对照](validation/DIAGNOSTIC_COMPARE.md)：并列两局的处理、复制、队列、截图覆盖和温度指标，保留条件差异、中断及重复输入等证据缺口。
+- [0.3.7两局热反馈](validation/HEAT_RETEST_0.3.7_2026-10-03.md) · [0.3.8修正记录](validation/NEXT_VERSION_0.3.8_2026-10-03.md)：提前降载并说明提示延迟代价，真机降温仍待验证。
 - [匿名玩家试用套件](validation/PLAYER_TRIAL_KIT.md) · [打开离线记录表](validation/player-trial.html)：记录辅助开关对照、提示理解/感知、帮助和干扰；不自动上传，导出后再由负责人保管。
 - [评审补强与复现入口](validation/SCORE_RECOVERY_GOAL_2026-10-03.md)：历史需求缺口、现有实现、验证边界与下一轮验收。
 

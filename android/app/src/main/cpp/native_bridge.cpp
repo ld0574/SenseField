@@ -300,10 +300,8 @@ void append_yolox_observations(Session &session, const uint8_t *rgba,
             rgba, width, height, row_stride, area.x0, area.y0,
             crop_width, crop_height, resized_width, resized_height);
     if (resized.empty()) return;
-    ncnn::Mat input;
-    ncnn::copy_make_border(resized, input, 0, target - resized_height,
-                           0, target - resized_width,
-                           ncnn::BORDER_CONSTANT, 114.0f);
+    ncnn::Mat input = mapassist_yolox::pad_resized_to_square(
+            resized, target, session.yolox.opt);
     if (input.empty()) return;
 
     ncnn::Extractor extractor = session.yolox.create_extractor();

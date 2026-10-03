@@ -11,6 +11,12 @@ package com.openkhub.sensefield;
  */
 final class FrameProcessingPolicy {
     static final long MIN_START_INTERVAL_MS = 83;
+    // App load-reduction triggers, not hardware safety limits. Battery readings
+    // lag surface/SoC heat, so reduce work before the former 43/45 C thresholds.
+    static final int BATTERY_WARM_ENTER_TENTHS_C = 400;
+    static final int BATTERY_WARM_EXIT_TENTHS_C = 390;
+    static final int BATTERY_HOT_ENTER_TENTHS_C = 420;
+    static final int BATTERY_HOT_EXIT_TENTHS_C = 410;
 
     // Android PowerManager thermal status values. Kept numeric so this class
     // remains independent of Android APIs and can be tested on the JVM.
@@ -87,13 +93,13 @@ final class FrameProcessingPolicy {
     private void updateBatteryMode(int temperatureTenthsC) {
         if (temperatureTenthsC < 0) return;
 
-        if (temperatureTenthsC >= 450) {
+        if (temperatureTenthsC >= BATTERY_HOT_ENTER_TENTHS_C) {
             batteryMode = Mode.HOT;
         } else if (batteryMode == Mode.HOT) {
-            if (temperatureTenthsC <= 440) batteryMode = Mode.WARM;
+            if (temperatureTenthsC <= BATTERY_HOT_EXIT_TENTHS_C) batteryMode = Mode.WARM;
         } else if (batteryMode == Mode.WARM) {
-            if (temperatureTenthsC <= 420) batteryMode = Mode.NORMAL;
-        } else if (temperatureTenthsC >= 430) {
+            if (temperatureTenthsC <= BATTERY_WARM_EXIT_TENTHS_C) batteryMode = Mode.NORMAL;
+        } else if (temperatureTenthsC >= BATTERY_WARM_ENTER_TENTHS_C) {
             batteryMode = Mode.WARM;
         }
     }
@@ -127,14 +133,14 @@ final class FrameProcessingPolicy {
 
     private static long restFor(Mode mode, long costMs) {
         switch (mode) {
-            case WARM:
-                return clampRest(Math.max(80, costMs / 2), 250);
-            case HOT: {
-                // 3/4 of 467 ms already reaches the 350 ms cap; avoid
+            case WARM: {
+                // 3/4 of 534 ms already reaches the 400 ms cap; avoid
                 // overflowing when processing time is unexpectedly large.
-                long hotRest = costMs >= 467 ? 350 : (costMs * 3) / 4;
-                return clampRest(Math.max(100, hotRest), 350);
+                long warmRest = costMs >= 534 ? 400 : (costMs * 3) / 4;
+                return clampRest(Math.max(120, warmRest), 400);
             }
+            case HOT:
+                return clampRest(Math.max(180, costMs), 600);
             case NORMAL:
             default:
                 return clampRest(Math.max(40, costMs / 4), 150);
