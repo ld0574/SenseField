@@ -51,6 +51,10 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize|stateHidden" />
         <activity
+            android:name=".Match3AssistActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
+        <activity
             android:name=".GameTuningActivity"
             android:exported="false" />
         <activity
