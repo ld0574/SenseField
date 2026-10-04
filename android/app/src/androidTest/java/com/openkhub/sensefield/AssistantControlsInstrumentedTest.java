@@ -219,6 +219,29 @@ public class AssistantControlsInstrumentedTest {
         } finally { controller.close(); preferences.edit().clear().commit(); }
     }
 
+    @Test public void localModelReadyCannotClearBlockedInputOrPause() {
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+            Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+            SharedPreferences preferences = preferences(context);
+            Host host = new Host();
+            AssistantController controller = new AssistantController(context, "local-ready-gates",
+                    new AssistantSettings(preferences), host);
+            try {
+                controller.voiceInputStateChanged(VoiceInputSafetyPolicy.InputState.OTHER_RECORDING);
+                controller.localAsrReady();
+                assertEquals(VoiceInputSafetyPolicy.InputState.OTHER_RECORDING.status, host.status);
+                controller.setVoicePaused(true);
+                controller.localAsrReady();
+                assertTrue(host.status.startsWith(VoiceInputSafetyPolicy.InputState.PAUSED.status));
+                assertFalse(host.status.contains("已就绪"));
+                controller.thermal(FrameProcessingPolicy.Mode.HOT);
+                controller.localAsrReady();
+                assertTrue(host.status.contains("温度较高"));
+                assertFalse(host.status.contains("已就绪"));
+            } finally { controller.close(); preferences.edit().clear().commit(); }
+        });
+    }
+
     @Test public void localVoiceDoesNotRequireVisualGatewayConfiguration() {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         SharedPreferences preferences = preferences(context);

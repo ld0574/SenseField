@@ -107,6 +107,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
 
     CuePlayer(Context context) {
         this.context = context.getApplicationContext();
+        scheduleAssistantTtsRecovery();
         spatialEnabledAtStart = GameProfile.settings(this.context)
                 .getBoolean(PresentationAudioPolicy.PREF_SPATIAL, false);
         spatialTonePrewarmWorker = spatialEnabledAtStart
@@ -159,6 +160,27 @@ final class CuePlayer implements CueDispatcher.Renderer {
                 Log.i(TAG, "Prewarmed opt-in spatial tone cache entries="
                         + spatialToneCache.entryCountForTest());
             });
+        }
+    }
+
+    private void scheduleAssistantTtsRecovery() {
+        if (!AssistantTtsCache.claimProcessStartupSweep()) return;
+        File cacheDirectory = context.getCacheDir();
+        recoverAssistantTtsFiles(cacheDirectory);
+        // A just-crashed TTS engine may still hold its output descriptor briefly. Retry after a
+        // grace period; paths owned by live utterances are tracked and skipped by the sweeper.
+        mainHandler.postDelayed(() -> recoverAssistantTtsFiles(cacheDirectory),
+                AssistantTtsCache.ORPHAN_GRACE_MS);
+    }
+
+    private static void recoverAssistantTtsFiles(File cacheDirectory) {
+        try {
+            int deleted = AssistantTtsCache.deleteStaleFiles(
+                    cacheDirectory, System.currentTimeMillis());
+            if (deleted > 0)
+                Log.i(TAG, "Removed stale assistant TTS cache files count=" + deleted);
+        } catch (IOException error) {
+            Log.w(TAG, "Could not recover stale assistant TTS cache files", error);
         }
     }
 
@@ -621,27 +643,9 @@ final class CuePlayer implements CueDispatcher.Renderer {
         TextToSpeech voice;
         if (request.speech == null || request.speech.isEmpty()) return false;
         String utteranceId = "assistant:" + request.cueId + ":" + System.nanoTime();
-        File outputFile = new File(context.getCacheDir(), "assistant_"
-                + Long.toHexString(System.nanoTime()) + ".wav");
         Bundle parameters = new Bundle();
         parameters.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1f);
-        final AssistantUtterance utterance = new AssistantUtterance(
-                request, callback, outputFile);
-        utterance.synthesisTimeout = () -> {
-            if (assistantUtterances.remove(utteranceId, utterance)) {
-                utterance.cancelled = true;
-                outputFile.delete();
-                TextToSpeech activeVoice = tts;
-                if (activeVoice != null) {
-                    try { activeVoice.stop(); }
-                    catch (RuntimeException error) {
-                        Log.w(TAG, "Could not stop timed-out assistant synthesis", error);
-                    }
-                }
-                callback.onFinished(SystemClock.elapsedRealtime(), false);
-                Log.w(TAG, "Offline assistant TTS synthesis timed out for " + utteranceId);
-            }
-        };
+        final AssistantUtterance utterance;
         synchronized (audioLock) {
             if (closed || !ttsReady || !offlineTtsReady || tts == null) return false;
             if (!request.playbackAllowedAt(SystemClock.elapsedRealtime())) {
@@ -649,18 +653,48 @@ final class CuePlayer implements CueDispatcher.Renderer {
                 return true;
             }
             voice = tts;
-            assistantUtterances.put(utteranceId, utterance);
+            File outputFile;
+            try {
+                outputFile = AssistantTtsCache.createOutputFile(context.getCacheDir());
+            } catch (IOException error) {
+                Log.w(TAG, "Could not allocate assistant TTS cache file", error);
+                return false;
+            }
+            final AssistantUtterance created = new AssistantUtterance(request, callback, outputFile);
+            created.synthesisTimeout = () -> {
+                if (assistantUtterances.remove(utteranceId, created)) {
+                    created.cancelled = true;
+                    AssistantTtsCache.delete(created.outputFile);
+                    TextToSpeech activeVoice = tts;
+                    if (activeVoice != null) {
+                        try { activeVoice.stop(); }
+                        catch (RuntimeException error) {
+                            Log.w(TAG, "Could not stop timed-out assistant synthesis", error);
+                        }
+                    }
+                    callback.onFinished(SystemClock.elapsedRealtime(), false);
+                    Log.w(TAG, "Offline assistant TTS synthesis timed out for " + utteranceId);
+                }
+            };
+            assistantUtterances.put(utteranceId, created);
+            utterance = created;
         }
         mainHandler.postDelayed(utterance.synthesisTimeout, ASSISTANT_SYNTHESIS_TIMEOUT_MS);
+        if (closed || utterance.cancelled || assistantUtterances.get(utteranceId) != utterance) {
+            mainHandler.removeCallbacks(utterance.synthesisTimeout);
+            AssistantTtsCache.delete(utterance.outputFile);
+            return false;
+        }
         try {
-            int result = voice.synthesizeToFile(request.speech, parameters, outputFile, utteranceId);
+            int result = voice.synthesizeToFile(request.speech, parameters,
+                    utterance.outputFile, utteranceId);
             if (result == TextToSpeech.SUCCESS) return true;
         } catch (RuntimeException error) {
             Log.w(TAG, "Could not synthesize assistant speech offline", error);
         }
         assistantUtterances.remove(utteranceId, utterance);
         mainHandler.removeCallbacks(utterance.synthesisTimeout);
-        outputFile.delete();
+        AssistantTtsCache.delete(utterance.outputFile);
         return false;
     }
 
@@ -787,7 +821,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
                                  boolean success) {
         mainHandler.removeCallbacks(utterance.synthesisTimeout);
         boolean wasCurrent = assistantUtterances.remove(utteranceId, utterance);
-        utterance.outputFile.delete();
+        AssistantTtsCache.delete(utterance.outputFile);
         if (wasCurrent && !utterance.cancelled && !closed)
             utterance.callback.onFinished(SystemClock.elapsedRealtime(), success);
     }
@@ -795,7 +829,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
     private void failAssistant(String utteranceId, AssistantUtterance utterance) {
         mainHandler.removeCallbacks(utterance.synthesisTimeout);
         if (!assistantUtterances.remove(utteranceId, utterance)) return;
-        utterance.outputFile.delete();
+        AssistantTtsCache.delete(utterance.outputFile);
         if (!utterance.cancelled && !closed)
             utterance.callback.onFinished(SystemClock.elapsedRealtime(), false);
     }
@@ -931,7 +965,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
             for (AssistantUtterance utterance : assistantUtterances.values()) {
                 utterance.cancelled = true;
                 mainHandler.removeCallbacks(utterance.synthesisTimeout);
-                utterance.outputFile.delete();
+                AssistantTtsCache.delete(utterance.outputFile);
             }
             assistantUtterances.clear();
             track = assistantTrack;
@@ -959,7 +993,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
             for (AssistantUtterance utterance : assistantUtterances.values()) {
                 utterance.cancelled = true;
                 mainHandler.removeCallbacks(utterance.synthesisTimeout);
-                utterance.outputFile.delete();
+                AssistantTtsCache.delete(utterance.outputFile);
             }
             assistantUtterances.clear();
             track = assistantTrack;
@@ -1081,7 +1115,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
             for (AssistantUtterance utterance : assistantUtterances.values()) {
                 utterance.cancelled = true;
                 mainHandler.removeCallbacks(utterance.synthesisTimeout);
-                utterance.outputFile.delete();
+                AssistantTtsCache.delete(utterance.outputFile);
             }
             assistantUtterances.clear();
             if (assistantTrack != null) {

@@ -232,6 +232,7 @@ def test_build_question_is_not_answered_with_only_gold_or_timer() -> None:
     "question",
     [
         "我这局应该怎么出装？",
+        "请推荐一件当前适合的装备",
         "根据阵容该选哪个英雄？",
         "这个画面我应该选哪个？",
         "这个画面我应该怎么打？",

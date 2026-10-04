@@ -97,7 +97,7 @@ python3 -m venv .venv
 PYTHON=.venv/bin/python bash scripts/assistant_gateway_install_deps.sh --vision-only
 ```
 
-服务环境文件必须设置 `ASSISTANT_GATEWAY_ASR_BACKEND=disabled`，再按现有方式配置设备令牌、视觉提供商和TLS。该模式不初始化ASR，`/v1/audio`关闭；配置好的 `/v1/visual` 仍经认证可用，health报告 `vision_only` / `asr_ready=false`。轻量extra不安装PyTorch、FunASR、Hugging Face或模型缓存；旧CPU对照安装方式仅在显式需要比较时使用。CLI mock参数测试覆盖轻量路径、旧Linux路径与非法参数，没有实际执行包安装或远端迁移。
+服务环境文件必须设置 `ASSISTANT_GATEWAY_ASR_BACKEND=disabled`，再按现有方式配置设备令牌、视觉提供商和TLS。该模式不初始化ASR，`/v1/audio`关闭；配置好的 `/v1/visual` 仍经认证可用，health报告 `vision_only` / `asr_ready=false`。轻量extra不安装PyTorch、FunASR、Hugging Face或模型缓存；旧CPU对照安装方式仅在显式需要比较时使用。CLI mock参数测试覆盖轻量路径、旧Linux路径与非法参数。2026-10-04另在全新Python3.12本地环境执行轻量安装，确认正式app可启动且torch、funasr、huggingface_hub、sherpa_onnx均未安装；未迁移新远端主机。
 
 Android大模型不入Git。下列脚本按 `sensevoice.metadata.json` 的完整revision、大小与SHA获取官方公开文件，只在主动执行时下载；构建本身不会隐式下载ASR权重。已有文件可传 `--source-dir`，本地源缺失或校验失败时不回退网络。
 
@@ -108,14 +108,20 @@ python3 scripts/prepare_android_asr_assets.py --check-only
 
 模型许可与runtime许可在APK的 `assets/sensevoice/` 中；构建校验拒绝半套或不匹配的资产，启动再次核验并复制至不备份目录。缺失模型时语音明确不可用，既有本地预警继续，不会转到服务器ASR。
 
-当前约214MB APK超过旧更新器100MiB上限；后续候选上限修为256MiB，并保留流式大小、SHA、同源HTTPS、包名和签名校验。旧客户端首次进入此候选需人工覆盖安装；尚未制作过渡包或上传CDN。已装手机包与用户离开后的源码候选分别记录，不宣称新版上限已在手机中生效。
+当前约214MB APK超过旧更新器100MiB上限；后续候选上限修为256MiB，并保留流式大小、SHA、同源HTTPS、包名和签名校验。旧客户端首次进入此候选需人工覆盖安装；尚未制作过渡包或上传CDN。用户回连后最终候选已覆盖手机，256MiB上限包含在该包；与此前100MiB包的历史结果分开记录。
 
-HOT目前停止VAD/ASR处理并废弃结果，但AudioRecord仍读入并丢弃帧；没有宣称释放麦克风或零采音负载。真实麦克风、游戏开麦让路、物理时延及热/负载门禁仍待实测。后续候选修复了native失败与取消并发时引擎被释放却仍显示加载中的状态，失败会独立通知会话，不回传旧文本。
+先前候选在HOT时仍读入并丢弃帧；当前源码改为HOT/用户暂停调用AudioRecord.stop()，恢复复用同一录音实例，并清空跨轮PCM、VAD/AEC和统计。AOSP Android10/14/16的start()实现会flush缓冲，但厂商HAL与实际麦克风恢复新鲜度仍待设备测量；不宣称销毁实例、零采音负载或降温验收。真实麦克风、游戏开麦让路、物理时延及热/负载门禁仍待实测。后续候选修复了native失败与取消并发时引擎被释放却仍显示加载中的状态，失败会独立通知会话，不回传旧文本。
 
 历史服务器 ASR 对照代码包含 CPU Python Paraformer；此前显式 `ASSISTANT_GATEWAY_ASR_BACKEND=sensevoice_int8` 与 `ASSISTANT_GATEWAY_SENSEVOICE_MODEL_DIR` 可选 CPU SenseVoiceSmall int8 ONNX。两个比较后端都使用连续监听/VAD 分段，在完整语音段结束后识别一次，不输出 partial；SenseVoice 使用 `sherpa-onnx==1.13.8`，manifest 固定约 239 MB 的 `model.int8.onnx` 与 tokens 文件。FunAudioLLM/Alibaba SenseVoiceSmall 的模型许可是 [FunASR Model Open Source License Agreement 1.1](https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE)，不是 Apache-2.0。Paraformer/SenseVoice server-cache 只属于历史服务端对照安排；新的本地候选允许模型 asset 随 APK 分发，但二进制不入 Git，需随包注明 FunASR Model License 1.1、Sherpa Apache-2.0、ONNX Runtime MIT。网关代码为 MIT。
 
-已安装的 APK 为 Android 10+ 手机端 ASR：bundled SenseVoiceSmall int8 作为约 239 MB APK asset，本地复制并校验哈希；JNI sherpa-onnx 1.13.8 + ONNX Runtime 1.28.2 单线程 CPU 运行，不依赖系统 on-device service。音频不联网、不落盘；只有用户问画面时才把文本问题和授权截图送到视觉网关。取消时保留单 slot 至 native 退出，设备 HOT 时暂停输入，无云端 fallback。该 APK 已无线安装至小米 Android 14，版本 `0.4.1/code18`，大小 214121822 bytes，SHA-256 `4218bf94b03153e48e9e313fd28900139c14c0bba000e534289cd4f799df5759`。服务端 Paraformer/SenseVoice 数据只作为比较实验，不代表手机端效果。
+此前4218bf94…安装快照的APK为Android 10+ 手机端ASR：bundled SenseVoiceSmall int8 作为约 239 MB APK asset，本地复制并校验哈希；JNI sherpa-onnx 1.13.8 + ONNX Runtime 1.28.2 单线程 CPU 运行，不依赖系统 on-device service。音频不联网、不落盘；只有用户问画面时才把文本问题和授权截图送到视觉网关。取消时保留单 slot 至 native 退出，设备 HOT 时暂停输入，无云端 fallback。该 APK 已无线安装至小米 Android 14，版本 `0.4.1/code18`，大小 214121822 bytes，SHA-256 `4218bf94b03153e48e9e313fd28900139c14c0bba000e534289cd4f799df5759`。服务端 Paraformer/SenseVoice 数据只作为比较实验，不代表手机端效果。
 
 Mac 上对同一段 1,769 ms 合成 PCM 的单点记录为：旧协议 Paraformer（4 threads）speech-end finalization 2,324 ms；新协议记录 `inference_ms=185 ms`。SenseVoice 对 score、build、draft 三类合成样本的直接识别耗时分别为 85、139、145 ms，预设关键词判断通过。服务器 ASR 合成 WSS 对照的 speech-end 至 final 为 274 ms 单点，这些服务端数值都来自合成输入。手机端 instrumentation 的纯合成 PCM 测试新增 1 项，比分、出装、选人三例分别为 170、294、352 ms，关键词和 `isRequest` 断言通过。此测试不是物理麦克风采音、真实发声、P95 或温升测量；直接 recognizer inference、WSS speech-end-to-final、instrumentation 场景耗时和实际客户端端到端也不是同一计时范围。历史 Linux Paraformer WSS 的 199 ms finalization / 313 ms inference 仍是较早服务记录。
 
 在 2026-10-04 的一次只读检查中，所提供的 Linux 主机 SSH 可达，显示 8 个在线逻辑 CPU、AMD Ryzen 9 5900X；当时预期环境文件、`/opt/mapassist` 项目与 Python runtime、固定 ASR 模型缓存均不存在，回环服务端口拒绝连接。该次检查没有发起 HTTPS/WSS ASR，也没有运行直接推理，是有明确时间点的主机快照。此后网关已设 `ASSISTANT_GATEWAY_ASR_BACKEND=disabled` 并重启；健康检查 HTTP 200，报告 `vision_only` / `asr_ready=false`，服务器 ASR 已停用且不加载模型，视觉 Qwen 配置未变。此前已安装的 `0.4.1/code18` APK 对应构建回归通过 225 项 JVM、10 项 instrumentation、103 项 Python 网关测试，以及 Debug/Test APK 构建和 lint；ASR instrumentation 为上述纯合成 PCM 用例。真实麦克风、物理发声、P95 和温升仍未验证。
+
+## 2026-10-04 手机端ASR工程续改
+
+最终候选ce8dd75b…已覆盖手机，历史4218bf94…包分开记录，最终候选制品、239项JVM、122项相关Python与14项模拟器软件链路证据见[工程复核记录](../../validation/ASSISTANT_ONDEVICE_ENGINEERING_2026-10-04.md)。新增fixture运行正式Controller/HTTPS客户端/网关，只用合成PCM和固定视觉回复，不启动麦克风、录屏或真实TTS；临时CA与令牌随测试清理，不能加入交付包。动态装备推荐问句的kind回归已修正，不把静态15秒窗口用于动态购买建议。当前服务仍为vision_only和qwen/qwen3.8-27b，没有付费模型回退。
+
+测试网关重启已加载动态装备问句修复；保留用户已安装的同一CA，叶证书补SKI/AKI后通过OpenSSL strict与Python3.14验证。叶证书一天有效，属临时测试环境；凭据和证书保存在ignored私有目录，不进入APK或Git。

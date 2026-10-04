@@ -44,8 +44,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run the authenticated MapAssist assistant gateway.",
         epilog=(
-            "ZHIPU_API_KEY is optional for authenticated ASR-only mode. It is required only for "
-            "/v1/visual; without it, health reports asr_only and visual requests return 503."
+            "For phone-local ASR set ASSISTANT_GATEWAY_ASR_BACKEND=disabled and install the "
+            "assistant-vision-gateway extra. /v1/visual needs the selected provider's server-side "
+            "credentials: ZHIPU_API_KEY for zhipu or ASSISTANT_GATEWAY_VISION_API_KEY for compatible. "
+            "No provider credentials are needed for historical ASR-only operation."
         ),
     )
     parser.add_argument("--host", default=None, help="Bind address; production defaults to 0.0.0.0")

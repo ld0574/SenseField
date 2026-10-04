@@ -95,9 +95,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
             if (voiceEnabled) {
                 asr = new OnDeviceAsr(context, new OnDeviceAsr.Listener() {
                     @Override public void ready() {
-                        main.post(() -> {
-                            if (!closed && voiceEnabled) setStatus("本地离线中文识别已就绪");
-                        });
+                        main.post(() -> localAsrReady());
                     }
                     @Override public void result(long generation, String turn, String text, long inferenceMs) {
                         onLocalAsrResult(generation, turn, text, inferenceMs);
@@ -242,6 +240,19 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         if (localAsr != null) localAsr.close();
         setStatus("本地离线中文识别不可用，语音输入已暂停；本地预警继续");
     }
+    /** Model readiness cannot clear the microphone, user-pause or thermal gates. */
+    void localAsrReady() {
+        if (closed || !voiceEnabled) return;
+        if (paused || voicePaused || mode == FrameProcessingPolicy.Mode.HOT) {
+            setStatus(mode == FrameProcessingPolicy.Mode.HOT
+                    ? "温度较高，助手输入暂停；本地预警继续"
+                    : VoiceInputSafetyPolicy.InputState.PAUSED.status);
+        } else if (inputState != null && inputState != VoiceInputSafetyPolicy.InputState.READY) {
+            setStatus(inputState.status);
+        } else {
+            setStatus("本地离线中文识别已就绪");
+        }
+    }
     private void voiceInputUnavailable(String status) {
         if (closed) return;
         if (inputState != VoiceInputSafetyPolicy.InputState.UNAVAILABLE)
@@ -264,7 +275,11 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         if (closed || state == null) return;
         inputState = state;
         invalidate("audio_input_" + state.auditKey);
-        main.post(() -> setStatus(state.status));
+        main.post(() -> {
+            if (closed || inputState != state) return;
+            if (paused || voicePaused || mode == FrameProcessingPolicy.Mode.HOT) localAsrReady();
+            else setStatus(state.status);
+        });
     }
     void setVoicePaused(boolean value) {
         if (!voiceEnabled) { setStatus("连续语音尚未开启"); return; }
@@ -312,7 +327,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         boolean changed = mode != value; mode = value;
         if (changed && value == FrameProcessingPolicy.Mode.HOT) {
             AssistantVoiceInput input = voice; if (input != null) input.pause(true);
-            captureInvalidated("hot"); main.post(() -> setStatus("温度较高，画面理解暂停；本地预警继续"));
+            captureInvalidated("hot"); main.post(() -> setStatus("温度较高，语音和画面理解暂停；本地预警继续"));
         } else if (changed) {
             AssistantVoiceInput input = voice; if (input != null) input.pause(paused || voicePaused);
         }

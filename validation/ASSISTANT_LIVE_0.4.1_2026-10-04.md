@@ -101,3 +101,7 @@
 后续源码候选SHA256 `0c9991a40a416606e78c7f0308e55153754611dd40b2d815c6aeea4a45914a5a`，214,738,312bytes，仍0.4.1/code18，未覆盖手机。新增更新器256MiB上限与214MB包元数据回归；旧100MiB客户端首次进入此候选需要人工覆盖，尚未发布过渡包。识别失败与取消并发时会独立通知引擎不可用，避免永远显示加载；HOT只停止VAD/ASR处理，AudioRecord仍读入并丢弃帧，未验证或宣称物理释放麦克风。
 
 最终226项JVM、Debug/Test APK和lint通过；网关/轻量安装CLI/CDN清单及HTTPS fixture相关Python121项通过。轻量 `--vision-only` 安装不选PyTorch/FunASR/HF依赖，mock参数测试覆盖5项并修复macOS Bash3.2空数组兼容；未执行新远端安装或卸载。正式native末版在Android14模拟器另外完成1项纯合成ASR（三样例）测试，不用模拟器速度替代手机。权重准备脚本只在显式调用时获取pinned公开资产，当前只读hash校验通过。新候选与已装包分开保留；后续重点为真人设备、游戏场景、声学与热负载及独立符合度验收，不补写分数或门禁。
+
+## 手机回连后的工程候选覆盖安装
+
+用户重新提供无线ADB后，手机无活动辅助服务时已安装最终干净0.4.1/code18候选，214,750,924bytes，SHA-256 `ce8dd75befd042444199867b8deea09619a69c6bce9bbb123e65eecb6d3eae1f`；手机读回匹配，服务器配置与令牌保留，未自动开始录音/录屏。新增HOT/用户暂停停止AudioRecord、恢复清缓冲、状态保护及TTS回收。239项JVM、122项相关Python、14项模拟器测试是软件证据，不是本次装机后的真实语音/发热验收。测试网关已加载动态装备问句修复，既有CA下叶证书补SKI/AKI后严格HTTPS health通过，vision_only与Qwen配置保持。工程链路范围、AOSP源码依据、制品与未测门禁见[工程复核](ASSISTANT_ONDEVICE_ENGINEERING_2026-10-04.md)。
