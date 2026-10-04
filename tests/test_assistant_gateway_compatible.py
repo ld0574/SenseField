@@ -10,7 +10,7 @@ pytest.importorskip("httpx")
 import httpx
 
 from mapassist.assistant_gateway.compatible import CompatibleVisionClient
-from mapassist.assistant_gateway.errors import VisionRateLimited
+from mapassist.assistant_gateway.errors import VisionRateLimited, VisionUpstreamError
 
 
 def _sse(content: str) -> bytes:
@@ -54,6 +54,50 @@ def test_compatible_client_uses_openai_streaming_shape_and_jpeg_data_uri() -> No
     assert body["messages"][1]["content"][0] == {"type": "text", "text": "Read the HUD"}
     image = body["messages"][1]["content"][1]["image_url"]["url"]
     assert image == "data:image/jpeg;base64,/9j/TESTIMAGE"
+
+
+@pytest.mark.parametrize("first_has_content", [False, True])
+def test_empty_finish_reason_keeps_stream_open_until_the_final_answer(first_has_content: bool) -> None:
+    answer = '{"kind":"ui_text","answer":"点击单人练习场。","uncertain":false}'
+    first_part = answer[:12] if first_has_content else ""
+    events = [
+        {"choices": [{"delta": {"reasoning_content": "PRIVATE_REASONING", "content": first_part},
+                      "finish_reason": ""}]},
+        {"choices": [{"delta": {"content": answer[len(first_part):]}, "finish_reason": ""}]},
+        {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+    ]
+    stream = ("".join("data: " + json.dumps(event) + "\n\n" for event in events)
+              + "data: [DONE]\n\n").encode()
+
+    async def scenario() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+                lambda _request: httpx.Response(200, content=stream))) as http_client:
+            client = CompatibleVisionClient("test-key", base_url="https://vision.example/v1",
+                                            model="internvl3.5-241b-a28b", http_client=http_client)
+            try:
+                assert await client.complete(question="q", image_base64="a") == answer
+            finally:
+                await client.close()
+
+    asyncio.run(scenario())
+
+
+def test_reasoning_only_stream_never_becomes_an_answer_after_empty_finish_marker() -> None:
+    stream = (b'data: {"choices":[{"delta":{"reasoning_content":"PRIVATE_REASONING"},'
+              b'"finish_reason":""}]}\n\ndata: [DONE]\n\n')
+
+    async def scenario() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+                lambda _request: httpx.Response(200, content=stream))) as http_client:
+            client = CompatibleVisionClient("test-key", base_url="https://vision.example/v1",
+                                            model="internvl3.5-241b-a28b", http_client=http_client)
+            try:
+                with pytest.raises(VisionUpstreamError):
+                    await client.complete(question="q", image_base64="a")
+            finally:
+                await client.close()
+
+    asyncio.run(scenario())
 
 
 def test_compatible_client_reuses_safe_rate_limit_metadata_and_cooldown() -> None:

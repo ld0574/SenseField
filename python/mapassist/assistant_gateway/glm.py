@@ -428,7 +428,9 @@ class GlmVisionClient:
             output.append(part)
 
         finish_reason = choice.get("finish_reason")
-        if finish_reason is None:
+        # Some compatible providers send an empty-string marker on every continuing
+        # delta. It is not a terminal reason: stopping here discards the final answer.
+        if finish_reason is None or finish_reason == "":
             return False
         metrics.finish_reason = (
             finish_reason

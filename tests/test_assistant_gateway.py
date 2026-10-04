@@ -341,6 +341,19 @@ def test_current_board_move_remains_short_lived_hud() -> None:
     assert parsed.kind == "hud"
 
 
+@pytest.mark.parametrize("question", [
+    "我现在应该先买哪件？",
+    "按最新金币和价格，我应该买哪个？",
+    "敌方法术伤害为主，购买哪一件比较合适？",
+])
+def test_purchase_choice_without_word_equipment_still_requires_hud_freshness(question: str) -> None:
+    parsed = parse_visual_answer(
+        '{"kind":"ui_text","answer":"先买抗魔披风，增加法术防御。","uncertain":false}',
+        question=question,
+    )
+    assert parsed.kind == "hud"
+
+
 def test_dynamic_question_does_not_reclassify_unknown() -> None:
     parsed = parse_visual_answer(
         '{"kind":"unknown","answer":"","uncertain":true}',
