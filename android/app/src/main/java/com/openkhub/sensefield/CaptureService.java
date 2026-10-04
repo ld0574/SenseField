@@ -1328,6 +1328,7 @@ public final class CaptureService extends Service {
         }
         @Override public void cancelSpeech() { CueDispatcher dispatcher = cueDispatcher; if (dispatcher != null) dispatcher.cancelAssistantSpeech(); }
         @Override public boolean speaking() { CueDispatcher dispatcher = cueDispatcher; return dispatcher != null && dispatcher.isSpeaking(); }
+        @Override public boolean assistantSpeaking() { CueDispatcher dispatcher = cueDispatcher; return dispatcher != null && dispatcher.hasAssistantSpeech(); }
         @Override public long lastAlertAtMs() { CueDispatcher dispatcher = cueDispatcher; return dispatcher == null ? -1 : dispatcher.recentAlertAtMs(); }
         @Override public String nearby() {
             NativeFrameResult.Relation relation = assistantRelation;

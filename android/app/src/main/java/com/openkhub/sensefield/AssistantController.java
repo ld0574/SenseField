@@ -21,6 +21,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         boolean speechReady();
         void cancelSpeech();
         boolean speaking();
+        default boolean assistantSpeaking() { return speaking(); }
         long lastAlertAtMs();
         String nearby();
         void mark();
@@ -55,18 +56,28 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     private long frameNotBeforeMs;
     private long nextRequestId;
     private VisualTask inFlight;
+    // One completed response may wait for provisional VAD/ASR to resolve. It is never queued
+    // across a confirmed replacement question or a session reset, and keeps its original age.
+    private JSONObject deferredVisualResult;
+    private long deferredVisualId;
+    private String deferredVisualFailure;
     private AssistantReply lastReply;
     private String lastAutomaticAnswer = "";
     private String currentStatus = "助手正在连接";
     private static final String EXPIRED_FRAME_PROMPT = "画面返回太慢，旧画面已丢弃。";
     static final long MANUAL_QUIET_MS = 60_000;
-    static final String SCREEN_QUESTION = "请结合最近画面分析当前页面：装备页给购买建议，选人页给英雄建议，对战页给打法建议。先说最重要的一条，忽略连杀横幅。看不清就说明。";
+    static final String SCREEN_QUESTION = "请结合最近画面分析当前页面：装备页给购买建议，选人页给英雄建议，对战页给打法建议，大厅或菜单页说明下一步可用的入口。先说最重要的一条，忽略连杀横幅。看不清就说明。";
     static final String AUTOMATIC_QUESTION = "只在当前画面出现影响下一步操作的新变化时给一条简短建议，先说行动再说依据；忽略连杀横幅、金币和计时变化，没有可靠依据就回答不确定。";
     private static final class VisualTask {
-        final long id; final String turn; final FrameSnapshot frame;
+        final long id; final String turn; final long generation; final FrameSnapshot frame;
         final List<FrameSnapshot> contextFrames; final boolean proactive;
         VisualTask(long id, String turn, FrameSnapshot frame, List<FrameSnapshot> contextFrames, boolean proactive) {
+            this(id, turn, frame == null ? -1 : frame.generation, frame, contextFrames, proactive);
+        }
+        VisualTask(long id, String turn, long generation, FrameSnapshot frame,
+                List<FrameSnapshot> contextFrames, boolean proactive) {
             this.id = id; this.turn = turn; this.frame = frame;
+            this.generation = generation;
             this.contextFrames = contextFrames; this.proactive = proactive;
         }
     }
@@ -87,7 +98,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
             overlay = new AssistantOverlay(context, new AssistantOverlay.Listener() {
                 @Override public void readScreen() {
                     host.audit("AssistantInteraction event=READ_SCREEN");
-                    question(SCREEN_QUESTION, false);
+                    AssistantController.this.readScreen();
                 }
                 @Override public void repeat() { repeatLast(); }
                 @Override public void mark() { host.mark(); setStatus("已标记问题"); }
@@ -116,7 +127,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
                     @Override public void pcm(short[] pcm) {
                         OnDeviceAsr current = asr;
                         if (!voiceEnabled || !voiceTurnActive || current == null
-                                || !session.owns(audioGeneration, audioTurn)) return;
+                                || !session.ownsCapture(audioGeneration, audioTurn)) return;
                         current.accept(pcm);
                     }
                     @Override public void ended() { voiceEnded(); }
@@ -142,7 +153,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         });
     }
     void feedRender(short[] frame) { AssistantVoiceInput input = voice; if (input != null) input.feedRender(frame); }
-    private void voiceStarted() {
+    private synchronized void voiceStarted() {
         if (closed || paused || voicePaused || !voiceEnabled || mode == FrameProcessingPolicy.Mode.HOT) return;
         if (awaitingFinal || voiceTurnActive) {
             host.audit("AssistantVoice event=DROPPED reason=interrupted_by_user generation="
@@ -153,32 +164,39 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         userSpeaking = true; voiceTurnActive = false; awaitingFinal = false;
         proactiveQuietUntilMs = Math.max(proactiveQuietUntilMs,
                 SystemClock.elapsedRealtime() + MANUAL_QUIET_MS);
-        audioTurn = session.newTurn(); audioGeneration = session.generation();
-        host.cancelSpeech(); abandonVisual();
-        synchronized (this) { pendingQuestion = null; inFlight = null; }
+        // Stop an answer already submitted for speech immediately, without resuming its tail.
+        // Merely detecting another audio fragment must not kill a waiting visual request.
+        if (host.assistantSpeaking()) {
+            session.invalidate(); abandonVisual();
+            synchronized (this) { pendingQuestion = null; }
+            host.audit("AssistantVoice event=INTERRUPT_PLAYBACK monotonicMs=" + SystemClock.elapsedRealtime());
+        }
+        host.cancelSpeech();
+        audioTurn = session.newCaptureTurn(); audioGeneration = session.generation();
         if (current == null || !current.ready()
                 || !current.begin(audioGeneration, audioTurn)) {
             userSpeaking = false;
-            session.invalidate();
+            session.invalidateCapture();
             String reason = current == null ? "asr_unavailable" : "asr_busy";
             host.audit("AssistantVoice event=DROPPED reason=" + reason + " generation="
                     + audioGeneration + " monotonicMs=" + SystemClock.elapsedRealtime());
             main.post(() -> setStatus(current != null && !current.ready()
                     ? "本地离线中文识别正在加载，请稍后重说" : "本地离线中文识别正忙，请稍后重说"));
+            main.post(this::releaseDeferredVisual);
             return;
         }
         voiceTurnActive = true;
         host.audit("AssistantVoice event=START source=on_device generation=" + audioGeneration
                 + " turn=" + audioTurn + " monotonicMs=" + SystemClock.elapsedRealtime());
     }
-    private void voiceEnded() {
+    private synchronized void voiceEnded() {
         userSpeaking = false;
         if (!voiceTurnActive) return;
         voiceTurnActive = false;
         if (mode == FrameProcessingPolicy.Mode.HOT) {
             awaitingFinal = false;
             OnDeviceAsr localAsr = asr; if (localAsr != null) localAsr.invalidate();
-            session.invalidate();
+            session.invalidateCapture();
             host.audit("AssistantVoice event=DROPPED reason=hot generation=" + audioGeneration
                     + " monotonicMs=" + SystemClock.elapsedRealtime());
             return;
@@ -192,24 +210,28 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         if (!accepted) {
             awaitingFinal = false;
             if (current != null) current.invalidate();
-            session.invalidate();
+            session.invalidateCapture();
             host.audit("AssistantVoice event=DROPPED reason=asr_finish_rejected generation="
                     + generation + " monotonicMs=" + SystemClock.elapsedRealtime());
             main.post(() -> setStatus("本地离线中文识别正忙，请稍后重说"));
+            main.post(this::releaseDeferredVisual);
             return;
         }
         main.postDelayed(() -> {
-            if (awaitingFinal && session.owns(generation, turn)) {
+            if (awaitingFinal && session.ownsCapture(generation, turn)) {
                 host.audit("AssistantVoice event=DROPPED reason=local_asr_timeout generation="
                         + generation + " monotonicMs=" + SystemClock.elapsedRealtime());
-                invalidate("local_asr_timeout");
+                awaitingFinal = false;
+                session.invalidateCapture();
+                OnDeviceAsr timedOut = asr; if (timedOut != null) timedOut.invalidate();
                 setStatus("本地语音识别超时，请重说");
+                releaseDeferredVisual();
             }
         }, 5000);
     }
     void onLocalAsrResult(long generation, String turn, String rawText, long inferenceMs) {
-        main.post(() -> {
-            if (closed || !voiceEnabled || !awaitingFinal || !session.owns(generation, turn)) {
+        main.post(() -> { synchronized (this) {
+            if (closed || !voiceEnabled || !awaitingFinal || !session.ownsCapture(generation, turn)) {
                 host.audit("AssistantVoice event=DROPPED reason=stale_local_asr_result generation="
                         + generation + " monotonicMs=" + SystemClock.elapsedRealtime());
                 return;
@@ -223,17 +245,18 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
             if (text.isEmpty()) {
                 host.audit("AssistantVoice event=RESULT_UNKNOWN reason=empty_final generation="
                         + generation + " monotonicMs=" + SystemClock.elapsedRealtime());
-                setStatus("没有听清，请重说"); return;
+                setStatus("没有听清，请重说"); releaseDeferredVisual(); return;
             }
             // Only a deliberate question proceeds to the visual service; PCM stays on device.
-            if (isRequest(text)) question(text, false);
+            if (isRequest(text) || AssistantConversationIntent.matches(text)) question(text, false);
             else {
                 host.audit("AssistantVoice event=RESULT_UNKNOWN reason=not_request generation="
                         + generation + " textChars=" + text.length()
                         + " monotonicMs=" + SystemClock.elapsedRealtime());
                 setStatus("已听到，等待你的问题");
+                releaseDeferredVisual();
             }
-        });
+        } });
     }
     private void localAsrUnavailable() {
         if (closed || !voiceEnabled) return;
@@ -344,7 +367,10 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         OnDeviceAsr localAsr = asr; if (localAsr != null) localAsr.invalidate();
         userSpeaking = false; voiceTurnActive = false; awaitingFinal = false;
         VisualTask canceled;
-        synchronized (this) { pendingQuestion = null; canceled = inFlight; inFlight = null; }
+        synchronized (this) {
+            pendingQuestion = null; canceled = inFlight; inFlight = null;
+            deferredVisualResult = null; deferredVisualFailure = null; deferredVisualId = 0;
+        }
         if (canceled != null) host.audit("AssistantVisual event=DROPPED reason=capture_invalidated requestId="
                 + canceled.id + " proactive=" + canceled.proactive);
         long generation = session.generation();
@@ -359,6 +385,13 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         frameHistory.clear();
     }
     void question(String text, boolean proactive) {
+        question(text, proactive, text);
+    }
+    /** A screen button has a visible action label while its detailed instruction stays server-side. */
+    void readScreen() {
+        question(SCREEN_QUESTION, false, "读画面");
+    }
+    private void question(String text, boolean proactive, String visibleText) {
         if (closed || paused || text == null || text.trim().isEmpty()) {
             host.audit("AssistantInteraction event=QUESTION_IGNORED reason="
                     + (closed ? "closed" : paused ? "paused" : "empty"));
@@ -376,7 +409,8 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
                 + " textChars=" + text.length() + " monotonicMs=" + SystemClock.elapsedRealtime());
         userSpeaking = false; voiceTurnActive = false; awaitingFinal = false;
         synchronized (this) { pendingQuestion = null; }
-        if (!proactive) append("你：" + text);
+        if (!proactive) append("你：" + (visibleText == null || visibleText.trim().isEmpty()
+                ? text : visibleText.trim()));
         if (localCommand(text, turn)) return;
         if (!visionEnabled) {
             String explanation = settings.vision && !settings.configured()
@@ -409,6 +443,10 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         }, 2000);
     }
     private boolean localCommand(String text, String turn) {
+        AssistantConversationIntent.Match conversation = AssistantConversationIntent.classify(text);
+        if (conversation != null) {
+            sayLocal(turn, conversation.answer, false); return true;
+        }
         String command = text.replaceAll("[\\s，。！？!?]", "");
         if (command.matches("(听野|助手)?(你好|您好|在吗|你在吗|在不在|听得到吗|你听得到吗)")) {
             sayLocal(turn, "我在。可以说读取画面，或附近情况。", false); return true;
@@ -486,7 +524,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
             }
             generation = session.generation(); id = ++nextRequestId;
             // Reserve the slot before copying, so no encoder/frame queue can accumulate.
-            inFlight = new VisualTask(id, turn, null, Collections.emptyList(), proactive);
+            inFlight = new VisualTask(id, turn, generation, null, Collections.emptyList(), proactive);
         }
         final FrameSnapshot frame;
         try { frame = FrameSnapshot.copy(rgba, width, height, stride, proactive ? 960 : 1280,
@@ -567,7 +605,8 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     static String visualQuestion(String text) { return text; }
     /** Legacy transport callback retained for interface compatibility; local ASR is independent. */
     @Override public void audioUnavailable(String reason) { }
-    @Override public void visualResult(long id, JSONObject result) { main.post(() -> {
+    @Override public void visualResult(long id, JSONObject result) { main.post(() -> { synchronized (this) {
+        if (deferVisualDuringInput(id, result, null)) return;
         VisualTask task = takeTask(id); if (task == null || task.frame == null || closed) return;
         if (!session.owns(task.frame.generation, task.turn)
                 || !session.sessionId.equals(result.optString("session_id"))
@@ -610,7 +649,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
                 + " turn=" + reply.turnId + " kind=" + reply.kind + " answerChars=" + reply.answer.length()
                 + " monotonicMs=" + now + " frameId=" + task.frame.frameId + " frameAgeMs=" + (now - task.frame.capturedAtMs)
                 + " elapsedMs=" + result.optLong("elapsed_ms", -1) + " proactive=" + task.proactive);
-    }); }
+    } }); }
     /** A queued assistant utterance can expire after the visual result was accepted. */
     void assistantSpeechExpired(String playbackSessionId, String cueId, long atMs) {
         main.post(() -> {
@@ -632,7 +671,15 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         setStatus(EXPIRED_FRAME_PROMPT);
         sayLocal(turn, EXPIRED_FRAME_PROMPT, false);
     }
-    @Override public void visualFailure(long id, String code) { main.post(() -> {
+    private void reportManualFeedback(VisualTask task, String reason, String message) {
+        if (task == null || task.proactive || !session.owns(task.generation, task.turn)) return;
+        setStatus(message);
+        sayLocal(task.turn, message, true);
+        host.audit("AssistantVisual event=MANUAL_FEEDBACK reason=" + safeCode(reason)
+                + " frameId=" + (task.frame == null ? -1 : task.frame.frameId));
+    }
+    @Override public void visualFailure(long id, String code) { main.post(() -> { synchronized (this) {
+        if (deferVisualDuringInput(id, null, code)) return;
         VisualTask task = takeTask(id); if (task == null || closed) return;
         if (!task.proactive) proactiveQuietUntilMs = Math.max(proactiveQuietUntilMs,
                 SystemClock.elapsedRealtime() + MANUAL_QUIET_MS);
@@ -641,18 +688,17 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
             if (policy.retryAfterMs(now) <= 0) policy.throttled(now,
                     "provider_busy".equals(code) || "1305".equals(code) ? AssistantPolicy.OVERLOAD_RETRY_MS : 60_000);
         }
-        if (task.frame != null && session.owns(task.frame.generation, task.turn) && !task.proactive && !"cancelled".equals(code)) {
+        if (session.owns(task.generation, task.turn) && !task.proactive && !"cancelled".equals(code)) {
             String explanation = "timeout".equals(code) ? "画面读取超时，请重试。"
                     : "provider_busy".equals(code) || "1305".equals(code) ? "画面模型繁忙，请稍后重试；本地预警正常。"
                     : "rate_limited".equals(code) ? "画面服务繁忙，请稍后重试。"
                     : "画面理解暂时不可用，请稍后再试。";
-            setStatus(explanation);
-            sayLocal(task.turn, explanation, true);
+            reportManualFeedback(task, safeCode(code), explanation);
         }
         String reason = safeCode(code);
         host.audit("AssistantVisual event=DROPPED reason=" + reason + " proactive=" + task.proactive);
         host.audit("AssistantVisual event=FAILED code=" + reason);
-    }); }
+    } }); }
     private static String safeCode(String code) { return code != null && code.matches("[a-zA-Z0-9_]{1,48}") ? code : "service_unavailable"; }
     @Override public void visualDiagnostic(long id, int status, String source,
             String providerCode, int upstreamStatus, long retryAfter) {
@@ -671,9 +717,34 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
                 + " upstreamHttpStatus=" + upstreamStatus + " retryAfterSeconds=" + retryAfter);
     }
     private synchronized VisualTask takeTask(long id) { if (inFlight == null || inFlight.id != id) return null; VisualTask task = inFlight; inFlight = null; return task; }
+    private boolean deferVisualDuringInput(long id, JSONObject result, String failure) {
+        synchronized (this) {
+            if (closed || inFlight == null || inFlight.id != id
+                    || !(userSpeaking || voiceTurnActive || awaitingFinal)) return false;
+            deferredVisualId = id;
+            deferredVisualResult = result;
+            deferredVisualFailure = failure;
+        }
+        host.audit("AssistantVisual event=WAITING_FOR_INPUT requestId=" + id
+                + " monotonicMs=" + SystemClock.elapsedRealtime());
+        return true;
+    }
+    private void releaseDeferredVisual() {
+        final long id; final JSONObject result; final String failure;
+        synchronized (this) {
+            if (closed || userSpeaking || voiceTurnActive || awaitingFinal) return;
+            id = deferredVisualId; result = deferredVisualResult; failure = deferredVisualFailure;
+            deferredVisualResult = null; deferredVisualFailure = null; deferredVisualId = 0;
+        }
+        if (result != null) visualResult(id, result);
+        else if (failure != null) visualFailure(id, failure);
+    }
     private void abandonVisual() {
         VisualTask canceled;
-        synchronized (this) { canceled = inFlight; inFlight = null; }
+        synchronized (this) {
+            canceled = inFlight; inFlight = null;
+            deferredVisualResult = null; deferredVisualFailure = null; deferredVisualId = 0;
+        }
         if (canceled != null) host.audit("AssistantVisual event=DROPPED reason=cancelled requestId="
                 + canceled.id + " proactive=" + canceled.proactive);
         client.cancelVisual();
@@ -687,7 +758,8 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         }
         host.speak(reply);
     }
-    boolean allows(AssistantReply reply) { return !closed && !paused && (voiceEnabled || visionEnabled) && session.owns(reply.generation, reply.turnId)
+    boolean allows(AssistantReply reply) { return !closed && !paused && !userSpeaking && !awaitingFinal
+            && (voiceEnabled || visionEnabled) && session.owns(reply.generation, reply.turnId)
             && reply.freshAt(SystemClock.elapsedRealtime()) && ("local".equals(reply.kind) || mode != FrameProcessingPolicy.Mode.HOT)
             && (!reply.proactive || (!userSpeaking && !awaitingFinal && (overlay == null || !overlay.isExpanded())
                 && (host.lastAlertAtMs() < 0 || SystemClock.elapsedRealtime() - host.lastAlertAtMs() >= AssistantPolicy.ALERT_QUIET_MS))); }

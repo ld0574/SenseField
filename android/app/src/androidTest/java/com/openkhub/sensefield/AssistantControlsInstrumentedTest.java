@@ -20,12 +20,13 @@ import org.junit.runner.RunWith;
 @RunWith(AndroidJUnit4.class)
 public class AssistantControlsInstrumentedTest {
     static final class Host implements AssistantController.Host {
-        AssistantReply last; int spoken; int cancelled; boolean ready = true; String status = "";
+        AssistantReply last; int spoken; int cancelled; boolean ready = true; boolean assistantSpeaking; String status = "";
         final List<String> audits = new ArrayList<>();
         public void speak(AssistantReply reply) { last = reply; spoken++; }
         public boolean speechReady() { return ready; }
         public void cancelSpeech() { cancelled++; }
         public boolean speaking() { return false; }
+        public boolean assistantSpeaking() { return assistantSpeaking; }
         public long lastAlertAtMs() { return -1; }
         public String nearby() { return "当前观察不够新鲜，无法判断附近情况。"; }
         public void mark() { }
@@ -88,6 +89,19 @@ public class AssistantControlsInstrumentedTest {
                 FrameSnapshot.class, List.class, boolean.class);
         constructor.setAccessible(true);
         Object task = constructor.newInstance(id, turn, frame, Collections.emptyList(), proactive);
+        Field inFlight = AssistantController.class.getDeclaredField("inFlight");
+        inFlight.setAccessible(true);
+        inFlight.set(controller, task);
+    }
+
+    private static void installPendingVisualTask(AssistantController controller, long id,
+            String turn, long generation) throws Exception {
+        Class<?> taskType = Class.forName(AssistantController.class.getName() + "$VisualTask");
+        Constructor<?> constructor = taskType.getDeclaredConstructor(long.class, String.class,
+                long.class, FrameSnapshot.class, List.class, boolean.class);
+        constructor.setAccessible(true);
+        Object task = constructor.newInstance(id, turn, generation, null,
+                Collections.emptyList(), false);
         Field inFlight = AssistantController.class.getDeclaredField("inFlight");
         inFlight.setAccessible(true);
         inFlight.set(controller, task);
@@ -186,7 +200,7 @@ public class AssistantControlsInstrumentedTest {
                 new AssistantSettings(preferences), host);
         try {
             AssistantSession session = session(controller);
-            String turn = session.newTurn();
+            String turn = session.newCaptureTurn();
             markAwaitingAsrResult(controller);
             controller.onLocalAsrResult(session.generation(), turn, "这个画面我应该选哪个", 12);
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
@@ -208,7 +222,7 @@ public class AssistantControlsInstrumentedTest {
                 new AssistantSettings(preferences), host);
         try {
             AssistantSession session = session(controller);
-            String turn = session.newTurn();
+            String turn = session.newCaptureTurn();
             markAwaitingAsrResult(controller);
             controller.onLocalAsrResult(session.generation(), turn, "我选桑启", 9);
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
@@ -218,6 +232,181 @@ public class AssistantControlsInstrumentedTest {
             assertEquals(0, countAudit(host, "AssistantInteraction event=QUESTION"));
             assertEquals(0, host.spoken);
             assertEquals("已听到，等待你的问题", host.status);
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void provisionalVadDoesNotCancelPendingVisualButStopsSpeech() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "vad-pending-test", new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller); String turn = session.newTurn();
+            installVisualTask(controller, 301, turn, staleHudFrame(301, SystemClock.elapsedRealtime(), session.generation()), false);
+            java.lang.reflect.Method start = AssistantController.class.getDeclaredMethod("voiceStarted");
+            start.setAccessible(true); start.invoke(controller);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            Field task = AssistantController.class.getDeclaredField("inFlight"); task.setAccessible(true);
+            assertNotNull("Provisional input must preserve the pending visual task", task.get(controller));
+            assertTrue(session.owns(session.generation(), turn));
+            assertEquals(1, host.cancelled);
+            assertEquals(0, countAudit(host, "AssistantVisual event=DROPPED reason=cancelled"));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void nonRequestFinalReleasesDeferredResponseWithOriginalFrameAge() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "vad-defer-test", new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller); String turn = session.newTurn();
+            long capturedAt = SystemClock.elapsedRealtime();
+            installVisualTask(controller, 302, turn, staleHudFrame(302, capturedAt, session.generation()), false);
+            String capture = session.newCaptureTurn(); markAwaitingAsrResult(controller);
+            controller.visualResult(302, visualResult(session, session.generation(), turn, 302, "先跟前排推进。"));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync(); assertEquals(0, host.spoken);
+            assertEquals(1, countAudit(host, "AssistantVisual event=WAITING_FOR_INPUT"));
+            controller.onLocalAsrResult(session.generation(), capture, "我选桑启", 20);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(1, host.spoken); assertEquals(capturedAt, host.last.capturedAtMs);
+            assertEquals(turn, host.last.turnId);
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void newQuestionDiscardsDeferredAnswerAndHearingCheckStaysLocal() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "vad-replace-test", new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller); String turn = session.newTurn();
+            installVisualTask(controller, 303, turn, staleHudFrame(303, SystemClock.elapsedRealtime(), session.generation()), false);
+            long oldGeneration = session.generation(); String capture = session.newCaptureTurn(); markAwaitingAsrResult(controller);
+            controller.visualResult(303, visualResult(session, oldGeneration, turn, 303, "旧建议。"));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            controller.onLocalAsrResult(oldGeneration, capture, "你好你好，你能听到我说话吗？", 20);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(1, host.spoken); assertEquals("local", host.last.kind);
+            assertTrue(host.last.answer.startsWith("听得到"));
+            assertFalse(session.owns(oldGeneration, turn));
+            Field task = AssistantController.class.getDeclaredField("inFlight"); task.setAccessible(true); assertNull(task.get(controller));
+            Field pending = AssistantController.class.getDeclaredField("pendingQuestion"); pending.setAccessible(true); assertNull(pending.get(controller));
+            assertEquals(0, countAudit(host, "AssistantVisual event=REQUEST"));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void speechAlreadySubmittedIsCancelledAndCannotResumeAfterNonRequest() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host(); host.assistantSpeaking = true;
+        AssistantController controller = new AssistantController(context, "vad-playback-test", new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller); String turn = session.newTurn(); long generation = session.generation();
+            AssistantReply previous = new AssistantReply(generation, turn, -1, SystemClock.elapsedRealtime(), "local", "旧答复。", false);
+            java.lang.reflect.Method start = AssistantController.class.getDeclaredMethod("voiceStarted");
+            start.setAccessible(true); start.invoke(controller);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(1, host.cancelled); assertFalse(controller.allows(previous));
+            assertFalse(session.owns(generation, turn)); assertEquals(0, host.spoken);
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void expiredDeferredVisualNeverRefreshesFrameOrSpeaksOldAdvice() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "vad-expiry-test", new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller); String turn = session.newTurn();
+            long capturedAt = SystemClock.elapsedRealtime() - 5001;
+            installVisualTask(controller, 304, turn, staleHudFrame(304, capturedAt, session.generation()), false);
+            String capture = session.newCaptureTurn(); markAwaitingAsrResult(controller);
+            controller.visualResult(304, visualResult(session, session.generation(), turn, 304, "旧建议不应播报。"));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync(); assertEquals(0, host.spoken);
+            controller.onLocalAsrResult(session.generation(), capture, "我选桑启", 20);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(1, host.spoken); assertEquals("local", host.last.kind);
+            assertEquals(EXPIRED_FRAME_PROMPT, host.last.answer);
+            assertEquals(1, countAudit(host, "AssistantVisual event=EXPIRED stage=result"));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void captureResetClearsDeferredResultAndBlocksLateSpeech() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "vad-reset-test", new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller); String turn = session.newTurn(); long generation = session.generation();
+            installVisualTask(controller, 305, turn, staleHudFrame(305, SystemClock.elapsedRealtime(), generation), false);
+            String capture = session.newCaptureTurn(); markAwaitingAsrResult(controller);
+            controller.visualResult(305, visualResult(session, generation, turn, 305, "旧建议。"));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            controller.captureInvalidated("capture_reset");
+            controller.onLocalAsrResult(generation, capture, "我选桑启", 20);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            Field deferred = AssistantController.class.getDeclaredField("deferredVisualResult"); deferred.setAccessible(true);
+            assertNull(deferred.get(controller)); assertEquals(0, host.spoken);
+            assertFalse(session.owns(generation, turn));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void replacedOwnerCannotRegisterTransportCallAfterEncoding() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context);
+        java.util.concurrent.atomic.AtomicReference<String> failure = new java.util.concurrent.atomic.AtomicReference<>();
+        AssistantGatewayClient client = new AssistantGatewayClient(new AssistantSettings(preferences), new AssistantGatewayClient.Listener() {
+            public void audioMessage(JSONObject message) { }
+            public void audioUnavailable(String reason) { }
+            public void visualResult(long id, JSONObject result) { fail("A stale request cannot reach the network"); }
+            public void visualFailure(long id, String reason) { failure.set(reason); }
+        });
+        try {
+            AssistantSession session = new AssistantSession("encoded-stale-test"); String oldTurn = session.newTurn();
+            long now = SystemClock.elapsedRealtime(); FrameSnapshot frame = staleHudFrame(306, now, session.generation());
+            session.newTurn();
+            client.visual(306, session, oldTurn, frame, frame.jpeg(), "请读画面", false, now);
+            assertEquals("cancelled", failure.get());
+            Field active = AssistantGatewayClient.class.getDeclaredField("visual"); active.setAccessible(true); assertNull(active.get(client));
+        } finally { client.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void manualReadScreenShowsActionLabelInsteadOfServerInstruction() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context);
+        Host host = new Host();
+        AssistantController controller = new AssistantController(context, "read-screen-label-test",
+                new AssistantSettings(preferences), host);
+        try {
+            controller.readScreen();
+            Field pending = AssistantController.class.getDeclaredField("pendingQuestion");
+            pending.setAccessible(true);
+            assertEquals("The detailed instruction remains the visual request payload",
+                    AssistantController.SCREEN_QUESTION, pending.get(controller));
+            Field history = AssistantController.class.getDeclaredField("history");
+            history.setAccessible(true);
+            String visibleHistory = history.get(controller).toString();
+            assertTrue(visibleHistory.contains("你：读画面"));
+            assertFalse("The internal instruction must never appear as user speech",
+                    visibleHistory.contains(AssistantController.SCREEN_QUESTION));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void frameCopyFailureWithNoSnapshotGivesManualPanelAndVoiceFeedback() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context);
+        Host host = new Host();
+        AssistantController controller = new AssistantController(context, "empty-frame-failure-test",
+                new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller);
+            String turn = session.newTurn();
+            installPendingVisualTask(controller, 119, turn, session.generation());
+            controller.visualFailure(119, "frame_unavailable");
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+
+            assertEquals("A manual request without a copied frame still gets voice feedback",
+                    1, host.spoken);
+            assertEquals("local", host.last.kind);
+            assertEquals("画面理解暂时不可用，请稍后再试。", host.last.answer);
+            assertEquals(host.last.answer, host.status);
+            assertEquals(1, countAudit(host,
+                    "AssistantVisual event=MANUAL_FEEDBACK reason=frame_unavailable frameId=-1"));
         } finally { controller.close(); preferences.edit().clear().commit(); }
     }
 

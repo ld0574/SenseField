@@ -92,6 +92,24 @@ public class AssistantContractsTest {
         session.close();
         assertFalse(session.owns(session.generation(), third));
     }
+    @Test public void provisionalCaptureKeepsAnswerOwnerAndRejectsReplacedAudio() {
+        AssistantSession session = new AssistantSession("provisional-capture");
+        long generation = session.generation();
+        String answer = session.newTurn();
+        String firstAudio = session.newCaptureTurn();
+        assertTrue(session.owns(generation, answer));
+        assertTrue(session.ownsCapture(generation, firstAudio));
+        String nextAudio = session.newCaptureTurn();
+        assertFalse(session.ownsCapture(generation, firstAudio));
+        assertTrue(session.owns(generation, answer));
+        session.invalidateCapture();
+        assertFalse(session.ownsCapture(generation, nextAudio));
+        assertTrue(session.owns(generation, answer));
+        String finalAudio = session.newCaptureTurn();
+        session.invalidate();
+        assertFalse(session.owns(generation, answer));
+        assertFalse(session.ownsCapture(generation, finalAudio));
+    }
     @Test public void dynamicHudExpiresEarlierThanStaticText() {
         AssistantReply hud = new AssistantReply(1, "t", 1, 1000, "hud", "1:0", false);
         AssistantReply menu = new AssistantReply(1, "t", 1, 1000, "ui_text", "开始", false);
@@ -161,6 +179,26 @@ public class AssistantContractsTest {
         assertTrue(AssistantController.isRequest("你是谁"));
         assertFalse(AssistantController.isRequest("我刚刚跑过去了"));
         assertFalse(AssistantController.isRequest("他们刚刚聊到听野"));
+    }
+    @Test public void greetingsAndMicrophoneChecksStayLocalWithoutSwallowingVisualQuestions() {
+        AssistantConversationIntent.Match repeatedGreeting =
+                AssistantConversationIntent.classify("你好你好");
+        assertNotNull(repeatedGreeting);
+        assertEquals(AssistantConversationIntent.Type.GREETING, repeatedGreeting.type);
+        assertTrue(AssistantConversationIntent.matches("你好你好"));
+        assertFalse(AssistantController.isRequest("你好你好"));
+
+        AssistantConversationIntent.Match combined =
+                AssistantConversationIntent.classify("你好你好，你能听到我说话吗？");
+        assertNotNull(combined);
+        assertEquals(AssistantConversationIntent.Type.HEARING_CHECK, combined.type);
+        assertTrue(combined.answer.contains("听得到"));
+        assertTrue(AssistantConversationIntent.matches("你能听到我说话吗"));
+        assertTrue(AssistantConversationIntent.matches("你能听到我说话"));
+
+        assertNull(AssistantConversationIntent.classify("你好，我想问装备建议"));
+        assertNull(AssistantConversationIntent.classify("听到这个音效了吗"));
+        assertNull(AssistantConversationIntent.classify("这个英雄适合出什么装备？"));
     }
     @Test public void whichQuestionsReadOptionsWithoutPromotingOrdinaryChoiceStatements() {
         for (String question : Arrays.asList("这个画面我应该选哪个", "选哪一个", "哪项比较合适",

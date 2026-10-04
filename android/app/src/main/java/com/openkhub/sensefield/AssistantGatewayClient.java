@@ -172,6 +172,11 @@ final class AssistantGatewayClient implements AutoCloseable {
                 .post(RequestBody.create(body.toString(), MediaType.get("application/json; charset=utf-8"))).build());
         synchronized (this) {
             if (closed) { listener.visualFailure(requestId, "closed"); return; }
+            // A newer question can arrive during JPEG/Base64 work, before cancelVisual sees
+            // this call. Recheck ownership when installing the call to avoid reviving it.
+            if (!session.owns(frame.generation, turn)) {
+                listener.visualFailure(requestId, "cancelled"); return;
+            }
             if (visual != null) { listener.visualFailure(requestId, "busy"); return; }
             visual = call;
         }

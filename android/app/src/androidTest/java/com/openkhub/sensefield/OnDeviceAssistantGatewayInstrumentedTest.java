@@ -229,7 +229,7 @@ public final class OnDeviceAssistantGatewayInstrumentedTest {
         assertTrue(asr.ready());
 
         long generation = session.generation();
-        String turn = session.newTurn();
+        String turn = session.newCaptureTurn();
         setAwaitingFinal(controller, true);
         assertTrue(asr.begin(generation, turn));
         byte[] bytes;

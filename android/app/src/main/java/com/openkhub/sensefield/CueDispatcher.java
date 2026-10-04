@@ -397,6 +397,12 @@ final class CueDispatcher implements AutoCloseable {
     }
 
     synchronized boolean isSpeaking() { return speaking != null; }
+    synchronized boolean hasAssistantSpeech() {
+        if (speaking != null && speaking.category == CueRequest.Category.ASSISTANT) return true;
+        for (Pending pending : speechQueue)
+            if (pending.request.category == CueRequest.Category.ASSISTANT) return true;
+        return false;
+    }
 
     /** Start time of the most recently started near/peripheral/danger alert. */
     long recentAlertAtMs() { return lastAlertAtMs; }
