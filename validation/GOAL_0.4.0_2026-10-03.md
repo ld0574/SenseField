@@ -1,6 +1,6 @@
 # 0.4.0 选用式语音与画面助手目标、接口和验收记录
 
-当前0.4.1已改为手机端ASR，服务器只提供视觉。停止/恢复录音、状态保护、缓存回收与正式软件链路的后续证据见[手机端ASR工程复核](ASSISTANT_ONDEVICE_ENGINEERING_2026-10-04.md)；本页0.4.0服务器ASR和GLM结果保留为历史，不能替代当前真实语音或热负载验收。
+当前0.4.1已改为手机端ASR，服务器只提供视觉。停止/恢复录音、状态保护、缓存回收与正式软件链路的后续证据见[手机端ASR工程复核](ASSISTANT_ONDEVICE_ENGINEERING_2026-10-04.md)；最新正文追踪、问题抢占、首句TTS、测试及装机见[对局后修订](ASSISTANT_POSTMATCH_REPAIR_2026-10-04.md)。本页0.4.0服务器ASR和GLM结果保留为历史，不能替代当前真实语音或热负载验收。
 
 编制日期：2026-10-03；工程状态更新：2026-10-04。版本目标 0.4.0 / versionCode 17 是历史方案；只读核对的最新公开下载为 0.3.8。此前 4218bf94… 快照的0.4.1/code18 APK 已无线安装至小米 Android 14，214121822 bytes，SHA-256 `4218bf94b03153e48e9e313fd28900139c14c0bba000e534289cd4f799df5759`。Android JVM 225 项、instrumentation 10 项、Python 网关 103 项以及 Debug/Test APK 与 lint 通过。纯合成 PCM instrumentation 的比分/出装/选人三例分别为 170/294/352ms，关键词与 `isRequest` 断言通过；不等于真实麦克风、实际发声、P95 或温升验证。服务器 ASR 合成 WSS 的 speech-end 至 final 274ms 是历史比较单点。0.4.1/code18 仍为本地候选、未公开发布；此前安装的 `ba187fa…` 版本与本轮新安装包区分记录。此前 Mac 合成菜单路径使用 `qwen/qwen3.8-27b`。本局旧客户端会话记录 11 个 FINAL、其中 6 个为空；计数器另显示 2 个手动请求、8 个主动请求和 5 个 accepted results，其余状态未审计，不能完整归因。14:27:32 的旧会话软件日志曾显示 ASR FINAL `requestLike=true` 后触发手动 QUESTION 和新帧请求；外部实声、物理时延、热表现或玩家验收仍待取得独立证据。
 

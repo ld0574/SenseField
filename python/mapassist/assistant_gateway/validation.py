@@ -171,6 +171,34 @@ def _requires_live_hud(question: str | None) -> bool:
     return bool(question and _DYNAMIC_ADVICE_QUESTION_RE.search(question))
 
 
+_TRANSIENT_BANNER_RE = re.compile(
+    r"不可阻挡|无人能挡|大杀特杀|杀人如麻|主宰比赛|天下无双|超神|双杀|三杀|四杀|五杀",
+)
+_BANNER_WRAPPER_RE = re.compile(
+    r"当前|目前|现在|屏幕|画面|游戏|中央|居中|中间|正中|上方|显示|出现|看到|写着|"
+    r"字样|字幕|文字|提示|横幅|公告|连杀|击杀|播报|称号|获得|这是|是|的|了|一个",
+)
+_LITERAL_TEXT_QUESTION_RE = re.compile(
+    r"(?:读|念|朗读|转写|抄写|识别|解释).{0,30}(?:文字|字样|字幕|横幅|提示|公告|内容|出来|"
+    r"不可阻挡|无人能挡|超神|双杀|三杀|四杀|五杀)|"
+    r"(?:文字|字样|字幕|横幅|提示|公告).{0,20}(?:怎么读|读出来|念出来|写.{0,4}什么|是什么|什么意思)|"
+    r"什么意思|\b(?:read|transcribe|explain).{0,30}(?:text|banner|caption|unstoppable)|"
+    r"\bwhat.{0,30}(?:banner|caption|unstoppable).{0,15}mean",
+    re.IGNORECASE,
+)
+
+
+def _is_transient_banner_only(answer: str, question: str | None) -> bool:
+    """A kill-streak caption alone is not an answer to a game-help question."""
+    if not _TRANSIENT_BANNER_RE.search(answer):
+        return False
+    if question and _LITERAL_TEXT_QUESTION_RE.search(question):
+        return False
+    remainder = _TRANSIENT_BANNER_RE.sub("", answer)
+    remainder = _BANNER_WRAPPER_RE.sub("", remainder)
+    return not re.sub(r"[\W\d_]", "", remainder)
+
+
 def parse_visual_answer(raw: str, *, question: str | None = None) -> VisualAnswer:
     if not isinstance(raw, str):
         raise InvalidRequest("model response must be text")
@@ -198,7 +226,8 @@ def parse_visual_answer(raw: str, *, question: str | None = None) -> VisualAnswe
         return VisualAnswer("unknown", UNKNOWN_ANSWER, True)
     if kind == "unknown":
         return VisualAnswer("unknown", "", True)
-    if not answer or _is_progress_only_build_answer(answer, question):
+    if (not answer or _is_progress_only_build_answer(answer, question)
+            or _is_transient_banner_only(answer, question)):
         return VisualAnswer("unknown", UNKNOWN_ANSWER, True)
     if _requires_live_hud(question):
         kind = "hud"

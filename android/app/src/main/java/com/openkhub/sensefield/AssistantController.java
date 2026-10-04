@@ -59,7 +59,9 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     private String lastAutomaticAnswer = "";
     private String currentStatus = "助手正在连接";
     private static final String EXPIRED_FRAME_PROMPT = "画面返回太慢，旧画面已丢弃。";
-    static final long MANUAL_QUIET_MS = 15_000;
+    static final long MANUAL_QUIET_MS = 60_000;
+    static final String SCREEN_QUESTION = "请结合最近画面分析当前页面：装备页给购买建议，选人页给英雄建议，对战页给打法建议。先说最重要的一条，忽略连杀横幅。看不清就说明。";
+    static final String AUTOMATIC_QUESTION = "只在当前画面出现影响下一步操作的新变化时给一条简短建议，先说行动再说依据；忽略连杀横幅、金币和计时变化，没有可靠依据就回答不确定。";
     private static final class VisualTask {
         final long id; final String turn; final FrameSnapshot frame;
         final List<FrameSnapshot> contextFrames; final boolean proactive;
@@ -85,7 +87,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
             overlay = new AssistantOverlay(context, new AssistantOverlay.Listener() {
                 @Override public void readScreen() {
                     host.audit("AssistantInteraction event=READ_SCREEN");
-                    question("请识别当前游戏场景，并提炼画面中与当前操作相关的清晰信息。", false);
+                    question(SCREEN_QUESTION, false);
                 }
                 @Override public void repeat() { repeatLast(); }
                 @Override public void mark() { host.mark(); setStatus("已标记问题"); }
@@ -149,6 +151,8 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         OnDeviceAsr current = asr;
         if (current != null) current.invalidate();
         userSpeaking = true; voiceTurnActive = false; awaitingFinal = false;
+        proactiveQuietUntilMs = Math.max(proactiveQuietUntilMs,
+                SystemClock.elapsedRealtime() + MANUAL_QUIET_MS);
         audioTurn = session.newTurn(); audioGeneration = session.generation();
         host.cancelSpeech(); abandonVisual();
         synchronized (this) { pendingQuestion = null; inFlight = null; }
@@ -360,7 +364,6 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
                     + (closed ? "closed" : paused ? "paused" : "empty"));
             return;
         }
-        host.audit("AssistantInteraction event=QUESTION proactive=" + proactive);
         text = text.trim();
         if (!proactive) proactiveQuietUntilMs = Math.max(proactiveQuietUntilMs,
                 SystemClock.elapsedRealtime() + MANUAL_QUIET_MS);
@@ -368,6 +371,9 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         session.invalidate();
         OnDeviceAsr localAsr = asr; if (localAsr != null) localAsr.invalidate();
         String turn = session.newTurn(); host.cancelSpeech(); abandonVisual();
+        host.audit("AssistantInteraction event=QUESTION proactive=" + proactive
+                + " generation=" + session.generation() + " turn=" + turn
+                + " textChars=" + text.length() + " monotonicMs=" + SystemClock.elapsedRealtime());
         userSpeaking = false; voiceTurnActive = false; awaitingFinal = false;
         synchronized (this) { pendingQuestion = null; }
         if (!proactive) append("你：" + text);
@@ -475,7 +481,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
             } else {
                 if (!proactiveEnabled || now < proactiveQuietUntilMs || !policy.automaticDue(now, mode, speaking,
                         overlay != null && overlay.isExpanded(), host.lastAlertAtMs(), signature)) return;
-                question = "只描述这张画面中新出现且清晰的界面文字、比分或界面状态；没有有用变化时回答不确定。";
+                question = AUTOMATIC_QUESTION;
                 turn = session.newTurn(); proactive = true;
             }
             generation = session.generation(); id = ++nextRequestId;
@@ -520,7 +526,8 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
                 }
             }
             policy.started(sentAt, proactive, signature);
-            host.audit("AssistantVisual event=REQUEST frameId=" + frameId + " generation=" + generation
+            host.audit("AssistantVisual event=REQUEST requestId=" + id + " frameId=" + frameId + " generation=" + generation
+                    + " turn=" + turn + " monotonicMs=" + sentAt
                     + " frameAgeMs=" + primaryAgeMs + " contextFrames=" + contextImages.size()
                     + " proactive=" + proactive);
             client.visual(id, session, turn, frame, jpeg, contextImages, question, proactive, sentAt);
@@ -596,8 +603,12 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         if (task.proactive) lastAutomaticAnswer = answer;
         if (now - reply.capturedAtMs > 2000) reply = new AssistantReply(reply.generation, reply.turnId,
                 reply.frameId, reply.capturedAtMs, reply.kind, "约" + ((now - reply.capturedAtMs) / 1000) + "秒前截图显示，" + answer, false, task.proactive);
-        lastReply = reply; append("听野：" + reply.answer); setStatus("助手可用"); playReply(reply);
-        host.audit("AssistantVisual event=RESULT frameId=" + task.frame.frameId + " frameAgeMs=" + (now - task.frame.capturedAtMs)
+        if (task.proactive) reply = new AssistantReply(reply.generation, reply.turnId,
+                reply.frameId, reply.capturedAtMs, reply.kind, "画面变化，" + reply.answer, false, true);
+        lastReply = reply; append((task.proactive ? "主动观察：" : "听野：") + reply.answer); setStatus("助手可用"); playReply(reply);
+        host.audit("AssistantVisual event=RESULT requestId=" + id + " generation=" + reply.generation
+                + " turn=" + reply.turnId + " kind=" + reply.kind + " answerChars=" + reply.answer.length()
+                + " monotonicMs=" + now + " frameId=" + task.frame.frameId + " frameAgeMs=" + (now - task.frame.capturedAtMs)
                 + " elapsedMs=" + result.optLong("elapsed_ms", -1) + " proactive=" + task.proactive);
     }); }
     /** A queued assistant utterance can expire after the visual result was accepted. */
@@ -669,7 +680,11 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     }
     private void playReply(AssistantReply reply) {
         if (!allows(reply)) return;
-        if (!host.speechReady()) { setStatus("缺少可用的离线中文语音，请安装语音包；回答保留在面板"); return; }
+        if (!host.speechReady()) {
+            host.audit("AssistantSpeech event=UNAVAILABLE generation=" + reply.generation
+                    + " turn=" + reply.turnId + " monotonicMs=" + SystemClock.elapsedRealtime());
+            setStatus("缺少可用的离线中文语音，请安装语音包；回答保留在面板"); return;
+        }
         host.speak(reply);
     }
     boolean allows(AssistantReply reply) { return !closed && !paused && (voiceEnabled || visionEnabled) && session.owns(reply.generation, reply.turnId)

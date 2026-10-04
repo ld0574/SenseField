@@ -19,7 +19,7 @@ from PIL import Image
 from mapassist.assistant_gateway.app import create_app
 from mapassist.assistant_gateway.audio import GenerationHighWater, _merge_recognized_text
 from mapassist.assistant_gateway.config import GatewaySettings
-from mapassist.assistant_gateway.errors import AsrBusy
+from mapassist.assistant_gateway.errors import AsrBusy, VisionTimeout
 from mapassist.assistant_gateway.validation import (
     UNKNOWN_ANSWER,
     InvalidRequest,
@@ -122,6 +122,40 @@ def test_health_and_visual_auth_and_response_ids() -> None:
     assert not body["uncertain"]
     assert vision.calls[0][1].startswith("/9j/")
     assert not vision.calls[0][1].startswith("data:")
+
+
+def test_opt_in_private_text_trace_records_visual_request_lifecycle(tmp_path) -> None:
+    raw_answer = '{"kind":"hud","answer":"PRIVATE_MODEL_ADVICE","uncertain":false}'
+    vision = FakeVision(raw_answer)
+    settings = GatewaySettings(
+        device_tokens=(TOKEN,),
+        zhipu_api_key="test-api-key",
+        require_tls=False,
+        mode="test",
+        test_text_log_dir=tmp_path,
+    )
+    app = create_app(settings, recognizer=FakeRecognizer(), vision_client=vision)
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/visual",
+            json=_visual_payload(question="PRIVATE_USER_QUESTION"),
+            headers={"Authorization": f"Bearer {TOKEN}"},
+        )
+
+    assert response.status_code == 200
+    recorder = app.state.test_text_trace
+    assert recorder is not None
+    contents = recorder.path.read_text(encoding="utf-8")
+    rows = [json.loads(line) for line in contents.splitlines()]
+    assert [row["event"] for row in rows] == [
+        "request", "model_response", "validated_response", "terminal",
+    ]
+    assert rows[0]["question"] == "PRIVATE_USER_QUESTION"
+    assert rows[1]["raw_answer"] == raw_answer
+    assert rows[2]["answer"] == "PRIVATE_MODEL_ADVICE"
+    assert rows[3]["code"] == "success"
+    assert TOKEN not in contents
+    assert _image_base64() not in contents
 
 
 def test_visual_rejects_oversized_body_and_malformed_image() -> None:
@@ -654,6 +688,152 @@ def test_cancelled_visual_request_releases_session_and_health_stays_responsive()
                 assert retry.status_code == 200
 
     asyncio.run(scenario())
+
+
+def test_newer_manual_visual_supersedes_old_manual_and_rejects_old_generation(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class SupersedableVision:
+        def __init__(self) -> None:
+            self.old_started = asyncio.Event()
+            self.new_started = asyncio.Event()
+            self.release_new = asyncio.Event()
+            self.calls: list[str] = []
+            self.active_calls = 0
+            self.max_active_calls = 0
+
+        async def complete(self, *, question: str, image_base64: str) -> str:
+            del image_base64
+            self.calls.append(question)
+            self.active_calls += 1
+            self.max_active_calls = max(self.max_active_calls, self.active_calls)
+            try:
+                if question == "PRIVATE_OLD_MANUAL_QUESTION":
+                    self.old_started.set()
+                    await asyncio.Event().wait()
+                    return '{"kind":"hud","answer":"PRIVATE_OLD_ANSWER","uncertain":false}'
+                if question == "PRIVATE_NEW_MANUAL_QUESTION":
+                    self.new_started.set()
+                    await self.release_new.wait()
+                    return '{"kind":"hud","answer":"当前手动结果","uncertain":false}'
+                raise AssertionError("A rejected stale generation must not reach the provider")
+            finally:
+                self.active_calls -= 1
+
+        async def close(self) -> None:
+            return None
+
+    async def scenario() -> None:
+        import httpx
+
+        vision = SupersedableVision()
+        app = create_app(_settings(), recognizer=FakeRecognizer(), vision_client=vision)
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                headers = {"Authorization": f"Bearer {TOKEN}"}
+                old_manual = asyncio.create_task(client.post(
+                    "/v1/visual",
+                    json=_visual_payload(
+                        generation=3,
+                        turn_id="old-manual-turn",
+                        frame_id="old-manual-frame",
+                        question="PRIVATE_OLD_MANUAL_QUESTION",
+                    ),
+                    headers=headers,
+                ))
+                await asyncio.wait_for(vision.old_started.wait(), timeout=1)
+
+                new_manual = asyncio.create_task(client.post(
+                    "/v1/visual",
+                    json=_visual_payload(
+                        generation=4,
+                        turn_id="new-manual-turn",
+                        frame_id="new-manual-frame",
+                        question="PRIVATE_NEW_MANUAL_QUESTION",
+                    ),
+                    headers=headers,
+                ))
+                await asyncio.wait_for(vision.new_started.wait(), timeout=1)
+
+                stale = await client.post(
+                    "/v1/visual",
+                    json=_visual_payload(
+                        generation=3,
+                        turn_id="stale-manual-turn",
+                        frame_id="stale-manual-frame",
+                        question="PRIVATE_STALE_MANUAL_QUESTION",
+                    ),
+                    headers=headers,
+                )
+                assert stale.status_code == 409
+                assert stale.json()["error"]["code"] == "vision_busy"
+                assert vision.calls == [
+                    "PRIVATE_OLD_MANUAL_QUESTION",
+                    "PRIVATE_NEW_MANUAL_QUESTION",
+                ]
+                assert vision.max_active_calls == 1
+
+                vision.release_new.set()
+                result = await asyncio.wait_for(new_manual, timeout=1)
+                assert result.status_code == 200
+                assert result.json()["turn_id"] == "new-manual-turn"
+                assert result.json()["frame_id"] == "new-manual-frame"
+                assert result.json()["answer"] == "当前手动结果"
+                with pytest.raises(asyncio.CancelledError):
+                    await old_manual
+                assert vision.max_active_calls == 1
+
+    caplog.set_level(logging.INFO, logger="mapassist.assistant_gateway.audit")
+    asyncio.run(scenario())
+    audit = "\n".join(record.getMessage() for record in caplog.records)
+    assert "event=payload_validated generation=3 turn_id=old-manual-turn frame_id=old-manual-frame" in audit
+    assert "event=request_accepted generation=3 turn_id=old-manual-turn frame_id=old-manual-frame" in audit
+    assert "event=request_started generation=3 turn_id=old-manual-turn frame_id=old-manual-frame" in audit
+    assert "event=cancelled generation=3 turn_id=old-manual-turn frame_id=old-manual-frame" in audit
+    assert "proactive=false stage=superseded_by_manual" in audit
+    assert "superseded_by_generation=4" in audit
+    assert "event=busy generation=3 turn_id=stale-manual-turn frame_id=stale-manual-frame" in audit
+    assert "stage=active_manual_generation_guard" in audit and "active_generation=4" in audit
+    assert "event=request_started generation=4 turn_id=new-manual-turn frame_id=new-manual-frame" in audit
+    assert "event=success generation=4 turn_id=new-manual-turn frame_id=new-manual-frame" in audit
+    assert "stage=response_validation" in audit and "answer_chars=" in audit
+    assert "PRIVATE_OLD_MANUAL_QUESTION" not in audit
+    assert "PRIVATE_NEW_MANUAL_QUESTION" not in audit
+    assert "PRIVATE_STALE_MANUAL_QUESTION" not in audit
+    assert "PRIVATE_OLD_ANSWER" not in audit
+
+
+def test_visual_timeout_emits_request_ids_and_stage(caplog: pytest.LogCaptureFixture) -> None:
+    class TimedOutVision:
+        async def complete(self, *, question: str, image_base64: str) -> str:
+            del question, image_base64
+            raise VisionTimeout()
+
+        async def close(self) -> None:
+            return None
+
+    caplog.set_level(logging.INFO, logger="mapassist.assistant_gateway.audit")
+    with TestClient(create_app(_settings(), recognizer=FakeRecognizer(), vision_client=TimedOutVision())) as client:
+        response = client.post(
+            "/v1/visual",
+            json=_visual_payload(
+                generation=5,
+                turn_id="timeout-turn",
+                frame_id="timeout-frame",
+                proactive=False,
+            ),
+            headers={"Authorization": f"Bearer {TOKEN}"},
+        )
+    assert response.status_code == 504
+    assert response.json()["error"]["code"] == "vision_timeout"
+    audit = "\n".join(record.getMessage() for record in caplog.records)
+    assert "event=request_started generation=5 turn_id=timeout-turn frame_id=timeout-frame" in audit
+    assert "event=timeout generation=5 turn_id=timeout-turn frame_id=timeout-frame" in audit
+    assert "proactive=false stage=provider_call" in audit and "code=vision_timeout" in audit
+    assert "elapsed_ms=" in audit
 
 
 def test_manual_visual_preempts_proactive_without_overlapping_or_reusing_old_result() -> None:

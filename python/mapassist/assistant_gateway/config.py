@@ -26,8 +26,15 @@ class GatewaySettings:
     request_timeout_seconds: float = 8.0
     require_tls: bool = True
     mode: str = "production"
+    # Explicit opt-in for supervised tests, including production-provider tests.
+    test_text_log_dir: Path | None = field(default=None, repr=False)
+    test_text_log_seconds: int = 3600
 
     def __post_init__(self) -> None:
+        if (isinstance(self.test_text_log_seconds, bool)
+                or not isinstance(self.test_text_log_seconds, int)
+                or not 1 <= self.test_text_log_seconds <= 3600):
+            raise ValueError("ASSISTANT_GATEWAY_TEST_TEXT_LOG_SECONDS must be between 1 and 3600")
         if self.asr_backend not in {"disabled", "paraformer_streaming", "sensevoice_int8"}:
             raise ValueError("ASSISTANT_GATEWAY_ASR_BACKEND is unsupported")
         if not re.fullmatch(r"glm-[a-z0-9][a-z0-9._-]{0,120}", self.zhipu_model):
@@ -55,6 +62,11 @@ class GatewaySettings:
         tokens = tuple(dict.fromkeys(values))
         cache = os.environ.get("ASSISTANT_GATEWAY_MODEL_CACHE", "").strip()
         sensevoice_dir = os.environ.get("ASSISTANT_GATEWAY_SENSEVOICE_MODEL_DIR", "").strip()
+        text_log_dir = os.environ.get("ASSISTANT_GATEWAY_TEST_TEXT_LOG_DIR", "").strip()
+        try:
+            text_log_seconds = int(os.environ.get("ASSISTANT_GATEWAY_TEST_TEXT_LOG_SECONDS", "3600"))
+        except ValueError as exc:
+            raise ValueError("ASSISTANT_GATEWAY_TEST_TEXT_LOG_SECONDS must be an integer") from exc
         concurrency_raw = os.environ.get("ASSISTANT_GATEWAY_ACCOUNT_CONCURRENCY", "1").strip()
         try:
             concurrency = int(concurrency_raw)
@@ -81,6 +93,8 @@ class GatewaySettings:
             account_concurrency=concurrency,
             require_tls=require_tls,
             mode=mode,
+            test_text_log_dir=Path(text_log_dir).expanduser() if text_log_dir else None,
+            test_text_log_seconds=text_log_seconds,
         )
 
     def validate_production(self) -> None:

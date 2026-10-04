@@ -27,6 +27,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -44,6 +45,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
     private static final long TONE_DURATION_MS = 90;
     private static final long SPEECH_TIMEOUT_MS = 4000;
     private static final long ASSISTANT_SYNTHESIS_TIMEOUT_MS = 15_000;
+    private static final long ASSISTANT_PLAYBACK_DRAIN_TIMEOUT_MS = 2_000;
 
     private final Context context;
     private final SoundPool pool;
@@ -55,8 +57,10 @@ final class CuePlayer implements CueDispatcher.Renderer {
     private final boolean spatialEnabledAtStart;
     private final Map<String, CueDispatcher.PlaybackCallback> speechCallbacks =
             new ConcurrentHashMap<>();
+    private final Map<String, AssistantReply> assistantGroups = new ConcurrentHashMap<>();
     private final Map<String, AssistantUtterance> assistantUtterances =
             new ConcurrentHashMap<>();
+    private final Object assistantTtsSubmissionLock = new Object();
     private final Set<Integer> ready = ConcurrentHashMap.newKeySet();
     private final Set<Integer> failed = ConcurrentHashMap.newKeySet();
     private final PendingToneQueue pendingTones = new PendingToneQueue();
@@ -79,18 +83,55 @@ final class CuePlayer implements CueDispatcher.Renderer {
         void onPcmReference(short[] frame16kMono);
     }
 
-    private static final class AssistantUtterance {
+    private static final class AssistantReply {
         final CueRequest request;
         final CueDispatcher.PlaybackCallback callback;
-        final File outputFile;
-        volatile boolean cancelled;
-        Runnable synthesisTimeout;
+        final AssistantTtsPipeline.Group group;
 
-        AssistantUtterance(CueRequest request, CueDispatcher.PlaybackCallback callback,
-                           File outputFile) {
+        AssistantReply(CueRequest request, CueDispatcher.PlaybackCallback callback,
+                       AssistantTtsPipeline.Group group) {
             this.request = request;
             this.callback = callback;
+            this.group = group;
+        }
+    }
+
+    private static final class AssistantUtterance {
+        final String utteranceId;
+        final AssistantReply reply;
+        final AssistantTtsPipeline.Segment segment;
+        final File outputFile;
+        Runnable synthesisTimeout;
+
+        AssistantUtterance(String utteranceId, AssistantReply reply,
+                           AssistantTtsPipeline.Segment segment, File outputFile) {
+            this.utteranceId = utteranceId;
+            this.reply = reply;
+            this.segment = segment;
             this.outputFile = outputFile;
+        }
+    }
+
+    private static final class AssistantDropEvent {
+        final String cueId;
+        final AssistantTtsPipeline.DropSummary dropped;
+        final String reason;
+
+        AssistantDropEvent(String cueId, AssistantTtsPipeline.DropSummary dropped,
+                           String reason) {
+            this.cueId = cueId;
+            this.dropped = dropped;
+            this.reason = reason;
+        }
+    }
+
+    private static final class AssistantFailure {
+        final AssistantReply reply;
+        final AssistantTtsPipeline.Transition transition;
+
+        AssistantFailure(AssistantReply reply, AssistantTtsPipeline.Transition transition) {
+            this.reply = reply;
+            this.transition = transition;
         }
     }
 
@@ -390,12 +431,22 @@ final class CuePlayer implements CueDispatcher.Renderer {
                             @Override public void onDone(String id) {
                                 AssistantUtterance assistant = assistantUtterances.get(id);
                                 if (assistant != null) {
-                                    mainHandler.removeCallbacks(assistant.synthesisTimeout);
+                                    boolean readyForPlayback;
+                                    synchronized (audioLock) {
+                                        readyForPlayback = isCurrentAssistantLocked(assistant)
+                                                && assistant.reply.group.synthesisReady(
+                                                assistant.segment.index);
+                                        if (readyForPlayback)
+                                            mainHandler.removeCallbacks(
+                                                    assistant.synthesisTimeout);
+                                    }
+                                    if (!readyForPlayback) return;
+                                    logAssistantSegment("ready", assistant);
                                     try {
                                         assistantAudioWorker.execute(
-                                                () -> playAssistantFile(id, assistant));
+                                                () -> playAssistantFile(assistant));
                                     } catch (RuntimeException rejected) {
-                                        failAssistant(id, assistant);
+                                        failAssistantSegment(assistant, "worker_rejected", false, true);
                                     }
                                     return;
                                 }
@@ -406,7 +457,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
                             @Override public void onError(String id) {
                                 AssistantUtterance assistant = assistantUtterances.get(id);
                                 if (assistant != null) {
-                                    failAssistant(id, assistant);
+                                    failAssistantSegment(assistant, "synthesis_error", false, true);
                                     Log.w(TAG, "Offline assistant TTS synthesis failed for " + id);
                                     return;
                                 }
@@ -418,7 +469,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
                             @Override public void onStop(String id, boolean interrupted) {
                                 AssistantUtterance assistant = assistantUtterances.get(id);
                                 if (assistant != null) {
-                                    failAssistant(id, assistant);
+                                    failAssistantSegment(assistant, "synthesis_stopped", false, true);
                                     return;
                                 }
                                 CueDispatcher.PlaybackCallback callback = speechCallbacks.remove(id);
@@ -640,154 +691,234 @@ final class CuePlayer implements CueDispatcher.Renderer {
 
     private boolean synthesizeAssistant(CueRequest request,
                                         CueDispatcher.PlaybackCallback callback) {
-        TextToSpeech voice;
         if (request.speech == null || request.speech.isEmpty()) return false;
-        String utteranceId = "assistant:" + request.cueId + ":" + System.nanoTime();
-        Bundle parameters = new Bundle();
-        parameters.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1f);
-        final AssistantUtterance utterance;
+        AssistantTtsPipeline.Plan plan = AssistantTtsPipeline.split(request.speech);
+        if (plan.segments.isEmpty()) {
+            if (plan.droppedChars > 0)
+                logAssistantDrop(request.cueId, 0, 0, plan.droppedChars, "limit");
+            callback.onFinished(SystemClock.elapsedRealtime(), false);
+            return true;
+        }
+        String groupId = "assistant:" + request.cueId + ":" + System.nanoTime();
+        AssistantReply reply = new AssistantReply(request, callback,
+                new AssistantTtsPipeline.Group(groupId, request.cueId, plan));
         synchronized (audioLock) {
             if (closed || !ttsReady || !offlineTtsReady || tts == null) return false;
-            if (!request.playbackAllowedAt(SystemClock.elapsedRealtime())) {
-                callback.onFinished(SystemClock.elapsedRealtime(), false);
-                return true;
-            }
-            voice = tts;
-            File outputFile;
-            try {
-                outputFile = AssistantTtsCache.createOutputFile(context.getCacheDir());
-            } catch (IOException error) {
-                Log.w(TAG, "Could not allocate assistant TTS cache file", error);
-                return false;
-            }
-            final AssistantUtterance created = new AssistantUtterance(request, callback, outputFile);
-            created.synthesisTimeout = () -> {
-                if (assistantUtterances.remove(utteranceId, created)) {
-                    created.cancelled = true;
-                    AssistantTtsCache.delete(created.outputFile);
-                    TextToSpeech activeVoice = tts;
-                    if (activeVoice != null) {
-                        try { activeVoice.stop(); }
-                        catch (RuntimeException error) {
-                            Log.w(TAG, "Could not stop timed-out assistant synthesis", error);
-                        }
-                    }
-                    callback.onFinished(SystemClock.elapsedRealtime(), false);
-                    Log.w(TAG, "Offline assistant TTS synthesis timed out for " + utteranceId);
+            assistantGroups.put(groupId, reply);
+        }
+        if (plan.droppedChars > 0)
+            logAssistantDrop(request.cueId, plan.segments.size(), 0,
+                    plan.droppedChars, "limit");
+        return startAssistantSegment(reply, true);
+    }
+
+    private boolean startAssistantSegment(AssistantReply reply, boolean initial) {
+        TextToSpeech voice = null;
+        AssistantUtterance utterance = null;
+        AssistantTtsPipeline.Transition transition = null;
+        boolean setupFailed = false;
+        synchronized (audioLock) {
+            if (closed || assistantGroups.get(reply.group.groupId) != reply
+                    || reply.group.isCancelled()) return !initial;
+            AssistantTtsPipeline.Segment segment = reply.group.reserveNext();
+            if (segment == null) return !initial;
+            if (!reply.request.playbackAllowedAt(SystemClock.elapsedRealtime())) {
+                transition = reply.group.expiredBeforePlayback(segment.index);
+                assistantGroups.remove(reply.group.groupId, reply);
+            } else {
+                try {
+                    File outputFile = AssistantTtsCache.createOutputFile(context.getCacheDir());
+                    String utteranceId = reply.group.groupId + ":segment:" + segment.index;
+                    utterance = new AssistantUtterance(utteranceId, reply, segment, outputFile);
+                    assistantUtterances.put(utteranceId, utterance);
+                    voice = tts;
+                } catch (IOException error) {
+                    Log.w(TAG, "Could not allocate assistant TTS cache file", error);
+                    transition = reply.group.failed(segment.index);
+                    assistantGroups.remove(reply.group.groupId, reply);
+                    setupFailed = true;
                 }
-            };
-            assistantUtterances.put(utteranceId, created);
-            utterance = created;
+            }
         }
+
+        if (transition != null) {
+            if (!transition.dropped.isEmpty())
+                logAssistantDrop(reply.request.cueId, transition.dropped.index,
+                        transition.dropped.segments, transition.dropped.chars,
+                        setupFailed ? "failed" : "expired");
+            if (!setupFailed || !initial) finishAssistantReply(reply, transition.success);
+            return !setupFailed;
+        }
+        if (utterance == null || voice == null) return !initial;
+
+        AssistantUtterance active = utterance;
+        utterance.synthesisTimeout = () -> {
+            if (failAssistantSegment(active, "synthesis_timeout", true, true))
+                Log.w(TAG, "Offline assistant TTS synthesis timed out for "
+                        + active.utteranceId);
+        };
         mainHandler.postDelayed(utterance.synthesisTimeout, ASSISTANT_SYNTHESIS_TIMEOUT_MS);
-        if (closed || utterance.cancelled || assistantUtterances.get(utteranceId) != utterance) {
-            mainHandler.removeCallbacks(utterance.synthesisTimeout);
-            AssistantTtsCache.delete(utterance.outputFile);
-            return false;
+        logAssistantSegment("synthesis-started", utterance);
+
+        Bundle parameters = new Bundle();
+        parameters.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1f);
+        int result = TextToSpeech.ERROR;
+        AssistantTtsPipeline.Transition expired = null;
+        synchronized (assistantTtsSubmissionLock) {
+            synchronized (audioLock) {
+                if (!isCurrentAssistantLocked(utterance)) {
+                    mainHandler.removeCallbacks(utterance.synthesisTimeout);
+                    AssistantTtsCache.delete(utterance.outputFile);
+                    return !initial;
+                }
+                if (!reply.request.playbackAllowedAt(SystemClock.elapsedRealtime())) {
+                    expired = reply.group.expiredBeforePlayback(utterance.segment.index);
+                    assistantUtterances.remove(utterance.utteranceId, utterance);
+                    assistantGroups.remove(reply.group.groupId, reply);
+                    mainHandler.removeCallbacks(utterance.synthesisTimeout);
+                    AssistantTtsCache.delete(utterance.outputFile);
+                }
+            }
+            if (expired == null) {
+                try {
+                    result = voice.synthesizeToFile(utterance.segment.text, parameters,
+                            utterance.outputFile, utterance.utteranceId);
+                } catch (RuntimeException error) {
+                    Log.w(TAG, "Could not synthesize assistant speech offline", error);
+                }
+            }
         }
-        try {
-            int result = voice.synthesizeToFile(request.speech, parameters,
-                    utterance.outputFile, utteranceId);
-            if (result == TextToSpeech.SUCCESS) return true;
-        } catch (RuntimeException error) {
-            Log.w(TAG, "Could not synthesize assistant speech offline", error);
+        if (expired != null) {
+            if (!expired.dropped.isEmpty())
+                logAssistantDrop(reply.request.cueId, expired.dropped.index,
+                        expired.dropped.segments, expired.dropped.chars, "expired");
+            finishAssistantReply(reply, expired.success);
+            return true;
         }
-        assistantUtterances.remove(utteranceId, utterance);
-        mainHandler.removeCallbacks(utterance.synthesisTimeout);
-        AssistantTtsCache.delete(utterance.outputFile);
+        if (result == TextToSpeech.SUCCESS) return true;
+        failAssistantSegment(utterance, "synthesis_rejected", false, !initial);
         return false;
     }
 
-    private void playAssistantFile(String utteranceId, AssistantUtterance utterance) {
+    private void playAssistantFile(AssistantUtterance utterance) {
         AudioTrack track = null;
-        boolean started = false;
+        boolean trackStarted = false;
         boolean completed = false;
+        boolean expired = false;
         try {
-            if (utterance.cancelled || closed) return;
-            PcmWav wav = readPcmWav(utterance.outputFile);
-            short[] pcm16k = VoiceEchoProcessor.resampleTo16k(wav.samples, wav.sampleRateHz);
-            if (pcm16k.length == 0 || utterance.cancelled || closed) return;
-            int minBuffer = AudioTrack.getMinBufferSize(VoiceEchoProcessor.SAMPLE_RATE_HZ,
-                    AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
-            if (minBuffer <= 0) throw new IOException("AudioTrack buffer size unavailable");
-            // Keep the output queue at the device minimum (and at least two
-            // 10 ms frames). Reference frames are sent immediately after the
-            // matching PCM is accepted, close to the two-frame delay SpeexDSP
-            // uses for its playback buffer.
-            int bufferBytes = Math.max(minBuffer, VoiceEchoProcessor.FRAME_SAMPLES * 2 * 2);
-            track = new AudioTrack.Builder()
-                    .setAudioAttributes(new AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_GAME)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-                    .setAudioFormat(new AudioFormat.Builder()
-                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                            .setSampleRate(VoiceEchoProcessor.SAMPLE_RATE_HZ)
-                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
-                    .setBufferSizeInBytes(bufferBytes)
-                    .setTransferMode(AudioTrack.MODE_STREAM)
-                    .build();
-            track.setVolume(volume());
-            synchronized (audioLock) {
-                boolean current = !closed && !utterance.cancelled
-                        && assistantUtterances.get(utteranceId) == utterance;
-                if (!current) {
-                    utterance.cancelled = true;
-                } else if (!utterance.request.playbackAllowedAt(SystemClock.elapsedRealtime())) {
-                    // Keep it current until finishAssistant() delivers the
-                    // terminal callback so CueDispatcher records EXPIRED.
-                } else {
-                    assistantTrack = track;
-                    track.play();
-                    started = true;
-                }
-            }
-            if (!started) {
-                return;
-            }
-            if (utterance.cancelled || assistantUtterances.get(utteranceId) != utterance)
-                return;
-            utterance.callback.onStarted(SystemClock.elapsedRealtime());
-            AssistantPlaybackListener reference = assistantPlaybackListener;
-            short[] referenceFrame = reference == null ? null
-                    : new short[VoiceEchoProcessor.FRAME_SAMPLES];
-            int referenceSamples = 0;
-            for (int offset = 0; offset < pcm16k.length
-                    && !utterance.cancelled && !closed;) {
-                int count = Math.min(VoiceEchoProcessor.FRAME_SAMPLES, pcm16k.length - offset);
-                int written = track.write(pcm16k, offset, count, AudioTrack.WRITE_BLOCKING);
-                if (written <= 0) throw new IOException("Assistant PCM output stopped");
-                if (reference != null) {
-                    int copied = 0;
-                    while (copied < written) {
-                        int take = Math.min(written - copied,
-                                VoiceEchoProcessor.FRAME_SAMPLES - referenceSamples);
-                        System.arraycopy(pcm16k, offset + copied, referenceFrame,
-                                referenceSamples, take);
-                        copied += take;
-                        referenceSamples += take;
-                        if (referenceSamples == VoiceEchoProcessor.FRAME_SAMPLES) {
-                            if (!utterance.cancelled && !closed)
-                                emitPcmReference(reference, referenceFrame);
-                            referenceFrame = new short[VoiceEchoProcessor.FRAME_SAMPLES];
-                            referenceSamples = 0;
+            if (isCurrentAssistant(utterance)) {
+                PcmWav wav = readPcmWav(utterance.outputFile);
+                short[] pcm16k = VoiceEchoProcessor.resampleTo16k(wav.samples, wav.sampleRateHz);
+                if (pcm16k.length > 0 && isCurrentAssistant(utterance)) {
+                    int minBuffer = AudioTrack.getMinBufferSize(VoiceEchoProcessor.SAMPLE_RATE_HZ,
+                            AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
+                    if (minBuffer <= 0)
+                        throw new IOException("AudioTrack buffer size unavailable");
+                    // Keep the output queue at the device minimum and retain the established
+                    // mono 16 kHz PCM/AEC reference path for each independently synthesized part.
+                    int bufferBytes = Math.max(minBuffer,
+                            VoiceEchoProcessor.FRAME_SAMPLES * 2 * 2);
+                    track = new AudioTrack.Builder()
+                            .setAudioAttributes(new AudioAttributes.Builder()
+                                    .setUsage(AudioAttributes.USAGE_GAME)
+                                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                            .setAudioFormat(new AudioFormat.Builder()
+                                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                                    .setSampleRate(VoiceEchoProcessor.SAMPLE_RATE_HZ)
+                                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+                            .setBufferSizeInBytes(bufferBytes)
+                            .setTransferMode(AudioTrack.MODE_STREAM)
+                            .build();
+                    track.setVolume(volume());
+                    synchronized (audioLock) {
+                        if (isCurrentAssistantLocked(utterance)
+                                && utterance.reply.group.isReadyToPlay(
+                                utterance.segment.index)) {
+                            if (!utterance.reply.request.playbackAllowedAt(
+                                    SystemClock.elapsedRealtime())) {
+                                expired = true;
+                            } else {
+                                assistantTrack = track;
+                                track.play();
+                                trackStarted = true;
+                            }
                         }
                     }
-                }
-                offset += written;
-            }
-            if (reference != null && referenceSamples > 0
-                    && !utterance.cancelled && !closed)
-                emitPcmReference(reference, referenceFrame);
-            completed = !utterance.cancelled && !closed;
-            if (completed) {
-                // Allow the final queued frame to reach the output before reporting completion.
-                while (!utterance.cancelled && !closed
-                        && track.getPlaybackHeadPosition() < pcm16k.length) {
-                    try { Thread.sleep(5); }
-                    catch (InterruptedException interrupted) {
-                        Thread.currentThread().interrupt();
-                        completed = false;
-                        break;
+                    if (trackStarted) {
+                        AssistantPlaybackListener reference = assistantPlaybackListener;
+                        short[] referenceFrame = reference == null ? null
+                                : new short[VoiceEchoProcessor.FRAME_SAMPLES];
+                        int referenceSamples = 0;
+                        boolean firstWrite = true;
+                        for (int offset = 0; offset < pcm16k.length
+                                && isCurrentAssistant(utterance);) {
+                            int count = Math.min(VoiceEchoProcessor.FRAME_SAMPLES,
+                                    pcm16k.length - offset);
+                            int written = track.write(pcm16k, offset, count,
+                                    AudioTrack.WRITE_BLOCKING);
+                            if (written <= 0)
+                                throw new IOException("Assistant PCM output stopped");
+                            if (firstWrite) {
+                                boolean current;
+                                boolean notifyStarted = false;
+                                synchronized (audioLock) {
+                                    current = isCurrentAssistantLocked(utterance);
+                                    if (current) notifyStarted = utterance.reply.group
+                                            .markFirstWrite(utterance.segment.index);
+                                }
+                                if (!current) break;
+                                firstWrite = false;
+                                logAssistantSegment("playback-first-write", utterance);
+                                if (notifyStarted)
+                                    utterance.reply.callback.onStarted(
+                                            SystemClock.elapsedRealtime());
+                            }
+                            if (reference != null) {
+                                int copied = 0;
+                                while (copied < written) {
+                                    int take = Math.min(written - copied,
+                                            VoiceEchoProcessor.FRAME_SAMPLES - referenceSamples);
+                                    System.arraycopy(pcm16k, offset + copied, referenceFrame,
+                                            referenceSamples, take);
+                                    copied += take;
+                                    referenceSamples += take;
+                                    if (referenceSamples == VoiceEchoProcessor.FRAME_SAMPLES) {
+                                        if (isCurrentAssistant(utterance))
+                                            emitPcmReference(reference, referenceFrame);
+                                        referenceFrame = new short[
+                                                VoiceEchoProcessor.FRAME_SAMPLES];
+                                        referenceSamples = 0;
+                                    }
+                                }
+                            }
+                            offset += written;
+                        }
+                        if (reference != null && referenceSamples > 0
+                                && isCurrentAssistant(utterance))
+                            emitPcmReference(reference, referenceFrame);
+                        completed = isCurrentAssistant(utterance) && !firstWrite;
+                        if (completed) {
+                            // Let the final queued frame reach output before advancing the group.
+                            long drainDeadline = SystemClock.elapsedRealtime()
+                                    + ASSISTANT_PLAYBACK_DRAIN_TIMEOUT_MS;
+                            while (isCurrentAssistant(utterance)
+                                    && track.getPlaybackHeadPosition() < pcm16k.length
+                                    && SystemClock.elapsedRealtime() < drainDeadline) {
+                                try { Thread.sleep(5); }
+                                catch (InterruptedException interrupted) {
+                                    Thread.currentThread().interrupt();
+                                    completed = false;
+                                    break;
+                                }
+                            }
+                            completed = completed && isCurrentAssistant(utterance);
+                            if (completed && track.getPlaybackHeadPosition() < pcm16k.length) {
+                                completed = false;
+                                Log.w(TAG, "Assistant PCM playback drain timed out cueId="
+                                        + utterance.reply.request.cueId + " index="
+                                        + utterance.segment.index);
+                            }
+                        }
                     }
                 }
             }
@@ -805,8 +936,10 @@ final class CuePlayer implements CueDispatcher.Renderer {
             synchronized (audioLock) {
                 if (assistantTrack == track) assistantTrack = null;
             }
-            finishAssistant(utteranceId, utterance, started && completed);
         }
+        if (expired) expireAssistantSegment(utterance);
+        else if (trackStarted && completed) completeAssistantSegment(utterance);
+        else failAssistantSegment(utterance, "playback_failed", false, true);
     }
 
     private void emitPcmReference(AssistantPlaybackListener listener, short[] frame) {
@@ -817,21 +950,141 @@ final class CuePlayer implements CueDispatcher.Renderer {
         }
     }
 
-    private void finishAssistant(String utteranceId, AssistantUtterance utterance,
-                                 boolean success) {
-        mainHandler.removeCallbacks(utterance.synthesisTimeout);
-        boolean wasCurrent = assistantUtterances.remove(utteranceId, utterance);
-        AssistantTtsCache.delete(utterance.outputFile);
-        if (wasCurrent && !utterance.cancelled && !closed)
-            utterance.callback.onFinished(SystemClock.elapsedRealtime(), success);
+    private boolean isCurrentAssistant(AssistantUtterance utterance) {
+        synchronized (audioLock) { return isCurrentAssistantLocked(utterance); }
     }
 
-    private void failAssistant(String utteranceId, AssistantUtterance utterance) {
-        mainHandler.removeCallbacks(utterance.synthesisTimeout);
-        if (!assistantUtterances.remove(utteranceId, utterance)) return;
-        AssistantTtsCache.delete(utterance.outputFile);
-        if (!utterance.cancelled && !closed)
-            utterance.callback.onFinished(SystemClock.elapsedRealtime(), false);
+    private boolean isCurrentAssistantLocked(AssistantUtterance utterance) {
+        return !closed && assistantGroups.get(utterance.reply.group.groupId) == utterance.reply
+                && assistantUtterances.get(utterance.utteranceId) == utterance
+                && !utterance.reply.group.isCancelled();
+    }
+
+    private void completeAssistantSegment(AssistantUtterance utterance) {
+        AssistantTtsPipeline.Transition transition;
+        synchronized (audioLock) {
+            if (!assistantUtterances.remove(utterance.utteranceId, utterance)) return;
+            mainHandler.removeCallbacks(utterance.synthesisTimeout);
+            AssistantTtsCache.delete(utterance.outputFile);
+            if (assistantGroups.get(utterance.reply.group.groupId) != utterance.reply) return;
+            transition = utterance.reply.group.playbackCompleted(utterance.segment.index);
+            if (transition.action == AssistantTtsPipeline.Action.FINISH)
+                assistantGroups.remove(utterance.reply.group.groupId, utterance.reply);
+        }
+        handleAssistantTransition(utterance.reply, transition, "failed");
+    }
+
+    private void expireAssistantSegment(AssistantUtterance utterance) {
+        AssistantTtsPipeline.Transition transition;
+        synchronized (audioLock) {
+            if (!assistantUtterances.remove(utterance.utteranceId, utterance)) return;
+            mainHandler.removeCallbacks(utterance.synthesisTimeout);
+            AssistantTtsCache.delete(utterance.outputFile);
+            if (assistantGroups.get(utterance.reply.group.groupId) != utterance.reply) return;
+            transition = utterance.reply.group.expiredBeforePlayback(utterance.segment.index);
+            assistantGroups.remove(utterance.reply.group.groupId, utterance.reply);
+        }
+        handleAssistantTransition(utterance.reply, transition, "expired");
+    }
+
+    private boolean failAssistantSegment(AssistantUtterance utterance, String reason,
+                                         boolean stopVoice, boolean notify) {
+        AssistantFailure failure;
+        if (stopVoice) {
+            synchronized (assistantTtsSubmissionLock) {
+                failure = detachFailedAssistantSegment(utterance, true);
+                if (failure == null) return false;
+                TextToSpeech activeVoice = tts;
+                if (activeVoice != null) {
+                    try { activeVoice.stop(); }
+                    catch (RuntimeException error) {
+                        Log.w(TAG, "Could not stop timed-out assistant synthesis", error);
+                    }
+                }
+            }
+        } else {
+            failure = detachFailedAssistantSegment(utterance, false);
+            if (failure == null) return false;
+        }
+        if (!failure.transition.dropped.isEmpty())
+            logAssistantDrop(failure.reply.request.cueId, failure.transition.dropped.index,
+                    failure.transition.dropped.segments, failure.transition.dropped.chars, reason);
+        if (notify) finishAssistantReply(failure.reply, false);
+        return true;
+    }
+
+    private AssistantFailure detachFailedAssistantSegment(AssistantUtterance utterance,
+                                                          boolean requireSynthesis) {
+        synchronized (audioLock) {
+            if (!isCurrentAssistantLocked(utterance)) return null;
+            if (requireSynthesis && !utterance.reply.group.isSynthesizing(
+                    utterance.segment.index)) return null;
+            if (!assistantUtterances.remove(utterance.utteranceId, utterance)) return null;
+            mainHandler.removeCallbacks(utterance.synthesisTimeout);
+            AssistantTtsCache.delete(utterance.outputFile);
+            AssistantTtsPipeline.Transition transition = utterance.reply.group
+                    .failed(utterance.segment.index);
+            assistantGroups.remove(utterance.reply.group.groupId, utterance.reply);
+            if (transition.action == AssistantTtsPipeline.Action.IGNORED) return null;
+            return new AssistantFailure(utterance.reply, transition);
+        }
+    }
+
+    private void handleAssistantTransition(AssistantReply reply,
+                                          AssistantTtsPipeline.Transition transition,
+                                          String dropReason) {
+        if (transition.action == AssistantTtsPipeline.Action.IGNORED) return;
+        if (!transition.dropped.isEmpty())
+            logAssistantDrop(reply.request.cueId, transition.dropped.index,
+                    transition.dropped.segments, transition.dropped.chars, dropReason);
+        if (transition.action == AssistantTtsPipeline.Action.NEXT) {
+            startAssistantSegment(reply, false);
+        } else {
+            finishAssistantReply(reply, transition.success);
+        }
+    }
+
+    private void finishAssistantReply(AssistantReply reply, boolean success) {
+        if (reply.group.claimFinishCallback())
+            reply.callback.onFinished(SystemClock.elapsedRealtime(), success);
+    }
+
+    private static void logAssistantSegment(String event, AssistantUtterance utterance) {
+        Log.i(TAG, "Assistant TTS event=" + event + " cueId=" + utterance.reply.request.cueId
+                + " index=" + utterance.segment.index + " chars=" + utterance.segment.chars
+                + " monoMs=" + SystemClock.elapsedRealtime()
+                + " timeMs=" + System.currentTimeMillis());
+    }
+
+    private static void logAssistantDrop(String cueId, int index, int segments, int chars,
+                                         String reason) {
+        if (chars <= 0 && segments <= 0) return;
+        Log.i(TAG, "Assistant TTS event=remaining-dropped cueId=" + cueId
+                + " index=" + index + " segments=" + segments + " chars=" + chars
+                + " reason=" + reason + " monoMs=" + SystemClock.elapsedRealtime()
+                + " timeMs=" + System.currentTimeMillis());
+    }
+
+    private List<AssistantDropEvent> cancelAssistantGroupsLocked(String reason) {
+        List<AssistantDropEvent> dropped = new java.util.ArrayList<>();
+        for (AssistantReply reply : assistantGroups.values()) {
+            AssistantTtsPipeline.DropSummary summary = reply.group.cancel();
+            if (!summary.isEmpty())
+                dropped.add(new AssistantDropEvent(reply.request.cueId, summary, reason));
+        }
+        for (AssistantUtterance utterance : assistantUtterances.values()) {
+            mainHandler.removeCallbacks(utterance.synthesisTimeout);
+            AssistantTtsCache.delete(utterance.outputFile);
+        }
+        assistantUtterances.clear();
+        assistantGroups.clear();
+        return dropped;
+    }
+
+    private static void logAssistantDrops(List<AssistantDropEvent> dropped) {
+        for (AssistantDropEvent event : dropped)
+            logAssistantDrop(event.cueId, event.dropped.index, event.dropped.segments,
+                    event.dropped.chars, event.reason);
     }
 
     private static final class PcmWav {
@@ -958,27 +1211,26 @@ final class CuePlayer implements CueDispatcher.Renderer {
     @Override public void stopSpeech() {
         TextToSpeech voice;
         AudioTrack track;
+        List<AssistantDropEvent> dropped;
         synchronized (audioLock) {
             // Some TTS engines do not deliver onStop for every flushed
             // utterance.  Do not retain callbacks from a paused session.
             speechCallbacks.clear();
-            for (AssistantUtterance utterance : assistantUtterances.values()) {
-                utterance.cancelled = true;
-                mainHandler.removeCallbacks(utterance.synthesisTimeout);
-                AssistantTtsCache.delete(utterance.outputFile);
-            }
-            assistantUtterances.clear();
+            dropped = cancelAssistantGroupsLocked("stopped");
             track = assistantTrack;
             assistantTrack = null;
             voice = tts;
         }
+        logAssistantDrops(dropped);
         // Do not call into the remote TTS engine while holding audioLock:
         // an engine may synchronously or asynchronously deliver onStop.
         if (voice != null) {
-            try {
-                voice.stop();
-            } catch (RuntimeException error) {
-                Log.w(TAG, "Could not stop accessibility speech", error);
+            synchronized (assistantTtsSubmissionLock) {
+                try {
+                    voice.stop();
+                } catch (RuntimeException error) {
+                    Log.w(TAG, "Could not stop accessibility speech", error);
+                }
             }
         }
         stopAssistantTrack(track);
@@ -988,22 +1240,22 @@ final class CuePlayer implements CueDispatcher.Renderer {
         TextToSpeech voice;
         AudioTrack track;
         boolean hadAssistant;
+        List<AssistantDropEvent> dropped;
         synchronized (audioLock) {
-            hadAssistant = !assistantUtterances.isEmpty() || assistantTrack != null;
-            for (AssistantUtterance utterance : assistantUtterances.values()) {
-                utterance.cancelled = true;
-                mainHandler.removeCallbacks(utterance.synthesisTimeout);
-                AssistantTtsCache.delete(utterance.outputFile);
-            }
-            assistantUtterances.clear();
+            hadAssistant = !assistantGroups.isEmpty() || !assistantUtterances.isEmpty()
+                    || assistantTrack != null;
+            dropped = cancelAssistantGroupsLocked("cancelled");
             track = assistantTrack;
             assistantTrack = null;
             voice = tts;
         }
+        logAssistantDrops(dropped);
         if (hadAssistant && voice != null) {
-            try { voice.stop(); }
-            catch (RuntimeException error) {
-                Log.w(TAG, "Could not stop assistant synthesis", error);
+            synchronized (assistantTtsSubmissionLock) {
+                try { voice.stop(); }
+                catch (RuntimeException error) {
+                    Log.w(TAG, "Could not stop assistant synthesis", error);
+                }
             }
         }
         stopAssistantTrack(track);
@@ -1102,6 +1354,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
 
     void close() {
         TextToSpeech voice;
+        List<AssistantDropEvent> dropped;
         synchronized (audioLock) {
             if (closed) return;
             closed = true;
@@ -1112,23 +1365,21 @@ final class CuePlayer implements CueDispatcher.Renderer {
             failed.clear();
             pendingTones.clear();
             speechCallbacks.clear();
-            for (AssistantUtterance utterance : assistantUtterances.values()) {
-                utterance.cancelled = true;
-                mainHandler.removeCallbacks(utterance.synthesisTimeout);
-                AssistantTtsCache.delete(utterance.outputFile);
-            }
-            assistantUtterances.clear();
+            dropped = cancelAssistantGroupsLocked("closed");
             if (assistantTrack != null) {
                 stopAssistantTrack(assistantTrack);
                 assistantTrack = null;
             }
             cancelSpatialTones(null);
         }
+        logAssistantDrops(dropped);
         if (voice != null) {
-            try {
-                voice.shutdown();
-            } catch (RuntimeException error) {
-                Log.w(TAG, "Could not shut down TTS cleanly", error);
+            synchronized (assistantTtsSubmissionLock) {
+                try {
+                    voice.shutdown();
+                } catch (RuntimeException error) {
+                    Log.w(TAG, "Could not shut down TTS cleanly", error);
+                }
             }
         }
         assistantAudioWorker.shutdownNow();

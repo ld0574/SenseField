@@ -104,6 +104,80 @@ public class AssistantControlsInstrumentedTest {
         return host.audits.stream().filter(value -> value.contains(marker)).count();
     }
 
+    @Test public void speechStartReservesSixtySecondQuietWindowWithoutStartingCapture() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context);
+        Host host = new Host();
+        AssistantController controller = new AssistantController(context, "speech-quiet-test",
+                new AssistantSettings(preferences), host);
+        try {
+            long before = SystemClock.elapsedRealtime();
+            java.lang.reflect.Method started = AssistantController.class.getDeclaredMethod("voiceStarted");
+            started.setAccessible(true);
+            started.invoke(controller); // No start(): no microphone, ASR model or overlay.
+            Field quiet = AssistantController.class.getDeclaredField("proactiveQuietUntilMs");
+            quiet.setAccessible(true);
+            assertTrue(quiet.getLong(controller) >= before + 60_000);
+            assertEquals(1, host.cancelled);
+            assertEquals(0, host.spoken);
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void manualReplyExtendsQuietWindowAndBlocksAutomaticFrame() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context);
+        Host host = new Host();
+        AssistantController controller = new AssistantController(context, "manual-quiet-test",
+                new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller);
+            String turn = session.newTurn();
+            long capturedAt = SystemClock.elapsedRealtime();
+            FrameSnapshot frame = staleHudFrame(91, capturedAt, session.generation());
+            installVisualTask(controller, 91, turn, frame, false);
+            controller.visualResult(91, visualResult(session, session.generation(), turn, 91,
+                    "先跟前排推进。"));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(1, host.spoken);
+            Field proactive = AssistantController.class.getDeclaredField("proactiveEnabled");
+            proactive.setAccessible(true);
+            proactive.setBoolean(controller, true);
+            long generation = session.generation();
+            controller.offerFrame(ByteBuffer.allocate(64 * 36 * 4), 64, 36, 64 * 4,
+                    92, SystemClock.elapsedRealtime());
+            assertEquals("Quiet frames must not open an automatic turn", generation, session.generation());
+            assertEquals(0, countAudit(host, "AssistantVisual event=REQUEST"));
+            Field quiet = AssistantController.class.getDeclaredField("proactiveQuietUntilMs");
+            quiet.setAccessible(true);
+            assertTrue(quiet.getLong(controller) >= capturedAt + 60_000);
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void proactiveReplyHasSpokenAndPanelLabelsWithoutChangingFrameOwnership() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context);
+        Host host = new Host();
+        AssistantController controller = new AssistantController(context, "proactive-label-test",
+                new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller);
+            String turn = session.newTurn();
+            long capturedAt = SystemClock.elapsedRealtime();
+            FrameSnapshot frame = staleHudFrame(93, capturedAt, session.generation());
+            installVisualTask(controller, 93, turn, frame, true);
+            controller.visualResult(93, visualResult(session, session.generation(), turn, 93,
+                    "先跟前排推进。"));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(1, host.spoken);
+            assertTrue(host.last.answer.startsWith("画面变化，"));
+            assertTrue(host.last.proactive);
+            assertEquals(capturedAt, host.last.capturedAtMs);
+            Field history = AssistantController.class.getDeclaredField("history");
+            history.setAccessible(true);
+            assertTrue(history.get(controller).toString().contains("主动观察："));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
     @Test public void finalSelectionQuestionPreservesIntentWithoutOpeningPanel() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         SharedPreferences preferences = preferences(context);

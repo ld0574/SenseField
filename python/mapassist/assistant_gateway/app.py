@@ -21,6 +21,8 @@ from .config import GatewaySettings, safe_configuration_status
 from .errors import GatewayError
 from .glm import GlmVisionClient
 from .compatible import CompatibleVisionClient
+from .test_text_trace import TestTextTraceRecorder
+from .request_trace import visual_request_context
 from .validation import (
     UNKNOWN_ANSWER,
     InvalidRequest,
@@ -45,6 +47,7 @@ class _ActiveVisualRequest:
     generation: int
     upstream_task: asyncio.Task[str] | None = None
     pending_manual: asyncio.Task[Any] | None = None
+    pending_manual_generation: int | None = None
     handoff: asyncio.Event = field(default_factory=asyncio.Event)
 
 
@@ -73,6 +76,45 @@ async def _complete_or_disconnect(
         await _cancel_and_wait(task)
         raise asyncio.CancelledError
     return await task
+
+
+def _log_visual_event(
+    event: str,
+    visual_request: VisualRequest,
+    *,
+    stage: str,
+    started_at: float,
+    code: str | None = None,
+    active_generation: int | None = None,
+    superseded_by_generation: int | None = None,
+    kind: str | None = None,
+    uncertain: bool | None = None,
+    answer_chars: int | None = None,
+) -> None:
+    fields = [
+        "assistant_gateway_visual",
+        f"session_id={visual_request.session_id}",
+        f"event={event}",
+        f"generation={visual_request.generation}",
+        f"turn_id={visual_request.turn_id}",
+        f"frame_id={visual_request.frame_id}",
+        f"proactive={str(visual_request.proactive).lower()}",
+        f"stage={stage}",
+        f"elapsed_ms={max(0, int((time.monotonic() - started_at) * 1000))}",
+    ]
+    if code is not None:
+        fields.append(f"code={code}")
+    if active_generation is not None:
+        fields.append(f"active_generation={active_generation}")
+    if superseded_by_generation is not None:
+        fields.append(f"superseded_by_generation={superseded_by_generation}")
+    if kind is not None:
+        fields.append(f"kind={kind}")
+    if uncertain is not None:
+        fields.append(f"uncertain={str(uncertain).lower()}")
+    if answer_chars is not None:
+        fields.append(f"answer_chars={answer_chars}")
+    _AUDIT_LOGGER.info(" ".join(fields))
 
 
 class HttpBodyLimitMiddleware:
@@ -164,7 +206,16 @@ def _secure_scheme(scope: dict[str, Any]) -> bool:
     return scope.get("scheme") in {"https", "wss"}
 
 
-def _vision_call(vision_client: Any, visual_request: VisualRequest) -> Any:
+async def _vision_call(vision_client: Any, visual_request: VisualRequest) -> Any:
+    token = visual_request_context.set((visual_request.session_id, visual_request.generation,
+                                        visual_request.turn_id, visual_request.frame_id))
+    try:
+        return await _vision_call_with_context(vision_client, visual_request)
+    finally:
+        visual_request_context.reset(token)
+
+
+def _vision_call_with_context(vision_client: Any, visual_request: VisualRequest) -> Any:
     context_images = tuple(frame.image.jpeg_base64 for frame in visual_request.context_frames)
     question = visual_request.question
     if context_images:
@@ -252,6 +303,14 @@ def create_app(
                 await close()
 
     app = FastAPI(title="MapAssist Assistant Gateway", docs_url=None, redoc_url=None, lifespan=lifespan)
+    app.state.test_text_trace = (
+        TestTextTraceRecorder(
+            settings.test_text_log_dir,
+            seconds=settings.test_text_log_seconds,
+        )
+        if settings.test_text_log_dir is not None
+        else None
+    )
     app.add_middleware(HttpBodyLimitMiddleware)
 
     @app.exception_handler(GatewayError)
@@ -294,6 +353,7 @@ def create_app(
 
     @app.post("/v1/visual")
     async def visual(request: Request) -> JSONResponse:
+        started = time.monotonic()
         if settings.require_tls and not _secure_scheme(request.scope):
             raise GatewayError("https_required", "Use HTTPS for this service.", http_status=426)
         if not _authorization_matches(request.headers.get("authorization"), settings.device_tokens):
@@ -314,22 +374,35 @@ def create_app(
             raise GatewayError("invalid_request", str(exc), http_status=422) from exc
         del payload
 
+        _log_visual_event(
+            "payload_validated", visual_request,
+            stage="payload_validation", started_at=started,
+        )
+        text_trace = request.app.state.test_text_trace
+        if text_trace is not None:
+            text_trace.record("request", visual_request)
+        # Keep the original event for existing consumers. It records successful
+        # payload validation only; request_started below means the session slot
+        # has actually been acquired and an upstream call has been scheduled.
         _AUDIT_LOGGER.info(
-            "assistant_gateway_visual event=request_accepted generation=%s turn_id=%s frame_id=%s context_count=%s",
+            "assistant_gateway_visual event=request_accepted generation=%s turn_id=%s frame_id=%s context_count=%s proactive=%s stage=payload_validation elapsed_ms=%s",
             visual_request.generation,
             visual_request.turn_id,
             visual_request.frame_id,
             len(visual_request.context_frames),
+            str(visual_request.proactive).lower(),
+            max(0, int((time.monotonic() - started) * 1000)),
         )
 
         session_id = visual_request.session_id
         current_task = asyncio.current_task()
         if current_task is None:
             raise RuntimeError("visual request has no owning task")
-        started = time.monotonic()
         disconnect_task = asyncio.create_task(_wait_for_client_disconnect(request))
         active: _ActiveVisualRequest | None = None
         owns_slot = False
+        terminal_stage = "session_slot"
+        active_generation: int | None = None
         handoff_task: asyncio.Task[bool] | None = None
         try:
             async with request.app.state.visual_sessions_lock:
@@ -346,23 +419,41 @@ def create_app(
                     request.app.state.active_visual_requests[session_id] = active
                     owns_slot = True
                     preempted_task = None
-                elif (
-                    not visual_request.proactive
-                    and active.proactive
-                    and active.pending_manual is None
-                    and visual_request.generation >= active.generation
-                ):
-                    # Reserve the slot for this manual request before asking
-                    # the proactive request to stop. Other arrivals stay busy
-                    # until cancellation has fully released the upstream call.
-                    active.pending_manual = current_task
-                    preempted_task = active.upstream_task
                 else:
-                    raise GatewayError(
-                        "vision_busy",
-                        "A visual request is already active for this session.",
-                        http_status=409,
+                    active_generation = active.generation
+                    manual_supersedes_proactive = (
+                        not visual_request.proactive
+                        and active.proactive
+                        and visual_request.generation >= active.generation
                     )
+                    manual_supersedes_manual = (
+                        not visual_request.proactive
+                        and not active.proactive
+                        and visual_request.generation > active.generation
+                    )
+                    if (
+                        (manual_supersedes_proactive or manual_supersedes_manual)
+                        and active.pending_manual is None
+                    ):
+                        # Reserve the slot before cancelling the current call.
+                        # A newer manual turn can supersede an older manual turn,
+                        # but equal/older generations cannot cancel the owner.
+                        active.pending_manual = current_task
+                        active.pending_manual_generation = visual_request.generation
+                        preempted_task = active.upstream_task
+                        terminal_stage = "preemption_handoff"
+                    else:
+                        if active.pending_manual is not None:
+                            terminal_stage = "handoff_pending"
+                        elif not visual_request.proactive and not active.proactive:
+                            terminal_stage = "active_manual_generation_guard"
+                        else:
+                            terminal_stage = "active_proactive"
+                        raise GatewayError(
+                            "vision_busy",
+                            "A visual request is already active for this session.",
+                            http_status=409,
+                        )
 
             if not owns_slot:
                 if preempted_task is not None and not preempted_task.done():
@@ -381,7 +472,9 @@ def create_app(
                             transferred = active.owner_task is current_task
                             if not transferred and active.pending_manual is current_task:
                                 active.pending_manual = None
+                                active.pending_manual_generation = None
                         if not transferred:
+                            terminal_stage = "preemption_handoff_timeout"
                             raise GatewayError(
                                 "vision_busy",
                                 "The previous visual request is still stopping.",
@@ -397,6 +490,7 @@ def create_app(
                         request.app.state.active_visual_requests.get(session_id) is not active
                         or active.owner_task is not current_task
                     ):
+                        terminal_stage = "preemption_handoff_lost"
                         raise GatewayError(
                             "vision_busy",
                             "A visual request is already active for this session.",
@@ -409,9 +503,16 @@ def create_app(
                     )
                     owns_slot = True
 
+            _log_visual_event(
+                "request_started", visual_request,
+                stage="upstream_call", started_at=started,
+            )
+            terminal_stage = "upstream_call"
             if active.upstream_task is None:
                 raise RuntimeError("visual request slot has no upstream task")
             raw_answer = await _complete_or_disconnect(active.upstream_task, disconnect_task)
+            if text_trace is not None:
+                text_trace.record("model_response", visual_request, raw_answer=raw_answer)
             try:
                 answer = parse_visual_answer(raw_answer, question=visual_request.question)
             except InvalidRequest:
@@ -430,18 +531,107 @@ def create_app(
                 "uncertain": answer.uncertain,
                 "elapsed_ms": max(0, int((time.monotonic() - started) * 1000)),
             }
+            if text_trace is not None:
+                text_trace.record(
+                    "validated_response",
+                    visual_request,
+                    answer=answer.answer,
+                    kind=answer.kind,
+                    uncertain=answer.uncertain,
+                    elapsed_ms=result["elapsed_ms"],
+                )
             _AUDIT_LOGGER.info(
-                "assistant_gateway_visual event=response_validated generation=%s turn_id=%s frame_id=%s context_count=%s kind=%s uncertain=%s answer_chars=%s elapsed_ms=%s",
+                "assistant_gateway_visual event=response_validated generation=%s turn_id=%s frame_id=%s context_count=%s proactive=%s stage=response_validation kind=%s uncertain=%s answer_chars=%s elapsed_ms=%s",
                 visual_request.generation,
                 visual_request.turn_id,
                 visual_request.frame_id,
                 len(visual_request.context_frames),
+                str(visual_request.proactive).lower(),
                 answer.kind,
                 answer.uncertain,
                 len(answer.answer),
                 result["elapsed_ms"],
             )
+            _log_visual_event(
+                "success", visual_request,
+                stage="response_validation", started_at=started,
+                kind=answer.kind, uncertain=answer.uncertain,
+                answer_chars=len(answer.answer),
+            )
+            if text_trace is not None:
+                text_trace.record(
+                    "terminal",
+                    visual_request,
+                    code="success",
+                    stage="response_validation",
+                    elapsed_ms=result["elapsed_ms"],
+                )
             return JSONResponse(result)
+        except asyncio.CancelledError:
+            superseded_by_generation = None
+            stage = "client_disconnect" if disconnect_task.done() else "route_cancelled"
+            if (
+                active is not None
+                and active.owner_task is current_task
+                and active.pending_manual is not None
+            ):
+                stage = "superseded_by_manual"
+                superseded_by_generation = active.pending_manual_generation
+            elif terminal_stage == "preemption_handoff" and disconnect_task.done():
+                stage = "client_disconnect_during_handoff"
+            _log_visual_event(
+                "cancelled", visual_request,
+                stage=stage, started_at=started,
+                superseded_by_generation=superseded_by_generation,
+            )
+            if text_trace is not None:
+                text_trace.record(
+                    "terminal",
+                    visual_request,
+                    code="cancelled",
+                    stage=stage,
+                    elapsed_ms=max(0, int((time.monotonic() - started) * 1000)),
+                )
+            raise
+        except GatewayError as exc:
+            if exc.code == "vision_busy":
+                event = "busy"
+            elif exc.code == "vision_timeout":
+                event = "timeout"
+                terminal_stage = "provider_call"
+            else:
+                event = "failed"
+            _log_visual_event(
+                event, visual_request,
+                stage=terminal_stage, started_at=started,
+                code=exc.code,
+                active_generation=active_generation,
+            )
+            if text_trace is not None:
+                text_trace.record(
+                    "terminal",
+                    visual_request,
+                    code=exc.code,
+                    stage=terminal_stage,
+                    elapsed_ms=max(0, int((time.monotonic() - started) * 1000)),
+                )
+            raise
+        except Exception:
+            _log_visual_event(
+                "failed", visual_request,
+                stage=terminal_stage, started_at=started,
+                code="internal_error",
+                active_generation=active_generation,
+            )
+            if text_trace is not None:
+                text_trace.record(
+                    "terminal",
+                    visual_request,
+                    code="internal_error",
+                    stage=terminal_stage,
+                    elapsed_ms=max(0, int((time.monotonic() - started) * 1000)),
+                )
+            raise
         finally:
             if not disconnect_task.done():
                 disconnect_task.cancel()
@@ -457,6 +647,7 @@ def create_app(
                         if active.pending_manual is not None:
                             active.owner_task = active.pending_manual
                             active.pending_manual = None
+                            active.pending_manual_generation = None
                             active.proactive = False
                             active.upstream_task = None
                             active.handoff.set()
@@ -466,6 +657,7 @@ def create_app(
                             active.handoff.set()
                     elif active.pending_manual is current_task:
                         active.pending_manual = None
+                        active.pending_manual_generation = None
 
     @app.websocket("/v1/audio")
     async def audio(websocket: WebSocket) -> None:

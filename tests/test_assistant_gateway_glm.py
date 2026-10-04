@@ -58,13 +58,13 @@ def test_glm_direct_stream_uses_pinned_request_shape_and_raw_base64_image() -> N
     assert body["thinking"] == {"type": "disabled"}
     assert "response_format" not in body
     assert "Simplified Chinese" in body["messages"][0]["content"]
-    assert "kind=hud for live match values" in body["messages"][0]["content"]
-    assert "Use kind=ui_text for stable menu text" in body["messages"][0]["content"]
-    assert "Do not guess hidden positions, cooldowns" in body["messages"][0]["content"]
-    assert "do not answer with only gold or a timer" in body["messages"][0]["content"]
-    assert "后羿/鲁班七号" in body["messages"][0]["content"]
-    assert "kind=hud for live match values and advice" in body["messages"][0]["content"]
-    assert "开心消消乐" in body["messages"][0]["content"]
+    system = body["messages"][0]["content"]
+    assert "hud for match/lineup/board-dependent advice" in system
+    assert "ui_text for stable menu text" in system
+    assert "Never invent hero/icon identities, hidden enemies, cooldowns" in system
+    assert "Do not substitute gold, timer" in system
+    assert "王者荣耀 versus 开心消消乐" in system
+    assert "FIRST sentence" in system
     assert body["messages"][0]["content"] == SYSTEM_PROMPT
     image = body["messages"][1]["content"][1]["image_url"]["url"]
     assert image == "/9j/RAWBASE64"
