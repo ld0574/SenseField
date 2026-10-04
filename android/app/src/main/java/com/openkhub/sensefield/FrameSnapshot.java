@@ -13,7 +13,7 @@ final class FrameSnapshot {
     final long signature;
     final DiagnosticPixels pixels;
 
-    private FrameSnapshot(long id, long at, long generation, long signature, DiagnosticPixels pixels) {
+    FrameSnapshot(long id, long at, long generation, long signature, DiagnosticPixels pixels) {
         this.frameId = id; this.capturedAtMs = at; this.generation = generation;
         this.signature = signature; this.pixels = pixels;
     }

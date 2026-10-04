@@ -55,6 +55,18 @@ public class AppUpdateClientTest {
     }
 
     @Test
+    public void offlineVoiceApkCanBeOfferedWithoutRemovingTheDownloadSizeLimit() throws Exception {
+        JSONObject voicePackage = manifest().put("apk_bytes", 214121822L);
+        AppUpdateRelease release = AppUpdateClient.parseSelfHostedManifest(voicePackage, 18,
+                PACKAGE_NAME, SELF_HOSTED_METADATA);
+        assertNotNull(release);
+        assertEquals(214121822L, release.getBytes());
+        assertThrows(java.io.IOException.class, () -> AppUpdateClient.parseSelfHostedManifest(
+                voicePackage.put("apk_bytes", 256L * 1024L * 1024L + 1),
+                18, PACKAGE_NAME, SELF_HOSTED_METADATA));
+    }
+
+    @Test
     public void manifestRejectsDifferentPackageAndNonSameOriginApkUrls() throws Exception {
         JSONObject differentPackage = manifest();
         differentPackage.put("package_name", "com.attacker.app");

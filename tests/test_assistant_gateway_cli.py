@@ -21,3 +21,5 @@ def test_cli_logging_enables_only_the_gateway_audit_logger() -> None:
     assert "httpx" not in config["loggers"]
     assert "mapassist.assistant_gateway.audit" not in uvicorn.config.LOGGING_CONFIG["loggers"]
     assert config["handlers"]["default"] == uvicorn.config.LOGGING_CONFIG["handlers"]["default"]
+    assert "%(asctime)s" in config["formatters"]["default"]["fmt"]
+    assert "%(asctime)s" not in uvicorn.config.LOGGING_CONFIG["formatters"]["default"]["fmt"]

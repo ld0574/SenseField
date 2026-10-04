@@ -183,3 +183,37 @@ tasks.register('verifyMinimapModelAssets') {
 tasks.named('preBuild').configure {
     dependsOn tasks.named('verifyMinimapModelAssets')
 }
+
+tasks.register('verifyOnDeviceAsrAssets') {
+    def directory = file('src/main/assets/sensevoice')
+    def metadataFile = file('src/main/assets/sensevoice.metadata.json')
+    inputs.files(metadataFile, file("${directory}/model.int8.onnx"), file("${directory}/tokens.txt"))
+    doLast {
+        def files = ['model.int8.onnx', 'tokens.txt'].collect { file("${directory}/${it}") }
+        if (files.every { !it.isFile() }) {
+            logger.lifecycle('Local ASR assets are absent; continuous voice will report unavailable without cloud fallback.')
+            return
+        }
+        if (files.any { !it.isFile() } || !metadataFile.isFile()) {
+            throw new GradleException('Local ASR requires both pinned model/tokens and sensevoice.metadata.json.')
+        }
+        def metadata = new JsonSlurper().parse(metadataFile)
+        files.each { asset ->
+            def expected = metadata.files[asset.name]
+            def digest = MessageDigest.getInstance('SHA-256')
+            asset.withInputStream { stream ->
+                byte[] block = new byte[65536]
+                int count
+                while ((count = stream.read(block)) != -1) digest.update(block, 0, count)
+            }
+            if (!expected || asset.length() != expected.size
+                    || digest.digest().encodeHex().toString() != expected.sha256) {
+                throw new GradleException("Local ASR asset ${asset.name} does not match its pinned manifest.")
+            }
+        }
+    }
+}
+
+tasks.named('preBuild').configure {
+    dependsOn tasks.named('verifyOnDeviceAsrAssets')
+}

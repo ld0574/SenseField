@@ -1,6 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+vision_only=0
+while (($#)); do
+  case "$1" in
+    --vision-only)
+      if ((vision_only)); then
+        echo "Usage: $0 [--vision-only]" >&2
+        exit 2
+      fi
+      vision_only=1
+      ;;
+    *)
+      echo "Usage: $0 [--vision-only]" >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
 python_bin="${PYTHON:-python3}"
 "$python_bin" - <<'PY'
 import sys
@@ -18,22 +36,29 @@ else
 fi
 
 platform="$($python_bin -c 'import sys; print(sys.platform)')"
-wheelhouse_args=()
-if [[ -n "${ASSISTANT_GATEWAY_WHEELHOUSE:-}" ]]; then
-  wheelhouse_args=(--find-links "$ASSISTANT_GATEWAY_WHEELHOUSE")
+
+install_with_wheelhouse() {
+  if [[ -n "${ASSISTANT_GATEWAY_WHEELHOUSE:-}" ]]; then
+    "${installer[@]}" --find-links "$ASSISTANT_GATEWAY_WHEELHOUSE" "$@"
+  else
+    "${installer[@]}" "$@"
+  fi
+}
+
+if ((vision_only)); then
+  install_with_wheelhouse -e ".[assistant-vision-gateway]"
+  exit 0
 fi
 
 if [[ "$platform" == "linux" ]]; then
-  "${installer[@]}" \
+  install_with_wheelhouse \
     --index-url https://download.pytorch.org/whl/cpu \
     --extra-index-url https://pypi.org/simple \
-    "${wheelhouse_args[@]}" \
     "torch==2.8.0+cpu"
-  "${installer[@]}" \
+  install_with_wheelhouse \
     --index-url https://pypi.org/simple \
     --extra-index-url https://download.pytorch.org/whl/cpu \
-    "${wheelhouse_args[@]}" \
     -e ".[assistant-gateway]"
 else
-  "${installer[@]}" -e ".[assistant-gateway]"
+  install_with_wheelhouse -e ".[assistant-gateway]"
 fi

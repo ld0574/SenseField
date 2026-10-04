@@ -1,6 +1,6 @@
 # Assistant Gateway Linux 合成部署测试
 
-本文说明如何复现隔离的 Linux 网关合成冒烟测试。网关只绑定回环地址，通过 SSH direct-tcpip 隧道访问；测试使用经校验的自签名 TLS 证书、固定版本的 CPU Paraformer、独立设备令牌，以及服务端 Zhipu API Key 完成一次合成 GLM 请求。
+本文记录历史 Linux 网关合成冒烟测试及当前后续验证边界。历史服务只绑定回环地址，通过 SSH direct-tcpip 隧道访问；当时使用经校验的自签名 TLS 证书、固定版本的 CPU Paraformer、独立设备令牌，以及服务端 Zhipu API Key 完成合成 GLM 请求。后续源码新增了可显式选择的 ASR 后端，但不代表该后端已部署在历史 Linux 主机。
 
 2026-10-04 的后续修订增加服务端视觉提供商选择。`ASSISTANT_GATEWAY_VISION_PROVIDER=zhipu` 使用智谱原生接口，模型由 `ASSISTANT_GATEWAY_GLM_MODEL` 指定，默认仍是 `glm-4.6v-flash`。compatible API 在私有服务端环境中配置 `ASSISTANT_GATEWAY_VISION_BASE_URL`、`ASSISTANT_GATEWAY_VISION_MODEL`、`ASSISTANT_GATEWAY_VISION_API_KEY`。按用户先 MiniMax、再千问的顺序测试后，当前明确选择上游 `/models` 返回的 `qwen/qwen3.8-27b`：合成选项图通过完整 TLS 网关，单次往返 1350 ms。MiniMax-M3 在本轮返回 HTTP 200 空正文或耗尽输出预算，不等同于 429 限流；此前无 namespace 的千问单次 503 保留为历史，不能仅凭新结果确定其全部原因。该接口图片使用 JPEG data URL，智谱接口仍使用原始 Base64。APK 不包含供应商密钥，客户端无需更换模型专用安装包。模型/HTTPS 地址在启动前校验，`/health` 仅显示模型名称等安全状态；没有自动回退或切换提供商。详见[本轮记录](../../validation/ASSISTANT_LIVE_0.4.1_2026-10-04.md)。
 
@@ -83,3 +83,39 @@ Linux 客户端首次运行完成 HTTPS 和 GLM 检查后，本地 harness 在�
 本次只测试了经 SSH 隧道访问的 Linux 网关自身，没有测试 Android 应用连接 Linux 网关、Android 麦克风、真实游戏截图或物理音频播放；图像与语音均为合成输入。
 
 脱敏结果保存在被 Git 忽略的 `output/assistant/0.4.0/server-test/server-test-result.json`。测试结束后已停止网关、关闭监听、撤销远端测试令牌，并删除远端 TLS 证书、私钥和 PCM 副本。远端原有 Zhipu 环境文件和测试日志可保留在权限 `0600` 下；访问日志已关闭。本地只保留测试公钥证书，私钥已删除。下次复现需重新生成匹配的证书和私钥，并重新生成设备令牌；完成测试后删除私钥和令牌，不长期保留。
+
+## 手机端 ASR 安装验证、服务器比较实验与主机快照（2026-10-04）
+
+当前部署使用下面的 `vision_only` 方式。此前章节中的 PyTorch、Paraformer、模型快照和 WSS 命令是0.4.0历史服务端比较流程，不是当前手机离线识别的服务器安装要求。
+
+### 当前轻量部署与 Android 资产准备
+
+在项目根目录创建 Python 3.10–3.13 的虚拟环境，安装轻量网关依赖：
+
+```sh
+python3 -m venv .venv
+PYTHON=.venv/bin/python bash scripts/assistant_gateway_install_deps.sh --vision-only
+```
+
+服务环境文件必须设置 `ASSISTANT_GATEWAY_ASR_BACKEND=disabled`，再按现有方式配置设备令牌、视觉提供商和TLS。该模式不初始化ASR，`/v1/audio`关闭；配置好的 `/v1/visual` 仍经认证可用，health报告 `vision_only` / `asr_ready=false`。轻量extra不安装PyTorch、FunASR、Hugging Face或模型缓存；旧CPU对照安装方式仅在显式需要比较时使用。CLI mock参数测试覆盖轻量路径、旧Linux路径与非法参数，没有实际执行包安装或远端迁移。
+
+Android大模型不入Git。下列脚本按 `sensevoice.metadata.json` 的完整revision、大小与SHA获取官方公开文件，只在主动执行时下载；构建本身不会隐式下载ASR权重。已有文件可传 `--source-dir`，本地源缺失或校验失败时不回退网络。
+
+```sh
+python3 scripts/prepare_android_asr_assets.py
+python3 scripts/prepare_android_asr_assets.py --check-only
+```
+
+模型许可与runtime许可在APK的 `assets/sensevoice/` 中；构建校验拒绝半套或不匹配的资产，启动再次核验并复制至不备份目录。缺失模型时语音明确不可用，既有本地预警继续，不会转到服务器ASR。
+
+当前约214MB APK超过旧更新器100MiB上限；后续候选上限修为256MiB，并保留流式大小、SHA、同源HTTPS、包名和签名校验。旧客户端首次进入此候选需人工覆盖安装；尚未制作过渡包或上传CDN。已装手机包与用户离开后的源码候选分别记录，不宣称新版上限已在手机中生效。
+
+HOT目前停止VAD/ASR处理并废弃结果，但AudioRecord仍读入并丢弃帧；没有宣称释放麦克风或零采音负载。真实麦克风、游戏开麦让路、物理时延及热/负载门禁仍待实测。后续候选修复了native失败与取消并发时引擎被释放却仍显示加载中的状态，失败会独立通知会话，不回传旧文本。
+
+历史服务器 ASR 对照代码包含 CPU Python Paraformer；此前显式 `ASSISTANT_GATEWAY_ASR_BACKEND=sensevoice_int8` 与 `ASSISTANT_GATEWAY_SENSEVOICE_MODEL_DIR` 可选 CPU SenseVoiceSmall int8 ONNX。两个比较后端都使用连续监听/VAD 分段，在完整语音段结束后识别一次，不输出 partial；SenseVoice 使用 `sherpa-onnx==1.13.8`，manifest 固定约 239 MB 的 `model.int8.onnx` 与 tokens 文件。FunAudioLLM/Alibaba SenseVoiceSmall 的模型许可是 [FunASR Model Open Source License Agreement 1.1](https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE)，不是 Apache-2.0。Paraformer/SenseVoice server-cache 只属于历史服务端对照安排；新的本地候选允许模型 asset 随 APK 分发，但二进制不入 Git，需随包注明 FunASR Model License 1.1、Sherpa Apache-2.0、ONNX Runtime MIT。网关代码为 MIT。
+
+已安装的 APK 为 Android 10+ 手机端 ASR：bundled SenseVoiceSmall int8 作为约 239 MB APK asset，本地复制并校验哈希；JNI sherpa-onnx 1.13.8 + ONNX Runtime 1.28.2 单线程 CPU 运行，不依赖系统 on-device service。音频不联网、不落盘；只有用户问画面时才把文本问题和授权截图送到视觉网关。取消时保留单 slot 至 native 退出，设备 HOT 时暂停输入，无云端 fallback。该 APK 已无线安装至小米 Android 14，版本 `0.4.1/code18`，大小 214121822 bytes，SHA-256 `4218bf94b03153e48e9e313fd28900139c14c0bba000e534289cd4f799df5759`。服务端 Paraformer/SenseVoice 数据只作为比较实验，不代表手机端效果。
+
+Mac 上对同一段 1,769 ms 合成 PCM 的单点记录为：旧协议 Paraformer（4 threads）speech-end finalization 2,324 ms；新协议记录 `inference_ms=185 ms`。SenseVoice 对 score、build、draft 三类合成样本的直接识别耗时分别为 85、139、145 ms，预设关键词判断通过。服务器 ASR 合成 WSS 对照的 speech-end 至 final 为 274 ms 单点，这些服务端数值都来自合成输入。手机端 instrumentation 的纯合成 PCM 测试新增 1 项，比分、出装、选人三例分别为 170、294、352 ms，关键词和 `isRequest` 断言通过。此测试不是物理麦克风采音、真实发声、P95 或温升测量；直接 recognizer inference、WSS speech-end-to-final、instrumentation 场景耗时和实际客户端端到端也不是同一计时范围。历史 Linux Paraformer WSS 的 199 ms finalization / 313 ms inference 仍是较早服务记录。
+
+在 2026-10-04 的一次只读检查中，所提供的 Linux 主机 SSH 可达，显示 8 个在线逻辑 CPU、AMD Ryzen 9 5900X；当时预期环境文件、`/opt/mapassist` 项目与 Python runtime、固定 ASR 模型缓存均不存在，回环服务端口拒绝连接。该次检查没有发起 HTTPS/WSS ASR，也没有运行直接推理，是有明确时间点的主机快照。此后网关已设 `ASSISTANT_GATEWAY_ASR_BACKEND=disabled` 并重启；健康检查 HTTP 200，报告 `vision_only` / `asr_ready=false`，服务器 ASR 已停用且不加载模型，视觉 Qwen 配置未变。此前已安装的 `0.4.1/code18` APK 对应构建回归通过 225 项 JVM、10 项 instrumentation、103 项 Python 网关测试，以及 Debug/Test APK 构建和 lint；ASR instrumentation 为上述纯合成 PCM 用例。真实麦克风、物理发声、P95 和温升仍未验证。

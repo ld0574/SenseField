@@ -387,3 +387,25 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 The source headers additionally refer to the WebRTC patent grant in its PATENTS
 file; see https://webrtc.googlesource.com/src/+/refs/heads/main/PATENTS.
+
+
+======================================================================
+Phone offline ASR (optional continuous voice)
+======================================================================
+SenseVoiceSmall int8 ONNX weights by FunAudioLLM/Alibaba,
+ONNX conversion by csukuangfj / sherpa-onnx.
+Source: csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17
+Pinned revision: 2365baeacb507f821a0c8120fcee3d484dba7a07
+Model license: FunASR Model Open Source License Agreement 1.1.
+See bundled sensevoice/MODEL_LICENSE.txt. These weights are not Apache-2.0.
+
+Inference runtime: sherpa-onnx 1.13.8, Apache License 2.0.
+Source: https://github.com/k2-fsa/sherpa-onnx/tree/v1.13.8
+See sensevoice/SHERPA_LICENSE.txt.
+
+ONNX Runtime 1.28.2, MIT License, Microsoft Corporation.
+See sensevoice/ONNXRUNTIME_LICENSE.txt and
+sensevoice/ONNXRUNTIME_THIRD_PARTY_NOTICES.txt for runtime dependencies.
+
+Local ASR uses one CPU inference thread and VAD-delimited utterances.
+No microphone audio is sent to a recognition server or saved as an audio file.

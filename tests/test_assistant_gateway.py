@@ -20,7 +20,12 @@ from mapassist.assistant_gateway.app import create_app
 from mapassist.assistant_gateway.audio import GenerationHighWater, _merge_recognized_text
 from mapassist.assistant_gateway.config import GatewaySettings
 from mapassist.assistant_gateway.errors import AsrBusy
-from mapassist.assistant_gateway.validation import UNKNOWN_ANSWER, parse_visual_answer
+from mapassist.assistant_gateway.validation import (
+    UNKNOWN_ANSWER,
+    InvalidRequest,
+    parse_visual_answer,
+    validate_visual_request,
+)
 
 
 TOKEN = "test-device-token-not-a-secret"
@@ -70,8 +75,8 @@ def _settings() -> GatewaySettings:
     )
 
 
-def _image_base64() -> str:
-    image = Image.new("RGB", (32, 20), "white")
+def _image_base64(color: str = "white") -> str:
+    image = Image.new("RGB", (32, 20), color)
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
     return base64.b64encode(buffer.getvalue()).decode("ascii")
@@ -122,7 +127,11 @@ def test_health_and_visual_auth_and_response_ids() -> None:
 def test_visual_rejects_oversized_body_and_malformed_image() -> None:
     with TestClient(create_app(_settings(), recognizer=FakeRecognizer(), vision_client=FakeVision())) as client:
         auth = {"Authorization": f"Bearer {TOKEN}"}
-        oversized = client.post("/v1/visual", content=b" " * (700 * 1024 + 1), headers=auth)
+        oversized = client.post(
+            "/v1/visual",
+            content=b" " * (3 * 700 * 1024 + 16 * 1024 + 1),
+            headers=auth,
+        )
         assert oversized.status_code == 413
         assert oversized.json()["error"]["code"] == "request_too_large"
 
@@ -156,31 +165,31 @@ def test_https_is_required_for_production_health_and_api() -> None:
         assert secure_client.get("/health").status_code == 200
 
 
-def test_unsafe_or_unreadable_model_output_becomes_unknown() -> None:
-    unsafe = FakeVision('{"kind":"hud","answer":"Enemy is to the left; move now.","uncertain":false}')
-    with TestClient(create_app(_settings(), recognizer=FakeRecognizer(), vision_client=unsafe)) as client:
+def test_structured_tactical_answer_is_not_rejected_by_a_keyword_filter() -> None:
+    advice = FakeVision('{"kind":"hud","answer":"建议利用掩体推进，先补足防御装备。","uncertain":false}')
+    with TestClient(create_app(_settings(), recognizer=FakeRecognizer(), vision_client=advice)) as client:
         response = client.post("/v1/visual", json=_visual_payload(), headers={"Authorization": f"Bearer {TOKEN}"})
     assert response.status_code == 200
-    assert response.json()["kind"] == "unknown"
-    assert response.json()["uncertain"] is True
+    assert response.json()["kind"] == "hud"
+    assert response.json()["answer"] == "建议利用掩体推进，先补足防御装备。"
+    assert response.json()["uncertain"] is False
 
 
 @pytest.mark.parametrize(
     "answer",
     [
-        "敌人在右上，往左走。",
-        "建议撤退。",
-        "敌方在地图西侧，向前推进并开火。",
-        "去楼上绕后包抄。",
+        "建議先出護甲，再根据可见阵容调整。",
+        "建议利用掩体推进，先补足防御装备。",
+        "先升级护盾，团战时保留技能。",
     ],
 )
-def test_chinese_enemy_location_or_tactical_output_becomes_unknown(answer: str) -> None:
+def test_game_aware_strategy_and_equipment_advice_remains_readable(answer: str) -> None:
     parsed = parse_visual_answer(
         '{"kind":"hud","answer":' + json.dumps(answer, ensure_ascii=False) + ',"uncertain":false}'
     )
-    assert parsed.kind == "unknown"
-    assert parsed.answer == UNKNOWN_ANSWER
-    assert parsed.uncertain is True
+    assert parsed.kind == "hud"
+    assert parsed.answer == answer
+    assert parsed.uncertain is False
 
 
 @pytest.mark.parametrize(
@@ -195,6 +204,181 @@ def test_chinese_hud_values_and_stable_menu_text_remain_readable(kind: str, answ
     )
     assert parsed.kind == kind
     assert parsed.answer == answer
+
+
+def test_build_question_is_not_answered_with_only_gold_or_timer() -> None:
+    for answer, question in (
+        ("目前有1200金币，对局时间10:20。", "What should I build?"),
+        ("金币不够。", "我现在应该买什么？"),
+        ("The timer shows 10:20.", "What should I buy?"),
+    ):
+        parsed = parse_visual_answer(
+            '{"kind":"hud","answer":' + json.dumps(answer, ensure_ascii=False) + ',"uncertain":false}',
+            question=question,
+        )
+        assert parsed.kind == "unknown"
+        assert parsed.answer == UNKNOWN_ANSWER
+        assert parsed.uncertain is True
+
+    useful = parse_visual_answer(
+        '{"kind":"ui_text","answer":"有1200金币，建议先买防具。","uncertain":false}',
+        question="What should I build?",
+    )
+    assert useful.kind == "hud"
+    assert useful.answer == "有1200金币，建议先买防具。"
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "我这局应该怎么出装？",
+        "根据阵容该选哪个英雄？",
+        "这个画面我应该选哪个？",
+        "这个画面我应该怎么打？",
+        "What should I buy for this build?",
+        "How should I play this round?",
+        "Which hero should I choose for this lineup?",
+    ],
+)
+def test_dynamic_advice_is_hud_even_if_model_labels_it_ui_text(question: str) -> None:
+    parsed = parse_visual_answer(
+        '{"kind":"ui_text","answer":"建议保护后排，再寻找合适时机推进。","uncertain":false}',
+        question=question,
+    )
+    assert parsed.kind == "hud"
+    assert parsed.answer == "建议保护后排，再寻找合适时机推进。"
+    assert parsed.uncertain is False
+
+
+def test_stable_equipment_explanation_keeps_longer_freshness_kind() -> None:
+    parsed = parse_visual_answer(
+        '{"kind":"ui_text","answer":"暗影战斧常用于提升战士的物理压制能力。","uncertain":false}',
+        question="暗影战斧的作用是什么？",
+    )
+    assert parsed.kind == "ui_text"
+
+
+def test_dynamic_question_does_not_reclassify_unknown() -> None:
+    parsed = parse_visual_answer(
+        '{"kind":"unknown","answer":"","uncertain":true}',
+        question="这个画面我应该怎么打？",
+    )
+    assert parsed.kind == "unknown"
+    assert parsed.answer == ""
+
+
+@pytest.mark.parametrize(
+    "answer",
+    ["这是一段很长的回答。" * 20, "第一句。第二句。第三句。"],
+)
+def test_answer_length_and_sentence_bounds_remain_enforced(answer: str) -> None:
+    parsed = parse_visual_answer(
+        '{"kind":"ui_text","answer":' + json.dumps(answer, ensure_ascii=False) + ',"uncertain":false}'
+    )
+    assert parsed.kind == "unknown"
+    assert parsed.answer == UNKNOWN_ANSWER
+
+
+def test_output_boundary_and_exact_schema_remain_enforced() -> None:
+    with pytest.raises(InvalidRequest, match="valid JSON"):
+        parse_visual_answer('Here is the answer: {"kind":"ui_text","answer":"建议先出防具。","uncertain":false}')
+    with pytest.raises(InvalidRequest, match="exactly the required keys"):
+        parse_visual_answer(
+            '{"kind":"ui_text","answer":"建议先出防具。","uncertain":false,"debug":"private"}'
+        )
+
+
+def test_context_frames_are_optional_and_sorted_oldest_first() -> None:
+    legacy = validate_visual_request(_visual_payload())
+    assert legacy.context_frames == ()
+
+    request = validate_visual_request(
+        _visual_payload(
+            context_frames=[
+                {"frame_id": "frame-newer", "frame_age_ms": 2_000, "image_base64": _image_base64("blue")},
+                {"frame_id": "frame-older", "frame_age_ms": 5_000, "image_base64": _image_base64("red")},
+            ]
+        )
+    )
+    assert [frame.frame_id for frame in request.context_frames] == ["frame-older", "frame-newer"]
+    assert [frame.frame_age_ms for frame in request.context_frames] == [5_000, 2_000]
+
+
+@pytest.mark.parametrize(
+    ("context_frames", "primary_age", "message"),
+    [
+        ([{"frame_id": "a", "frame_age_ms": 1000, "image_base64": _image_base64()},
+          {"frame_id": "b", "frame_age_ms": 2000, "image_base64": _image_base64()},
+          {"frame_id": "c", "frame_age_ms": 3000, "image_base64": _image_base64()}], 40, "at most two"),
+        ([{"frame_id": "frame-19", "frame_age_ms": 1000, "image_base64": _image_base64()}], 40, "distinct"),
+        ([{"frame_id": "same", "frame_age_ms": 1000, "image_base64": _image_base64()},
+          {"frame_id": "same", "frame_age_ms": 2000, "image_base64": _image_base64()}], 40, "distinct"),
+        ([{"frame_id": "older", "frame_age_ms": 40, "image_base64": _image_base64()}], 40, "older"),
+        ([{"frame_id": "too-old", "frame_age_ms": 6001, "image_base64": _image_base64()}], 40, "0 to 6000"),
+    ],
+)
+def test_invalid_context_frame_metadata_is_rejected(
+    context_frames: list[dict[str, object]], primary_age: int, message: str
+) -> None:
+    with pytest.raises(InvalidRequest, match=message):
+        validate_visual_request(_visual_payload(frame_age_ms=primary_age, context_frames=context_frames))
+
+
+def test_context_images_are_forwarded_in_order_and_redacted_audit_has_only_scalars(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class ContextVision:
+        def __init__(self) -> None:
+            self.call: tuple[str, str, tuple[str, ...]] | None = None
+
+        async def complete(
+            self,
+            *,
+            question: str,
+            image_base64: str,
+            context_images: tuple[str, ...],
+        ) -> str:
+            self.call = (question, image_base64, context_images)
+            return '{"kind":"ui_text","answer":"建议先补护甲。","uncertain":false}'
+
+        async def close(self) -> None:
+            return None
+
+    vision = ContextVision()
+    payload = _visual_payload(
+        question="PRIVATE_USER_QUESTION what should I build?",
+        frame_age_ms=100,
+        context_frames=[
+            {"frame_id": "ctx-newer", "frame_age_ms": 2_000, "image_base64": _image_base64("blue")},
+            {"frame_id": "ctx-older", "frame_age_ms": 5_000, "image_base64": _image_base64("red")},
+        ],
+    )
+    with caplog.at_level(logging.INFO, logger="mapassist.assistant_gateway.audit"):
+        with TestClient(create_app(_settings(), recognizer=FakeRecognizer(), vision_client=vision)) as client:
+            response = client.post(
+                "/v1/visual",
+                json=payload,
+                headers={"Authorization": f"Bearer {TOKEN}"},
+            )
+    assert response.status_code == 200
+    assert response.json()["answer"] == "建议先补护甲。"
+    assert vision.call is not None
+    question, primary_image, context_images = vision.call
+    assert context_images == (
+        validate_visual_request({**payload, "context_frames": [payload["context_frames"][1]]})
+        .context_frames[0]
+        .image.jpeg_base64,
+        validate_visual_request({**payload, "context_frames": [payload["context_frames"][0]]})
+        .context_frames[0]
+        .image.jpeg_base64,
+    )
+    assert primary_image == validate_visual_request(_visual_payload(image_base64=payload["image_base64"])).image.jpeg_base64
+    assert "5000 ms before" in question and "2000 ms before" in question and "100 ms old" in question
+    assert "PRIVATE_USER_QUESTION" not in " ".join(record.getMessage() for record in caplog.records)
+    audit = " ".join(record.getMessage() for record in caplog.records)
+    assert "event=request_accepted" in audit and "event=response_validated" in audit
+    assert "context_count=2" in audit and "answer_chars=7" in audit
+    assert "建议先补护甲" not in audit and _image_base64("red") not in audit
 
 
 def test_websocket_requires_authorization() -> None:

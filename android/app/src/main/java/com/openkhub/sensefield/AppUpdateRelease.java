@@ -4,7 +4,8 @@ import okhttp3.HttpUrl;
 
 /** Immutable, validated metadata for one application update. */
 public final class AppUpdateRelease {
-    public static final long MAX_APK_BYTES = 100L * 1024L * 1024L;
+    // The offline voice model makes the current APK about 214 MB.
+    public static final long MAX_APK_BYTES = 256L * 1024L * 1024L;
 
     private final String packageName;
     private final String versionName;

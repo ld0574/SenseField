@@ -1,8 +1,14 @@
 package com.openkhub.sensefield;
 
 import android.util.Base64;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -32,6 +38,20 @@ final class AssistantGatewayClient implements AutoCloseable {
         void visualFailure(long requestId, String code);
         default void visualDiagnostic(long requestId, int httpStatus, String source,
                 String providerCode, int upstreamHttpStatus, long retryAfterSeconds) { }
+    }
+    static final class ContextImage {
+        final String frameId;
+        final long frameAgeMs;
+        final byte[] jpeg;
+        ContextImage(String frameId, long frameAgeMs, byte[] jpeg) {
+            this.frameId = frameId; this.frameAgeMs = frameAgeMs; this.jpeg = jpeg;
+        }
+    }
+    private static final class EncodedContextImage {
+        final ContextImage context; final String base64;
+        EncodedContextImage(ContextImage context, String base64) {
+            this.context = context; this.base64 = base64;
+        }
     }
     private final AssistantSettings settings;
     private final Listener listener;
@@ -102,10 +122,51 @@ final class AssistantGatewayClient implements AutoCloseable {
     }
     void visual(long requestId, AssistantSession session, String turn, FrameSnapshot frame,
                 byte[] jpeg, String question, boolean proactive, long now) {
+        visual(requestId, session, turn, frame, jpeg, Collections.emptyList(), question, proactive, now);
+    }
+
+    void visual(long requestId, AssistantSession session, String turn, FrameSnapshot frame,
+                byte[] jpeg, List<ContextImage> contextFrames, String question, boolean proactive, long now) {
+        String primaryBase64 = Base64.encodeToString(jpeg, Base64.NO_WRAP);
+        Set<String> includedIds = new HashSet<>();
+        ArrayList<ContextImage> orderedContext = new ArrayList<>();
+        if (contextFrames != null) orderedContext.addAll(contextFrames);
+        orderedContext.sort((left, right) -> Long.compare(right.frameAgeMs, left.frameAgeMs));
+        ArrayList<EncodedContextImage> encodedImages = new ArrayList<>(FrameHistory.CAPACITY);
+        String primaryFrameId = String.valueOf(frame.frameId);
+        long initialPrimaryAgeMs = Math.max(0, now - frame.capturedAtMs);
+        for (ContextImage context : orderedContext) {
+            if (encodedImages.size() >= FrameHistory.CAPACITY) break;
+            if (!validContextImage(context, primaryFrameId, initialPrimaryAgeMs)
+                    || !includedIds.add(context.frameId)) continue;
+            encodedImages.add(new EncodedContextImage(context,
+                    Base64.encodeToString(context.jpeg, Base64.NO_WRAP)));
+        }
+
+        // Measure ages after Base64 work, close to request serialization, so a frame
+        // that crosses the six-second boundary while encoding is omitted.
+        long payloadAt = Math.max(now, android.os.SystemClock.elapsedRealtime());
+        long primaryAgeMs = Math.max(0, payloadAt - frame.capturedAtMs);
+        JSONArray encodedContext = new JSONArray();
+        for (EncodedContextImage encoded : encodedImages) {
+            ContextImage context = encoded.context;
+            long contextAgeMs = context.frameAgeMs + Math.max(0, payloadAt - now);
+            if (!validContextImage(context, primaryFrameId, primaryAgeMs, contextAgeMs)) continue;
+            encodedContext.put(json("frame_id", context.frameId,
+                    "frame_age_ms", contextAgeMs,
+                    "image_base64", encoded.base64));
+        }
         JSONObject body = json("session_id", session.sessionId, "generation", frame.generation,
-                "turn_id", turn, "frame_id", String.valueOf(frame.frameId), "question", question,
-                "image_base64", Base64.encodeToString(jpeg, Base64.NO_WRAP),
-                "frame_age_ms", Math.max(0, now - frame.capturedAtMs), "proactive", proactive);
+                "turn_id", turn, "frame_id", primaryFrameId, "question", question,
+                "image_base64", primaryBase64,
+                "frame_age_ms", primaryAgeMs, "proactive", proactive);
+        if (encodedContext.length() > 0) {
+            try { body.put("context_frames", encodedContext); }
+            catch (org.json.JSONException invalidContext) {
+                listener.visualFailure(requestId, "invalid_request");
+                return;
+            }
+        }
         Call call = http.newCall(new Request.Builder().url(settings.endpoint + "/v1/visual")
                 .header("Authorization", "Bearer " + settings.token)
                 .post(RequestBody.create(body.toString(), MediaType.get("application/json; charset=utf-8"))).build());
@@ -164,6 +225,19 @@ final class AssistantGatewayClient implements AutoCloseable {
                 else listener.visualFailure(requestId, failure == null ? "invalid_response" : failure);
             }
         });
+    }
+    static boolean validContextImage(ContextImage image, String primaryFrameId, long primaryAgeMs) {
+        return validContextImage(image, primaryFrameId, primaryAgeMs,
+                image == null ? -1 : image.frameAgeMs);
+    }
+    static boolean validContextImage(ContextImage image, String primaryFrameId, long primaryAgeMs,
+            long currentFrameAgeMs) {
+        if (image == null || image.frameId == null || image.frameId.isEmpty()
+                || image.frameId.length() > 128 || !image.frameId.matches("[A-Za-z0-9._:-]+")
+                || image.frameId.equals(primaryFrameId) || currentFrameAgeMs <= primaryAgeMs
+                || currentFrameAgeMs > FrameHistory.MAX_AGE_MS || image.jpeg == null
+                || image.jpeg.length == 0 || image.jpeg.length > 512 * 1024) return false;
+        return true;
     }
     synchronized void cancelVisual() { if (visual != null) { visual.cancel(); visual = null; } }
     static String visualFailureCode(boolean explicitlyCancelled, IOException error) {

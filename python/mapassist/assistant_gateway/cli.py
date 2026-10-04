@@ -25,6 +25,10 @@ def _uvicorn_logging_config() -> dict[str, object]:
     import uvicorn
 
     config = deepcopy(uvicorn.config.LOGGING_CONFIG)
+    # Wall-clock timestamps align provider/ASR events with the phone's logs;
+    # scalar audit fields still exclude transcripts and image contents.
+    config["formatters"]["default"]["fmt"] = "%(asctime)s %(levelprefix)s %(message)s"
+    config["formatters"]["default"]["datefmt"] = "%Y-%m-%dT%H:%M:%S%z"
     loggers = config.setdefault("loggers", {})
     if not isinstance(loggers, dict):
         raise TypeError("uvicorn logging config has an unexpected shape")

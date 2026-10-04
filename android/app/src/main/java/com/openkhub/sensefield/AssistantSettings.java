@@ -24,7 +24,8 @@ final class AssistantSettings {
     }
     static AssistantSettings from(Context context) { return new AssistantSettings(GameProfile.settings(context)); }
     boolean configured() { return validEndpoint(endpoint) && token.length() >= 24 && token.length() <= 256; }
-    boolean enabled() { return (voice || vision) && configured(); }
+    /** Voice capture and ASR are local; only screen understanding needs the gateway. */
+    boolean enabled() { return voice || (vision && configured()); }
     static boolean validEndpoint(String value) {
         try {
             URI uri = new URI(value);

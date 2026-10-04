@@ -20,12 +20,16 @@ class GatewaySettings:
     vision_api_key: str = field(default="", repr=False)
     vision_max_tokens: int = 256
     model_cache_dir: Path | None = None
+    asr_backend: str = "paraformer_streaming"
+    sensevoice_model_dir: Path | None = None
     account_concurrency: int = 1
     request_timeout_seconds: float = 8.0
     require_tls: bool = True
     mode: str = "production"
 
     def __post_init__(self) -> None:
+        if self.asr_backend not in {"disabled", "paraformer_streaming", "sensevoice_int8"}:
+            raise ValueError("ASSISTANT_GATEWAY_ASR_BACKEND is unsupported")
         if not re.fullmatch(r"glm-[a-z0-9][a-z0-9._-]{0,120}", self.zhipu_model):
             raise ValueError("ASSISTANT_GATEWAY_GLM_MODEL must be a GLM model identifier")
         if self.vision_provider not in {"zhipu", "compatible"}:
@@ -50,6 +54,7 @@ class GatewaySettings:
         # Preserve order while discarding duplicate credentials.
         tokens = tuple(dict.fromkeys(values))
         cache = os.environ.get("ASSISTANT_GATEWAY_MODEL_CACHE", "").strip()
+        sensevoice_dir = os.environ.get("ASSISTANT_GATEWAY_SENSEVOICE_MODEL_DIR", "").strip()
         concurrency_raw = os.environ.get("ASSISTANT_GATEWAY_ACCOUNT_CONCURRENCY", "1").strip()
         try:
             concurrency = int(concurrency_raw)
@@ -71,6 +76,8 @@ class GatewaySettings:
             vision_api_key=os.environ.get("ASSISTANT_GATEWAY_VISION_API_KEY", "").strip(),
             vision_max_tokens=vision_max_tokens,
             model_cache_dir=Path(cache).expanduser() if cache else None,
+            asr_backend=os.environ.get("ASSISTANT_GATEWAY_ASR_BACKEND", "paraformer_streaming").strip(),
+            sensevoice_model_dir=Path(sensevoice_dir).expanduser() if sensevoice_dir else None,
             account_concurrency=concurrency,
             require_tls=require_tls,
             mode=mode,
@@ -90,6 +97,8 @@ def safe_configuration_status(settings: GatewaySettings, *, asr_ready: bool, vis
     ready = authenticated_asr_ready and vision_ready
     if settings.mode == "development_mock":
         status = "development_mock"
+    elif settings.asr_backend == "disabled" and settings.device_tokens and vision_ready:
+        status = "vision_only"
     elif authenticated_asr_ready and not vision_ready:
         status = "asr_only"
     else:
@@ -97,6 +106,7 @@ def safe_configuration_status(settings: GatewaySettings, *, asr_ready: bool, vis
     return {
         "status": status,
         "asr_ready": asr_ready,
+        "asr_backend": settings.asr_backend,
         "vision_ready": vision_ready,
         "authentication_configured": bool(settings.device_tokens),
         "mode": settings.mode,

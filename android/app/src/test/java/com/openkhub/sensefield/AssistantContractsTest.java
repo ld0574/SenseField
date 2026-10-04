@@ -166,12 +166,16 @@ public class AssistantContractsTest {
         for (String question : Arrays.asList("这个画面我应该选哪个", "选哪一个", "哪项比较合适",
                 "哪一种", "选哪些", "哪个按钮是开始"))
             assertTrue(question, AssistantController.isRequest(question));
-        for (String statement : Arrays.asList("我选桑启", "选好了", "这一局我选择辅助"))
+        for (String question : Arrays.asList("帮我看下出装", "看一下这局出装", "帮我分析阵容",
+                "推荐装备", "帮我选英雄", "这局对战策略", "对战策略",
+                "你能不能帮我分析阵容", "能不能推荐装备", "我能不能推荐装备",
+                "装备购买建议", "选人建议", "英雄推荐", "自然之灵出装建议"))
+            assertTrue(question, AssistantController.isRequest(question));
+        for (String statement : Arrays.asList("我选桑启", "选好了", "这一局我选择辅助", "我推荐装备"))
             assertFalse(statement, AssistantController.isRequest(statement));
-        assertEquals("请读出当前画面中清晰可见的选项名称，不推荐选择，不猜测。",
-                AssistantController.visualQuestion("这个画面我应该选哪个"));
-        assertEquals("请读出当前画面中清晰可见的选项名称，不推荐选择，不猜测。",
-                AssistantController.visualQuestion("哪项比较合适"));
+        assertEquals("这个画面我应该选哪个", AssistantController.visualQuestion("这个画面我应该选哪个"));
+        assertEquals("哪项比较合适", AssistantController.visualQuestion("哪项比较合适"));
+        assertEquals("帮我推荐一个当前阵容适合的英雄", AssistantController.visualQuestion("帮我推荐一个当前阵容适合的英雄"));
         assertEquals("哪个按钮是开始", AssistantController.visualQuestion("哪个按钮是开始"));
         assertEquals("现在比分多少", AssistantController.visualQuestion("现在比分多少"));
     }

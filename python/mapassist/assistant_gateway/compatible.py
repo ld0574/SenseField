@@ -45,8 +45,18 @@ class CompatibleVisionClient(GlmVisionClient):
     def _request_url(self) -> str:
         return f"{self._base_url}/chat/completions"
 
-    def _request_body(self, *, question: str, image_base64: str) -> dict[str, Any]:
-        body = super()._request_body(question=question, image_base64=image_base64)
+    def _request_body(
+        self,
+        *,
+        question: str,
+        image_base64: str,
+        context_images: tuple[str, ...] = (),
+    ) -> dict[str, Any]:
+        body = super()._request_body(
+            question=question,
+            image_base64=image_base64,
+            context_images=context_images,
+        )
         # Optional vendor extensions are sent only for the exact documented model.
         body.pop("thinking", None)
         if self._model.lower() == "minimax-m3":

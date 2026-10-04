@@ -189,3 +189,106 @@ target_include_directories(presentation_audio_jni PRIVATE
     "${MAPASSIST_SPEEXDSP_SOURCE}/include"
     "${MAPASSIST_WEBRTCVAD_ROOT}/cbits")
 target_link_libraries(presentation_audio_jni PRIVATE speexdsp_aec webrtc_vad log m)
+
+# Pin the upstream sherpa-onnx Android C API runtime. The JNI bridge below uses
+# the C ABI directly, so libsherpa-onnx-jni.so and libsherpa-onnx-cxx-api.so
+# are intentionally not imported or packaged.
+set(MAPASSIST_SHERPA_ONNX_VERSION v1.13.8)
+set(MAPASSIST_SHERPA_ONNX_ARCHIVE_SHA256
+    2ff63469a71cb6009aa2e3ed5f4a670f8abdcbe4bb9ffd23776afc792a6b4f44)
+set(MAPASSIST_SHERPA_ONNX_HEADER_SHA256
+    2a1b95084be8fd1deb3228fcad2fd3f7f0258b64582f7402281ec174c7b7f4ce)
+set(MAPASSIST_SHERPA_ONNX_CACHE
+    "${CMAKE_BINARY_DIR}/sherpa-onnx-${MAPASSIST_SHERPA_ONNX_VERSION}")
+set(MAPASSIST_SHERPA_ONNX_ARCHIVE
+    "${MAPASSIST_SHERPA_ONNX_CACHE}/sherpa-onnx-${MAPASSIST_SHERPA_ONNX_VERSION}-android.tar.bz2")
+set(MAPASSIST_SHERPA_ONNX_ROOT
+    "${MAPASSIST_SHERPA_ONNX_CACHE}/sherpa-onnx-${MAPASSIST_SHERPA_ONNX_VERSION}-android")
+set(MAPASSIST_SHERPA_ONNX_HEADER
+    "${MAPASSIST_SHERPA_ONNX_CACHE}/sherpa-onnx-c-api.h")
+set(MAPASSIST_SHERPA_ONNX_ABI_ROOT
+    "${MAPASSIST_SHERPA_ONNX_ROOT}/jniLibs/${ANDROID_ABI}")
+file(MAKE_DIRECTORY "${MAPASSIST_SHERPA_ONNX_CACHE}")
+
+if(EXISTS "${MAPASSIST_SHERPA_ONNX_ARCHIVE}")
+    file(SHA256 "${MAPASSIST_SHERPA_ONNX_ARCHIVE}" MAPASSIST_SHERPA_ONNX_CACHED_SHA256)
+    if(NOT MAPASSIST_SHERPA_ONNX_CACHED_SHA256 STREQUAL MAPASSIST_SHERPA_ONNX_ARCHIVE_SHA256)
+        message(STATUS "Discarding sherpa-onnx archive with an unexpected SHA-256")
+        file(REMOVE "${MAPASSIST_SHERPA_ONNX_ARCHIVE}")
+        file(REMOVE_RECURSE "${MAPASSIST_SHERPA_ONNX_ROOT}")
+    endif()
+endif()
+if(NOT EXISTS "${MAPASSIST_SHERPA_ONNX_ARCHIVE}")
+    file(DOWNLOAD
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/${MAPASSIST_SHERPA_ONNX_VERSION}/sherpa-onnx-${MAPASSIST_SHERPA_ONNX_VERSION}-android.tar.bz2"
+        "${MAPASSIST_SHERPA_ONNX_ARCHIVE}"
+        EXPECTED_HASH "SHA256=${MAPASSIST_SHERPA_ONNX_ARCHIVE_SHA256}"
+        STATUS MAPASSIST_SHERPA_ONNX_DOWNLOAD_STATUS
+        TLS_VERIFY ON
+        SHOW_PROGRESS)
+    list(GET MAPASSIST_SHERPA_ONNX_DOWNLOAD_STATUS 0 MAPASSIST_SHERPA_ONNX_DOWNLOAD_CODE)
+    list(GET MAPASSIST_SHERPA_ONNX_DOWNLOAD_STATUS 1 MAPASSIST_SHERPA_ONNX_DOWNLOAD_MESSAGE)
+    if(NOT MAPASSIST_SHERPA_ONNX_DOWNLOAD_CODE EQUAL 0)
+        file(REMOVE "${MAPASSIST_SHERPA_ONNX_ARCHIVE}")
+        message(FATAL_ERROR
+            "Could not download pinned sherpa-onnx Android runtime: ${MAPASSIST_SHERPA_ONNX_DOWNLOAD_MESSAGE}")
+    endif()
+endif()
+
+if(EXISTS "${MAPASSIST_SHERPA_ONNX_HEADER}")
+    file(SHA256 "${MAPASSIST_SHERPA_ONNX_HEADER}" MAPASSIST_SHERPA_ONNX_CACHED_HEADER_SHA256)
+    if(NOT MAPASSIST_SHERPA_ONNX_CACHED_HEADER_SHA256 STREQUAL MAPASSIST_SHERPA_ONNX_HEADER_SHA256)
+        file(REMOVE "${MAPASSIST_SHERPA_ONNX_HEADER}")
+    endif()
+endif()
+if(NOT EXISTS "${MAPASSIST_SHERPA_ONNX_HEADER}")
+    file(DOWNLOAD
+        "https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/${MAPASSIST_SHERPA_ONNX_VERSION}/sherpa-onnx/c-api/c-api.h"
+        "${MAPASSIST_SHERPA_ONNX_HEADER}"
+        EXPECTED_HASH "SHA256=${MAPASSIST_SHERPA_ONNX_HEADER_SHA256}"
+        STATUS MAPASSIST_SHERPA_ONNX_HEADER_DOWNLOAD_STATUS
+        TLS_VERIFY ON)
+    list(GET MAPASSIST_SHERPA_ONNX_HEADER_DOWNLOAD_STATUS 0 MAPASSIST_SHERPA_ONNX_HEADER_DOWNLOAD_CODE)
+    list(GET MAPASSIST_SHERPA_ONNX_HEADER_DOWNLOAD_STATUS 1 MAPASSIST_SHERPA_ONNX_HEADER_DOWNLOAD_MESSAGE)
+    if(NOT MAPASSIST_SHERPA_ONNX_HEADER_DOWNLOAD_CODE EQUAL 0)
+        file(REMOVE "${MAPASSIST_SHERPA_ONNX_HEADER}")
+        message(FATAL_ERROR
+            "Could not download pinned sherpa-onnx C API header: ${MAPASSIST_SHERPA_ONNX_HEADER_DOWNLOAD_MESSAGE}")
+    endif()
+endif()
+file(SHA256 "${MAPASSIST_SHERPA_ONNX_HEADER}" MAPASSIST_SHERPA_ONNX_CACHED_HEADER_SHA256)
+if(NOT MAPASSIST_SHERPA_ONNX_CACHED_HEADER_SHA256 STREQUAL MAPASSIST_SHERPA_ONNX_HEADER_SHA256)
+    file(REMOVE "${MAPASSIST_SHERPA_ONNX_HEADER}")
+    message(FATAL_ERROR "Cached sherpa-onnx C API header has an unexpected SHA-256")
+endif()
+
+set(MAPASSIST_SHERPA_ONNX_EXTRACT FALSE)
+if(NOT EXISTS "${MAPASSIST_SHERPA_ONNX_ABI_ROOT}/libsherpa-onnx-c-api.so"
+        OR NOT EXISTS "${MAPASSIST_SHERPA_ONNX_ABI_ROOT}/libonnxruntime.so")
+    set(MAPASSIST_SHERPA_ONNX_EXTRACT TRUE)
+endif()
+if(MAPASSIST_SHERPA_ONNX_EXTRACT)
+    file(REMOVE_RECURSE "${MAPASSIST_SHERPA_ONNX_ROOT}")
+    file(MAKE_DIRECTORY "${MAPASSIST_SHERPA_ONNX_ROOT}")
+    file(ARCHIVE_EXTRACT
+        INPUT "${MAPASSIST_SHERPA_ONNX_ARCHIVE}"
+        DESTINATION "${MAPASSIST_SHERPA_ONNX_ROOT}")
+endif()
+if(NOT EXISTS "${MAPASSIST_SHERPA_ONNX_ABI_ROOT}/libsherpa-onnx-c-api.so"
+        OR NOT EXISTS "${MAPASSIST_SHERPA_ONNX_ABI_ROOT}/libonnxruntime.so")
+    message(FATAL_ERROR
+        "Pinned sherpa-onnx runtime is missing required shared libraries for Android ABI ${ANDROID_ABI}")
+endif()
+
+add_library(sherpa_onnx_c_api SHARED IMPORTED GLOBAL)
+set_target_properties(sherpa_onnx_c_api PROPERTIES
+    IMPORTED_LOCATION "${MAPASSIST_SHERPA_ONNX_ABI_ROOT}/libsherpa-onnx-c-api.so")
+add_library(onnxruntime SHARED IMPORTED GLOBAL)
+set_target_properties(onnxruntime PROPERTIES
+    IMPORTED_LOCATION "${MAPASSIST_SHERPA_ONNX_ABI_ROOT}/libonnxruntime.so")
+
+add_library(ondevice_asr_jni SHARED ondevice_asr_jni.cpp)
+target_compile_features(ondevice_asr_jni PRIVATE cxx_std_17)
+target_compile_options(ondevice_asr_jni PRIVATE $<$<CONFIG:Debug>:-O2>)
+target_include_directories(ondevice_asr_jni PRIVATE "${MAPASSIST_SHERPA_ONNX_CACHE}")
+target_link_libraries(ondevice_asr_jni PRIVATE sherpa_onnx_c_api onnxruntime log)

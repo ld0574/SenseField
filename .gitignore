@@ -147,3 +147,5 @@ docs/**
 *.gguf
 android/app/src/main/assets/minimap-yolox-nano-320.bin
 android/app/src/main/assets/minimap-yolox-nano-dual-512.bin
+android/app/src/main/assets/sensevoice/model.int8.onnx
+android/app/src/main/assets/sensevoice/tokens.txt

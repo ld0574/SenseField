@@ -1,0 +1,19 @@
+{
+  "model": "SenseVoiceSmall int8 ONNX",
+  "source": "csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17",
+  "revision": "2365baeacb507f821a0c8120fcee3d484dba7a07",
+  "authors": "FunAudioLLM/Alibaba; ONNX conversion by csukuangfj/sherpa-onnx",
+  "license": "FunASR Model Open Source License Agreement 1.1",
+  "license_url": "https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE",
+  "runtime": "sherpa-onnx==1.13.8",
+  "files": {
+    "model.int8.onnx": {
+      "size": 239233841,
+      "sha256": "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51"
+    },
+    "tokens.txt": {
+      "size": 315894,
+      "sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc"
+    }
+  }
+}

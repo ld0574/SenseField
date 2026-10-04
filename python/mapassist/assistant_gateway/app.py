@@ -15,14 +15,24 @@ from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import JSONResponse
 
 from .asr import FunAsrStreamingRecognizer, MockStreamingRecognizer
+from .sensevoice import SenseVoiceRecognizer
 from .audio import AudioProtocolError, AudioWebSocketSession, GenerationHighWater, validate_start
 from .config import GatewaySettings, safe_configuration_status
 from .errors import GatewayError
 from .glm import GlmVisionClient
 from .compatible import CompatibleVisionClient
-from .validation import UNKNOWN_ANSWER, InvalidRequest, VisualAnswer, parse_visual_answer, validate_visual_request
+from .validation import (
+    UNKNOWN_ANSWER,
+    InvalidRequest,
+    VisualAnswer,
+    VisualRequest,
+    parse_visual_answer,
+    validate_visual_request,
+)
 
-_MAX_REQUEST_BODY_BYTES = 700 * 1024
+# Three bounded images (the primary plus at most two context frames), JSON
+# metadata, and the validated question fit below this cap.
+_MAX_REQUEST_BODY_BYTES = 3 * 700 * 1024 + 16 * 1024
 _VISUAL_PREEMPTION_TIMEOUT_SECONDS = 2.0
 _DISCONNECT_POLL_INTERVAL_SECONDS = 0.05
 _AUDIT_LOGGER = logging.getLogger("mapassist.assistant_gateway.audit")
@@ -127,8 +137,14 @@ class HttpBodyLimitMiddleware:
 
 
 class MockVisionClient:
-    async def complete(self, *, question: str, image_base64: str) -> str:
-        del question, image_base64
+    async def complete(
+        self,
+        *,
+        question: str,
+        image_base64: str,
+        context_images: tuple[str, ...] = (),
+    ) -> str:
+        del question, image_base64, context_images
         return '{"kind":"unknown","answer":"","uncertain":true}'
 
     async def close(self) -> None:
@@ -148,6 +164,33 @@ def _secure_scheme(scope: dict[str, Any]) -> bool:
     return scope.get("scheme") in {"https", "wss"}
 
 
+def _vision_call(vision_client: Any, visual_request: VisualRequest) -> Any:
+    context_images = tuple(frame.image.jpeg_base64 for frame in visual_request.context_frames)
+    question = visual_request.question
+    if context_images:
+        context_ages = ", ".join(
+            f"context frame {index} is {frame.frame_age_ms} ms before the primary frame"
+            for index, frame in enumerate(visual_request.context_frames, start=1)
+        )
+        question = (
+            f"{question}\n\n"
+            "[Frame timing metadata, separate from the user question: "
+            f"{context_ages}; the primary frame is {visual_request.frame_age_ms} ms old. "
+            "Attached images follow this chronological order, with the primary frame last.]"
+        )
+        # Keep the legacy no-context call shape intact for third-party clients
+        # and existing adapters that only accept question and image_base64.
+        return vision_client.complete(
+            question=question,
+            image_base64=visual_request.image.jpeg_base64,
+            context_images=context_images,
+        )
+    return vision_client.complete(
+        question=question,
+        image_base64=visual_request.image.jpeg_base64,
+    )
+
+
 def create_app(
     settings: GatewaySettings | None = None,
     *,
@@ -155,9 +198,11 @@ def create_app(
     vision_client: Any | None = None,
 ) -> FastAPI:
     settings = settings or GatewaySettings.from_env()
-    if recognizer is None:
+    if recognizer is None and settings.asr_backend != "disabled":
         if settings.mode == "development_mock":
             recognizer = MockStreamingRecognizer()
+        elif settings.asr_backend == "sensevoice_int8":
+            recognizer = SenseVoiceRecognizer(model_dir=settings.sensevoice_model_dir)
         else:
             recognizer = FunAsrStreamingRecognizer(cache_dir=settings.model_cache_dir)
     if vision_client is None:
@@ -192,11 +237,12 @@ def create_app(
         try:
             if settings.mode == "production":
                 settings.validate_production()
-            initialize = getattr(recognizer, "initialize", None)
-            if initialize is None:
-                raise RuntimeError("ASR adapter has no initialization step")
-            await initialize()
-            app.state.asr_ready = True
+            if settings.asr_backend != "disabled":
+                initialize = getattr(recognizer, "initialize", None)
+                if initialize is None:
+                    raise RuntimeError("ASR adapter has no initialization step")
+                await initialize()
+                app.state.asr_ready = True
             app.state.vision_ready = vision_client is not None
             yield
         finally:
@@ -243,7 +289,7 @@ def create_app(
             asr_ready=request.app.state.asr_ready,
             vision_ready=request.app.state.vision_ready,
         )
-        status_code = 200 if result["status"] in {"ready", "asr_only", "development_mock"} else 503
+        status_code = 200 if result["status"] in {"ready", "vision_only", "asr_only", "development_mock"} else 503
         return JSONResponse(result, status_code=status_code)
 
     @app.post("/v1/visual")
@@ -252,8 +298,6 @@ def create_app(
             raise GatewayError("https_required", "Use HTTPS for this service.", http_status=426)
         if not _authorization_matches(request.headers.get("authorization"), settings.device_tokens):
             raise GatewayError("unauthorized", "A valid bearer device token is required.", http_status=401)
-        if not request.app.state.asr_ready:
-            raise GatewayError("not_ready", "The assistant gateway is not ready.", http_status=503)
         if not request.app.state.vision_ready or vision_client is None:
             raise GatewayError(
                 "vision_unconfigured",
@@ -269,6 +313,14 @@ def create_app(
         except InvalidRequest as exc:
             raise GatewayError("invalid_request", str(exc), http_status=422) from exc
         del payload
+
+        _AUDIT_LOGGER.info(
+            "assistant_gateway_visual event=request_accepted generation=%s turn_id=%s frame_id=%s context_count=%s",
+            visual_request.generation,
+            visual_request.turn_id,
+            visual_request.frame_id,
+            len(visual_request.context_frames),
+        )
 
         session_id = visual_request.session_id
         current_task = asyncio.current_task()
@@ -289,10 +341,7 @@ def create_app(
                         generation=visual_request.generation,
                     )
                     active.upstream_task = asyncio.create_task(
-                        vision_client.complete(
-                            question=visual_request.question,
-                            image_base64=visual_request.image.jpeg_base64,
-                        )
+                        _vision_call(vision_client, visual_request)
                     )
                     request.app.state.active_visual_requests[session_id] = active
                     owns_slot = True
@@ -356,10 +405,7 @@ def create_app(
                     active.proactive = False
                     active.generation = visual_request.generation
                     active.upstream_task = asyncio.create_task(
-                        vision_client.complete(
-                            question=visual_request.question,
-                            image_base64=visual_request.image.jpeg_base64,
-                        )
+                        _vision_call(vision_client, visual_request)
                     )
                     owns_slot = True
 
@@ -367,7 +413,7 @@ def create_app(
                 raise RuntimeError("visual request slot has no upstream task")
             raw_answer = await _complete_or_disconnect(active.upstream_task, disconnect_task)
             try:
-                answer = parse_visual_answer(raw_answer)
+                answer = parse_visual_answer(raw_answer, question=visual_request.question)
             except InvalidRequest:
                 answer = VisualAnswer(
                     "unknown",
@@ -384,6 +430,17 @@ def create_app(
                 "uncertain": answer.uncertain,
                 "elapsed_ms": max(0, int((time.monotonic() - started) * 1000)),
             }
+            _AUDIT_LOGGER.info(
+                "assistant_gateway_visual event=response_validated generation=%s turn_id=%s frame_id=%s context_count=%s kind=%s uncertain=%s answer_chars=%s elapsed_ms=%s",
+                visual_request.generation,
+                visual_request.turn_id,
+                visual_request.frame_id,
+                len(visual_request.context_frames),
+                answer.kind,
+                answer.uncertain,
+                len(answer.answer),
+                result["elapsed_ms"],
+            )
             return JSONResponse(result)
         finally:
             if not disconnect_task.done():

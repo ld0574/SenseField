@@ -10,6 +10,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import org.json.JSONObject;
 import org.junit.Test;
@@ -48,6 +49,23 @@ public class AssistantControlsInstrumentedTest {
         return (AssistantSession) field.get(controller);
     }
 
+    private static void markAwaitingAsrResult(AssistantController controller) throws Exception {
+        Field field = AssistantController.class.getDeclaredField("awaitingFinal");
+        field.setAccessible(true);
+        field.setBoolean(controller, true);
+    }
+
+    private static FrameHistory frameHistory(AssistantController controller) throws Exception {
+        Field field = AssistantController.class.getDeclaredField("frameHistory");
+        field.setAccessible(true);
+        return (FrameHistory) field.get(controller);
+    }
+
+    private static void addHistoryPair(FrameHistory history, long nowMs) {
+        assertTrue(history.add(new FrameSnapshot(901, nowMs - 4_000, 1, 0, null)));
+        assertTrue(history.add(new FrameSnapshot(902, nowMs - 2_000, 1, 0, null)));
+    }
+
     private static FrameSnapshot staleHudFrame(long frameId, long capturedAtMs,
                                                 long generation) {
         int width = 64, height = 36, stride = width * 4;
@@ -67,9 +85,9 @@ public class AssistantControlsInstrumentedTest {
             String turn, FrameSnapshot frame, boolean proactive) throws Exception {
         Class<?> taskType = Class.forName(AssistantController.class.getName() + "$VisualTask");
         Constructor<?> constructor = taskType.getDeclaredConstructor(long.class, String.class,
-                FrameSnapshot.class, boolean.class);
+                FrameSnapshot.class, List.class, boolean.class);
         constructor.setAccessible(true);
-        Object task = constructor.newInstance(id, turn, frame, proactive);
+        Object task = constructor.newInstance(id, turn, frame, Collections.emptyList(), proactive);
         Field inFlight = AssistantController.class.getDeclaredField("inFlight");
         inFlight.setAccessible(true);
         inFlight.set(controller, task);
@@ -86,7 +104,7 @@ public class AssistantControlsInstrumentedTest {
         return host.audits.stream().filter(value -> value.contains(marker)).count();
     }
 
-    @Test public void finalSelectionQuestionQueuesVisibleChoicesWithoutOpeningPanel() throws Exception {
+    @Test public void finalSelectionQuestionPreservesIntentWithoutOpeningPanel() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         SharedPreferences preferences = preferences(context);
         Host host = new Host();
@@ -95,13 +113,12 @@ public class AssistantControlsInstrumentedTest {
         try {
             AssistantSession session = session(controller);
             String turn = session.newTurn();
-            controller.audioMessage(new JSONObject().put("type", "final")
-                    .put("session_id", session.sessionId).put("generation", session.generation())
-                    .put("turn_id", turn).put("text", "这个画面我应该选哪个"));
+            markAwaitingAsrResult(controller);
+            controller.onLocalAsrResult(session.generation(), turn, "这个画面我应该选哪个", 12);
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             Field pending = AssistantController.class.getDeclaredField("pendingQuestion");
             pending.setAccessible(true);
-            assertEquals("请读出当前画面中清晰可见的选项名称，不推荐选择，不猜测。",
+            assertEquals("这个画面我应该选哪个",
                     pending.get(controller));
             assertEquals(1, countAudit(host, "AssistantInteraction event=QUESTION proactive=false"));
             assertEquals(0, host.spoken);
@@ -118,9 +135,8 @@ public class AssistantControlsInstrumentedTest {
         try {
             AssistantSession session = session(controller);
             String turn = session.newTurn();
-            controller.audioMessage(new JSONObject().put("type", "final")
-                    .put("session_id", session.sessionId).put("generation", session.generation())
-                    .put("turn_id", turn).put("text", "我选桑启"));
+            markAwaitingAsrResult(controller);
+            controller.onLocalAsrResult(session.generation(), turn, "我选桑启", 9);
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             Field pending = AssistantController.class.getDeclaredField("pendingQuestion");
             pending.setAccessible(true);
@@ -131,7 +147,46 @@ public class AssistantControlsInstrumentedTest {
         } finally { controller.close(); preferences.edit().clear().commit(); }
     }
 
-    @Test public void connectedServerCannotHideBlockedMicrophoneAndRecoveryClearsTheWarning()
+    @Test public void manualTurnReusesRecentFramesButCaptureLifecycleInvalidationsClearThem() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context);
+        Host host = new Host();
+        AssistantController controller = new AssistantController(context, "frame-history-test",
+                new AssistantSettings(preferences), host);
+        try {
+            FrameHistory history = frameHistory(controller);
+            long now = SystemClock.elapsedRealtime();
+            addHistoryPair(history, now);
+            AssistantSession session = session(controller);
+            long oldGeneration = session.generation();
+            controller.question("帮我看下出装", false);
+            assertTrue(session.generation() > oldGeneration);
+            long primaryAt = SystemClock.elapsedRealtime();
+            assertEquals("A new question turn can use both recent same-capture frames", 2,
+                    history.context(primaryAt, new FrameSnapshot(
+                            903, primaryAt, session.generation(), 0, null)).size());
+
+            controller.thermal(FrameProcessingPolicy.Mode.HOT);
+            assertEquals(0, history.size());
+
+            controller.thermal(FrameProcessingPolicy.Mode.NORMAL);
+            addHistoryPair(history, SystemClock.elapsedRealtime());
+            controller.pause(true);
+            assertEquals(0, history.size());
+
+            controller.pause(false);
+            addHistoryPair(history, SystemClock.elapsedRealtime());
+            controller.captureInvalidated("capture_reset");
+            assertEquals(0, history.size());
+
+            addHistoryPair(history, SystemClock.elapsedRealtime());
+            preferences.edit().putBoolean(AssistantSettings.IMAGE_CONSENT, false).commit();
+            controller.settingsChanged(new AssistantSettings(preferences));
+            assertEquals("Revoking image consent clears retained pixels immediately", 0, history.size());
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void legacyServerAudioCallbacksCannotOverrideLocalInputState()
             throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         SharedPreferences preferences = preferences(context);
@@ -145,15 +200,43 @@ public class AssistantControlsInstrumentedTest {
                     .put("session_id", session.sessionId).put("generation", session.generation())
                     .put("turn_id", "reset-g" + session.generation()).put("reason", "ready"));
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-            assertTrue(host.status.contains("语音服务器已连接"));
             assertTrue(host.status.contains(VoiceInputSafetyPolicy.InputState.ROUTE_UNVERIFIED.status));
+            assertFalse(host.status.contains("语音服务器已连接"));
+            String turn = session.newTurn();
+            controller.audioMessage(new JSONObject().put("type", "final")
+                    .put("session_id", session.sessionId).put("generation", session.generation())
+                    .put("turn_id", turn).put("text", "这个画面我应该选哪个"));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            Field pending = AssistantController.class.getDeclaredField("pendingQuestion");
+            pending.setAccessible(true);
+            assertNull("A legacy server final must not enter the live assistant", pending.get(controller));
             controller.voiceInputStateChanged(VoiceInputSafetyPolicy.InputState.READY);
             controller.audioMessage(new JSONObject().put("type", "status")
                     .put("session_id", session.sessionId).put("generation", session.generation())
                     .put("turn_id", "reset-g" + session.generation()).put("reason", "ready"));
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-            assertEquals("语音服务器已连接", host.status);
+            assertEquals(VoiceInputSafetyPolicy.InputState.READY.status, host.status);
         } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void localVoiceDoesNotRequireVisualGatewayConfiguration() {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context);
+        try {
+            preferences.edit().putBoolean(AssistantSettings.VISION, false)
+                    .putString(AssistantSettings.ENDPOINT, "")
+                    .putString(AssistantSettings.TOKEN, "").commit();
+            AssistantSettings localVoice = new AssistantSettings(preferences);
+            assertTrue(localVoice.voice);
+            assertFalse(localVoice.configured());
+            assertTrue(localVoice.enabled());
+
+            preferences.edit().putBoolean(AssistantSettings.VISION, true).commit();
+            AssistantSettings visionWithoutGateway = new AssistantSettings(preferences);
+            assertFalse(visionWithoutGateway.configured());
+            assertTrue("Voice remains locally available while visual access is unconfigured",
+                    visionWithoutGateway.enabled());
+        } finally { preferences.edit().clear().commit(); }
     }
 
     @Test public void expiredManualVisualResultExplainsDiscardedFrameAndProactiveStaysSilent()

@@ -24,12 +24,19 @@ assistant-gateway = [
     "torch==2.8.0; sys_platform != 'linux'",
     "kaldi-native-fbank==1.22.3",
 ]
+assistant-vision-gateway = [
+    "fastapi==0.142.2",
+    "uvicorn==0.54.0",
+    "websockets==15.0.1",
+    "httpx==0.28.1",
+]
 assistant-gateway-test = [
     "pytest>=8,<10",
     "fastapi==0.142.2",
     "websockets==15.0.1",
     "httpx==0.28.1",
 ]
+assistant-asr-sensevoice = ["sherpa-onnx==1.13.8"]
 
 [project.scripts]
 mapassist-replay = "mapassist.replay:main"

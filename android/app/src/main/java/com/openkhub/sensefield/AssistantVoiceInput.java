@@ -20,6 +20,8 @@ final class AssistantVoiceInput implements AutoCloseable {
     interface Listener extends VoiceActivityGate.Output {
         void inputStateChanged(VoiceInputSafetyPolicy.InputState state);
         default void safetyMetadata(int flags, int routedDeviceType) { }
+        default void acousticSummary(int frames, int speechFrames, int rms, int peak,
+                int clippedSamples, int inputDeviceType) { }
         void unavailable(String status);
     }
     private final Context context;
@@ -27,6 +29,7 @@ final class AssistantVoiceInput implements AutoCloseable {
     private final VoiceActivityGate gate;
     private final VoiceEchoProcessor echo = new VoiceEchoProcessor();
     private final VoiceSpeechDetector speech = new VoiceSpeechDetector();
+    private final VoiceInputMetrics metrics = new VoiceInputMetrics();
     private final ExecutorService callbacks = Executors.newSingleThreadExecutor();
     private final AudioManager manager;
     private volatile boolean closed, paused, headset;
@@ -109,7 +112,7 @@ final class AssistantVoiceInput implements AutoCloseable {
                     listener.safetyMetadata(safetyFlags, routedDeviceType);
                 }
                 if (VoiceInputSafetyPolicy.requiresSessionReset(lastSafetyFlags, safetyFlags)) {
-                    gate.reset(); echo.reset(); lastSafetyFlags = safetyFlags;
+                    gate.reset(); echo.reset(); metrics.reset(); lastSafetyFlags = safetyFlags;
                     listener.inputStateChanged(state);
                     if (!speech.reset()) {
                         reportUnavailable("本地语音检测不可用，助手输入暂停；预警继续");
@@ -119,7 +122,20 @@ final class AssistantVoiceInput implements AutoCloseable {
                 if (state != VoiceInputSafetyPolicy.InputState.READY) continue;
                 if (!speech.available()) { reportUnavailable("本地语音检测不可用，助手输入暂停；预警继续"); break; }
                 short[] processed = echo.process(frame);
-                gate.accept(processed, speech.isSpeech(processed));
+                boolean speechDetected = speech.isSpeech(processed);
+                boolean wasActive = gate.active();
+                gate.accept(processed, speechDetected);
+                if (wasActive || gate.active()) metrics.accept(processed, speechDetected);
+                if (wasActive && !gate.active()) {
+                    int inputDeviceType = -1;
+                    try {
+                        android.media.AudioDeviceInfo device = owned.getRoutedDevice();
+                        if (device != null) inputDeviceType = device.getType();
+                    } catch (RuntimeException ignored) { }
+                    listener.acousticSummary(metrics.frames, metrics.speechFrames, metrics.rms(),
+                            metrics.peak, metrics.clippedSamples, inputDeviceType);
+                    metrics.reset();
+                }
             }
         } catch (RuntimeException error) { if (!closed) reportUnavailable("语音输入中断，预警继续运行"); }
         finally {

@@ -5,6 +5,18 @@ import pytest
 from mapassist.assistant_gateway.config import GatewaySettings, safe_configuration_status
 
 
+def test_explicit_sensevoice_backend_and_private_model_directory(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ASSISTANT_GATEWAY_ASR_BACKEND", "sensevoice_int8")
+    monkeypatch.setenv("ASSISTANT_GATEWAY_SENSEVOICE_MODEL_DIR", "/private/asr-model")
+    settings = GatewaySettings.from_env()
+    status = safe_configuration_status(settings, asr_ready=True, vision_ready=True)
+    assert status["asr_backend"] == "sensevoice_int8"
+    assert str(settings.sensevoice_model_dir) not in repr(status)
+    monkeypatch.setenv("ASSISTANT_GATEWAY_ASR_BACKEND", "automatic-paid-fallback")
+    with pytest.raises(ValueError, match="ASR_BACKEND"):
+        GatewaySettings.from_env()
+
+
 @pytest.mark.parametrize("value", ["63", "1025", "not-integer"])
 def test_invalid_token_budget_is_rejected(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
     monkeypatch.setenv("ASSISTANT_GATEWAY_VISION_MAX_TOKENS", value)

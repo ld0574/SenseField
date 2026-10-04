@@ -20,6 +20,7 @@ from PIL import Image
 from mapassist.assistant_gateway.app import create_app
 from mapassist.assistant_gateway.config import GatewaySettings
 from mapassist.assistant_gateway.errors import VisionRateLimited, VisionTimeout, VisionUpstreamError
+from mapassist.assistant_gateway.compatible import CompatibleVisionClient
 from mapassist.assistant_gateway.glm import GLM_MODEL, GLM_URL, SYSTEM_PROMPT, GlmVisionClient
 
 
@@ -57,12 +58,59 @@ def test_glm_direct_stream_uses_pinned_request_shape_and_raw_base64_image() -> N
     assert body["thinking"] == {"type": "disabled"}
     assert "response_format" not in body
     assert "Simplified Chinese" in body["messages"][0]["content"]
-    assert "kind=hud for changing" in body["messages"][0]["content"]
-    assert "kind=ui_text only for stable" in body["messages"][0]["content"]
+    assert "kind=hud for live match values" in body["messages"][0]["content"]
+    assert "Use kind=ui_text for stable menu text" in body["messages"][0]["content"]
+    assert "Do not guess hidden positions, cooldowns" in body["messages"][0]["content"]
+    assert "do not answer with only gold or a timer" in body["messages"][0]["content"]
+    assert "后羿/鲁班七号" in body["messages"][0]["content"]
+    assert "kind=hud for live match values and advice" in body["messages"][0]["content"]
+    assert "开心消消乐" in body["messages"][0]["content"]
     assert body["messages"][0]["content"] == SYSTEM_PROMPT
     image = body["messages"][1]["content"][1]["image_url"]["url"]
     assert image == "/9j/RAWBASE64"
     assert not image.startswith("data:")
+
+
+def test_context_images_precede_current_image_and_get_labels() -> None:
+    async def scenario() -> tuple[dict[str, object], dict[str, object]]:
+        http_client = httpx.AsyncClient()
+        glm = GlmVisionClient("test-key", http_client=http_client)
+        compatible = CompatibleVisionClient(
+            "test-key",
+            base_url="https://vision.example/v1",
+            model="test-model",
+            http_client=http_client,
+        )
+        try:
+            context_body = glm._request_body(
+                question="What build fits this hero? [context frame 1 is 5000 ms before current]",
+                image_base64="CURRENT",
+                context_images=("OLDEST", "NEWER"),
+            )
+            compatible_body = compatible._request_body(
+                question="q", image_base64="CURRENT", context_images=("OLDER",)
+            )
+            return context_body, compatible_body
+        finally:
+            await http_client.aclose()
+
+    context_body, compatible_body = asyncio.run(scenario())
+    content = context_body["messages"][1]["content"]
+    assert [item.get("text") for item in content if item["type"] == "text"] == [
+        "What build fits this hero? [context frame 1 is 5000 ms before current]",
+        "Earlier context frame 1, oldest first.",
+        "Earlier context frame 2, oldest first.",
+        "Current primary frame.",
+    ]
+    images = [item["image_url"]["url"] for item in content if item["type"] == "image_url"]
+    assert images == ["OLDEST", "NEWER", "CURRENT"]
+
+    compatible_content = compatible_body["messages"][1]["content"]
+    compatible_images = [item["image_url"]["url"] for item in compatible_content if item["type"] == "image_url"]
+    assert compatible_images == [
+        "data:image/jpeg;base64,OLDER",
+        "data:image/jpeg;base64,CURRENT",
+    ]
 
 
 @pytest.mark.parametrize(
