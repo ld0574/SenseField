@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 import ipaddress
 import os
 import sys
@@ -17,6 +18,22 @@ def _is_loopback(host: str) -> bool:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
+
+
+def _uvicorn_logging_config() -> dict[str, object]:
+    """Keep scalar gateway diagnostics visible without raising other logger levels."""
+    import uvicorn
+
+    config = deepcopy(uvicorn.config.LOGGING_CONFIG)
+    loggers = config.setdefault("loggers", {})
+    if not isinstance(loggers, dict):
+        raise TypeError("uvicorn logging config has an unexpected shape")
+    loggers["mapassist.assistant_gateway.audit"] = {
+        "handlers": ["default"],
+        "level": "INFO",
+        "propagate": False,
+    }
+    return config
 
 
 def main() -> None:
@@ -71,4 +88,5 @@ def main() -> None:
         proxy_headers=False,
         access_log=False,
         ws_max_size=128 * 1024,
+        log_config=_uvicorn_logging_config(),
     )

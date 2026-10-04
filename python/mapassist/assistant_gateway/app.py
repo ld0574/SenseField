@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import json
+import logging
 import time
 from contextlib import asynccontextmanager
 from typing import Any
@@ -17,9 +18,11 @@ from .audio import AudioProtocolError, AudioWebSocketSession, GenerationHighWate
 from .config import GatewaySettings, safe_configuration_status
 from .errors import GatewayError
 from .glm import GlmVisionClient
+from .compatible import CompatibleVisionClient
 from .validation import UNKNOWN_ANSWER, InvalidRequest, VisualAnswer, parse_visual_answer, validate_visual_request
 
 _MAX_REQUEST_BODY_BYTES = 700 * 1024
+_AUDIT_LOGGER = logging.getLogger("mapassist.assistant_gateway.audit")
 
 
 class HttpBodyLimitMiddleware:
@@ -120,9 +123,18 @@ def create_app(
     if vision_client is None:
         if settings.mode == "development_mock":
             vision_client = MockVisionClient()
-        elif settings.zhipu_api_key:
+        elif settings.vision_provider == "compatible" and settings.vision_api_key:
+            vision_client = CompatibleVisionClient(
+                settings.vision_api_key,
+                base_url=settings.vision_base_url,
+                model=settings.vision_model,
+                concurrency=settings.account_concurrency,
+                timeout_seconds=settings.request_timeout_seconds,
+            )
+        elif settings.vision_provider == "zhipu" and settings.zhipu_api_key:
             vision_client = GlmVisionClient(
                 settings.zhipu_api_key,
+                model=settings.zhipu_model,
                 concurrency=settings.account_concurrency,
                 timeout_seconds=settings.request_timeout_seconds,
             )
@@ -161,8 +173,19 @@ def create_app(
         retry_after = getattr(exc, "retry_after_seconds", None)
         if retry_after is not None:
             headers["Retry-After"] = str(retry_after)
+        metadata = exc.safe_metadata()
+        if metadata:
+            _AUDIT_LOGGER.warning(
+                "assistant_gateway_audit event=%s source=%s provider_code=%s upstream_http_status=%s retry_after_seconds=%s retry_after_source=%s",
+                exc.code,
+                metadata.get("source"),
+                metadata.get("provider_code"),
+                metadata.get("upstream_http_status"),
+                metadata.get("retry_after_seconds"),
+                metadata.get("retry_after_source"),
+            )
         return JSONResponse(
-            {"error": {"code": exc.code, "message": exc.message}},
+            {"error": {"code": exc.code, "message": exc.message, **metadata}},
             status_code=exc.http_status,
             headers=headers,
         )
@@ -193,7 +216,7 @@ def create_app(
         if not request.app.state.vision_ready or vision_client is None:
             raise GatewayError(
                 "vision_unconfigured",
-                "Vision is not configured; set ZHIPU_API_KEY to enable screen understanding.",
+                "The selected vision provider is not configured on the server.",
                 http_status=503,
             )
         try:
@@ -248,6 +271,7 @@ def create_app(
             await websocket.close(code=4401, reason="Bearer device token required")
             return
         if not websocket.app.state.asr_ready:
+            _AUDIT_LOGGER.warning("assistant_gateway_audio event=rejected reason=asr_unavailable")
             await websocket.close(code=1013, reason="ASR unavailable")
             return
         await websocket.accept()

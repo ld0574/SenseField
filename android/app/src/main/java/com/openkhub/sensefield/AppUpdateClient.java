@@ -48,6 +48,11 @@ public final class AppUpdateClient implements AutoCloseable {
     private static final Pattern SEMVER = Pattern.compile(
             "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$");
     private static final Pattern SHA256 = Pattern.compile("^[0-9a-fA-F]{64}$");
+    private static final ExecutorService TRANSPORT_CLEANUP = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "sensefield-updater-transport-close");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private final Context appContext;
     private final HttpUrl metadataUrl;
@@ -149,7 +154,8 @@ public final class AppUpdateClient implements AutoCloseable {
             activeJob = null;
         }
         if (job != null) {
-            job.cancel();
+            job.cancelled = true;
+            TRANSPORT_CLEANUP.execute(job::cancel);
         }
     }
 
@@ -165,13 +171,15 @@ public final class AppUpdateClient implements AutoCloseable {
             job = activeJob;
             activeJob = null;
         }
-        if (job != null) {
-            job.cancel();
-        }
+        if (job != null) job.cancelled = true;
         worker.shutdownNow();
-        metadataHttpClient.dispatcher().cancelAll();
-        httpClient.dispatcher().cancelAll();
-        httpClient.connectionPool().evictAll();
+        TRANSPORT_CLEANUP.execute(() -> {
+            if (job != null) job.cancel();
+            metadataHttpClient.dispatcher().cancelAll();
+            httpClient.dispatcher().cancelAll();
+            // TLS close_notify can write to a socket even for an idle connection.
+            httpClient.connectionPool().evictAll();
+        });
     }
 
     private void startJob(ErrorCallback onBusy, JobWork work) {

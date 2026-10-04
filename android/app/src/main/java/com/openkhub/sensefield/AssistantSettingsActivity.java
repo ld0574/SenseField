@@ -43,7 +43,7 @@ public final class AssistantSettingsActivity extends Activity {
             status.setText("已保存。更改连接后请重新开始辅助。");
         });
         consentSwitch(page, "连续语音（可以插话）", AssistantSettings.VOICE, AssistantSettings.AUDIO_CONSENT,
-                "开启前请佩戴耳机，并确认你正在玩的游戏声音确实从耳机传出。应用只能核对本应用默认 USAGE_GAME 探测音轨是否路由到有线、USB 或 BLE 耳机，不能读取或证明某个游戏音轨实际走耳机；游戏声仍从扬声器传出或无法确认时，请勿继续。开启后，会话期间持续使用麦克风，把本地检测到的语音片段及前300毫秒、末尾短静音发送到你的自托管服务器识别。片段可能包含背景人声或误识别声音；默认不保存原始语音。若探测音轨路由未知、不是支持的耳机或检测到其他录音会话，助手停止上传。", true);
+                "开启前请佩戴耳机或耳塞，并确认你正在玩的游戏声音确实在耳机里。应用只能核对本应用默认 USAGE_GAME 探测音轨是否路由到有线、USB、普通蓝牙 A2DP 或 BLE 耳机，不能读取或证明某个游戏音轨实际走耳机；A2DP 路由类型也不能区分耳塞与蓝牙音箱。蓝牙音箱、外放或无法确认游戏声音在耳机里时，请勿继续。开启后，会话期间持续使用麦克风，把本地检测到的语音片段及前300毫秒、末尾短静音发送到你的自托管服务器识别。片段可能包含背景人声或误识别声音；默认不保存原始语音。若探测音轨路由未知、不是支持的耳机或检测到其他录音会话，助手停止上传。", true);
         consentSwitch(page, "画面理解", AssistantSettings.VISION, AssistantSettings.IMAGE_CONSENT,
                 "开启后，提问或已开启的低频主动观察会把当前共享屏幕的缩图发送到自托管服务器，再送到智谱 GLM API。授权画面可能包含游戏聊天或系统通知，请留意共享范围。默认不保存截图；第三方服务按其条款处理数据。", false);
         simpleSwitch(page, "低频主动描述（需要画面理解）", AssistantSettings.PROACTIVE);

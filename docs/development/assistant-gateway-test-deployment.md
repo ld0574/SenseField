@@ -2,6 +2,8 @@
 
 本文说明如何复现隔离的 Linux 网关合成冒烟测试。网关只绑定回环地址，通过 SSH direct-tcpip 隧道访问；测试使用经校验的自签名 TLS 证书、固定版本的 CPU Paraformer、独立设备令牌，以及服务端 Zhipu API Key 完成一次合成 GLM 请求。
 
+2026-10-04 的后续修订增加服务端视觉提供商选择。`ASSISTANT_GATEWAY_VISION_PROVIDER=zhipu` 使用智谱原生接口，模型由 `ASSISTANT_GATEWAY_GLM_MODEL` 指定，默认仍是 `glm-4.6v-flash`。用户后续指定收费的 `MiniMax-M3` 优先、`qwen3.8-27b` 后续测试，与兼容接口：配置 `ASSISTANT_GATEWAY_VISION_PROVIDER=compatible`，并在私有服务端环境中设置 `ASSISTANT_GATEWAY_VISION_BASE_URL`、`ASSISTANT_GATEWAY_VISION_MODEL`、`ASSISTANT_GATEWAY_VISION_API_KEY`。该接口图片使用 JPEG data URL，智谱接口仍使用原始 Base64；不共用错误的图片格式。APK 不包含供应商密钥，客户端无需更换模型专用安装包。模型/HTTPS地址在启动前校验，`/health` 仅显示模型名称等安全状态；没有自动回退或切换提供商。
+
 ## 准备隔离主机
 
 使用 Linux x86_64、Python 3.10–3.13，并为固定模型快照和 CPU PyTorch wheel 预留足够磁盘空间。本次主机使用 Python 3.11.13 和 `torch==2.8.0+cpu`，无 CUDA 和 NVIDIA 软件包。若 CPU wheel 已放入私有 wheelhouse，可这样安装网关依赖：

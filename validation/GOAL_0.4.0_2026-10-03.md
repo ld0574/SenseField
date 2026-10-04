@@ -1,12 +1,14 @@
 # 0.4.0 选用式语音与画面助手目标、接口和验收记录
 
-编制日期：2026-10-03；工程状态更新：2026-10-04。版本目标 0.4.0 / versionCode 17。只读核对的最新公开下载为 0.3.8；0.4.0 仍是未发布的工程候选，工程链路已通过合成输入联调；外部时延、热表现或玩家验收仍待取得独立证据。
+编制日期：2026-10-03；工程状态更新：2026-10-04。版本目标 0.4.0 / versionCode 17 是历史方案；只读核对的最新公开下载为 0.3.8。后续 0.4.1/code18 仍为未发布的本地工程候选，最新 APK 已安装到测试手机，语音/画面设置与授权保持、网关 health 为 200，ASR/vision ready 且视觉提供商为 MiniMax-M3；安装后未启动新助手会话，实际麦克风使用和外部可闻声音、时延、热表现或玩家验收仍待取得独立证据。
+
+0.4.0 历史配置使用 GLM-only 视觉后端。后续 0.4.1 服务端增加 `zhipu` / compatible API 提供商与模型配置；用户指定先用收费的 `MiniMax-M3`，再测试 `qwen3.8-27b`。MiniMax 合成视觉与正式 Android HTTPS 客户端请求通过；千问仅一次 HTTP 503、无视觉结果、尚未验证，也未重试；模型间不自动 fallback。结果见[0.4.1真机记录](ASSISTANT_LIVE_0.4.1_2026-10-04.md)。此选择不修改本页历史测试结果或符合度门禁。
 
 ## 目标与完成边界
 
 在既有端侧小地图辅助之外，为明确选择该能力的用户提供语音和画面问答。语音、画面与主动观察分开授权，默认关闭；首次开启必须在游戏外、相关 Activity 可见时完成。连续语音由用户自己选择，不能强制改成按住说话。助手随用户授权的 MediaProjection 前台服务运行；应用切到后台后，已运行的服务仍可继续，系统持续显示前台服务通知。当前没有独立于该服务、静默运行的后台采集路径。
 
-当前实现没有本地 ASR 模式。用户分别开启语音并同意音频处理后，端侧 WebRTC VAD 2.0.10（aggressiveness mode 3）筛出的语音片段和最多约 300 ms 预滚动音频会流向用户配置的网关/自有服务。连续语音路由门槛为 Android 10/API 29+：本应用使用 `USAGE_GAME`、`MODE_STATIC`、全零 PCM 静态短缓冲并静音无限循环的 `AudioTrack` 探测默认路由，通过其 `getRoutedDevice()` 与 routing callback 白名单确认有线/USB 耳机；BLE 路由识别从 API 31 起可用。探测不申请 audio focus、不调用 `setPreferredDevice()`，也不读取其他 UID 的游戏播放配置。Android 14/15 AOSP 会匿名化提供给普通应用的活动播放配置并清空设备 ID，因此旧的跨 UID 活动路由门禁无法工作；见[Android 14 播放配置匿名化](https://android.googlesource.com/platform/frameworks/base/+/android-14.0.0_r1/services/core/java/com/android/server/audio/PlaybackActivityMonitor.java#L741)、[Android 15 播放配置匿名化](https://android.googlesource.com/platform/frameworks/base/+/android-15.0.0_r1/services/core/java/com/android/server/audio/PlaybackActivityMonitor.java#L791)与[匿名配置副本实现](https://android.googlesource.com/platform/frameworks/base/+/android-14.0.0_r1/media/java/android/media/AudioPlaybackConfiguration.java#L391)。探测只能证明本应用默认 `USAGE_GAME` 声路，无法确认游戏为自己的轨道指定了不同设备，试用前须由用户确认游戏声已在耳机中；外放实验未开放。无耳机、A2DP、SCO、扬声器、未知路由或探测失败时暂停上传。静音探测轨道可能带来额外 native 音频负载，需由热/负载对照测量，不称为零开销。Android 10/11 仍支持本地预警与手动画面问答。应用同时观察自身录音静音与全局其他录音会话；`isClientSilenced()` 为真或任意其他麦克风活动（包括匿名 session）出现时暂停上传，恢复前清空旧轮次；设备实际并发行为仍待真机验证。用户分别开启画面并同意画面处理后，单张用户请求的画面通过该服务交给智谱 GLM-4.6V-Flash。图像和音频路径相互独立，低频主动观察另设开关。应用不持久化完整语音转录；已有诊断截图/报告是另一条本地保留路径，按其现有用户开关与本机保留规则处理，不能拿它推断助手数据被上传或被持久化。
+当前实现没有本地 ASR 模式。用户分别开启语音并同意音频处理后，端侧 WebRTC VAD 2.0.10（aggressiveness mode 3）筛出的语音片段和最多约 300 ms 预滚动音频会流向用户配置的网关/自有服务。连续语音路由门槛为 Android 10/API 29+：本应用使用 `USAGE_GAME`、`MODE_STATIC`、全零 PCM 静态短缓冲并静音无限循环的 `AudioTrack` 探测默认路由，通过其 `getRoutedDevice()` 与 routing callback 白名单确认有线/USB 耳机；BLE 路由识别从 API 31 起可用。探测不申请 audio focus、不调用 `setPreferredDevice()`，也不读取其他 UID 的游戏播放配置。Android 14/15 AOSP 会匿名化提供给普通应用的活动播放配置并清空设备 ID，因此旧的跨 UID 活动路由门禁无法工作；见[Android 14 播放配置匿名化](https://android.googlesource.com/platform/frameworks/base/+/android-14.0.0_r1/services/core/java/com/android/server/audio/PlaybackActivityMonitor.java#L741)、[Android 15 播放配置匿名化](https://android.googlesource.com/platform/frameworks/base/+/android-15.0.0_r1/services/core/java/com/android/server/audio/PlaybackActivityMonitor.java#L791)与[匿名配置副本实现](https://android.googlesource.com/platform/frameworks/base/+/android-14.0.0_r1/media/java/android/media/AudioPlaybackConfiguration.java#L391)。探测只能证明本应用默认 `USAGE_GAME` 声路，无法确认游戏为自己的轨道指定了不同设备，试用前须由用户确认游戏声已在耳机中；外放实验未开放。0.4.1修订增加普通A2DP耳机实验；设备类型无法区分耳机与蓝牙音箱，用户须戴耳机并确认游戏声也在耳机中。无耳机、SCO、扬声器、未知路由或探测失败仍暂停上传。静音探测轨道可能带来额外 native 音频负载，需由热/负载对照测量，不称为零开销。Android 10/11 仍支持本地预警与手动画面问答。应用同时观察自身录音静音与全局其他录音会话；`isClientSilenced()` 为真或任意其他麦克风活动（包括匿名 session）出现时暂停上传，恢复前清空旧轮次；设备实际并发行为仍待真机验证。0.4.0 历史视觉路径把单张用户请求的画面交给 GLM-4.6V-Flash；当前 0.4.1 服务端支持 `zhipu` 与 compatible API，按用户指定先用 MiniMax-M3，qwen3.8-27b 单次 HTTP 503 尚未验证，无自动 fallback。图像和音频路径相互独立，低频主动观察另设开关。应用不持久化完整语音转录；已有诊断截图/报告是另一条本地保留路径，按其现有用户开关与本机保留规则处理，不能拿它推断助手数据被上传或被持久化。
 
 语音或画面被用户关闭、网关不可用、权限撤销时，不影响端侧小地图识别链路。SpeexDSP AEC 已接入耳机条件下的语音链路，并用助手自身的合成 PCM 作回声参考；它不会捕获游戏播放音频，也不依赖游戏提供回声参考。AEC 算法已集成，目标设备上的回声抑制效果、并发采音质量和可懂度仍待实测。
 
@@ -20,7 +22,7 @@
 
 - 合并开心消消乐后的工作树通过 JVM 204 项、Python 530 项（1 项跳过）、native CTest 4/4、arm64 Debug 构建与 lint。Android 14 arm64 模拟器 12 项本地 instrumentation 通过；额外 2 项显式真实 HTTPS/WSS 测试通过（普通套件未配置时跳过）。前序 183 项结果保留为历史，不混入当前计数。
 - ASR 使用 CPU Python FunASR 和已校验的 pinned Paraformer streaming Apache-2.0 snapshot。一次合成输入“请读出当前比分”的 smoke 在 2,510 ms 后收到 final；这是单次服务管线耗时，不是语音质量、外部实声时延或 P95。外部录像 final-recognition P95（目标 ≤1,000 ms）仍无样本，尚不能判定通过。
-- 真实 GLM-4.6V-Flash 合成图读取正确，单次 API 请求 1,089 ms；Android 正式客户端经已验证 TLS 的 HTTPS/WSS 完成真实 GLM、固定 CPU ASR 和跨 generation reset。复现见[安卓传输测试](../docs/development/assistant-android-transport-test.md)。Linux 隔离网关的 TLS、401 鉴权拒绝、真实 CPU ASR 与免费 GLM 合成测试均通过；单次音频结束至 final 为 199 ms，GLM 网关请求为 1,804 ms。见[Linux 部署记录](../docs/development/assistant-gateway-test-deployment.md)；未测 Android→Linux 或实体麦克风。目标设备耳机/麦克风并发、SpeexDSP AEC 实效、外部录音端到端时延、热负载比较和玩家体验仍待完成；以上均非物理 SLA 或 P95。0.4.0 没有公开发布记录。
+- **0.4.0 历史 GLM 集成与测试：**真实 GLM-4.6V-Flash 合成图读取正确，单次 API 请求 1,089 ms；Android 正式客户端经已验证 TLS 的 HTTPS/WSS 完成真实 GLM、固定 CPU ASR 和跨 generation reset。复现见[安卓传输测试](../docs/development/assistant-android-transport-test.md)。Linux 隔离网关的 TLS、401 鉴权拒绝、真实 CPU ASR 与免费 GLM 合成测试均通过；单次音频结束至 final 为 199 ms，GLM 网关请求为 1,804 ms。见[Linux 部署记录](../docs/development/assistant-gateway-test-deployment.md)；未测 Android→Linux 或实体麦克风。目标设备耳机/麦克风并发、SpeexDSP AEC 实效、外部录音端到端时延、热负载比较和玩家体验仍待完成；以上均非物理 SLA 或 P95。0.4.0 没有公开发布记录。
 
 该助手不自动提高历史 35 项符合度，也不改变 2026-10-01 评估书的 **52.96% 历史结果**。新问答可作为独立实验能力；#11 是否满足、能否帮助玩家，仍要按对应需求和独立证据复核，不预报分数。
 
@@ -33,9 +35,10 @@
 | 健康检查 | GET /health | 服务就绪信息；不得带或回显密钥 |
 | 语音流 | WSS /v1/audio，HTTP Authorization: Bearer …；先发 JSON {type:start, session_id, generation, sample_rate:16000}，随后发 speech_start、speech_end、reset 控制消息（含 turn_id、generation），音频为 16 kHz 单声道 PCM16LE 二进制帧 | 服务发 partial、final、status 等带 ID 的事件；包含文本或状态及 asr_ms。应用不把 partial/final 回调当作物理发声时间 |
 | 画面请求 | POST /v1/visual，同一网关 Bearer 认证；JSON 包含 session_id、generation、turn_id、frame_id、question、image_base64、frame_age_ms、proactive | JSON 返回关联 ID 与 kind（hud / ui_text / unknown）、answer、uncertain、elapsed_ms。请求仅在用户选择的功能范围内发出 |
-| GLM 视觉服务 | 网关后端请求 `/api/paas/v4/chat/completions`，按智谱原生 HTTPS 接口在 `image_url.url` 传原始 base64 JPEG；关闭 thinking，流式输出，`max_tokens=256`，不发送 `response_format` | `ZHIPU_API_KEY` 仅在服务器端。当前代码只有 GLM-4.6V-Flash 视觉后端、没有视觉回退。智谱公开价目页与模型说明在 2026-10-03 标示该模型 API 输入/输出免费（[价格页](https://docs.bigmodel.cn/cn/guide/start/pricing)、[模型说明](https://docs.bigmodel.cn/cn/guide/models/free/glm-4.6v-flash)）；账号额度、并发/速率限制和网关服务器成本仍适用，不能据此称整体服务没有成本。数据用途与留存期限仍须按实际账户与部署条款核对，不推定零留存 |
+| 0.4.0 历史 GLM 视觉服务 | 网关后端请求 `/api/paas/v4/chat/completions`，按智谱原生 HTTPS 接口在 `image_url.url` 传原始 base64 JPEG；关闭 thinking，流式输出，`max_tokens=256`，不发送 `response_format` | `ZHIPU_API_KEY` 仅在服务器端。此行描述 0.4.0 历史 GLM-only 配置，不代表 0.4.1 当前提供商。智谱公开价目页与模型说明在 2026-10-03 标示该模型 API 输入/输出免费（[价格页](https://docs.bigmodel.cn/cn/guide/start/pricing)、[模型说明](https://docs.bigmodel.cn/cn/guide/models/free/glm-4.6v-flash)）；账号额度、并发/速率限制和网关服务器成本仍适用，不能据此称整体服务没有成本。数据用途与留存期限仍须按实际账户与部署条款核对，不推定零留存 |
+| 0.4.1 当前视觉提供商 | 网关支持服务端 `zhipu` 与 compatible API 配置。当前按用户指定先用 `MiniMax-M3`，再测 `qwen3.8-27b` | MiniMax 合成验证有结果；qwen3.8-27b 仅一次 HTTP 503、未生成结果且未验证；无自动 fallback。各项细节见[真机记录](ASSISTANT_LIVE_0.4.1_2026-10-04.md) |
 
-网关设备 token 的配置名为 `ASSISTANT_GATEWAY_DEVICE_TOKEN`，多 token 可用 `ASSISTANT_GATEWAY_DEVICE_TOKENS`；它们与 `ZHIPU_API_KEY` 分开。Android 侧只使用用户配置的网关 URL 与设备凭据；不得在仓库、APK 源码或日志中放服务端模型密钥。
+网关设备 token 的配置名为 `ASSISTANT_GATEWAY_DEVICE_TOKEN`，多 token 可用 `ASSISTANT_GATEWAY_DEVICE_TOKENS`；兼容接口凭据与 `ZHIPU_API_KEY` 均单独保存在服务端环境。Android 侧只使用用户配置的网关 URL 与设备凭据；不得在仓库、APK 源码或日志中放服务端模型密钥。
 
 ## 35 项需求证据链中的重点条目
 
@@ -59,7 +62,7 @@
 
 ## 实际玩家与设备验收
 
-以下是将来收集证据的验收计划，当前没有参与者计数或通过结果。未获得真实记录之前保持待测。
+以下为目标玩家与受控验收计划；队友工程联调另记于[0.4.1真机记录](ASSISTANT_LIVE_0.4.1_2026-10-04.md)，尚无目标参与者独立验收通过结果。未取得对应证据的门禁保持待测。
 
 - 招募 3–5 名目标/探索参与者。热与负载比较须完成 3 组配对的 15 分钟运行；候选相对对照的电池温升增量不超过 1°C，native processing P95 回归不超过 10%。同设备、游戏场景、音量、热点、画质和语音条件应匹配；实施前预先定义起始温度匹配范围，建议配对起始电池温度相差不超过 1°C。组间充分冷却，出现不适或明显发热就停止，不要求完成满时长。目标玩家的功能体验另外报告，不把这些工程门槛当成玩家效用结论。
 - 外部设备连续拍摄屏幕并录制房间中的实际提示声音；标记用户实际语音起止、助手当前声音停止、真实静音开始和第一段有用回答的物理时间。保留无声、未回答和录像缺失为 unknown，不填零，不用 TTS/ASR 回调代替物理声音。
@@ -84,7 +87,7 @@ timing_source 必须为 external_recording。Barge-in 行须同时填 interrupte
 
 下列工程检查和真人门禁分开记录，不把代码或合成输入联调当作玩家验收。
 
-- [x] 模拟模型 HTTPS/WSS 与 Android 正式客户端真实 GLM/CPU ASR 合成输入 transport 测试通过；覆盖 TLS、设备鉴权、请求/响应 ID 与 generation reset，不覆盖患者数据和物理声学条件。
+- [x] 0.4.0 历史 GLM/CPU ASR 合成输入 transport 测试通过；覆盖 TLS、设备鉴权、请求/响应 ID 与 generation reset，不覆盖参与者数据和物理声学条件。
 - [ ] 三个隐私开关分别关闭/开启验证；关闭时用服务端日志证明没有对应音频或图像请求；首开流程在游戏外 Activity 可见时完成；应用切至后台后的前台服务/通知/采集生命周期完成真机核验。
 - [ ] 服务端只持有 ZHIPU_API_KEY；APK、Git、诊断日志中无服务端密钥或设备 token；公开仓库扫描无秘密内容输出。
 - [ ] 语音临时数据、服务端访问日志和第三方服务数据保留条款均已复核；无完整对话转录被应用持久化；诊断 ZIP 的本机保留按既有诊断设置另行核查。
@@ -96,8 +99,14 @@ timing_source 必须为 external_recording。Barge-in 行须同时填 interrupte
 
 ## 工程交付与保留门禁
 
-2026-10-04 完成这阶段的工程交付：同伴消消乐已快进合并至本地 main；统一声音抢占、插话取消与过期回调、呈现层实验、独立隐私开关、小圆点、VAD/AEC、CPU ASR 网关和免费 GLM 接入均已落在候选源码。路由审查发现 Android 14/15 的跨 UID 播放配置匿名化会阻断原耳机判断，已改为本应用静音轨道探测，并用 Android 14 的默认扬声器测试确认闭锁；这不验证真实耳机效果。最终回归为 204 项 JVM、12 项本地设备测试、lint；额外 2 项真实 Android 传输测试和 Linux 网关自身的合成推理另记。
+2026-10-04 完成这阶段的工程交付：同伴消消乐已快进合并至本地 main；统一声音抢占、插话取消与过期回调、呈现层实验、独立隐私开关、小圆点、VAD/AEC、CPU ASR 网关和 0.4.0 历史 GLM 接入均已落在候选源码。路由审查发现 Android 14/15 的跨 UID 播放配置匿名化会阻断原耳机判断，已改为本应用静音轨道探测，并用 Android 14 的默认扬声器测试确认闭锁；这不验证真实耳机效果。此前回归为 204 项 JVM、12 项本地设备测试、lint；额外 2 项真实 Android 传输测试和 Linux 网关自身的合成推理另记。
 
-Linux 单次 ASR 的音频结束至 final 为 199 ms，推理为 313 ms，开始至 final 为 1,982 ms（含 1,770 ms 输入）；GLM 网关请求为 1,804 ms，SSH 隧道 HTTPS 往返为 1,868 ms。全部是合成数据的单点服务测量，无 P95、物理发声、Android→Linux 或玩家结论。部署复现与测试清理见[Linux 部署记录](../docs/development/assistant-gateway-test-deployment.md)。后续按上文的独立设备、声音、热负载与玩家门禁收集证据。
+Linux 单次 ASR 的音频结束至 final 为 199 ms，推理为 313 ms，开始至 final 为 1,982 ms（含 1,770 ms 输入）；GLM 网关请求为 1,804 ms，SSH 隧道 HTTPS 往返为 1,868 ms。以上 GLM 数据是 0.4.0 历史配置的合成数据单点服务测量，无 P95、物理发声、Android→Linux 或玩家结论。部署复现与测试清理见[Linux 部署记录](../docs/development/assistant-gateway-test-deployment.md)。后续按上文的独立设备、声音、热负载与玩家门禁收集证据。
 
 本地候选 `output/releases/0.4.0/` 包含 arm64 APK、中文使用说明、SHA-256 和核验 JSON；临时 Android 联调 CA 已移除，实际测试凭据经提交候选与 APK 字节扫描无匹配。新版符合度方案记录真实测试入口，未训练、未扫描阈值、未读取封存录像、未改既有模型/profile、未改 `verified` / `release_ready`。真实玩家、物理声音、受控温升与供应商留存核验仍独立待测，不用工程目标完成替代它们。
+
+### 0.4.1 交互控制工程进展
+
+“选哪个/哪一项？”类自然语音 final 会进入“读取当前画面可见选项”的待处理请求；控制提示只要求读出清晰可见的选项名称，不推荐、不猜测，因此这是界面转读而非战术建议。普通选择陈述（如“我选桑启”）不触发截图请求。蓝牙或麦克风安全状态处于 blocked 时，服务端 `ready` 不会覆盖本地阻塞状态；状态变化刷新运行通知。安全审计 `INPUT_STATE` 仅记录 flags 与 routed device type，不记录转写正文。
+
+13:37:53 的音频系统历史记录显示 A2DP 断开后路由回到 speaker、SCO 未启用；该记录只说明路由变化，不能证明用户某句话发生于该时刻。最新 Android JVM 216 项全部通过；Android 14 模拟器 `AssistantControls` 9/9 通过，覆盖自然 final→可见选项 pending、普通选择陈述不请求、blocked→ready 保留并恢复本地状态、过期提示等。最新 0.4.1 APK 已安装至测试手机，语音/画面设置与授权保持、网关 health 为 200、ASR/vision ready 且视觉提供商为 MiniMax-M3；安装后未启动新助手会话，实际麦克风使用与外部可闻声音仍未验证。以上都是工程证据，不代表外部可闻声音、物理时延/温升、玩家验收或评分变化；35 项符合度和 52.96% 历史判定、既有严格小地图门槛均保持不变，`verified` 与 `release_ready` 未改。

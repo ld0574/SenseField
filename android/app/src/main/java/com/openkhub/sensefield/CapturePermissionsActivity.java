@@ -11,7 +11,10 @@ import android.media.projection.MediaProjectionManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.widget.Button;
 import android.widget.CheckBox;
@@ -22,6 +25,7 @@ import android.widget.Toast;
 
 import org.json.JSONException;
 import java.io.IOException;
+import java.util.UUID;
 
 /** All device grants are checked here; projection consent is never reused. */
 public final class CapturePermissionsActivity extends Activity {
@@ -36,6 +40,11 @@ public final class CapturePermissionsActivity extends Activity {
     private Button capture;
     private boolean startRequested;
     private boolean attemptedForStart;
+    private final Handler startHandler = new Handler(Looper.getMainLooper());
+    private String pendingStartId;
+    private long startDeadlineMs;
+    private boolean resumed;
+    private final Runnable checkStart = this::checkCaptureStart;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -44,6 +53,10 @@ public final class CapturePermissionsActivity extends Activity {
         startRequested = getIntent().getBooleanExtra(EXTRA_START, false);
         attemptedForStart = savedInstanceState != null
                 && savedInstanceState.getBoolean("attempted_start", false);
+        if (savedInstanceState != null) {
+            pendingStartId = savedInstanceState.getString("pending_start_id");
+            startDeadlineMs = savedInstanceState.getLong("pending_start_deadline_ms");
+        }
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setFitsSystemWindows(true);
@@ -152,10 +165,11 @@ public final class CapturePermissionsActivity extends Activity {
         boolean active = GameProfile.settings(this).getBoolean("capture_active", false)
                 && CaptureService.isRunning();
         boolean ready = requiredSettingsReady(this);
-        screenStatus.setText(active ? "本次会话已授权。停止后再次开始需要重新确认。"
+        screenStatus.setText(pendingStartId != null ? "正在准备辅助，随后打开王者荣耀"
+                : active ? "本次会话已授权。停止后再次开始需要重新确认。"
                 : ready ? "每次开始新会话时，由系统确认共享整个屏幕。"
                 : "请先完成下方的必要授权，再确认本次屏幕共享。");
-        capture.setEnabled(ready && !active);
+        capture.setEnabled(ready && !active && pendingStartId == null);
         notificationStatus.setText(notificationGranted(this) ? "已允许" : "需要授权，用于查看辅助运行状态");
         overlayStatus.setText(Settings.canDrawOverlays(this) ? "已允许"
                 : overlayRequired(this) ? "视觉提示已开启，需要置顶显示授权"
@@ -167,6 +181,7 @@ public final class CapturePermissionsActivity extends Activity {
     }
 
     private void requestCapture() {
+        if (pendingStartId != null) return;
         if (Match3LiveService.isRunning()) {
             toast("请先停止消消乐实时辅助，再启动王者辅助");
             return;
@@ -207,8 +222,44 @@ public final class CapturePermissionsActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        resumed = true;
         refreshPermissions();
-        if (startRequested && !attemptedForStart && requiredSettingsReady(this)) requestCapture();
+        if (pendingStartId != null) checkCaptureStart();
+        else if (startRequested && !attemptedForStart && requiredSettingsReady(this)) requestCapture();
+    }
+
+    @Override protected void onPause() {
+        resumed = false;
+        startHandler.removeCallbacks(checkStart);
+        super.onPause();
+    }
+
+    @Override protected void onDestroy() {
+        startHandler.removeCallbacks(checkStart);
+        super.onDestroy();
+    }
+
+    private void checkCaptureStart() {
+        startHandler.removeCallbacks(checkStart);
+        if (!resumed || pendingStartId == null || isFinishing() || isDestroyed()) return;
+        CaptureService.StartResult result = CaptureService.startResult(pendingStartId);
+        if (result != null) {
+            // Consume before launching: resuming or rotating must not open the game twice.
+            pendingStartId = null;
+            if (result.ready && CaptureService.isRunning()
+                    && GameProfile.settings(this).getBoolean("capture_active", false)) {
+                GameLauncher.openHonorOfKings(this);
+                setResult(RESULT_OK);
+                finish();
+            } else {
+                toast(GameProfile.settings(this).getString("last_capture_status", "辅助启动失败，请重新开始"));
+                refreshPermissions();
+            }
+        } else if (SystemClock.elapsedRealtime() >= startDeadlineMs) {
+            pendingStartId = null;
+            toast("辅助启动超时，请检查运行状态后重新开始");
+            refreshPermissions();
+        } else startHandler.postDelayed(checkStart, 100);
     }
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions,
@@ -228,6 +279,8 @@ public final class CapturePermissionsActivity extends Activity {
 
     @Override protected void onSaveInstanceState(Bundle state) {
         state.putBoolean("attempted_start", attemptedForStart);
+        state.putString("pending_start_id", pendingStartId);
+        state.putLong("pending_start_deadline_ms", startDeadlineMs);
         super.onSaveInstanceState(state);
     }
 
@@ -240,14 +293,25 @@ public final class CapturePermissionsActivity extends Activity {
             toast("未授权截屏，辅助未开始");
             return;
         }
+        if (pendingStartId != null) return;
+        pendingStartId = UUID.randomUUID().toString();
+        startDeadlineMs = SystemClock.elapsedRealtime() + 15000;
         // Pass this fresh one-use result directly to the foreground service.
         Intent service = new Intent(this, CaptureService.class);
         service.setAction(CaptureService.ACTION_START);
         service.putExtra(CaptureService.EXTRA_RESULT_CODE, resultCode);
         service.putExtra(CaptureService.EXTRA_RESULT_DATA, data);
-        startForegroundService(service);
-        setResult(RESULT_OK);
-        finish();
+        service.putExtra(CaptureService.EXTRA_START_REQUEST_ID, pendingStartId);
+        try {
+            // Remain visible until both projection and microphone foreground types are ready.
+            startForegroundService(service);
+            refreshPermissions();
+            if (resumed) checkCaptureStart();
+        } catch (RuntimeException error) {
+            pendingStartId = null;
+            toast("系统未能启动辅助，请检查授权后重试");
+            refreshPermissions();
+        }
     }
 
     private void toast(String text) { Toast.makeText(this, text, Toast.LENGTH_LONG).show(); }

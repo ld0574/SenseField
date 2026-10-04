@@ -41,6 +41,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     private volatile String audioTurn = "";
     private volatile long audioGeneration;
     private volatile boolean uploading;
+    private volatile VoiceInputSafetyPolicy.InputState inputState;
     private volatile long latestFrameAtMs = -1;
     private volatile long lastReconnectMs = -1;
     private String pendingQuestion;
@@ -52,6 +53,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     private AssistantReply lastReply;
     private String lastAutomaticAnswer = "";
     private String currentStatus = "助手正在连接";
+    private static final String EXPIRED_FRAME_PROMPT = "画面返回太慢，旧画面已丢弃。";
     private static final class VisualTask {
         final long id; final String turn; final FrameSnapshot frame; final boolean proactive;
         VisualTask(long id, String turn, FrameSnapshot frame, boolean proactive) {
@@ -67,7 +69,10 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         main.post(() -> {
             if (closed) return;
             overlay = new AssistantOverlay(context, new AssistantOverlay.Listener() {
-                @Override public void readScreen() { question("请读出当前界面的清晰文字和比分。", false); }
+                @Override public void readScreen() {
+                    host.audit("AssistantInteraction event=READ_SCREEN");
+                    question("请读出当前界面的清晰文字和比分。", false);
+                }
                 @Override public void repeat() { repeatLast(); }
                 @Override public void mark() { host.mark(); setStatus("已标记问题"); }
                 @Override public void pauseVoice() { setVoicePaused(!voicePaused); }
@@ -96,6 +101,13 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
                             }
                         }, 5000);
                     }
+                    @Override public void inputStateChanged(VoiceInputSafetyPolicy.InputState state) {
+                        voiceInputStateChanged(state);
+                    }
+                    @Override public void safetyMetadata(int flags, int routedDeviceType) {
+                        host.audit("AssistantVoice event=INPUT_STATE flags=" + flags
+                                + " routedDeviceType=" + routedDeviceType);
+                    }
                     @Override public void unavailable(String value) { main.post(() -> voiceStatus(value)); }
                 });
                 voice.start();
@@ -123,11 +135,14 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     }
     private void voiceStatus(String value) {
         if (closed) return;
-        if (value.contains("游戏正在") || value.contains("外放") || value.contains("中断")
-                || value.contains("不可用") || value.contains("未授权") || value.contains("输入可用")) {
-            invalidate("audio_route");
-        }
         setStatus(value);
+    }
+    /** Called on each typed input-gate transition before queued finals can reach the UI thread. */
+    void voiceInputStateChanged(VoiceInputSafetyPolicy.InputState state) {
+        if (closed || state == null) return;
+        inputState = state;
+        invalidate("audio_input_" + state.auditKey);
+        main.post(() -> setStatus(state.status));
     }
     void setVoicePaused(boolean value) {
         if (!voiceEnabled) { setStatus("连续语音尚未开启"); return; }
@@ -184,7 +199,12 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         });
     }
     void question(String text, boolean proactive) {
-        if (closed || paused || text == null || text.trim().isEmpty()) return;
+        if (closed || paused || text == null || text.trim().isEmpty()) {
+            host.audit("AssistantInteraction event=QUESTION_IGNORED reason="
+                    + (closed ? "closed" : paused ? "paused" : "empty"));
+            return;
+        }
+        host.audit("AssistantInteraction event=QUESTION proactive=" + proactive);
         text = text.trim(); if (text.length() > 240) text = text.substring(0, 240);
         session.invalidate();
         String turn = session.newTurn(); host.cancelSpeech(); abandonVisual();
@@ -195,9 +215,16 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         if (localCommand(text, turn)) return;
         if (!visionEnabled) { sayLocal(turn, "画面理解尚未开启。", false); return; }
         if (!policy.manualAllowed(SystemClock.elapsedRealtime(), mode)) {
-            sayLocal(turn, mode == FrameProcessingPolicy.Mode.HOT ? "温度较高，画面理解暂时暂停。" : "画面服务暂时不可用，请稍后再试。", false); return;
+            long retryMs = policy.retryAfterMs(SystemClock.elapsedRealtime());
+            String reason = mode == FrameProcessingPolicy.Mode.HOT ? "hot"
+                    : retryMs > 0 ? "rate_limited" : "session_budget";
+            host.audit("AssistantVisual event=DENIED reason=" + reason + " retryAfterMs=" + retryMs);
+            sayLocal(turn, mode == FrameProcessingPolicy.Mode.HOT ? "温度较高，画面理解暂时暂停。"
+                    : retryMs > 0 ? "画面服务暂时繁忙，请在" + ((retryMs + 999) / 1000) + "秒后重试。"
+                    : "本次会话的画面问答次数已用完，请稍后再试。", false); return;
         }
         if (overlay != null && overlay.isExpanded()) overlay.setExpanded(false);
+        text = visualQuestion(text);
         AssistantReply previous = lastReply;
         if (previous != null && !"local".equals(previous.kind) && !previous.uncertain
                 && previous.freshAt(SystemClock.elapsedRealtime())) {
@@ -220,6 +247,12 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     }
     private boolean localCommand(String text, String turn) {
         String command = text.replaceAll("[\\s，。！？!?]", "");
+        if (command.matches("(听野|助手)?(你好|您好|在吗|你在吗|在不在|听得到吗|你听得到吗)")) {
+            sayLocal(turn, "我在。可以说读取画面，或附近情况。", false); return true;
+        }
+        if (command.matches("(听野|助手)?(你是谁|你叫什么|能做什么|你能做什么)")) {
+            sayLocal(turn, "我是听野，可以读画面中的清晰文字和比分。", false); return true;
+        }
         if (command.matches("(停止播报|别说了|停说|安静|暂停助手)")) {
             if (command.equals("暂停助手")) setVoicePaused(true); else setStatus("已停止助手播报"); return true;
         }
@@ -311,7 +344,8 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         else if ("final".equals(type)) {
             awaitingFinal = false;
             host.audit("AssistantVoice event=FINAL generation=" + generation + " asrMs=" + message.optLong("asr_ms", -1)
-                    + " finalizationMs=" + message.optLong("finalization_ms", -1) + " inferenceMs=" + message.optLong("inference_ms", -1));
+                    + " finalizationMs=" + message.optLong("finalization_ms", -1) + " inferenceMs=" + message.optLong("inference_ms", -1)
+                    + " textChars=" + text.length() + " requestLike=" + isRequest(text));
             if (text.isEmpty()) { setStatus("没有听清，请重说"); return; }
             // Ordinary statements do not automatically upload screenshots.
             if (isRequest(text)) question(text, false); else setStatus("已听到，等待你的问题");
@@ -323,7 +357,15 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         }
     }); }
     static boolean isRequest(String text) {
-        return text.matches(".*(什么|怎么|多少|哪里|在哪|有没有|是不是|吗|么|呢|读|看看|告诉|解释|重复|重说|再说|别说|停止播报|停说|安静|暂停助手|附近情况|提醒|提示).*" );
+        if (text.replaceAll("[\\s，。！？!?]", "").matches(
+                "(听野|助手)?(你好|您好|在不在|你是谁|你叫什么|能做什么|你能做什么)")) return true;
+        return text.matches(".*(什么|怎么|多少|哪(一)?(个|项|种|些|位|款|边|里)|在哪|有没有|是不是|吗|么|呢|读|看看|告诉|解释|重复|重说|再说|别说|停止播报|停说|安静|暂停助手|附近情况|提醒|提示).*" );
+    }
+    /** Selection questions read visible options; the assistant does not choose tactics. */
+    static String visualQuestion(String text) {
+        if (text.matches("(?s).*((选|选择).*哪|哪.*(选|选择|合适|适合|好)).*"))
+            return "请读出当前画面中清晰可见的选项名称，不推荐选择，不猜测。";
+        return text;
     }
     @Override public void audioUnavailable(String reason) { main.post(() -> {
         if (closed || client.hasAudioConnection()) return;
@@ -339,13 +381,21 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         String kind = result.optString("kind", "unknown"), answer = result.optString("answer").trim();
         boolean uncertain = result.optBoolean("uncertain", true);
         if (answer.length() > 400 || (!"hud".equals(kind) && !"ui_text".equals(kind) && !"unknown".equals(kind))) { setStatus("画面回答不可用"); return; }
+        AssistantReply reply = new AssistantReply(task.frame.generation, task.turn, task.frame.frameId,
+                task.frame.capturedAtMs, kind, answer, uncertain, task.proactive);
+        long now = SystemClock.elapsedRealtime();
+        if (!reply.freshAt(now)) {
+            if (!task.proactive && now > reply.expiresAtMs()) {
+                explainExpiredFrame(task.turn, task.frame.frameId,
+                        task.frame.capturedAtMs, "result");
+            } else {
+                setStatus("画面回答已过期，请重问");
+            }
+            return;
+        }
         if (uncertain || "unknown".equals(kind) || answer.isEmpty()) {
             if (!task.proactive) sayLocal(task.turn, "没看清，请重新提问。", true); return;
         }
-        AssistantReply reply = new AssistantReply(task.frame.generation, task.turn, task.frame.frameId,
-                task.frame.capturedAtMs, kind, answer, false, task.proactive);
-        long now = SystemClock.elapsedRealtime();
-        if (!reply.freshAt(now)) { setStatus("画面回答已过期，请重问"); return; }
         if (task.proactive && answer.equals(lastAutomaticAnswer)) return;
         if (task.proactive) lastAutomaticAnswer = answer;
         if (now - reply.capturedAtMs > 2000) reply = new AssistantReply(reply.generation, reply.turnId,
@@ -354,14 +404,61 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         host.audit("AssistantVisual event=RESULT frameId=" + task.frame.frameId + " frameAgeMs=" + (now - task.frame.capturedAtMs)
                 + " elapsedMs=" + result.optLong("elapsed_ms", -1) + " proactive=" + task.proactive);
     }); }
+    /** A queued assistant utterance can expire after the visual result was accepted. */
+    void assistantSpeechExpired(String playbackSessionId, String cueId, long atMs) {
+        main.post(() -> {
+            AssistantReply reply = lastReply;
+            if (closed || paused || !(voiceEnabled || visionEnabled) || reply == null
+                    || "local".equals(reply.kind) || reply.proactive || reply.frameId < 0
+                    || !session.sessionId.equals(playbackSessionId)
+                    || !session.owns(reply.generation, reply.turnId)
+                    || !(session.sessionId + ":assistant:" + reply.turnId).equals(cueId)
+                    || atMs <= reply.expiresAtMs()
+                    || SystemClock.elapsedRealtime() <= reply.expiresAtMs()) return;
+            explainExpiredFrame(reply.turnId, reply.frameId, reply.capturedAtMs, "playback");
+        });
+    }
+    private void explainExpiredFrame(String turn, long frameId, long capturedAtMs, String stage) {
+        long ageMs = SystemClock.elapsedRealtime() - capturedAtMs;
+        host.audit("AssistantVisual event=EXPIRED stage=" + stage + " frameId=" + frameId
+                + " frameAgeMs=" + Math.max(0, ageMs));
+        setStatus(EXPIRED_FRAME_PROMPT);
+        sayLocal(turn, EXPIRED_FRAME_PROMPT, false);
+    }
     @Override public void visualFailure(long id, String code) { main.post(() -> {
         VisualTask task = takeTask(id); if (task == null || closed) return;
-        if ("rate_limited".equals(code) || "1302".equals(code) || "1305".equals(code)) policy.throttled(SystemClock.elapsedRealtime());
-        if (task.frame != null && session.owns(task.frame.generation, task.turn) && !task.proactive && !"cancelled".equals(code))
-            sayLocal(task.turn, "画面理解暂时不可用，请稍后再试。", true);
+        if ("rate_limited".equals(code) || "1302".equals(code) || "1305".equals(code) || "provider_busy".equals(code)) {
+            long now = SystemClock.elapsedRealtime();
+            if (policy.retryAfterMs(now) <= 0) policy.throttled(now,
+                    "provider_busy".equals(code) || "1305".equals(code) ? AssistantPolicy.OVERLOAD_RETRY_MS : 60_000);
+        }
+        if (task.frame != null && session.owns(task.frame.generation, task.turn) && !task.proactive && !"cancelled".equals(code)) {
+            String explanation = "timeout".equals(code) ? "画面读取超时，请重试。"
+                    : "provider_busy".equals(code) || "1305".equals(code) ? "画面模型繁忙，请稍后重试；本地预警正常。"
+                    : "rate_limited".equals(code) ? "画面服务繁忙，请稍后重试。"
+                    : "画面理解暂时不可用，请稍后再试。";
+            setStatus(explanation);
+            sayLocal(task.turn, explanation, true);
+        }
         host.audit("AssistantVisual event=FAILED code=" + safeCode(code));
     }); }
     private static String safeCode(String code) { return code != null && code.matches("[a-zA-Z0-9_]{1,48}") ? code : "service_unavailable"; }
+    @Override public void visualDiagnostic(long id, int status, String source,
+            String providerCode, int upstreamStatus, long retryAfter) {
+        if (closed) return;
+        if (status == 429 && retryAfter > 0)
+            policy.throttled(SystemClock.elapsedRealtime(), Math.min(86_400, retryAfter) * 1000);
+        if (status == 429 && "provider".equals(source) && "1305".equals(providerCode)) {
+            // A busy free provider should not spend the session's opportunities on
+            // unattended requests. Manual requests obey the gateway's retry hint.
+            proactiveEnabled = false;
+            host.audit("AssistantVisual event=AUTOMATIC_PAUSED reason=provider_overloaded");
+            main.post(() -> setStatus("画面服务繁忙，本局自动读屏已暂停；稍后可手动读取"));
+        }
+        host.audit("AssistantVisual event=HTTP_ERROR requestId=" + id + " httpStatus=" + status
+                + " source=" + source + " providerCode=" + providerCode
+                + " upstreamHttpStatus=" + upstreamStatus + " retryAfterSeconds=" + retryAfter);
+    }
     private synchronized VisualTask takeTask(long id) { if (inFlight == null || inFlight.id != id) return null; VisualTask task = inFlight; inFlight = null; return task; }
     private void abandonVisual() { synchronized (this) { inFlight = null; } client.cancelVisual(); }
     private void playReply(AssistantReply reply) {
@@ -375,7 +472,15 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
                 && (host.lastAlertAtMs() < 0 || SystemClock.elapsedRealtime() - host.lastAlertAtMs() >= AssistantPolicy.ALERT_QUIET_MS))); }
     private void append(String line) { while (history.size() >= 12) history.removeFirst(); history.addLast(line);
         if (overlay != null) overlay.history(String.join("\n\n", history)); }
-    private void setStatus(String value) { if (closed) return; currentStatus = value; host.status(value); if (overlay != null) overlay.status(value); }
+    private void setStatus(String value) {
+        if (closed) return;
+        VoiceInputSafetyPolicy.InputState state = inputState;
+        if (voiceEnabled && state != null && state != VoiceInputSafetyPolicy.InputState.READY
+                && !value.equals(state.status)) value += "；" + state.status;
+        currentStatus = value;
+        host.status(value);
+        if (overlay != null) overlay.status(value);
+    }
     @Override public void close() {
         closed = true; uploading = false; session.close();
         main.removeCallbacksAndMessages(null); main.post(() -> {

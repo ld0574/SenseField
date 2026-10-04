@@ -17,7 +17,11 @@ import java.util.concurrent.Executors;
 
 /** Ordinary-app input: never requests privacy-sensitive priority over the game. */
 final class AssistantVoiceInput implements AutoCloseable {
-    interface Listener extends VoiceActivityGate.Output { void unavailable(String status); }
+    interface Listener extends VoiceActivityGate.Output {
+        void inputStateChanged(VoiceInputSafetyPolicy.InputState state);
+        default void safetyMetadata(int flags, int routedDeviceType) { }
+        void unavailable(String status);
+    }
     private final Context context;
     private final Listener listener;
     private final VoiceActivityGate gate;
@@ -30,6 +34,8 @@ final class AssistantVoiceInput implements AutoCloseable {
     private volatile boolean silenced = true;
     private volatile int ownSessionId;
     private volatile AudioRecord record;
+    private int lastSafetyFlags = Integer.MIN_VALUE;
+    private int lastRoutedDeviceType = Integer.MIN_VALUE;
     private AssistantAudioRouteProbe routeProbe;
     private Thread thread;
     private final AudioManager.AudioRecordingCallback recordings = new AudioManager.AudioRecordingCallback() {
@@ -48,13 +54,13 @@ final class AssistantVoiceInput implements AutoCloseable {
     }
     void start() {
         if (closed || record != null) return;
-        if (!speech.available()) { listener.unavailable("本地语音检测不可用，助手输入暂停；预警继续"); close(); return; }
+        if (!speech.available()) { reportUnavailable("本地语音检测不可用，助手输入暂停；预警继续"); close(); return; }
         if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            listener.unavailable("未授权麦克风，预警继续运行"); close(); return;
+            reportUnavailable("未授权麦克风，预警继续运行"); close(); return;
         }
         try {
             int minimum = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
-            if (minimum <= 0) { listener.unavailable("麦克风格式不可用，预警继续运行"); close(); return; }
+            if (minimum <= 0) { reportUnavailable("麦克风格式不可用，预警继续运行"); close(); return; }
             AudioRecord.Builder builder = new AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
                     .setAudioFormat(new AudioFormat.Builder().setSampleRate(16000).setChannelMask(AudioFormat.CHANNEL_IN_MONO)
                             .setEncoding(AudioFormat.ENCODING_PCM_16BIT).build()).setBufferSizeInBytes(Math.max(minimum, 6400));
@@ -83,38 +89,55 @@ final class AssistantVoiceInput implements AutoCloseable {
             }
             owned.startRecording();
             thread = new Thread(() -> read(owned), "SenseFieldVoice"); thread.start();
-        } catch (RuntimeException error) { listener.unavailable("麦克风暂不可用，预警继续运行"); close(); }
+        } catch (RuntimeException error) { reportUnavailable("麦克风暂不可用，预警继续运行"); close(); }
     }
     private void read(AudioRecord owned) {
-        short[] frame = new short[160]; int lastState = -1, filled = 0;
+        short[] frame = new short[160]; int filled = 0;
         try {
             while (!closed) {
                 int count = owned.read(frame, filled, frame.length - filled, AudioRecord.READ_BLOCKING);
-                if (count <= 0) { if (!closed) listener.unavailable("语音输入中断，预警继续运行"); break; }
+                if (count <= 0) { if (!closed) reportUnavailable("语音输入中断，预警继续运行"); break; }
                 filled += count; if (filled < frame.length) continue; filled = 0;
-                int state = paused ? 1 : silenced || otherRecording ? 2 : !headset ? 3 : 0;
-                if (state != lastState) {
-                    gate.reset(); echo.reset(); lastState = state;
+                VoiceInputSafetyPolicy.InputState state = VoiceInputSafetyPolicy.inputState(
+                        paused, silenced, otherRecording, headset);
+                int safetyFlags = VoiceInputSafetyPolicy.safetyFlags(
+                        paused, silenced, otherRecording, headset);
+                AssistantAudioRouteProbe probe = routeProbe;
+                int routedDeviceType = probe == null ? -1 : probe.routedDeviceType();
+                if (safetyFlags != lastSafetyFlags || routedDeviceType != lastRoutedDeviceType) {
+                    lastRoutedDeviceType = routedDeviceType;
+                    listener.safetyMetadata(safetyFlags, routedDeviceType);
+                }
+                if (VoiceInputSafetyPolicy.requiresSessionReset(lastSafetyFlags, safetyFlags)) {
+                    gate.reset(); echo.reset(); lastSafetyFlags = safetyFlags;
+                    listener.inputStateChanged(state);
                     if (!speech.reset()) {
-                        listener.unavailable("本地语音检测不可用，助手输入暂停；预警继续");
+                        reportUnavailable("本地语音检测不可用，助手输入暂停；预警继续");
                         break;
                     }
-                    listener.unavailable(state == 2 ? "存在其他录音会话或录音状态未知，助手暂停输入"
-                            : state == 3 ? "请戴耳机并确认游戏声音也从耳机播放；本应用只核对自身游戏声路"
-                            : state == 1 ? "助手语音已暂停" : "语音输入可用");
                 }
-                if (state != 0) continue;
-                if (!speech.available()) { listener.unavailable("本地语音检测不可用，助手输入暂停；预警继续"); break; }
+                if (state != VoiceInputSafetyPolicy.InputState.READY) continue;
+                if (!speech.available()) { reportUnavailable("本地语音检测不可用，助手输入暂停；预警继续"); break; }
                 short[] processed = echo.process(frame);
                 gate.accept(processed, speech.isSpeech(processed));
             }
-        } catch (RuntimeException error) { if (!closed) listener.unavailable("语音输入中断，预警继续运行"); }
+        } catch (RuntimeException error) { if (!closed) reportUnavailable("语音输入中断，预警继续运行"); }
         finally {
             closed = true;
             try { owned.stop(); } catch (RuntimeException ignored) { }
             try { owned.release(); } catch (RuntimeException ignored) { }
             record = null; cleanup();
         }
+    }
+    private void reportUnavailable(String status) {
+        int flags = lastSafetyFlags == Integer.MIN_VALUE
+                ? VoiceInputSafetyPolicy.FLAG_UNAVAILABLE
+                : lastSafetyFlags | VoiceInputSafetyPolicy.FLAG_UNAVAILABLE;
+        if (VoiceInputSafetyPolicy.requiresSessionReset(lastSafetyFlags, flags)) {
+            lastSafetyFlags = flags;
+            listener.inputStateChanged(VoiceInputSafetyPolicy.InputState.UNAVAILABLE);
+        }
+        listener.unavailable(status);
     }
     void feedRender(short[] pcm) { if (!closed) echo.feedRender(pcm); }
     void pause(boolean value) { paused = value; }

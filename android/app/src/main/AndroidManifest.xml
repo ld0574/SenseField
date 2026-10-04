@@ -13,6 +13,7 @@
          才会发起网络请求；默认关闭，不改变"本地处理、不上传"的产品承诺。
          明文 HTTP 仅对本机回环地址放行（见 xml/network_security_config.xml）。 -->
     <queries>
+        <package android:name="com.tencent.tmgp.sgame" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:mimeType="application/vnd.android.package-archive" />

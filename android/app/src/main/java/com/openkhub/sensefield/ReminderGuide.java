@@ -139,7 +139,7 @@ final class ReminderGuide {
             say(steps, "重新授权的语音",
                     "听到“截屏授权已结束”或“截屏恢复失败，请重新授权”，请返回辅助首页重新开始。");
         }
-        say(steps, "听完后再开始", "说明结束。开始辅助后，再打开游戏。需要重听或调声音，可以到设置里操作。");
+        say(steps, "听完后再开始", "说明结束。授权并启动辅助后，会自动打开王者荣耀。需要重听或调声音，可以到设置里操作。");
         return Collections.unmodifiableList(steps);
     }
 

@@ -23,7 +23,10 @@ final class AssistantReply {
         this.proactive = proactive;
     }
     long expiresAtMs() {
-        return capturedAtMs + ("hud".equals(kind) ? 5000 : "ui_text".equals(kind) ? 15000 : 5000);
+        // Local control/error messages carry no screenshot facts. Their session/turn
+        // guard still cancels them immediately on interruption or a newer question.
+        return capturedAtMs + ("hud".equals(kind) ? 5000
+                : "ui_text".equals(kind) || "local".equals(kind) ? 15000 : 5000);
     }
     boolean freshAt(long now) {
         return now >= capturedAtMs && now <= expiresAtMs();

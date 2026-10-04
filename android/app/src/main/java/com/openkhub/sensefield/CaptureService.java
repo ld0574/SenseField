@@ -44,6 +44,24 @@ public final class CaptureService extends Service {
     static final String ACTION_STOP = "com.openkhub.sensefield.STOP";
     static final String EXTRA_RESULT_CODE = "result_code";
     static final String EXTRA_RESULT_DATA = "result_data";
+    static final String EXTRA_START_REQUEST_ID = "start_request_id";
+    private static volatile StartResult lastStartResult;
+
+    /** One-use acknowledgement; service creation alone does not mean capture is ready. */
+    static final class StartResult {
+        final String requestId;
+        final boolean ready;
+        StartResult(String requestId, boolean ready) {
+            this.requestId = requestId;
+            this.ready = ready;
+        }
+    }
+
+    static StartResult startResult(String requestId) {
+        StartResult result = lastStartResult;
+        return result != null && requestId != null && requestId.equals(result.requestId)
+                ? result : null;
+    }
 
     private static final String TAG = "MapAssistCapture";
     private static final String CHANNEL = "mapassist_capture";
@@ -217,10 +235,16 @@ public final class CaptureService extends Service {
         if (!ACTION_START.equals(action) && !ACTION_STOP.equals(action)
                 && !ACTION_TOGGLE_PAUSE.equals(action)
                 && !ACTION_MARK_ISSUE.equals(action)) return START_NOT_STICKY;
+        if (ACTION_START.equals(action)
+                && startResult(intent.getStringExtra(EXTRA_START_REQUEST_ID)) != null) {
+            // Projection consent and its acknowledgement are both one-use.
+            return START_NOT_STICKY;
+        }
         if (ACTION_START.equals(action) && Match3LiveService.isRunning()) {
             android.widget.Toast.makeText(this, "请先停止消消乐实时辅助，再启动王者辅助",
                     android.widget.Toast.LENGTH_LONG).show();
             stopWithStatus("消消乐实时辅助运行中，请先停止");
+            lastStartResult = new StartResult(intent.getStringExtra(EXTRA_START_REQUEST_ID), false);
             return START_NOT_STICKY;
         }
         long expectedSessionGeneration = 0;
@@ -268,29 +292,37 @@ public final class CaptureService extends Service {
             refreshNotification();
             return START_NOT_STICKY;
         }
-        beginCaptureAttempt(startId, expectedSessionGeneration);
         int resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED);
         Intent resultData = intent.getParcelableExtra(EXTRA_RESULT_DATA);
+        boolean ready = false;
         if (resultCode == Activity.RESULT_OK && resultData != null) {
-            startCapture(resultCode, resultData, expectedSessionGeneration);
-        }
-        else stopWithStatus("截屏授权无效，请重新授权");
-        return START_NOT_STICKY;
-    }
-
-    private void startCapture(int resultCode, Intent resultData,
-                              long expectedSessionGeneration) {
-        synchronized (processingLock) {
-            if (stopping || expectedSessionGeneration != captureGeneration) return;
             try {
-                // startForegroundService() has a short system deadline. Enter
-                // foreground state before loading the model or preparing audio.
+                // Enter foreground while the authorization activity is still visible,
+                // before diagnostics, model loading or audio preparation can delay us.
                 AssistantSettings assistantConfig = AssistantSettings.from(this);
                 int foregroundTypes = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION;
                 if (Build.VERSION.SDK_INT >= 30 && assistantConfig.enabled() && assistantConfig.voice
                         && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
                     foregroundTypes |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
                 startForeground(NOTIFICATION_ID, notification("正在准备截屏"), foregroundTypes);
+                beginCaptureAttempt(startId, expectedSessionGeneration);
+                ready = startCapture(resultCode, resultData, expectedSessionGeneration);
+            } catch (RuntimeException error) {
+                Log.e(TAG, "Could not enter capture foreground", error);
+                stopWithStatus("无法启动辅助，请检查授权后重试");
+            }
+        } else stopWithStatus("截屏授权无效，请重新授权");
+        lastStartResult = new StartResult(intent.getStringExtra(EXTRA_START_REQUEST_ID), ready);
+        Log.i(TAG, "CaptureStartResult ready=" + ready);
+        return START_NOT_STICKY;
+    }
+
+    private boolean startCapture(int resultCode, Intent resultData,
+                              long expectedSessionGeneration) {
+        synchronized (processingLock) {
+            if (stopping || expectedSessionGeneration != captureGeneration) return false;
+            try {
+                AssistantSettings assistantConfig = AssistantSettings.from(this);
                 if (cuePlayer == null) cuePlayer = new CuePlayer(this);
                 cueSettings = new CueSettings(this);
                 cueDispatcher = new CueDispatcher(cuePlayer, cueSettings,
@@ -422,6 +454,7 @@ public final class CaptureService extends Service {
                         getResources().getDisplayMetrics().densityDpi,
                         DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                         reader.getSurface(), null, worker);
+                if (virtualDisplay == null) throw new IllegalStateException("Screen capture display unavailable");
                 GameProfile.settings(this).edit()
                         .putBoolean("capture_active", true)
                         .putBoolean("capture_paused", false)
@@ -431,9 +464,11 @@ public final class CaptureService extends Service {
                 publishDiagnosticStateLocked();
                 scheduleDisplayWatchdogLocked(sessionGeneration);
                 refreshNotification();
+                return true;
             } catch (IOException | JSONException | RuntimeException error) {
                 Log.e(TAG, "Could not start local capture", error);
                 stopWithStatus("无法开始截屏：" + error.getMessage());
+                return false;
             }
         }
     }
@@ -1270,6 +1305,12 @@ public final class CaptureService extends Service {
                     + " channel=" + channel + " atMs=" + atMs
                     + " playbackDelayMs=" + Math.max(0, atMs - request.createdAtMs)
                     + " result=" + result);
+            if (request.category == CueRequest.Category.ASSISTANT
+                    && "SPEECH".equals(channel) && "EXPIRED".equals(result)) {
+                AssistantController current = assistant;
+                if (current != null)
+                    current.assistantSpeechExpired(request.sessionId, request.cueId, atMs);
+            }
         }
     }
 
@@ -1296,7 +1337,11 @@ public final class CaptureService extends Service {
             return "这一帧没有识别到近区敌方标记，不能据此判断安全。";
         }
         @Override public void mark() { startService(actionIntent(ACTION_MARK_ISSUE)); }
-        @Override public void status(String value) { assistantStatus = value; }
+        @Override public void status(String value) {
+            if (value.equals(assistantStatus)) return;
+            assistantStatus = value;
+            if (!stopping && notificationManager != null) refreshNotification();
+        }
         @Override public void audit(String metadata) {
             Log.i(TAG, metadata);
             DiagnosticRecorder current = diagnostics;

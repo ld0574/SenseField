@@ -3,19 +3,39 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 @dataclass(frozen=True)
 class GatewaySettings:
     device_tokens: tuple[str, ...] = field(default_factory=tuple, repr=False)
     zhipu_api_key: str = field(default="", repr=False)
+    zhipu_model: str = "glm-4.6v-flash"
+    vision_provider: str = "zhipu"
+    vision_base_url: str = ""
+    vision_model: str = ""
+    vision_api_key: str = field(default="", repr=False)
     model_cache_dir: Path | None = None
     account_concurrency: int = 1
     request_timeout_seconds: float = 8.0
     require_tls: bool = True
     mode: str = "production"
+
+    def __post_init__(self) -> None:
+        if not re.fullmatch(r"glm-[a-z0-9][a-z0-9._-]{0,120}", self.zhipu_model):
+            raise ValueError("ASSISTANT_GATEWAY_GLM_MODEL must be a GLM model identifier")
+        if self.vision_provider not in {"zhipu", "compatible"}:
+            raise ValueError("ASSISTANT_GATEWAY_VISION_PROVIDER is unsupported")
+        if self.vision_provider == "compatible":
+            url = urlsplit(self.vision_base_url)
+            if (url.scheme != "https" or not url.hostname or url.username or url.password
+                    or url.query or url.fragment):
+                raise ValueError("ASSISTANT_GATEWAY_VISION_BASE_URL must be a credential-free HTTPS URL")
+            if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._/-]{0,127}", self.vision_model):
+                raise ValueError("ASSISTANT_GATEWAY_VISION_MODEL must be a model identifier")
 
     @classmethod
     def from_env(cls, *, require_tls: bool = True, mode: str = "production") -> "GatewaySettings":
@@ -36,6 +56,11 @@ class GatewaySettings:
         return cls(
             device_tokens=tokens,
             zhipu_api_key=os.environ.get("ZHIPU_API_KEY", "").strip(),
+            zhipu_model=os.environ.get("ASSISTANT_GATEWAY_GLM_MODEL", "glm-4.6v-flash").strip(),
+            vision_provider=os.environ.get("ASSISTANT_GATEWAY_VISION_PROVIDER", "zhipu").strip(),
+            vision_base_url=os.environ.get("ASSISTANT_GATEWAY_VISION_BASE_URL", "").strip(),
+            vision_model=os.environ.get("ASSISTANT_GATEWAY_VISION_MODEL", "").strip(),
+            vision_api_key=os.environ.get("ASSISTANT_GATEWAY_VISION_API_KEY", "").strip(),
             model_cache_dir=Path(cache).expanduser() if cache else None,
             account_concurrency=concurrency,
             require_tls=require_tls,
@@ -66,4 +91,7 @@ def safe_configuration_status(settings: GatewaySettings, *, asr_ready: bool, vis
         "vision_ready": vision_ready,
         "authentication_configured": bool(settings.device_tokens),
         "mode": settings.mode,
+        "vision_provider": settings.vision_provider,
+        "vision_model": (settings.vision_model if settings.vision_api_key else None)
+            if settings.vision_provider == "compatible" else (settings.zhipu_model if settings.zhipu_api_key else None),
     }

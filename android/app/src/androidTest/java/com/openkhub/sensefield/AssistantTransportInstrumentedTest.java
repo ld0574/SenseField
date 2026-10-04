@@ -10,6 +10,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.os.SystemClock;
+import android.os.StrictMode;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import java.io.File;
@@ -77,6 +78,33 @@ public class AssistantTransportInstrumentedTest {
         @Override public void visualFailure(long id, String code) {
             failure.set(code); visual.countDown();
         }
+    }
+
+    @Test public void mainThreadCloseReleasesRealPooledTlsConnectionWithoutNetworkOnMain() throws Exception {
+        client = new AssistantGatewayClient(settings, new Callbacks());
+        java.lang.reflect.Field field = AssistantGatewayClient.class.getDeclaredField("http");
+        field.setAccessible(true);
+        okhttp3.OkHttpClient http = (okhttp3.OkHttpClient) field.get(client);
+        try (okhttp3.Response response = http.newCall(new okhttp3.Request.Builder()
+                .url(settings.endpoint + "/health").build()).execute()) {
+            assertEquals(200, response.code());
+            assertNotNull(response.body()); response.body().string();
+        }
+        assertTrue("TLS connection was not pooled", http.connectionPool().connectionCount() > 0);
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+            StrictMode.ThreadPolicy previous = StrictMode.getThreadPolicy();
+            try {
+                StrictMode.setThreadPolicy(new StrictMode.ThreadPolicy.Builder()
+                        .detectNetwork().penaltyDeathOnNetwork().build());
+                client.close();
+                client.close();
+                assertFalse(client.ready());
+            } finally { StrictMode.setThreadPolicy(previous); }
+        });
+        long deadline = SystemClock.elapsedRealtime() + 3000;
+        while (http.connectionPool().connectionCount() != 0 && SystemClock.elapsedRealtime() < deadline)
+            Thread.sleep(10);
+        assertEquals("Transport cleanup did not release pooled TLS", 0, http.connectionPool().connectionCount());
     }
 
     @Test public void realHttpsReadsSyntheticMenuAndPreservesFrameOwnership() throws Exception {

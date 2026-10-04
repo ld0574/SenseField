@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -18,6 +19,11 @@ _MAX_AUDIO_MESSAGE_BYTES = 96 * 1024
 _QUEUE_CAPACITY = 3
 _BACKLOG_LIMIT_SECONDS = 2.0
 _MAX_REMEMBERED_AUDIO_SESSIONS = 1024
+_AUDIT_LOGGER = logging.getLogger("mapassist.assistant_gateway.audit")
+_AUDIT_REASONS = {
+    "reset", "stale_reset", "invalid_message", "unsupported_event", "invalid_event",
+    "invalid_audio_frame", "asr_backlog_reset", "asr_busy", "asr_error",
+}
 
 
 class StreamingRecognizer(Protocol):
@@ -148,6 +154,7 @@ class AudioWebSocketSession:
                 if send_task in done:
                     message = send_task.result()
                     await websocket.send_json(message)
+                    self._audit_sent(message)
                     self._outgoing.task_done()
                     send_task = asyncio.create_task(self._outgoing.get())
                 if receive_task in done:
@@ -172,6 +179,22 @@ class AudioWebSocketSession:
                     await self._worker_task
                 except (asyncio.CancelledError, Exception):
                     pass
+
+    def _audit_sent(self, message: dict[str, Any]) -> None:
+        kind = message.get("type")
+        if kind not in {"status", "final"}:
+            return
+        reason = message.get("reason")
+        reason = reason if isinstance(reason, str) and reason in _AUDIT_REASONS else "none"
+        text = message.get("text")
+        _AUDIT_LOGGER.info(
+            "assistant_gateway_audio event=%s reason=%s generation=%d text_chars=%d "
+            "asr_ms=%d inference_ms=%d finalization_ms=%s queue_depth=%d processing=%s",
+            kind, reason, message.get("generation", self.generation), len(text) if isinstance(text, str) else 0,
+            message.get("asr_ms", 0), message.get("inference_ms", 0),
+            message.get("finalization_ms"), self._jobs.qsize(),
+            str(self._processing_job is not None).lower(),
+        )
 
     async def _receive_packet(self, packet: dict[str, Any]) -> None:
         if packet.get("bytes") is not None:

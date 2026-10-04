@@ -4,6 +4,8 @@ import android.util.Base64;
 import org.json.JSONObject;
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.MediaType;
@@ -18,11 +20,18 @@ import okio.BufferedSource;
 
 /** Bounded TLS transport. Never contains a model provider key. */
 final class AssistantGatewayClient implements AutoCloseable {
+    private static final ExecutorService TRANSPORT_CLEANUP = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "SenseFieldTransportClose");
+        thread.setDaemon(true);
+        return thread;
+    });
     interface Listener {
         void audioMessage(JSONObject message);
         void audioUnavailable(String reason);
         void visualResult(long requestId, JSONObject result);
         void visualFailure(long requestId, String code);
+        default void visualDiagnostic(long requestId, int httpStatus, String source,
+                String providerCode, int upstreamHttpStatus, long retryAfterSeconds) { }
     }
     private final AssistantSettings settings;
     private final Listener listener;
@@ -108,10 +117,20 @@ final class AssistantGatewayClient implements AutoCloseable {
         call.enqueue(new Callback() {
             private void release() { synchronized (AssistantGatewayClient.this) { if (visual == call) visual = null; } }
             @Override public void onFailure(Call ignored, IOException error) {
-                release(); listener.visualFailure(requestId, call.isCanceled() ? "cancelled" : "network_unavailable");
+                final boolean explicitlyCancelled;
+                synchronized (AssistantGatewayClient.this) {
+                    // OkHttp also marks calls cancelled when callTimeout expires.
+                    // Only our detached/replaced request means the user cancelled it.
+                    explicitlyCancelled = closed || visual != call;
+                    if (visual == call) visual = null;
+                }
+                listener.visualFailure(requestId, visualFailureCode(explicitlyCancelled, error));
             }
             @Override public void onResponse(Call ignored, Response response) {
                 String failure = null; JSONObject result = null;
+                String source = "unknown", providerCode = "none";
+                int status = response.code(), upstreamStatus = -1;
+                long retryAfter = -1;
                 try (Response owned = response) {
                     if (owned.body() == null || owned.body().contentLength() > 32_768) failure = "invalid_response";
                     else {
@@ -121,7 +140,17 @@ final class AssistantGatewayClient implements AutoCloseable {
                             if (owned.isSuccessful()) result = parsed;
                             else {
                                 JSONObject error = parsed.optJSONObject("error");
-                                failure = owned.code() == 429 ? "rate_limited"
+                                if (error != null) {
+                                    String candidateSource = error.optString("source", "unknown");
+                                    if ("provider".equals(candidateSource) || "cooldown".equals(candidateSource))
+                                        source = candidateSource;
+                                    String candidateCode = error.optString("provider_code", "");
+                                    if (candidateCode.matches("[0-9]{1,6}")) providerCode = candidateCode;
+                                    int candidateStatus = error.optInt("upstream_http_status", -1);
+                                    if (candidateStatus >= 100 && candidateStatus <= 599) upstreamStatus = candidateStatus;
+                                    retryAfter = Math.min(86_400, Math.max(-1, error.optLong("retry_after_seconds", -1)));
+                                }
+                                failure = owned.code() == 429 ? ("1305".equals(providerCode) ? "provider_busy" : "rate_limited")
                                         : error == null ? parsed.optString("code", "service_unavailable")
                                         : error.optString("code", "service_unavailable");
                             }
@@ -129,24 +158,48 @@ final class AssistantGatewayClient implements AutoCloseable {
                     }
                 } catch (Exception ignoredError) { failure = "invalid_response"; }
                 release();
+                if (!response.isSuccessful()) listener.visualDiagnostic(requestId, status,
+                        source, providerCode, upstreamStatus, retryAfter);
                 if (result != null) listener.visualResult(requestId, result);
                 else listener.visualFailure(requestId, failure == null ? "invalid_response" : failure);
             }
         });
     }
     synchronized void cancelVisual() { if (visual != null) { visual.cancel(); visual = null; } }
+    static String visualFailureCode(boolean explicitlyCancelled, IOException error) {
+        if (explicitlyCancelled) return "cancelled";
+        return error instanceof java.io.InterruptedIOException ? "timeout" : "network_unavailable";
+    }
     static String readBounded(BufferedSource source, int maximumBytes) throws IOException {
         source.request((long) maximumBytes + 1);
         if (source.getBuffer().size() > maximumBytes) throw new IOException("Assistant response too large");
         return source.readUtf8();
     }
-    @Override public synchronized void close() {
-        closed = true; open = false;
-        if (socket != null) { socket.cancel(); socket = null; }
-        if (visual != null) { visual.cancel(); visual = null; }
-        http.dispatcher().cancelAll(); audioHttp.dispatcher().cancelAll();
-        http.connectionPool().evictAll(); audioHttp.connectionPool().evictAll();
-        http.dispatcher().executorService().shutdown(); audioHttp.dispatcher().executorService().shutdown();
+    @Override public void close() {
+        final WebSocket oldSocket;
+        final Call oldVisual;
+        synchronized (this) {
+            if (closed) return;
+            closed = true; open = false;
+            oldSocket = socket; socket = null;
+            oldVisual = visual; visual = null;
+        }
+        // TLS socket.close can write close_notify. Gate callbacks immediately,
+        // but release network resources away from the caller/UI thread.
+        TRANSPORT_CLEANUP.execute(() -> {
+            if (oldSocket != null) oldSocket.cancel();
+            if (oldVisual != null) oldVisual.cancel();
+            closeTransport(http);
+            closeTransport(audioHttp);
+        });
+    }
+    private static void closeTransport(OkHttpClient client) {
+        try {
+            client.dispatcher().cancelAll();
+            client.connectionPool().evictAll();
+        } finally {
+            client.dispatcher().executorService().shutdown();
+        }
     }
     static JSONObject json(Object... pairs) {
         JSONObject object = new JSONObject();

@@ -93,6 +93,33 @@ public class AppUpdateInstrumentedTest {
         assertFalse(AppUpdatePackageVerifier.verify(context, localFixture, release.get()).valid);
     }
 
+    @Test public void mainThreadCloseReleasesRealPooledTlsWithoutNetworkOnMain() throws Exception {
+        String endpoint = InstrumentationRegistry.getArguments().getString("pooledTlsEndpoint");
+        assumeTrue("An explicit live TLS fixture is required", endpoint != null);
+        client = new AppUpdateClient(context, endpoint);
+        java.lang.reflect.Field field = AppUpdateClient.class.getDeclaredField("httpClient");
+        field.setAccessible(true);
+        okhttp3.OkHttpClient http = (okhttp3.OkHttpClient) field.get(client);
+        try (okhttp3.Response response = http.newCall(new okhttp3.Request.Builder().url(endpoint).build()).execute()) {
+            assertNotNull(response.body());
+            response.body().string();
+        }
+        assertTrue("TLS connection was not pooled", http.connectionPool().connectionCount() > 0);
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+            android.os.StrictMode.ThreadPolicy previous = android.os.StrictMode.getThreadPolicy();
+            try {
+                android.os.StrictMode.setThreadPolicy(new android.os.StrictMode.ThreadPolicy.Builder()
+                        .detectNetwork().penaltyDeathOnNetwork().build());
+                client.close();
+                client.close();
+            } finally { android.os.StrictMode.setThreadPolicy(previous); }
+        });
+        long deadline = android.os.SystemClock.elapsedRealtime() + 3000;
+        while (http.connectionPool().connectionCount() != 0 && android.os.SystemClock.elapsedRealtime() < deadline)
+            Thread.sleep(10);
+        assertEquals("Updater cleanup did not release pooled TLS", 0, http.connectionPool().connectionCount());
+    }
+
     @Test public void sameInstalledVersionIsRejectedEvenWithCorrectHashAndSignature() throws Exception {
         localFixture = File.createTempFile("same-version-", ".apk", context.getCacheDir());
         Files.copy(new File(context.getApplicationInfo().sourceDir).toPath(), localFixture.toPath(),

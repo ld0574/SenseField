@@ -5,6 +5,8 @@ final class AssistantPolicy {
     static final long NORMAL_INTERVAL_MS = 30_000;
     static final long WARM_INTERVAL_MS = 60_000;
     static final long ALERT_QUIET_MS = 3000;
+    static final long OVERLOAD_RETRY_MS = 10_000;
+    static final long MAX_COOLDOWN_MS = 24 * 60 * 60_000L;
     static final long WINDOW_MS = 30 * 60_000;
     private long windowStarted = -1;
     private int automaticCalls;
@@ -26,11 +28,15 @@ final class AssistantPolicy {
         refreshWindow(now);
         return mode != FrameProcessingPolicy.Mode.HOT && now >= throttledUntil && totalCalls < 120;
     }
+    synchronized long retryAfterMs(long now) { return Math.max(0, throttledUntil - now); }
     synchronized void started(long now, boolean proactive, long signature) {
         refreshWindow(now); totalCalls++;
         if (proactive) { automaticCalls++; lastAutomatic = now; lastSignature = signature; }
     }
-    synchronized void throttled(long now) { throttledUntil = now + 60_000; }
+    synchronized void throttled(long now) { throttled(now, 60_000); }
+    synchronized void throttled(long now, long retryMs) {
+        throttledUntil = Math.max(throttledUntil, now + Math.max(0, Math.min(MAX_COOLDOWN_MS, retryMs)));
+    }
     private void refreshWindow(long now) {
         if (windowStarted < 0 || now - windowStarted >= WINDOW_MS) {
             windowStarted = now; automaticCalls = 0; totalCalls = 0;

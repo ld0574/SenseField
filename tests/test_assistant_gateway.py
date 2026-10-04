@@ -4,6 +4,7 @@ import asyncio
 import base64
 import io
 import json
+import logging
 import threading
 
 import pytest
@@ -356,10 +357,12 @@ def test_equal_generation_reset_does_not_cancel_active_turn() -> None:
     assert result["text"] == "继续说话"
 
 
-def test_global_asr_busy_is_reported_without_returning_stale_text() -> None:
+def test_global_asr_busy_is_reported_without_returning_stale_text(caplog: pytest.LogCaptureFixture) -> None:
     class BusyRecognizer(FakeRecognizer):
         async def transcribe(self, pcm16le: bytes, *, cache: dict[str, object], is_final: bool) -> str:
             raise AsrBusy()
+
+    caplog.set_level(logging.INFO, logger="mapassist.assistant_gateway.audit")
 
     with TestClient(create_app(_settings(), recognizer=BusyRecognizer(), vision_client=FakeVision())) as client:
         with client.websocket_connect("/v1/audio", headers={"Authorization": f"Bearer {TOKEN}"}) as websocket:
@@ -376,6 +379,45 @@ def test_global_asr_busy_is_reported_without_returning_stale_text() -> None:
     assert busy["status"] == busy["reason"] == "asr_busy"
     assert final["text"] == ""
     assert final["finalization_ms"] >= 0
+    audit = "\n".join(record.getMessage() for record in caplog.records)
+    assert "assistant_gateway_audio event=status reason=asr_busy" in audit
+    assert "assistant_gateway_audio event=final" in audit
+    assert "queue_depth=" in audit and "processing=" in audit
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_audio_audit_omits_recognized_text_and_exception_body(
+    fails: bool, caplog: pytest.LogCaptureFixture,
+) -> None:
+    marker = "DO_NOT_LOG_RECOGNITION_OR_EXCEPTION_TEXT"
+
+    class AuditRecognizer(FakeRecognizer):
+        async def transcribe(self, pcm16le: bytes, *, cache: dict[str, object], is_final: bool) -> str:
+            if fails:
+                raise RuntimeError(marker)
+            return marker
+
+    caplog.set_level(logging.INFO, logger="mapassist.assistant_gateway.audit")
+    with TestClient(create_app(_settings(), recognizer=AuditRecognizer(), vision_client=FakeVision())) as client:
+        with client.websocket_connect("/v1/audio", headers={"Authorization": f"Bearer {TOKEN}"}) as websocket:
+            websocket.send_json({"type": "start", "session_id": "audit-session", "generation": 0, "sample_rate": 16000})
+            assert websocket.receive_json()["status"] == "ready"
+            websocket.send_json({"type": "speech_start", "turn_id": "audit-turn", "generation": 0})
+            websocket.send_bytes(bytes(19_200))
+            websocket.send_json({"type": "speech_end", "turn_id": "audit-turn", "generation": 0})
+            while True:
+                result = websocket.receive_json()
+                if result["type"] == "final":
+                    break
+    audit = "\n".join(record.getMessage() for record in caplog.records)
+    assert marker not in audit and TOKEN not in audit
+    assert "assistant_gateway_audio event=final" in audit
+    if fails:
+        assert result["text"] == ""
+        assert "reason=asr_error" in audit
+    else:
+        assert result["text"] == marker
+        assert f"text_chars={len(marker)}" in audit
 
 
 def test_generation_high_water_has_a_fixed_lru_bound() -> None:
