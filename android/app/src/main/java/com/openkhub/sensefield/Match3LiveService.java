@@ -22,9 +22,12 @@ import java.nio.ByteBuffer;
 import java.util.List;
 
 /**
- * 消消乐实时识别服务：MediaProjection 连续截屏（约 1 次/秒）→ 标定采样 → 颜色矩阵
- * → 与上一帧比对 → 局面有实质变化时 TTS 播报可消除交换（6 秒最小播报间隔防刷屏）。
- * 需要 FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION（API 34+ 硬性要求，先启服务后取投影）。
+ * 消消乐实时识别服务 v2：MediaProjection 连续截屏 → 稳定窗防抖 → 变化播报。
+ * 三层防重复（修复「重复错误播报」）：
+ *   1) 800ms 定时取最新帧（静态画面也有节拍；不依赖 ImageReader 回调）；
+ *   2) 稳定窗：矩阵连续 STABLE_FRAMES 帧一致才认账——吸收消除动画/棋子摇摆的中间态；
+ *   3) 播报签名去重：与「上次已播报局面」相同就完全静默——只有真正换了局面才播。
+ * 犹豫提示：局面 15 秒无变化且有可消除交换 → 定时器重报最优解（独立于帧回调）。
  */
 public class Match3LiveService extends Service {
     private static final String TAG = "Match3Live";
@@ -34,6 +37,7 @@ public class Match3LiveService extends Service {
     static final String EXTRA_DATA = "data";
     private static final int NOTIFICATION_ID = 3002;
     private static final long CAPTURE_INTERVAL_MS = 800;
+    private static final int STABLE_FRAMES = 3;          // 连续 3 帧一致才算稳定（≈2.4s）
     private static final long MIN_ANNOUNCE_GAP_MS = 6000;
     private static final long IDLE_HINT_MS = 15000;
 
@@ -45,13 +49,14 @@ public class Match3LiveService extends Service {
     private CuePlayer player;
     private CueDispatcher dispatcher;
     private Match3Sampler sampler;
-    private char[][] lastMatrix;
+
+    private Bitmap latestFrame;              // onImageAvailable 只负责存最新帧
+    private char[][] lastRawMatrix;          // 上一采样帧的矩阵（稳定窗用）
+    private int sameRawCount;                // 连续一致的帧数
+    private char[][] lastAnnouncedMatrix;    // 上次已播报的局面（签名去重用）
     private List<Match3Board.Swap> lastSwaps;
     private long lastChangeAt;
     private long lastAnnounceAt;
-    private int width;
-    private int height;
-    private int dpi;
     private volatile boolean running;
 
     @Override
@@ -103,9 +108,12 @@ public class Match3LiveService extends Service {
                 reader.getSurface(), null, handler());
         reader.setOnImageAvailableListener(this::onImageAvailable, handler());
         Log.i(TAG, "实时识别已启动 " + width + "x" + height);
-        handler.postDelayed(this::idleCheck, 5000);
+        handler.removeCallbacks(tick);
+        handler.postDelayed(tick, CAPTURE_INTERVAL_MS);
         return START_NOT_STICKY;
     }
+
+    /* ---------- 帧采集：只存最新帧，处理交给定时 tick ---------- */
 
     private Handler handler() {
         if (handler == null) {
@@ -116,13 +124,7 @@ public class Match3LiveService extends Service {
         return handler;
     }
 
-    private long lastProcessedAt;
-
     private void onImageAvailable(ImageReader r) {
-        long now = SystemClock.elapsedRealtime();
-        if (now - lastProcessedAt < CAPTURE_INTERVAL_MS) {
-            return;
-        }
         Image image = null;
         try {
             image = r.acquireLatestImage();
@@ -130,16 +132,42 @@ public class Match3LiveService extends Service {
         } catch (Exception e) {
             return;
         }
-        lastProcessedAt = now;
         try {
             Bitmap bitmap = imageToBitmap(image);
-            processFrame(bitmap);
+            synchronized (frameLock) {
+                if (latestFrame != null && !latestFrame.isRecycled()) latestFrame.recycle();
+                latestFrame = bitmap;
+            }
         } catch (Exception e) {
-            Log.w(TAG, "帧处理失败: " + e.getMessage());
+            Log.w(TAG, "帧转换失败: " + e.getMessage());
         } finally {
             if (image != null) image.close();
         }
     }
+
+    private final Object frameLock = new Object();
+
+    /* ---------- 定时 tick：取最新帧走稳定窗判定 ---------- */
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            if (!running) return;
+            Bitmap frame;
+            synchronized (frameLock) {
+                frame = latestFrame;
+                latestFrame = null;
+            }
+            if (frame != null && !frame.isRecycled()) {
+                try {
+                    processFrame(frame);
+                } catch (Exception e) {
+                    Log.w(TAG, "帧处理失败: " + e.getMessage());
+                }
+            }
+            idleCheck();
+            handler.postDelayed(this, CAPTURE_INTERVAL_MS);
+        }
+    };
 
     private Bitmap imageToBitmap(Image image) {
         Image.Plane plane = image.getPlanes()[0];
@@ -147,14 +175,19 @@ public class Match3LiveService extends Service {
         int rowStride = plane.getRowStride();
         int pixelStride = plane.getPixelStride();
         int rowPadding = rowStride - pixelStride * width;
-        Bitmap full = Bitmap.createBitmap(width + rowPadding / pixelStride, height,
+        int w = image.getWidth(), h = image.getHeight();
+        Bitmap full = Bitmap.createBitmap(w + rowPadding / pixelStride, h,
                 Bitmap.Config.ARGB_8888);
         full.copyPixelsFromBuffer(buffer);
         if (rowPadding > 0) {
-            return Bitmap.createBitmap(full, 0, 0, width, height);
+            return Bitmap.createBitmap(full, 0, 0, w, h);
         }
         return full;
     }
+
+    private int width;
+    private int height;
+    private int dpi;
 
     private void processFrame(Bitmap frame) {
         /* 自适应：服务启动后的第一帧自动检测棋盘包围盒（深色棋盘格区域），
@@ -178,44 +211,59 @@ public class Match3LiveService extends Service {
                     l, t, r, b);
         }
         char[][] matrix = sampler.sample(frame);
-        List<Match3Board.Swap> swaps = Match3Board.findSwaps(matrix);
-        if (lastMatrix != null && !matrixChanged(lastMatrix, matrix)) {
+
+        /* 稳定窗：连续 STABLE_FRAMES 帧一致才认账（吸收消除动画/棋子摇摆中间态） */
+        if (lastRawMatrix != null && matrixEquals(lastRawMatrix, matrix)) {
+            sameRawCount++;
+        } else {
+            lastRawMatrix = matrix;
+            sameRawCount = 1;
+        }
+        if (sameRawCount < STABLE_FRAMES) return;
+
+        /* 播报签名去重：与上次已播报局面相同 → 完全静默 */
+        if (matrixEquals(lastAnnouncedMatrix, matrix)) {
             return;
         }
-        lastMatrix = matrix;
-        lastSwaps = swaps;
+        boolean isFirst = lastAnnouncedMatrix == null;
+        lastAnnouncedMatrix = matrix;
         lastChangeAt = SystemClock.elapsedRealtime();
+        List<Match3Board.Swap> swaps = Match3Board.findSwaps(matrix);
+        lastSwaps = swaps;
         long now = SystemClock.elapsedRealtime();
-        if (now - lastAnnounceAt < MIN_ANNOUNCE_GAP_MS) {
-            return;
+        if (!isFirst && now - lastAnnounceAt < MIN_ANNOUNCE_GAP_MS) {
+            return;   // 间隔内：局面已被记住，间隔过后有变化再播
         }
         lastAnnounceAt = now;
-        StringBuilder sb = new StringBuilder("局面更新。");
+        StringBuilder sb = new StringBuilder(isFirst ? "棋盘识别完成。" : "局面更新。");
         if (!swaps.isEmpty()) {
             sb.append(Match3Board.swapSpeech(swaps.get(0)));
             if (swaps.size() > 1) sb.append("，共 ").append(swaps.size()).append(" 处");
         } else {
-            sb.append("棋面上已有可消除组合。");
+            sb.append("暂无可消除交换。");
         }
         Log.i(TAG, sb.toString());
         announce(sb.toString());
     }
 
-    private static boolean matrixChanged(char[][] a, char[][] b) {
+    private static boolean matrixEquals(char[][] a, char[][] b) {
+        if (a == null || b == null) return false;
+        if (a.length != b.length) return false;
         for (int r = 0; r < a.length; r++) {
+            if (a[r].length != b[r].length) return false;
             for (int c = 0; c < a[r].length; c++) {
-                if (a[r][c] != b[r][c]) return true;
+                if (a[r][c] != b[r][c]) return false;
             }
         }
-        return false;
+        return true;
     }
 
-    /** 犹豫提示：独立定时器（静态画面不产生新帧，不能依赖 ImageReader 回调）。
-     *  局面 15 秒无变化且有可消除交换 → 重报最优解，之后每 15 秒一次。 */
+    /** 犹豫提示：独立定时检查（静态画面不产生新帧，不能依赖 ImageReader 回调）。
+     *  已播报局面 15 秒无变化且有可消除交换 → 重报最优解，之后每 15 秒一次。 */
     private void idleCheck() {
         if (!running) return;
         long now = SystemClock.elapsedRealtime();
-        if (lastMatrix != null && lastSwaps != null && !lastSwaps.isEmpty()
+        if (lastAnnouncedMatrix != null && lastSwaps != null && !lastSwaps.isEmpty()
                 && now - lastChangeAt >= IDLE_HINT_MS
                 && now - lastAnnounceAt >= MIN_ANNOUNCE_GAP_MS) {
             lastAnnounceAt = now;
@@ -224,7 +272,6 @@ public class Match3LiveService extends Service {
             Log.i(TAG, "犹豫提示: " + speech);
             announce(speech);
         }
-        handler.postDelayed(this::idleCheck, 5000);
     }
 
     private void announce(String speech) {
@@ -259,11 +306,21 @@ public class Match3LiveService extends Service {
     }
 
     private Notification buildNotification() {
-        android.app.Notification.Builder builder = new android.app.Notification.Builder(this, "m3live")
+        android.app.NotificationChannel channel = new android.app.NotificationChannel("m3live",
+                "消消乐实时识别", android.app.NotificationManager.IMPORTANCE_LOW);
+        android.app.NotificationManager nm = getSystemService(android.app.NotificationManager.class);
+        if (nm != null) nm.createNotificationChannel(channel);
+        return new android.app.Notification.Builder(this, "m3live")
                 .setContentTitle("听野 · 消消乐实时识别中")
                 .setContentText("正在识别棋盘并语音播报")
-                .setSmallIcon(android.R.drawable.ic_menu_camera);
-        return builder.build();
+                .setSmallIcon(android.R.drawable.ic_menu_camera)
+                .build();
+    }
+
+    private void teardownMedia() {
+        if (reader != null) { try { reader.close(); } catch (Exception ignored) { } reader = null; }
+        if (display != null) { try { display.release(); } catch (Exception ignored) { } display = null; }
+        if (projection != null) { try { projection.stop(); } catch (Exception ignored) { } projection = null; }
     }
 
     @Override
@@ -274,12 +331,6 @@ public class Match3LiveService extends Service {
         android.app.NotificationManager nm = getSystemService(android.app.NotificationManager.class);
         if (nm != null) nm.createNotificationChannel(channel);
         running = true;
-    }
-
-    private void teardownMedia() {
-        if (reader != null) { try { reader.close(); } catch (Exception ignored) { } reader = null; }
-        if (display != null) { try { display.release(); } catch (Exception ignored) { } display = null; }
-        if (projection != null) { try { projection.stop(); } catch (Exception ignored) { } projection = null; }
     }
 
     @Override
