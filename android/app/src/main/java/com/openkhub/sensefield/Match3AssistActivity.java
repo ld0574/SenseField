@@ -153,7 +153,41 @@ public class Match3AssistActivity extends Activity {
 
         preview = new ImageView(this);
         preview.setAdjustViewBounds(true);
+        preview.setOnTouchListener((v, event) -> {
+            if (event.getAction() != android.view.MotionEvent.ACTION_UP) return false;
+            if (screenshot == null) return false;
+            int bw = screenshot.getWidth(), bh = screenshot.getHeight();
+            if (preview.getWidth() == 0 || preview.getHeight() == 0) return false;
+            int px = (int) (event.getX() * bw / preview.getWidth());
+            int py = (int) (event.getY() * bh / preview.getHeight());
+            handlePreviewTap(px, py);
+            return true;
+        });
         page.addView(preview);
+
+        /* ---------- 说明书与点读 ---------- */
+        LinearLayout coach = UiKit.card(this);
+        coach.addView(sectionLabel("本关说明书与点读（开心消消乐通用规则内置）"));
+        Button kb = UiKit.button(this, "朗读说明书（每按一次读一条）", false);
+        kb.setOnClickListener(v -> {
+            String[] names = Match3Coach.knowledgeNames();
+            String name = names[kbIndex % names.length];
+            announce(name + "。" + Match3Coach.KNOWLEDGE.get(name));
+            output.setText("说明书 [" + name + "]：" + Match3Coach.KNOWLEDGE.get(name));
+            kbIndex++;
+        });
+        coach.addView(kb);
+        Button region = UiKit.button(this, "框选识别（点我后在预览上点左上角和右下角）", false);
+        region.setOnClickListener(v -> {
+            regionPick = !regionPick;
+            regionFirst = null;
+            toast(regionPick ? "框选模式：先点棋盘区域的左上角" : "框选模式已取消");
+        });
+        coach.addView(region);
+        Button props = UiKit.button(this, "播报屏幕下方道具栏", false);
+        props.setOnClickListener(v -> announcePropBar());
+        coach.addView(props);
+        page.addView(coach);
 
         output = new TextView(this);
         output.setTypeface(Typeface.MONOSPACE);
@@ -489,6 +523,69 @@ public class Match3AssistActivity extends Activity {
             case CONFIRM: return "中置信·先确认";
             default: return "低置信·绝不静默";
         }
+    }
+
+    /* ---------- 预览点读 / 框选 / 道具栏 ---------- */
+
+    private int kbIndex;
+    private boolean regionPick;
+    private int[] regionFirst;
+
+    /** 预览点击：普通模式报单格；框选模式两次点击定区域后播报内容摘要。 */
+    private void handlePreviewTap(int px, int py) {
+        saveCalibration();
+        int rows = 6 + rowsSpin.getSelectedItemPosition();
+        int cols = 6 + colsSpin.getSelectedItemPosition();
+        int l = screenshot.getWidth() * parseInt(leftIn, 4) / 100;
+        int t = screenshot.getHeight() * parseInt(topIn, 18) / 100;
+        int r = screenshot.getWidth() * parseInt(rightIn, 96) / 100;
+        int b = screenshot.getHeight() * parseInt(bottomIn, 82) / 100;
+        int cellW = (r - l) / cols, cellH = (b - t) / rows;
+        int col = (px - l) / cellW, row = (py - t) / cellH;
+        if (col < 0 || col >= cols || row < 0 || row >= rows) {
+            toast("点在棋盘范围外了");
+            return;
+        }
+        if (regionPick) {
+            int[] corner = {row, col};
+            if (regionFirst == null) {
+                regionFirst = corner;
+                toast("左上角已定（第 " + (row + 1) + " 行第 " + (col + 1) + " 列），再点右下角");
+                return;
+            }
+            char[][] board = sampler().sample(screenshot);
+            Match3Coach.RegionSummary s = Match3Coach.summarizeRegion(
+                    board, regionFirst[0], regionFirst[1], row, col);
+            String speech = Match3Coach.regionSpeech(s);
+            announce(speech);
+            output.setText(speech);
+            regionPick = false;
+            regionFirst = null;
+            return;
+        }
+        char piece = Match3Sampler.classifyPoint(screenshot, px, py);
+        String speech = "第 " + (row + 1) + " 行，第 " + (col + 1) + " 列："
+                + Match3Coach.pieceName(piece) + "，"
+                + Match3Coach.quadrantOf(row, col, rows, cols) + "区域。";
+        announce(speech);
+        output.setText(speech);
+    }
+
+    /** 道具栏播报：棋盘盒下方横向采 6 格，逐格报颜色/模板名。 */
+    private void announcePropBar() {
+        if (screenshot == null) {
+            toast("本功能配合截图使用：先选一张含道具栏的截图");
+            return;
+        }
+        char[] strip = Match3Sampler.classifyStrip(screenshot, 84, 96, 6);
+        StringBuilder sb = new StringBuilder("道具栏从左到右：");
+        for (int i = 0; i < strip.length; i++) {
+            sb.append("第 ").append(i + 1).append(" 个，")
+              .append(Match3Coach.pieceName(strip[i])).append("色道具；");
+        }
+        String speech = sb.toString();
+        announce(speech);
+        output.setText(speech);
     }
 
     /* ---------- 播报（宽容策略真链路，与演示播报一致） ---------- */

@@ -57,6 +57,9 @@ public class Match3LiveService extends Service {
     private List<Match3Board.Swap> lastSwaps;
     private long lastChangeAt;
     private long lastAnnounceAt;
+    private boolean popupAnnounced;
+    private int liveRows = 8;
+    private int liveCols = 8;
     private volatile boolean running;
 
     @Override
@@ -209,8 +212,26 @@ public class Match3LiveService extends Service {
                     Math.max(6, Math.min(9, prefs.getInt("match3_rows", 8))),
                     Math.max(6, Math.min(9, prefs.getInt("match3_cols", 8))),
                     l, t, r, b);
+            liveRows = Math.max(6, Math.min(9, prefs.getInt("match3_rows", 8)));
+            liveCols = Math.max(6, Math.min(9, prefs.getInt("match3_cols", 8)));
         }
         char[][] matrix = sampler.sample(frame);
+
+        /* 教程/说明弹窗：出现→暂停局面播报并告知；消失→提醒可以开始游戏 */
+        boolean popup = Match3Coach.isPopupShowing(frame);
+        if (popup && !popupAnnounced) {
+            popupAnnounced = true;
+            Log.i(TAG, "检测到说明弹窗，暂停局面播报");
+            announce("检测到游戏说明弹窗。读完或跳过后就可以开始了。");
+            return;
+        }
+        if (!popup && popupAnnounced) {
+            popupAnnounced = false;
+            Log.i(TAG, "弹窗结束，可以开始游戏");
+            announce("说明已结束，可以开始游戏了。");
+            return;
+        }
+        if (popup) return;   // 弹窗期间的棋盘是暗的，不参与识别
 
         /* 稳定窗：连续 STABLE_FRAMES 帧一致才认账（吸收消除动画/棋子摇摆中间态） */
         if (lastRawMatrix != null && matrixEquals(lastRawMatrix, matrix)) {
@@ -237,7 +258,7 @@ public class Match3LiveService extends Service {
         lastAnnounceAt = now;
         StringBuilder sb = new StringBuilder(isFirst ? "棋盘识别完成。" : "局面更新。");
         if (!swaps.isEmpty()) {
-            sb.append(Match3Board.swapSpeech(swaps.get(0)));
+            sb.append(Match3Coach.swapSpeechWithQuadrant(swaps.get(0), liveRows, liveCols));
             if (swaps.size() > 1) sb.append("，共 ").append(swaps.size()).append(" 处");
         } else {
             sb.append("暂无可消除交换。");

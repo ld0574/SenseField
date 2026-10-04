@@ -55,6 +55,23 @@ final class Match3Sampler {
     }
 
     /** 按标定采样整个棋盘。templates 可为 null/空。 */
+    /** 单点报点：对截图中任意一点做颜色分类（预览点击报点用）。 */
+    static char classifyPoint(Bitmap bitmap, int cx, int cy) {
+        int half = Math.max(6, bitmap.getWidth() / 130);
+        return classifyCell(bitmap, cx, cy, half, null);
+    }
+
+    /** 横向均匀取 n 个槽位的颜色（道具栏播报用）。 */
+    static char[] classifyStrip(Bitmap bitmap, int yPctFrom, int yPctTo, int slots) {
+        char[] out = new char[slots];
+        int y = bitmap.getHeight() * (yPctFrom + yPctTo) / 200;
+        int slotW = bitmap.getWidth() / slots;
+        for (int i = 0; i < slots; i++) {
+            out[i] = classifyCell(bitmap, slotW * i + slotW / 2, y, slotW / 6, null);
+        }
+        return out;
+    }
+
     static char[][] sample(Bitmap bitmap, int rows, int cols,
                            int lPct, int tPct, int rPct, int bPct,
                            List<SpecialTemplate> templates) {
