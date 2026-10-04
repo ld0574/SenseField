@@ -18,6 +18,7 @@ class GatewaySettings:
     vision_base_url: str = ""
     vision_model: str = ""
     vision_api_key: str = field(default="", repr=False)
+    vision_max_tokens: int = 256
     model_cache_dir: Path | None = None
     account_concurrency: int = 1
     request_timeout_seconds: float = 8.0
@@ -29,6 +30,9 @@ class GatewaySettings:
             raise ValueError("ASSISTANT_GATEWAY_GLM_MODEL must be a GLM model identifier")
         if self.vision_provider not in {"zhipu", "compatible"}:
             raise ValueError("ASSISTANT_GATEWAY_VISION_PROVIDER is unsupported")
+        if (isinstance(self.vision_max_tokens, bool) or not isinstance(self.vision_max_tokens, int)
+                or not 64 <= self.vision_max_tokens <= 1024):
+            raise ValueError("ASSISTANT_GATEWAY_VISION_MAX_TOKENS must be between 64 and 1024")
         if self.vision_provider == "compatible":
             url = urlsplit(self.vision_base_url)
             if (url.scheme != "https" or not url.hostname or url.username or url.password
@@ -53,6 +57,10 @@ class GatewaySettings:
             raise ValueError("ASSISTANT_GATEWAY_ACCOUNT_CONCURRENCY must be an integer") from exc
         if concurrency < 1 or concurrency > 32:
             raise ValueError("ASSISTANT_GATEWAY_ACCOUNT_CONCURRENCY must be between 1 and 32")
+        try:
+            vision_max_tokens = int(os.environ.get("ASSISTANT_GATEWAY_VISION_MAX_TOKENS", "256"))
+        except ValueError as exc:
+            raise ValueError("ASSISTANT_GATEWAY_VISION_MAX_TOKENS must be an integer") from exc
         return cls(
             device_tokens=tokens,
             zhipu_api_key=os.environ.get("ZHIPU_API_KEY", "").strip(),
@@ -61,6 +69,7 @@ class GatewaySettings:
             vision_base_url=os.environ.get("ASSISTANT_GATEWAY_VISION_BASE_URL", "").strip(),
             vision_model=os.environ.get("ASSISTANT_GATEWAY_VISION_MODEL", "").strip(),
             vision_api_key=os.environ.get("ASSISTANT_GATEWAY_VISION_API_KEY", "").strip(),
+            vision_max_tokens=vision_max_tokens,
             model_cache_dir=Path(cache).expanduser() if cache else None,
             account_concurrency=concurrency,
             require_tls=require_tls,
@@ -92,6 +101,7 @@ def safe_configuration_status(settings: GatewaySettings, *, asr_ready: bool, vis
         "authentication_configured": bool(settings.device_tokens),
         "mode": settings.mode,
         "vision_provider": settings.vision_provider,
+        "vision_max_tokens": settings.vision_max_tokens if settings.vision_provider == "compatible" else 256,
         "vision_model": (settings.vision_model if settings.vision_api_key else None)
             if settings.vision_provider == "compatible" else (settings.zhipu_model if settings.zhipu_api_key else None),
     }

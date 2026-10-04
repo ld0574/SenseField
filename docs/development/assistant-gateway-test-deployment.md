@@ -2,7 +2,11 @@
 
 本文说明如何复现隔离的 Linux 网关合成冒烟测试。网关只绑定回环地址，通过 SSH direct-tcpip 隧道访问；测试使用经校验的自签名 TLS 证书、固定版本的 CPU Paraformer、独立设备令牌，以及服务端 Zhipu API Key 完成一次合成 GLM 请求。
 
-2026-10-04 的后续修订增加服务端视觉提供商选择。`ASSISTANT_GATEWAY_VISION_PROVIDER=zhipu` 使用智谱原生接口，模型由 `ASSISTANT_GATEWAY_GLM_MODEL` 指定，默认仍是 `glm-4.6v-flash`。用户后续指定收费的 `MiniMax-M3` 优先、`qwen3.8-27b` 后续测试，与兼容接口：配置 `ASSISTANT_GATEWAY_VISION_PROVIDER=compatible`，并在私有服务端环境中设置 `ASSISTANT_GATEWAY_VISION_BASE_URL`、`ASSISTANT_GATEWAY_VISION_MODEL`、`ASSISTANT_GATEWAY_VISION_API_KEY`。该接口图片使用 JPEG data URL，智谱接口仍使用原始 Base64；不共用错误的图片格式。APK 不包含供应商密钥，客户端无需更换模型专用安装包。模型/HTTPS地址在启动前校验，`/health` 仅显示模型名称等安全状态；没有自动回退或切换提供商。
+2026-10-04 的后续修订增加服务端视觉提供商选择。`ASSISTANT_GATEWAY_VISION_PROVIDER=zhipu` 使用智谱原生接口，模型由 `ASSISTANT_GATEWAY_GLM_MODEL` 指定，默认仍是 `glm-4.6v-flash`。compatible API 在私有服务端环境中配置 `ASSISTANT_GATEWAY_VISION_BASE_URL`、`ASSISTANT_GATEWAY_VISION_MODEL`、`ASSISTANT_GATEWAY_VISION_API_KEY`。按用户先 MiniMax、再千问的顺序测试后，当前明确选择上游 `/models` 返回的 `qwen/qwen3.8-27b`：合成选项图通过完整 TLS 网关，单次往返 1350 ms。MiniMax-M3 在本轮返回 HTTP 200 空正文或耗尽输出预算，不等同于 429 限流；此前无 namespace 的千问单次 503 保留为历史，不能仅凭新结果确定其全部原因。该接口图片使用 JPEG data URL，智谱接口仍使用原始 Base64。APK 不包含供应商密钥，客户端无需更换模型专用安装包。模型/HTTPS 地址在启动前校验，`/health` 仅显示模型名称等安全状态；没有自动回退或切换提供商。详见[本轮记录](../../validation/ASSISTANT_LIVE_0.4.1_2026-10-04.md)。
+
+compatible API 可配置 `ASSISTANT_GATEWAY_VISION_MAX_TOKENS`，范围 64–1024，默认与当前值均为 256；智谱原生路径仍固定 256。仅 exact `MiniMax-M3` 使用其[官方支持](https://platform.minimax.io/docs/api-reference/text-chat-openai)的 `thinking: {"type":"disabled"}`，其他模型不继承该扩展。网关跟踪客户端断连并取消上游调用；同会话、generation 不旧的手动请求可先取消主动请求，等待其释放后执行，避免网关调用重叠。释放等待上限 2 秒，之后的模型调用上限 8 秒；等待超时返回 busy 并保留旧占用。不能据此保证供应商内部计算已停止。取消、优先级与所有权测试通过，手机实际发声和热/负载仍待验证。
+
+取消清理依赖 provider coroutine 响应取消；若自定义 adapter 忽略取消，断连清理会继续等待并保留会话占用，不能把 2 秒手动交接上限当作所有清理操作的硬上限。当前真实客户端使用可取消的 httpx 流。
 
 ## 准备隔离主机
 

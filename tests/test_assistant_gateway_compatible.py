@@ -101,6 +101,34 @@ def test_compatible_client_reuses_safe_rate_limit_metadata_and_cooldown() -> Non
     asyncio.run(scenario())
 
 
+def test_minimax_m3_uses_its_documented_non_thinking_mode() -> None:
+    client = CompatibleVisionClient("test", base_url="https://vision.example/v1",
+                                    model="MiniMax-M3", max_tokens=1024)
+    try:
+        body = client._request_body(question="q", image_base64="a")
+        assert body["max_tokens"] == 1024
+        assert body["thinking"] == {"type": "disabled"}
+        assert "enable_thinking" not in body
+    finally:
+        asyncio.run(client.close())
+
+
+@pytest.mark.parametrize("model", ["MiniMax-M3.1-Flash-Preview", "minimax-m2.5", "qwen/qwen3.8-27b"])
+def test_m3_thinking_extension_does_not_leak_to_other_models(model: str) -> None:
+    client = CompatibleVisionClient("test", base_url="https://vision.example/v1", model=model)
+    try:
+        assert "thinking" not in client._request_body(question="q", image_base64="a")
+    finally:
+        asyncio.run(client.close())
+
+
+@pytest.mark.parametrize("max_tokens", [True, 0, 63, 1025, "1024"])
+def test_compatible_token_budget_is_bounded(max_tokens: object) -> None:
+    with pytest.raises(ValueError):
+        CompatibleVisionClient("test", base_url="https://vision.example/v1",
+                              model="MiniMax-M3", max_tokens=max_tokens)
+
+
 @pytest.mark.parametrize(
     ("api_key", "base_url", "model"),
     [

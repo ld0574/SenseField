@@ -469,3 +469,233 @@ def test_cancelled_visual_request_releases_session_and_health_stays_responsive()
                 assert retry.status_code == 200
 
     asyncio.run(scenario())
+
+
+def test_manual_visual_preempts_proactive_without_overlapping_or_reusing_old_result() -> None:
+    class PreemptibleVision:
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+            self.cancelled = asyncio.Event()
+            self.active_calls = 0
+            self.max_active_calls = 0
+            self.questions: list[str] = []
+
+        async def complete(self, *, question: str, image_base64: str) -> str:
+            del image_base64
+            self.questions.append(question)
+            self.active_calls += 1
+            self.max_active_calls = max(self.max_active_calls, self.active_calls)
+            try:
+                if question == "background scan":
+                    self.started.set()
+                    try:
+                        await asyncio.Event().wait()
+                    finally:
+                        self.cancelled.set()
+                    return '{"kind":"hud","answer":"旧主动结果","uncertain":false}'
+                return '{"kind":"hud","answer":"手动已确认","uncertain":false}'
+            finally:
+                self.active_calls -= 1
+
+        async def close(self) -> None:
+            return None
+
+    async def scenario() -> None:
+        import httpx
+
+        vision = PreemptibleVision()
+        app = create_app(_settings(), recognizer=FakeRecognizer(), vision_client=vision)
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                headers = {"Authorization": f"Bearer {TOKEN}"}
+                proactive = asyncio.create_task(
+                    client.post(
+                        "/v1/visual",
+                        json=_visual_payload(
+                            proactive=True,
+                            question="background scan",
+                            turn_id="old-turn",
+                            frame_id="old-frame",
+                            generation=3,
+                        ),
+                        headers=headers,
+                    )
+                )
+                await asyncio.wait_for(vision.started.wait(), timeout=1)
+                manual = await asyncio.wait_for(
+                    client.post(
+                        "/v1/visual",
+                        json=_visual_payload(
+                            proactive=False,
+                            question="READ_SCREEN",
+                            turn_id="manual-turn",
+                            frame_id="manual-frame",
+                            generation=4,
+                        ),
+                        headers=headers,
+                    ),
+                    timeout=1,
+                )
+                assert manual.status_code == 200
+                assert manual.json()["turn_id"] == "manual-turn"
+                assert manual.json()["frame_id"] == "manual-frame"
+                assert manual.json()["answer"] == "手动已确认"
+                assert vision.cancelled.is_set()
+                assert vision.questions == ["background scan", "READ_SCREEN"]
+                assert vision.max_active_calls == 1
+                with pytest.raises(asyncio.CancelledError):
+                    await proactive
+
+    asyncio.run(scenario())
+
+
+def test_manual_preemption_timeout_keeps_upstream_slot_reserved(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mapassist.assistant_gateway import app as gateway_app
+
+    monkeypatch.setattr(gateway_app, "_VISUAL_PREEMPTION_TIMEOUT_SECONDS", 0.03)
+
+    class SlowCancellationVision:
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+            self.cancel_seen = asyncio.Event()
+            self.release = asyncio.Event()
+            self.calls: list[str] = []
+            self.active_calls = 0
+            self.max_active_calls = 0
+
+        async def complete(self, *, question: str, image_base64: str) -> str:
+            del image_base64
+            self.calls.append(question)
+            self.active_calls += 1
+            self.max_active_calls = max(self.max_active_calls, self.active_calls)
+            try:
+                if question == "slow proactive":
+                    self.started.set()
+                    try:
+                        await self.release.wait()
+                    except asyncio.CancelledError:
+                        self.cancel_seen.set()
+                        await self.release.wait()
+                    return '{"kind":"hud","answer":"主动结果","uncertain":false}'
+                return '{"kind":"hud","answer":"手动结果","uncertain":false}'
+            finally:
+                self.active_calls -= 1
+
+        async def close(self) -> None:
+            return None
+
+    async def scenario() -> None:
+        import httpx
+
+        vision = SlowCancellationVision()
+        app = create_app(_settings(), recognizer=FakeRecognizer(), vision_client=vision)
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                headers = {"Authorization": f"Bearer {TOKEN}"}
+                proactive = asyncio.create_task(
+                    client.post(
+                        "/v1/visual",
+                        json=_visual_payload(proactive=True, question="slow proactive"),
+                        headers=headers,
+                    )
+                )
+                await asyncio.wait_for(vision.started.wait(), timeout=1)
+                manual = await client.post(
+                    "/v1/visual",
+                    json=_visual_payload(proactive=False, question="manual"),
+                    headers=headers,
+                )
+                assert manual.status_code == 409
+                assert vision.cancel_seen.is_set()
+                assert vision.calls == ["slow proactive"]
+                assert vision.max_active_calls == 1
+
+                vision.release.set()
+                old_response = await asyncio.wait_for(proactive, timeout=1)
+                assert old_response.status_code == 200
+                retry = await client.post(
+                    "/v1/visual",
+                    json=_visual_payload(proactive=False, question="manual after release"),
+                    headers=headers,
+                )
+                assert retry.status_code == 200
+                assert retry.json()["answer"] == "手动结果"
+                assert vision.calls == ["slow proactive", "manual after release"]
+                assert vision.max_active_calls == 1
+
+    asyncio.run(scenario())
+
+
+def test_visual_client_disconnect_cancels_upstream_and_releases_session() -> None:
+    class DisconnectVision:
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+            self.cancelled = asyncio.Event()
+
+        async def complete(self, *, question: str, image_base64: str) -> str:
+            del question, image_base64
+            self.started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                self.cancelled.set()
+            return '{"kind":"unknown","answer":"","uncertain":true}'
+
+        async def close(self) -> None:
+            return None
+
+    async def scenario() -> None:
+        vision = DisconnectVision()
+        app = create_app(_settings(), recognizer=FakeRecognizer(), vision_client=vision)
+        payload = json.dumps(_visual_payload(proactive=True)).encode("utf-8")
+        disconnect = asyncio.Event()
+        body_delivered = False
+        sent: list[dict[str, object]] = []
+
+        async def receive() -> dict[str, object]:
+            nonlocal body_delivered
+            if not body_delivered:
+                body_delivered = True
+                return {"type": "http.request", "body": payload, "more_body": False}
+            await disconnect.wait()
+            return {"type": "http.disconnect"}
+
+        async def send(message: dict[str, object]) -> None:
+            sent.append(message)
+
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0", "spec_version": "2.3"},
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/v1/visual",
+            "raw_path": b"/v1/visual",
+            "query_string": b"",
+            "root_path": "",
+            "headers": [
+                (b"authorization", f"Bearer {TOKEN}".encode()),
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(payload)).encode()),
+            ],
+            "client": ("test", 1234),
+            "server": ("test", 80),
+        }
+
+        async with app.router.lifespan_context(app):
+            request = asyncio.create_task(app(scope, receive, send))
+            await asyncio.wait_for(vision.started.wait(), timeout=1)
+            disconnect.set()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(request, timeout=1)
+            assert vision.cancelled.is_set()
+            assert app.state.active_visual_requests == {}
+            assert sent == []
+
+    asyncio.run(scenario())

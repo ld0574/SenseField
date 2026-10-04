@@ -5,6 +5,20 @@ import pytest
 from mapassist.assistant_gateway.config import GatewaySettings, safe_configuration_status
 
 
+@pytest.mark.parametrize("value", ["63", "1025", "not-integer"])
+def test_invalid_token_budget_is_rejected(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("ASSISTANT_GATEWAY_VISION_MAX_TOKENS", value)
+    with pytest.raises(ValueError, match="VISION_MAX_TOKENS"):
+        GatewaySettings.from_env()
+
+
+def test_reasoning_budget_is_configurable_without_changing_zhipu_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ASSISTANT_GATEWAY_VISION_MAX_TOKENS", "1024")
+    settings = GatewaySettings.from_env()
+    assert settings.vision_max_tokens == 1024
+    assert settings.zhipu_model == "glm-4.6v-flash"
+
+
 def test_explicit_model_configuration_is_safe_and_does_not_expose_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ASSISTANT_GATEWAY_GLM_MODEL", "glm-4.6v")
     monkeypatch.setenv("ZHIPU_API_KEY", "test-server-key-not-a-secret")

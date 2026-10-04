@@ -8,6 +8,7 @@ import json
 import logging
 import time
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from typing import Any
 
 from fastapi import FastAPI, Request, WebSocket
@@ -22,7 +23,46 @@ from .compatible import CompatibleVisionClient
 from .validation import UNKNOWN_ANSWER, InvalidRequest, VisualAnswer, parse_visual_answer, validate_visual_request
 
 _MAX_REQUEST_BODY_BYTES = 700 * 1024
+_VISUAL_PREEMPTION_TIMEOUT_SECONDS = 2.0
+_DISCONNECT_POLL_INTERVAL_SECONDS = 0.05
 _AUDIT_LOGGER = logging.getLogger("mapassist.assistant_gateway.audit")
+
+
+@dataclass
+class _ActiveVisualRequest:
+    owner_task: asyncio.Task[Any]
+    proactive: bool
+    generation: int
+    upstream_task: asyncio.Task[str] | None = None
+    pending_manual: asyncio.Task[Any] | None = None
+    handoff: asyncio.Event = field(default_factory=asyncio.Event)
+
+
+async def _wait_for_client_disconnect(request: Request) -> None:
+    while not await request.is_disconnected():
+        await asyncio.sleep(_DISCONNECT_POLL_INTERVAL_SECONDS)
+
+
+async def _cancel_and_wait(task: asyncio.Task[Any] | None) -> None:
+    if task is None:
+        return
+    if not task.done():
+        task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+
+async def _complete_or_disconnect(
+    task: asyncio.Task[str],
+    disconnect_task: asyncio.Task[None],
+) -> str:
+    done, _pending = await asyncio.wait(
+        {task, disconnect_task},
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+    if disconnect_task in done:
+        await _cancel_and_wait(task)
+        raise asyncio.CancelledError
+    return await task
 
 
 class HttpBodyLimitMiddleware:
@@ -128,6 +168,7 @@ def create_app(
                 settings.vision_api_key,
                 base_url=settings.vision_base_url,
                 model=settings.vision_model,
+                max_tokens=settings.vision_max_tokens,
                 concurrency=settings.account_concurrency,
                 timeout_seconds=settings.request_timeout_seconds,
             )
@@ -146,7 +187,7 @@ def create_app(
         app.state.active_audio_sessions = set()
         app.state.audio_sessions_lock = asyncio.Lock()
         app.state.audio_generation_high_water = GenerationHighWater()
-        app.state.visual_sessions_busy = set()
+        app.state.active_visual_requests = {}
         app.state.visual_sessions_lock = asyncio.Lock()
         try:
             if settings.mode == "production":
@@ -229,16 +270,102 @@ def create_app(
             raise GatewayError("invalid_request", str(exc), http_status=422) from exc
         del payload
 
-        async with request.app.state.visual_sessions_lock:
-            if visual_request.session_id in request.app.state.visual_sessions_busy:
-                raise GatewayError("vision_busy", "A visual request is already active for this session.", http_status=409)
-            request.app.state.visual_sessions_busy.add(visual_request.session_id)
+        session_id = visual_request.session_id
+        current_task = asyncio.current_task()
+        if current_task is None:
+            raise RuntimeError("visual request has no owning task")
         started = time.monotonic()
+        disconnect_task = asyncio.create_task(_wait_for_client_disconnect(request))
+        active: _ActiveVisualRequest | None = None
+        owns_slot = False
+        handoff_task: asyncio.Task[bool] | None = None
         try:
-            raw_answer = await vision_client.complete(
-                question=visual_request.question,
-                image_base64=visual_request.image.jpeg_base64,
-            )
+            async with request.app.state.visual_sessions_lock:
+                active = request.app.state.active_visual_requests.get(session_id)
+                if active is None:
+                    active = _ActiveVisualRequest(
+                        owner_task=current_task,
+                        proactive=visual_request.proactive,
+                        generation=visual_request.generation,
+                    )
+                    active.upstream_task = asyncio.create_task(
+                        vision_client.complete(
+                            question=visual_request.question,
+                            image_base64=visual_request.image.jpeg_base64,
+                        )
+                    )
+                    request.app.state.active_visual_requests[session_id] = active
+                    owns_slot = True
+                    preempted_task = None
+                elif (
+                    not visual_request.proactive
+                    and active.proactive
+                    and active.pending_manual is None
+                    and visual_request.generation >= active.generation
+                ):
+                    # Reserve the slot for this manual request before asking
+                    # the proactive request to stop. Other arrivals stay busy
+                    # until cancellation has fully released the upstream call.
+                    active.pending_manual = current_task
+                    preempted_task = active.upstream_task
+                else:
+                    raise GatewayError(
+                        "vision_busy",
+                        "A visual request is already active for this session.",
+                        http_status=409,
+                    )
+
+            if not owns_slot:
+                if preempted_task is not None and not preempted_task.done():
+                    preempted_task.cancel()
+                handoff_task = asyncio.create_task(active.handoff.wait())
+                try:
+                    done, _pending = await asyncio.wait(
+                        {handoff_task, disconnect_task},
+                        timeout=_VISUAL_PREEMPTION_TIMEOUT_SECONDS,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if disconnect_task in done:
+                        raise asyncio.CancelledError
+                    if handoff_task not in done:
+                        async with request.app.state.visual_sessions_lock:
+                            transferred = active.owner_task is current_task
+                            if not transferred and active.pending_manual is current_task:
+                                active.pending_manual = None
+                        if not transferred:
+                            raise GatewayError(
+                                "vision_busy",
+                                "The previous visual request is still stopping.",
+                                http_status=409,
+                            )
+                finally:
+                    if not handoff_task.done():
+                        handoff_task.cancel()
+                    await asyncio.gather(handoff_task, return_exceptions=True)
+
+                async with request.app.state.visual_sessions_lock:
+                    if (
+                        request.app.state.active_visual_requests.get(session_id) is not active
+                        or active.owner_task is not current_task
+                    ):
+                        raise GatewayError(
+                            "vision_busy",
+                            "A visual request is already active for this session.",
+                            http_status=409,
+                        )
+                    active.proactive = False
+                    active.generation = visual_request.generation
+                    active.upstream_task = asyncio.create_task(
+                        vision_client.complete(
+                            question=visual_request.question,
+                            image_base64=visual_request.image.jpeg_base64,
+                        )
+                    )
+                    owns_slot = True
+
+            if active.upstream_task is None:
+                raise RuntimeError("visual request slot has no upstream task")
+            raw_answer = await _complete_or_disconnect(active.upstream_task, disconnect_task)
             try:
                 answer = parse_visual_answer(raw_answer)
             except InvalidRequest:
@@ -259,8 +386,29 @@ def create_app(
             }
             return JSONResponse(result)
         finally:
-            async with request.app.state.visual_sessions_lock:
-                request.app.state.visual_sessions_busy.discard(visual_request.session_id)
+            if not disconnect_task.done():
+                disconnect_task.cancel()
+            await asyncio.gather(disconnect_task, return_exceptions=True)
+            if handoff_task is not None and not handoff_task.done():
+                handoff_task.cancel()
+                await asyncio.gather(handoff_task, return_exceptions=True)
+            if active is not None:
+                if active.owner_task is current_task:
+                    await _cancel_and_wait(active.upstream_task)
+                async with request.app.state.visual_sessions_lock:
+                    if active.owner_task is current_task:
+                        if active.pending_manual is not None:
+                            active.owner_task = active.pending_manual
+                            active.pending_manual = None
+                            active.proactive = False
+                            active.upstream_task = None
+                            active.handoff.set()
+                        else:
+                            if request.app.state.active_visual_requests.get(session_id) is active:
+                                request.app.state.active_visual_requests.pop(session_id, None)
+                            active.handoff.set()
+                    elif active.pending_manual is current_task:
+                        active.pending_manual = None
 
     @app.websocket("/v1/audio")
     async def audio(websocket: WebSocket) -> None:
