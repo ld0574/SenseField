@@ -195,6 +195,18 @@ public class Match3AssistActivity extends Activity {
         coach.addView(props);
         page.addView(coach);
 
+        /* ---------- 读屏判定（无障碍树→Jev，领导方案 P0） ---------- */
+        LinearLayout readerCard = UiKit.card(this);
+        readerCard.addView(sectionLabel("读屏判定（无障碍树→Jev 判断式）：先在系统设置开启「听野读屏状态服务」"));
+        Button a11yGo = UiKit.button(this, "读屏→Jev 屏幕判定（类型＋弹窗门控）", true);
+        a11yGo.setOnClickListener(v -> judgeScreen());
+        readerCard.addView(a11yGo);
+        Button a11ySet = UiKit.button(this, "打开系统无障碍设置", false);
+        a11ySet.setOnClickListener(v -> startActivity(
+                new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+        readerCard.addView(a11ySet);
+        page.addView(readerCard);
+
         output = new TextView(this);
         output.setTypeface(Typeface.MONOSPACE);
         output.setTextSize(12);
@@ -594,6 +606,83 @@ public class Match3AssistActivity extends Activity {
         String speech = sb.toString();
         announce(speech);
         output.setText(speech);
+    }
+
+    /* ---------- 读屏判定（无障碍树→Jev，P0 基线：屏幕类型 Choice＋模态 Noul 扇出） ---------- */
+
+    private void judgeScreen() {
+        final JevClient client = JevSettings.clientOrNull(this);
+        if (client == null) {
+            output.setText("【未运行】判定层未启用或配置不完整（判定自测页上方保存设置）。");
+            return;
+        }
+        if (!SenseFieldReaderService.hasFreshState()) {
+            output.setText("【未就绪】读屏状态服务没有可用状态：请点「打开系统无障碍设置」，"
+                    + "找到「听野读屏状态服务」并开启，然后切回本页再试。\n开启后切几次屏幕，服务会自动缓存最新压缩状态。");
+            return;
+        }
+        final String state = SenseFieldReaderService.latestState();
+        final String pkg = SenseFieldReaderService.latestPackage();
+        output.setText("读屏判定中（来源 " + pkg + "，状态 " + state.length() + " 字符）…\n");
+        new Thread(() -> {
+            try {
+                Map<String, JevQuestion> qs = new java.util.LinkedHashMap<>();
+                Map<String, String> types = new java.util.LinkedHashMap<>();
+                types.put("主内容列表", "以可滚动列表或卡片流为主");
+                types.put("详情/阅读", "以大段阅读内容为主");
+                types.put("表单填写", "存在多个输入框待填写");
+                types.put("登录/验证", "登录或验证页面");
+                types.put("支付/金额确认", "涉及付款或金额确认");
+                types.put("弹窗/对话框", "存在覆盖型对话框");
+                types.put("系统设置", "系统或应用设置页");
+                types.put("错误/异常", "存在错误提示");
+                types.put("加载中", "正在加载或骨架屏");
+                types.put("广告/推广", "以广告或推广内容为主");
+                types.put("其他", "以上都不是");
+                qs.put("screen_type", new JevQuestion("screen_type", JevQuestion.TYPE_CHOICE,
+                        "当前屏幕属于下列哪一类？只选一个。", types));
+                qs.put("has_modal", new JevQuestion("has_modal", JevQuestion.TYPE_NOUL,
+                        "当前存在模态层（对话框/底部弹窗/权限申请/广告浮层），导致下方主内容不完整或不可操作。",
+                        mapOf("true", "存在模态遮挡", "false", "无遮挡")));
+                JevResult r = client.judge(state, qs);
+                StringBuilder sb = new StringBuilder("HTTP 200 · ").append(r.elapsedMs).append("ms · ")
+                        .append(r.model).append(" · tokens ").append(r.inputTokens).append("\n\n");
+                List<String> speeches = new ArrayList<>();
+                JevAnswer st = r.answers.get("screen_type");
+                if (st != null) {
+                    double c = st.surety();
+                    String speech;
+                    if (c >= 0.85) speech = "当前是「" + st.choice + "」。";
+                    else if (c >= 0.60) speech = "可能是「" + st.choice + "」，这个我不太确定。";
+                    else speech = "这一屏我没看清楚，要我从上往下逐条读吗？";
+                    sb.append("[screen_type] ").append(st.choice)
+                      .append(" (conf=").append(String.format(java.util.Locale.US, "%.2f", c)).append(")\n")
+                      .append("→ ").append(speech).append("\n\n");
+                    speeches.add(speech);
+                }
+                JevAnswer modal = r.answers.get("has_modal");
+                if (modal != null && modal.noul >= 0.7) {
+                    String m = "屏幕上有弹窗遮挡，下方内容暂时无法操作。";
+                    sb.append("[has_modal] p=").append(String.format(java.util.Locale.US, "%.2f", modal.noul))
+                      .append("\n→ ").append(m).append("\n");
+                    speeches.add(0, m);
+                }
+                for (String s : speeches) announce(s);
+                String text = sb.toString();
+                runOnUiThread(() -> output.setText(text));
+            } catch (Exception e) {
+                String msg = "【读屏判定失败】" + (e instanceof JevException
+                        ? ((JevException) e).kind + " HTTP " + ((JevException) e).status + "\n原文: " + ((JevException) e).bodyText
+                        : e.getMessage());
+                runOnUiThread(() -> output.setText(msg));
+            }
+        }, "screen-jev").start();
+    }
+
+    private static Map<String, String> mapOf(String... kv) {
+        Map<String, String> m = new java.util.LinkedHashMap<>();
+        for (int i = 0; i + 1 < kv.length; i += 2) m.put(kv[i], kv[i + 1]);
+        return m;
     }
 
     /* ---------- 播报（宽容策略真链路，与演示播报一致） ---------- */
