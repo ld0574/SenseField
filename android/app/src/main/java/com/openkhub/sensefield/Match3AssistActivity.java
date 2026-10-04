@@ -125,6 +125,9 @@ public class Match3AssistActivity extends Activity {
         bottomIn = pctInput(pct2, "右下Y%", 82);
         calib.addView(pct2);
         loadCalibration();
+        Button autoFit = UiKit.button(this, "自动适配棋盘（对当前截图自动找棋盘范围）", false);
+        autoFit.setOnClickListener(v -> autoFitBoard());
+        calib.addView(autoFit);
         Button sample = UiKit.button(this, "采样截图并播报可消除位置", false);
         sample.setOnClickListener(v -> sampleAndAnnounce());
         calib.addView(sample);
@@ -417,6 +420,29 @@ public class Match3AssistActivity extends Activity {
         InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         View focus = getCurrentFocus();
         if (imm != null && focus != null) imm.hideSoftInputFromWindow(focus.getWindowToken(), 0);
+    }
+
+    /** 自动适配：对当前截图检测深色棋盘格包围盒，写回标定（实时识别启动时也会自动做一次）。 */
+    private void autoFitBoard() {
+        if (screenshot == null) {
+            toast("先选择一张游戏截图");
+            return;
+        }
+        int[] box = Match3Sampler.autoDetectBoard(screenshot);
+        if (box == null) {
+            toast("自动适配未命中（棋盘底色不是深色？），请手动微调");
+            return;
+        }
+        leftIn.setText(String.valueOf(box[0]));
+        topIn.setText(String.valueOf(box[1]));
+        rightIn.setText(String.valueOf(box[2]));
+        bottomIn.setText(String.valueOf(box[3]));
+        saveCalibration();
+        drawPreview();
+        announce("棋盘自动适配完成，范围是横向百分之 " + box[0] + " 到 " + box[2]
+                + "，纵向百分之 " + box[1] + " 到 " + box[3] + "。请点采样确认。");
+        output.setText("自动适配：左上 (" + box[0] + "%, " + box[1] + "%) 右下 ("
+                + box[2] + "%, " + box[3] + "%)。已写回标定并保存，点「采样」验证。");
     }
 
     /* ---------- Jev 示例判定 ---------- */

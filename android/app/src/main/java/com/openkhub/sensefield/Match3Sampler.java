@@ -152,6 +152,73 @@ final class Match3Sampler {
         return diff / (16f * 16f * 3f);
     }
 
+    /* ---------- 棋盘自动适配：检测深色棋盘格区域的包围盒 ---------- */
+
+    /**
+     * 纯逻辑：给定逐像素「是棋盘格」掩码（降采样网格），返回棋盘包围盒（百分比）。
+     * 算法：行剖面找最长的密集行带（≥25% 像素是格），带内列剖面（≥30%）定左右。
+     * 返回 {l,t,r,b}（百分比，0-100）；检测不到返回 null。
+     */
+    static int[] detectBoundsFromMask(boolean[][] mask) {
+        int rows = mask.length, cols = mask[0].length;
+        int[] rowCount = new int[rows];
+        for (int r = 0; r < rows; r++) {
+            int n = 0;
+            for (int c = 0; c < cols; c++) if (mask[r][c]) n++;
+            rowCount[r] = n;
+        }
+        int minRowCount = cols / 4;
+        int bestTop = -1, bestBottom = -1, bestLen = 0;
+        int top = -1;
+        for (int r = 0; r <= rows; r++) {
+            boolean dense = r < rows && rowCount[r] >= minRowCount;
+            if (dense && top < 0) top = r;
+            if ((!dense || r == rows) && top >= 0) {
+                int len = r - top;
+                if (len > bestLen) { bestLen = len; bestTop = top; bestBottom = r - 1; }
+                top = -1;
+            }
+        }
+        if (bestTop < 0 || bestLen < rows / 10) return null;
+        int[] colCount = new int[cols];
+        for (int r = bestTop; r <= bestBottom; r++) {
+            for (int c = 0; c < cols; c++) if (mask[r][c]) colCount[c]++;
+        }
+        int bandRows = bestBottom - bestTop + 1;
+        int minColCount = bandRows * 3 / 10;
+        int left = -1, right = -1;
+        for (int c = 0; c < cols; c++) {
+            if (colCount[c] >= minColCount) { if (left < 0) left = c; right = c; }
+        }
+        if (left < 0 || right - left < cols / 10) return null;
+        return new int[]{
+                left * 100 / cols, bestTop * 100 / rows,
+                (right + 1) * 100 / cols, (bestBottom + 1) * 100 / rows
+        };
+    }
+
+    /**
+     * 对一帧做自动适配：降采样 → 逐像素判「深色棋盘格」（开心消消乐棋盘底为深蓝黑）→ 包围盒。
+     * 检测不到返回 null（保持手动标定）。
+     */
+    static int[] autoDetectBoard(Bitmap frame) {
+        int step = Math.max(1, frame.getWidth() / 160);
+        int cols = frame.getWidth() / step, rows = frame.getHeight() / step;
+        boolean[][] mask = new boolean[rows][cols];
+        for (int r = 0; r < rows; r++) {
+            for (int c = 0; c < cols; c++) {
+                int x = Math.min(frame.getWidth() - 1, c * step + step / 2);
+                int y = Math.min(frame.getHeight() - 1, r * step + step / 2);
+                int px = frame.getPixel(x, y);
+                float[] hsv = new float[3];
+                Color.colorToHSV(px, hsv);
+                /* 棋盘底：暗（v<0.45）、偏冷色（hue 170-300）、饱和度不限（冰格也偏暗） */
+                mask[r][c] = hsv[2] < 0.45f && hsv[0] >= 170f && hsv[0] <= 300f;
+            }
+        }
+        return detectBoundsFromMask(mask);
+    }
+
     /* ---------- 特殊棋子模板存取（app 私有目录 special_templates/） ---------- */
 
     static File templateDir(android.content.Context context) {

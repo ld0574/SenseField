@@ -33,8 +33,9 @@ public class Match3LiveService extends Service {
     static final String EXTRA_RESULT_CODE = "resultCode";
     static final String EXTRA_DATA = "data";
     private static final int NOTIFICATION_ID = 3002;
-    private static final long CAPTURE_INTERVAL_MS = 1000;
+    private static final long CAPTURE_INTERVAL_MS = 800;
     private static final long MIN_ANNOUNCE_GAP_MS = 6000;
+    private static final long IDLE_HINT_MS = 15000;
 
     private MediaProjection projection;
     private VirtualDisplay display;
@@ -45,6 +46,8 @@ public class Match3LiveService extends Service {
     private CueDispatcher dispatcher;
     private Match3Sampler sampler;
     private char[][] lastMatrix;
+    private List<Match3Board.Swap> lastSwaps;
+    private long lastChangeAt;
     private long lastAnnounceAt;
     private int width;
     private int height;
@@ -100,6 +103,7 @@ public class Match3LiveService extends Service {
                 reader.getSurface(), null, handler());
         reader.setOnImageAvailableListener(this::onImageAvailable, handler());
         Log.i(TAG, "实时识别已启动 " + width + "x" + height);
+        handler.postDelayed(this::idleCheck, 5000);
         return START_NOT_STICKY;
     }
 
@@ -153,26 +157,37 @@ public class Match3LiveService extends Service {
     }
 
     private void processFrame(Bitmap frame) {
+        /* 自适应：服务启动后的第一帧自动检测棋盘包围盒（深色棋盘格区域），
+         * 覆盖标定并持久化——玩家不用手调百分比。检测不到沿用现有标定。 */
         if (sampler == null) {
             var prefs = GameProfile.settings(this);
+            int l = prefs.getInt("match3_l", 4), t = prefs.getInt("match3_t", 18);
+            int r = prefs.getInt("match3_r", 96), b = prefs.getInt("match3_b", 82);
+            int[] auto = Match3Sampler.autoDetectBoard(frame);
+            if (auto != null) {
+                l = auto[0]; t = auto[1]; r = auto[2]; b = auto[3];
+                prefs.edit().putInt("match3_l", l).putInt("match3_t", t)
+                        .putInt("match3_r", r).putInt("match3_b", b).apply();
+                Log.i(TAG, "棋盘自动适配: l=" + l + "% t=" + t + "% r=" + r + "% b=" + b + "%");
+            } else {
+                Log.i(TAG, "棋盘自动适配未命中，沿用手动标定");
+            }
             sampler = new Match3Sampler(this,
                     Math.max(6, Math.min(9, prefs.getInt("match3_rows", 8))),
                     Math.max(6, Math.min(9, prefs.getInt("match3_cols", 8))),
-                    prefs.getInt("match3_l", 4), prefs.getInt("match3_t", 18),
-                    prefs.getInt("match3_r", 96), prefs.getInt("match3_b", 82));
+                    l, t, r, b);
         }
         char[][] matrix = sampler.sample(frame);
+        List<Match3Board.Swap> swaps = Match3Board.findSwaps(matrix);
         if (lastMatrix != null && !matrixChanged(lastMatrix, matrix)) {
             return;
         }
         lastMatrix = matrix;
+        lastSwaps = swaps;
+        lastChangeAt = SystemClock.elapsedRealtime();
         long now = SystemClock.elapsedRealtime();
         if (now - lastAnnounceAt < MIN_ANNOUNCE_GAP_MS) {
             return;
-        }
-        List<Match3Board.Swap> swaps = Match3Board.findSwaps(matrix);
-        if (swaps.isEmpty() && Match3Board.findRuns(matrix).isEmpty()) {
-            return;  // 无可消除且无现成三连：不播报，避免刷屏
         }
         lastAnnounceAt = now;
         StringBuilder sb = new StringBuilder("局面更新。");
@@ -193,6 +208,23 @@ public class Match3LiveService extends Service {
             }
         }
         return false;
+    }
+
+    /** 犹豫提示：独立定时器（静态画面不产生新帧，不能依赖 ImageReader 回调）。
+     *  局面 15 秒无变化且有可消除交换 → 重报最优解，之后每 15 秒一次。 */
+    private void idleCheck() {
+        if (!running) return;
+        long now = SystemClock.elapsedRealtime();
+        if (lastMatrix != null && lastSwaps != null && !lastSwaps.isEmpty()
+                && now - lastChangeAt >= IDLE_HINT_MS
+                && now - lastAnnounceAt >= MIN_ANNOUNCE_GAP_MS) {
+            lastAnnounceAt = now;
+            lastChangeAt = now;
+            String speech = "还在犹豫的话，" + Match3Board.swapSpeech(lastSwaps.get(0)) + "。";
+            Log.i(TAG, "犹豫提示: " + speech);
+            announce(speech);
+        }
+        handler.postDelayed(this::idleCheck, 5000);
     }
 
     private void announce(String speech) {
