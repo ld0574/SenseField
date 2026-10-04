@@ -2,13 +2,21 @@
 
 记录日期：2026-10-04。当前源码配置为 `0.4.1 / versionCode 18`。GitHub 最新公开体验版仍是 [0.3.8](https://github.com/ld0574/SenseField/releases/tag/v0.3.8)；0.4.1 是未发布的本地工程候选，不是可下载的 Release，也没有本版公开附件。
 
-## 自动更新
+## 0.4.1 CDN 同版本修订（本轮）
 
-- 默认从 GitHub `Latest` Release API 检查已发布的普通稳定 Release。用户可保留或关闭每次冷启动时的自动检查，也可手动重试。
+本轮保持 `0.4.1 / versionCode 18`，构建同版本修订 APK：`output/releases/0.4.1/听野v0.4.1 安卓测试安装包.apk`，21,400,339 bytes，SHA-256 `88992f7ef9323ad58558fcf5b4ee8ff8ad384f8e7405a567beaeb2389be8539d`。客户端从项目 CDN 的 `https://888413.xyz/apk/latest.json` 读取清单，并下载同源 `https://888413.xyz/apk/sensefieldv0.4.1.apk`。APK URL 由用户提供；清单路径为构建中选定的相邻固定路径，已配置为客户端默认值。
+
+JVM 212 项、Python 自动更新专项 28 项、Android updater instrumentation 7 项、arm64 build/lint 均通过。Android 专项覆盖本地 TLS 下载、同字节拒绝、同签名同版本不同 SHA 修订接受、异签名拒绝及 provider 访问范围。另有 1 项安装后指纹/no-op 复核确认实际安装内容 SHA 与新 APK 相符，后续检查不会对同一字节重复提示。
+
+真实 UI 流程已在 Mac localhost TLS fixture 上由已安装的旧同版本包进入“同版本修订安装包”下载，并通过 Android 系统 UPDATE 安装为本轮 APK；没有用 `adb install` 安装新 APK。该本地 TLS 结果不代表 CDN 在线更新成功。CDN APK URL 的真实 GET 目前返回旧 APK（21,400,339 bytes，SHA-256 `b2a4dd6a0ea2b699a72500f10af69ef97b3a870ba1c2f760733db4c76b71203a`），而清单 URL 返回 HTTP 404；新 APK 和工具生成的 `latest.json` 仍待用户按 APK 先、清单后的顺序手动上传，并刷新两条 CDN 缓存。清单 404 时没有进行 CDN manifest 在线检查。详见[本轮 CDN 修订验证记录](../../../validation/APP_UPDATE_CDN_0.4.1_2026-10-04.md)。整体 `verified=false`、`release_ready=false`，UI 安装成功也不替代玩家、热负载或实声验收。
+
+## 0.4.1 首次 GitHub 更新器构建（历史证据）
+
+- 此历史构建默认从 GitHub `Latest` Release API 检查已发布的普通稳定 Release。用户可保留或关闭每次冷启动时的自动检查，也可手动重试。
 - 检测到更新后由用户决定是否下载。下载到应用私有目录后，客户端核对清单中的 APK 字节数和 SHA-256，再检查包名、版本名称、`versionCode` 高于已安装版本且签名证书相同。
 - 安装始终交给 Android 系统安装器并由用户确认。首次安装更新时，系统可能要求先允许听野安装应用。游戏辅助运行中不会开始下载或安装。
 - 更新服务不可用或数据校验失败不会阻断已安装版本的本地辅助链路。更新客户端不上传画面、语音或助手服务凭据。
-- 可在受控构建中用 Gradle 属性指定同源 HTTPS 自托管清单；schema、APK 清单生成和隔离 Linux HTTPS fixture 见[自动更新开发说明](../../development/app-update.md)。团队尚未运行公开的自托管更新站点，官方默认源仍为 GitHub。
+- 该历史构建曾通过 Gradle 属性支持同源 HTTPS 自托管清单；schema、APK 清单生成和隔离 Linux HTTPS fixture 见[自动更新开发说明](../../development/app-update.md)。本轮当前更新源已迁移到项目 CDN，前一轮 GitHub 结果保留为历史记录。
 
 ## 候选验证状态
 

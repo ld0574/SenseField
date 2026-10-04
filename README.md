@@ -29,7 +29,7 @@
 
 本项目由参赛团队独立开发，是非官方作品，与腾讯、天美工作室群及《王者荣耀》官方无隶属、合作或认可关系。相关名称、商标和游戏内容归各自权利人所有。
 
-最新公开交付仍为 `0.3.8`（Android `versionCode 16`），是 GitHub `Latest` 普通 Release 体验版。当前源码版本为 `0.4.1 / versionCode 18`，自动更新专项验证和本地 arm64 Debug 候选包已完成；0.4.1 尚未发布，整体 `verified` 与 `release_ready` 仍为 false。0.4.0 合并树当时记录的语音/画面助手、消消乐与相关测试证据保留在[0.4.0 历史说明](docs/releases/0.4.0/RELEASE_NOTES.md)，不与 0.4.1 更新专项测试混为一谈。Linux 单次合成 ASR/GLM 延迟数据见[0.4.0 网关部署记录](docs/development/assistant-gateway-test-deployment.md)，不是实体麦克风或 P95 测量。外部实声时延、三组热负载对照和玩家验收仍未完成。0.4.1 当前验证进度见[自动更新验证记录](validation/APP_UPDATE_0.4.1_2026-10-04.md)，版本与历史交付见[发布索引](docs/releases/README.md)、[0.3.8记录](validation/NEXT_VERSION_0.3.8_2026-10-03.md)和[评审补强Goal](validation/SCORE_RECOVERY_GOAL_2026-10-03.md)。
+最新公开交付仍为 `0.3.8`（Android `versionCode 16`），是 GitHub `Latest` 普通 Release 体验版。当前源码版本为 `0.4.1 / versionCode 18`，当前按用户要求重做同版本 CDN 修订；默认更新清单为 `https://888413.xyz/apk/latest.json`，安装包直接从 CDN 下载。同版本修订以 SHA-256 区分，不新增 0.4.2。清单上传与本轮验证见[CDN 修订记录](validation/APP_UPDATE_CDN_0.4.1_2026-10-04.md)。整体 `verified` 与 `release_ready` 仍为 false。0.4.0 合并树当时记录的语音/画面助手、消消乐与相关测试证据保留在[0.4.0 历史说明](docs/releases/0.4.0/RELEASE_NOTES.md)，不与 0.4.1 更新专项测试混为一谈。Linux 单次合成 ASR/GLM 延迟数据见[0.4.0 网关部署记录](docs/development/assistant-gateway-test-deployment.md)，不是实体麦克风或 P95 测量。外部实声时延、三组热负载对照和玩家验收仍未完成。0.4.1 当前验证进度见[自动更新验证记录](validation/APP_UPDATE_0.4.1_2026-10-04.md)，版本与历史交付见[发布索引](docs/releases/README.md)、[0.3.8记录](validation/NEXT_VERSION_0.3.8_2026-10-03.md)和[评审补强Goal](validation/SCORE_RECOVERY_GOAL_2026-10-03.md)。
 
 ## 为什么做听野
 
@@ -79,7 +79,8 @@
 | 主画面边缘候选分支 | 候选诊断完成、分类器未接入、默认关闭 | 现有标签只能作为红色候选／困难负样本诊断，不能作为敌方英雄真值；见[复核记录](validation/MAIN_EDGE_REVIEW.md)。 |
 | 小地图近区提醒 | 已实现实验链路，待真机与玩家验证 | 双类模型识别自身小地图标记；敌方标记进入附近时按 8 向方位提示一次，持续占用不重复。开发录像离线回放覆盖率约 91%、约 2.3 次／分钟；近区半径尚未标定，见[实施路线](docs/plans/黑客松方案收敛与实施路线.md)。 |
 | 0.4.0 语音与画面助手（历史能力） | 历史工程候选，未发布 | 语音、画面理解及低频主动观察默认关闭；连续语音由用户选择。此前 0.4.0 合并树的 JVM、Android instrumentation、HTTPS/WSS 合成输入、native、Python、构建与 lint 结果见[历史记录](docs/releases/0.4.0/RELEASE_NOTES.md)，不作为 0.4.1 的测试证据。Android 10/API 29 起的静音 `USAGE_GAME` 探测轨道不能证明游戏自身轨道走耳机；耳机路由、外部实声时延、热负载与玩家验收仍待验证。 |
-| 0.4.1 自动更新 | 自动更新专项验证通过，未发布 | 默认检查 GitHub Latest 普通稳定 Release；每次冷启动最多检查一次，可关闭并可手动检查。用户选择后才下载，校验 APK 大小、SHA-256、包名、版本和相同签名，再交给 Android 系统安装器确认。游戏辅助运行中不下载或安装；更新服务失败不影响本地辅助。更新流程不传输画面、语音或助手凭据。JVM 全套 217 项（含 updater 新增 13 项）、Python 543 项通过/1 项跳过、4 项 Android updater instrumentation、arm64 build/lint 通过；Linux fixture 两次下载共 42,685,346 bytes。真实 UI 流程已通过系统 UPDATE 安装隔离的 0.4.2/code19 测试包。冷启动/旋转频率为代码复核项，没有专门的生命周期 instrumentation。详见[验证记录](validation/APP_UPDATE_0.4.1_2026-10-04.md)。 |
+| 0.4.1 CDN 修订 | 同版本工程验证通过，待手动上传 | 从项目 CDN 读取清单并下载 APK；版本名称和序号相同但 SHA-256 不同时提示修订更新。用户手动覆盖上传 APK 和自动生成的清单，保留签名验证与系统安装确认。详见[本轮记录](validation/APP_UPDATE_CDN_0.4.1_2026-10-04.md)。 |
+| 0.4.1 首次自动更新（历史） | 自动更新专项验证通过，未发布 | 默认检查 GitHub Latest 普通稳定 Release；每次冷启动最多检查一次，可关闭并可手动检查。用户选择后才下载，校验 APK 大小、SHA-256、包名、版本和相同签名，再交给 Android 系统安装器确认。游戏辅助运行中不下载或安装；更新服务失败不影响本地辅助。更新流程不传输画面、语音或助手凭据。JVM 全套 217 项（含 updater 新增 13 项）、Python 543 项通过/1 项跳过、4 项 Android updater instrumentation、arm64 build/lint 通过；Linux fixture 两次下载共 42,685,346 bytes。真实 UI 流程已通过系统 UPDATE 安装隔离的 0.4.2/code19 测试包。冷启动/旋转频率为代码复核项，没有专门的生命周期 instrumentation。详见[验证记录](validation/APP_UPDATE_0.4.1_2026-10-04.md)。 |
 | 开心消消乐伴随体验 | 主线已合并，实验功能 | 截图标定或授权后约 1 Hz 采样棋盘，播报可形成三连的相邻交换；Jev 仅有单独配置的示例判定。识别依赖手动标定和颜色启发式，实局准确率、特殊棋子完整规则和玩家效果未验证；不会替玩家操作。 |
 | 视野记忆与提示 | 实验版，需玩家验证 | 已接入多帧确认、事件跟踪、优先级、密集模式及多通道提示；0.3.5队友反馈双手操控正常。约04:35方向反馈可能与之后目标移动有关，仍待同一时刻证据。 |
 | 诊断与反馈闭环 | 本地工具 | ZIP可生成cue/事件/热量/截图报告；匿名试用表可记录开关对照、理解和干扰，并导出JSON。见下方工具入口。 |
@@ -101,7 +102,7 @@
 - [0.3.7两局热反馈](validation/HEAT_RETEST_0.3.7_2026-10-03.md) · [0.3.8修正记录](validation/NEXT_VERSION_0.3.8_2026-10-03.md)：提前降载并说明提示延迟代价，真机降温仍待验证。
 - [匿名玩家试用套件](validation/PLAYER_TRIAL_KIT.md) · [打开离线记录表](validation/player-trial.html)：记录辅助开关对照、提示理解/感知、帮助和干扰；不自动上传，导出后再由负责人保管。
 - [助手外部音频测量](validation/GOAL_0.4.0_2026-10-03.md)：用外部录像标记实际说话、停播和第一段有用回答；`python -m mapassist.measure_assistant_latency` 只接受外部录音标注，不以 ASR、TTS 或播放回调代替物理声音。
-- [Android 自动更新开发说明](docs/development/app-update.md) · [0.4.1 自动更新验证记录](validation/APP_UPDATE_0.4.1_2026-10-04.md)：默认 GitHub 稳定 Release 来源、受控 HTTPS 清单与隔离 fixture 的复现方法。
+- [Android 自动更新开发说明](docs/development/app-update.md) · [0.4.1 CDN 同版本修订记录](validation/APP_UPDATE_CDN_0.4.1_2026-10-04.md) · [首次 GitHub 更新器历史记录](validation/APP_UPDATE_0.4.1_2026-10-04.md)：当前清单默认指向项目 CDN；首次 GitHub 更新器证据保留为历史。
 - [评审补强与复现入口](validation/SCORE_RECOVERY_GOAL_2026-10-03.md)：历史需求缺口、现有实现、验证边界与下一轮验收。
 
 ## 本地运行

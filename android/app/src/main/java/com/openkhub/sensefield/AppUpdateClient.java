@@ -1,10 +1,11 @@
 package com.openkhub.sensefield;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
+import android.content.pm.PackageInfo;
 
-import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -33,12 +34,9 @@ import okhttp3.ResponseBody;
 
 /** Checks for releases and downloads their APK into app-private storage. */
 public final class AppUpdateClient implements AutoCloseable {
-    public static final String DEFAULT_METADATA_URL =
-            "https://api.github.com/repos/ld0574/SenseField/releases/latest";
-
-    private static final String GITHUB_OWNER = "ld0574";
-    private static final String GITHUB_REPOSITORY = "SenseField";
-    private static final String GITHUB_API_PATH = "/repos/ld0574/SenseField/releases/latest";
+    private static final String UPDATE_PREFS = "app_update_client";
+    private static final String INSTALLED_APK_SHA256 = "installed_apk_sha256";
+    private static final String INSTALLED_APK_IDENTITY = "installed_apk_identity";
     private static final long MAX_METADATA_BYTES = 1024L * 1024L;
     private static final long MAX_NOTES_CHARS = 16_384L;
     private static final int MAX_REDIRECTS = 5;
@@ -49,15 +47,10 @@ public final class AppUpdateClient implements AutoCloseable {
     private static final long PROGRESS_INTERVAL_MS = 250L;
     private static final Pattern SEMVER = Pattern.compile(
             "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$");
-    private static final Pattern GITHUB_SEMVER = Pattern.compile(
-            "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$");
     private static final Pattern SHA256 = Pattern.compile("^[0-9a-fA-F]{64}$");
-    private static final Pattern GITHUB_DIGEST = Pattern.compile(
-            "^sha256:([0-9a-fA-F]{64})$");
 
     private final Context appContext;
     private final HttpUrl metadataUrl;
-    private final boolean githubSource;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService worker = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "sensefield-app-updater");
@@ -76,10 +69,9 @@ public final class AppUpdateClient implements AutoCloseable {
             throw new IllegalArgumentException("Context is required.");
         }
         this.appContext = context.getApplicationContext();
-        HttpUrl parsed = validateMetadataUrl(configuredMetadataUrl == null
-                ? DEFAULT_METADATA_URL : configuredMetadataUrl);
-        this.metadataUrl = parsed;
-        this.githubSource = isGithubEndpoint(parsed);
+        this.metadataUrl = configuredMetadataUrl == null
+                || configuredMetadataUrl.trim().isEmpty()
+                ? null : validateMetadataUrl(configuredMetadataUrl);
         OkHttpClient networkDefaults = new OkHttpClient.Builder()
                 .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
                 .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
@@ -109,6 +101,11 @@ public final class AppUpdateClient implements AutoCloseable {
         void onDownloaded(File apkFile);
 
         void onError(String message);
+    }
+
+    /** Returns whether a valid update manifest URL was supplied. */
+    public boolean isConfigured() {
+        return metadataUrl != null;
     }
 
     /** Runs one metadata request on the worker. All callbacks are posted to the main thread. */
@@ -229,11 +226,14 @@ public final class AppUpdateClient implements AutoCloseable {
 
     private AppUpdateRelease checkBlocking(Job job, String localVersionName,
                                           long localVersionCode) throws IOException {
-        HttpUrl finalMetadataUrl = metadataUrl;
+        if (metadataUrl == null) {
+            throw new UpdateFailure("尚未配置更新清单地址。");
+        }
+        HttpUrl finalMetadataUrl;
         try (Response response = executeFollowingRedirects(metadataUrl, job,
-                RedirectPolicy.metadata(metadataUrl, githubSource))) {
+                RedirectPolicy.metadata(metadataUrl))) {
             if (!response.isSuccessful()) {
-                throw httpFailure(response.code(), githubSource);
+                throw httpFailure(response.code());
             }
             finalMetadataUrl = response.request().url();
             byte[] body = readBounded(response.body(), MAX_METADATA_BYTES,
@@ -245,12 +245,16 @@ public final class AppUpdateClient implements AutoCloseable {
                 throw new UpdateFailure("更新服务返回了无效数据。");
             }
             checkCancelled(job);
-            if (githubSource) {
-                return parseGithubRelease(json, localVersionName, appContext.getPackageName(),
-                        finalMetadataUrl);
+            AppUpdateRelease release = parseSelfHostedManifest(json, localVersionCode,
+                    appContext.getPackageName(), finalMetadataUrl);
+            if (release != null && release.getVersionCode() == localVersionCode) {
+                String installedHash = installedApkSha256(appContext);
+                if (isSameVersionNoOp(release, localVersionName, localVersionCode,
+                        installedHash)) {
+                    return null;
+                }
             }
-            return parseSelfHostedManifest(json, localVersionCode, appContext.getPackageName(),
-                    finalMetadataUrl);
+            return release;
         } finally {
             job.clearCall();
         }
@@ -262,13 +266,7 @@ public final class AppUpdateClient implements AutoCloseable {
                 || !isValidSha256(release.getSha256())) {
             throw new UpdateFailure("更新包信息无效，无法继续下载。");
         }
-        if (release.source() == AppUpdateRelease.Source.GITHUB_RELEASE) {
-            validateGithubAssetUrl(release.apkHttpUrl(), release.githubTag(),
-                    release.apkHttpUrl().pathSegments()
-                            .get(release.apkHttpUrl().pathSegments().size() - 1));
-        } else {
-            validateSameOriginApkUrl(release.apkHttpUrl(), release.metadataUrl());
-        }
+        validateSameOriginApkUrl(release.apkHttpUrl(), release.metadataUrl());
 
         File updateDirectory = new File(appContext.getFilesDir(), "updates");
         if (!updateDirectory.isDirectory() && !updateDirectory.mkdirs()) {
@@ -299,7 +297,7 @@ public final class AppUpdateClient implements AutoCloseable {
         try (Response response = executeFollowingRedirects(release.apkHttpUrl(), job,
                 RedirectPolicy.apk(release))) {
             if (!response.isSuccessful()) {
-                throw httpFailure(response.code(), false);
+                throw httpFailure(response.code());
             }
             ResponseBody responseBody = response.body();
             if (responseBody == null) {
@@ -417,9 +415,8 @@ public final class AppUpdateClient implements AutoCloseable {
             checkCancelled(job);
             Request.Builder request = new Request.Builder().url(url).get()
                     .header("User-Agent", "SenseField-Android-Updater");
-            if (policy.githubApiHeaders) {
-                request.header("Accept", "application/vnd.github+json");
-                request.header("X-GitHub-Api-Version", "2022-11-28");
+            if (policy.metadata) {
+                request.header("Cache-Control", "no-cache");
             }
             OkHttpClient client = policy.metadata ? metadataHttpClient : httpClient;
             Call call = client.newCall(request.build());
@@ -482,85 +479,8 @@ public final class AppUpdateClient implements AutoCloseable {
         });
     }
 
-    private static UpdateFailure httpFailure(int statusCode, boolean github) {
-        if (github && (statusCode == 403 || statusCode == 429)) {
-            return new UpdateFailure(
-                    "GitHub 暂时限制了更新查询，请稍后再试。");
-        }
-        if (statusCode == 404 && github) {
-            return new UpdateFailure("目前还没有可用的正式版更新。");
-        }
+    private static UpdateFailure httpFailure(int statusCode) {
         return new UpdateFailure("更新服务暂时无法处理请求（错误码 " + statusCode + "），请稍后重试。");
-    }
-
-    static AppUpdateRelease parseGithubRelease(JSONObject release, String localVersionName,
-                                               String expectedPackageName,
-                                               HttpUrl metadataUrl) throws UpdateFailure {
-        if (release == null || expectedPackageName == null || metadataUrl == null) {
-            throw new UpdateFailure("更新服务返回的信息不完整。");
-        }
-        if (!booleanField(release, "draft", false)
-                || !booleanField(release, "prerelease", false)) {
-            throw new UpdateFailure("仅支持已发布的正式版更新。");
-        }
-        String tag = stringField(release, "tag_name");
-        Matcher tagMatcher = GITHUB_SEMVER.matcher(tag);
-        if (!tagMatcher.matches()) {
-            throw new UpdateFailure("正式版的版本号格式不受支持。");
-        }
-        String remoteVersion = tag.substring(1);
-        if (compareNumericVersions(remoteVersion, localVersionName) <= 0) {
-            return null;
-        }
-        JSONArray assets = release.optJSONArray("assets");
-        if (assets == null) {
-            throw new UpdateFailure("正式版中没有可用的应用安装包。");
-        }
-        JSONObject apkAsset = null;
-        int apkCount = 0;
-        for (int index = 0; index < assets.length(); index++) {
-            JSONObject asset = assets.optJSONObject(index);
-            if (asset == null) {
-                continue;
-            }
-            String name = asset.optString("name", "");
-            if (name.toLowerCase(Locale.US).endsWith(".apk")) {
-                apkCount++;
-                apkAsset = asset;
-            }
-        }
-        if (apkCount != 1 || apkAsset == null) {
-            throw new UpdateFailure(apkCount == 0
-                    ? "正式版中没有 APK 安装包。"
-                    : "正式版中包含多个 APK，无法安全选择。");
-        }
-        String name = stringField(apkAsset, "name");
-        if (name.indexOf('/') >= 0 || name.indexOf('\\') >= 0 || name.equals(".")
-                || name.equals("..") || !name.toLowerCase(Locale.US).endsWith(".apk")) {
-            throw new UpdateFailure("正式版中的 APK 文件名无效。");
-        }
-        long size = longField(apkAsset, "size");
-        if (size <= 0 || size > AppUpdateRelease.MAX_APK_BYTES) {
-            throw new UpdateFailure("正式版 APK 超出允许的大小范围。");
-        }
-        Matcher digestMatcher = GITHUB_DIGEST.matcher(stringField(apkAsset, "digest"));
-        if (!digestMatcher.matches()) {
-            throw new UpdateFailure("正式版 APK 缺少有效的 SHA-256 校验值。");
-        }
-        HttpUrl downloadUrl;
-        try {
-            downloadUrl = HttpUrl.get(stringField(apkAsset, "browser_download_url"));
-            validateGithubAssetUrl(downloadUrl, tag, name);
-        } catch (IllegalArgumentException invalidUrl) {
-            throw new UpdateFailure("正式版 APK 下载地址无效。");
-        }
-        String notes = optionalStringField(release, "body");
-        if (notes.length() > MAX_NOTES_CHARS) {
-            notes = notes.substring(0, (int) MAX_NOTES_CHARS);
-        }
-        return new AppUpdateRelease(expectedPackageName, remoteVersion, -1L, downloadUrl,
-                size, digestMatcher.group(1).toLowerCase(Locale.US), notes,
-                AppUpdateRelease.Source.GITHUB_RELEASE, metadataUrl, tag);
     }
 
     static AppUpdateRelease parseSelfHostedManifest(JSONObject manifest, long localVersionCode,
@@ -603,12 +523,11 @@ public final class AppUpdateClient implements AutoCloseable {
         if (notes.length() > MAX_NOTES_CHARS) {
             notes = notes.substring(0, (int) MAX_NOTES_CHARS);
         }
-        if (code <= localVersionCode) {
-            return null;
+        if (code < localVersionCode) {
+            throw new UpdateFailure("更新版本号低于当前已安装版本。");
         }
         return new AppUpdateRelease(packageName, versionName, code, apkUrl, bytes,
-                hash.toLowerCase(Locale.US), notes, AppUpdateRelease.Source.SELF_HOSTED,
-                metadataUrl, null);
+                hash.toLowerCase(Locale.US), notes, metadataUrl);
     }
 
     static int compareNumericVersions(String left, String right) throws UpdateFailure {
@@ -648,23 +567,6 @@ public final class AppUpdateClient implements AutoCloseable {
         }
     }
 
-    static void validateGithubAssetUrl(HttpUrl url, String tag, String name) {
-        if (url == null || tag == null || name == null || !url.isHttps()
-                || !GITHUB_OWNER.equals(url.encodedPathSegments().size() > 0
-                ? url.encodedPathSegments().get(0) : "")
-                || !hasNoUserInfoOrFragment(url) || url.encodedQuery() != null
-                || !"github.com".equals(url.host())) {
-            throw new IllegalArgumentException("APK 地址不属于受信任的 GitHub 仓库。");
-        }
-        HttpUrl expected = new HttpUrl.Builder().scheme("https").host("github.com")
-                .addPathSegment(GITHUB_OWNER).addPathSegment(GITHUB_REPOSITORY)
-                .addPathSegment("releases").addPathSegment("download")
-                .addPathSegment(tag).addPathSegment(name).build();
-        if (!expected.encodedPath().equals(url.encodedPath()) || url.port() != 443) {
-            throw new IllegalArgumentException("APK 地址不属于受信任的 GitHub 发布路径。");
-        }
-    }
-
     static boolean isValidSha256(String value) {
         return value != null && SHA256.matcher(value).matches();
     }
@@ -695,6 +597,68 @@ public final class AppUpdateClient implements AutoCloseable {
         }
     }
 
+    static boolean isSameVersionNoOp(AppUpdateRelease candidate, String installedVersionName,
+                                     long installedVersionCode, String installedSha256)
+            throws UpdateFailure {
+        if (candidate == null || installedVersionName == null
+                || candidate.getVersionCode() < installedVersionCode) {
+            throw new UpdateFailure("更新版本号低于当前已安装版本。");
+        }
+        if (candidate.getVersionCode() > installedVersionCode) {
+            return false;
+        }
+        if (!candidate.getVersionName().equals(installedVersionName)) {
+            throw new UpdateFailure("版本号相同但版本名称不同，已拒绝此更新。");
+        }
+        if (!isValidSha256(installedSha256)) {
+            throw new UpdateFailure("无法校验当前安装包，暂时不能检查同版本修订。");
+        }
+        return constantTimeEquals(candidate.getSha256().toLowerCase(Locale.US),
+                installedSha256.toLowerCase(Locale.US));
+    }
+
+    static String installedApkSha256(Context context) throws IOException {
+        if (context == null) {
+            throw new UpdateFailure("无法读取当前安装包，暂时不能检查同版本修订。");
+        }
+        final PackageInfo installed;
+        try {
+            installed = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+        } catch (android.content.pm.PackageManager.NameNotFoundException | SecurityException missing) {
+            throw new UpdateFailure("无法读取当前安装包，暂时不能检查同版本修订。");
+        }
+        String sourcePath = context.getApplicationInfo().sourceDir;
+        File source = sourcePath == null ? null : new File(sourcePath);
+        if (source == null || !source.isFile()) {
+            throw new UpdateFailure("无法读取当前安装包，暂时不能检查同版本修订。");
+        }
+        String identity = installed.lastUpdateTime + "\n" + source.getAbsolutePath() + "\n"
+                + source.length() + "\n" + source.lastModified();
+        SharedPreferences preferences = context.getSharedPreferences(UPDATE_PREFS,
+                Context.MODE_PRIVATE);
+        String cachedIdentity = preferences.getString(INSTALLED_APK_IDENTITY, null);
+        String cachedHash = preferences.getString(INSTALLED_APK_SHA256, null);
+        if (identity.equals(cachedIdentity) && isValidSha256(cachedHash)) {
+            return cachedHash;
+        }
+        String hash = sha256File(source);
+        preferences.edit().putString(INSTALLED_APK_IDENTITY, identity)
+                .putString(INSTALLED_APK_SHA256, hash).apply();
+        return hash;
+    }
+
+    static String sha256File(File file) throws IOException {
+        MessageDigest digest = sha256Digest();
+        try (InputStream input = new java.io.FileInputStream(file)) {
+            byte[] buffer = new byte[32 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                digest.update(buffer, 0, count);
+            }
+        }
+        return toHex(digest.digest());
+    }
+
     private static byte[] readBounded(ResponseBody body, long maxBytes, String message)
             throws IOException {
         if (body == null) {
@@ -718,15 +682,6 @@ public final class AppUpdateClient implements AutoCloseable {
             }
             return output.toByteArray();
         }
-    }
-
-    private static boolean booleanField(JSONObject json, String field, boolean expected)
-            throws UpdateFailure {
-        Object value = json.opt(field);
-        if (!(value instanceof Boolean)) {
-            throw new UpdateFailure("更新服务返回的版本信息无效。");
-        }
-        return ((Boolean) value) == expected;
     }
 
     private static String stringField(JSONObject json, String field) throws UpdateFailure {
@@ -782,11 +737,6 @@ public final class AppUpdateClient implements AutoCloseable {
                 && matcher.group(2).length() <= 9 && matcher.group(3).length() <= 9;
     }
 
-    private static boolean isGithubEndpoint(HttpUrl url) {
-        return url.isHttps() && "api.github.com".equals(url.host())
-                && url.port() == 443 && GITHUB_API_PATH.equals(url.encodedPath());
-    }
-
     private static boolean hasNoUserInfoOrFragment(HttpUrl url) {
         return url.username().isEmpty() && url.password().isEmpty() && url.fragment() == null;
     }
@@ -830,28 +780,19 @@ public final class AppUpdateClient implements AutoCloseable {
 
     private static final class RedirectPolicy {
         private final boolean metadata;
-        private final boolean githubApiHeaders;
-        private final AppUpdateRelease release;
         private final HttpUrl metadataOrigin;
-        private final boolean github;
 
-        private RedirectPolicy(boolean metadata, boolean githubApiHeaders,
-                               AppUpdateRelease release, HttpUrl metadataOrigin,
-                               boolean github) {
+        private RedirectPolicy(boolean metadata, HttpUrl metadataOrigin) {
             this.metadata = metadata;
-            this.githubApiHeaders = githubApiHeaders;
-            this.release = release;
             this.metadataOrigin = metadataOrigin;
-            this.github = github;
         }
 
-        static RedirectPolicy metadata(HttpUrl origin, boolean github) {
-            return new RedirectPolicy(true, github, null, origin, github);
+        static RedirectPolicy metadata(HttpUrl origin) {
+            return new RedirectPolicy(true, origin);
         }
 
         static RedirectPolicy apk(AppUpdateRelease release) {
-            return new RedirectPolicy(false, false, release, release.metadataUrl(),
-                    release.source() == AppUpdateRelease.Source.GITHUB_RELEASE);
+            return new RedirectPolicy(false, release.metadataUrl());
         }
 
         boolean allows(HttpUrl from, HttpUrl to) {
@@ -859,26 +800,9 @@ public final class AppUpdateClient implements AutoCloseable {
                 return false;
             }
             if (metadata) {
-                if (!sameOrigin(metadataOrigin, to) || to.encodedQuery() != null) {
-                    return false;
-                }
-                return !github || GITHUB_API_PATH.equals(to.encodedPath());
-            }
-            if (!github) {
                 return sameOrigin(metadataOrigin, to) && to.encodedQuery() == null;
             }
-            if ("github.com".equals(to.host())) {
-                return to.port() == 443
-                        && to.encodedPath().equals(release.apkHttpUrl().encodedPath())
-                        && to.encodedQuery() == null;
-            }
-            if ("release-assets.githubusercontent.com".equals(to.host())
-                    || "objects.githubusercontent.com".equals(to.host())) {
-                String path = to.encodedPath();
-                return to.port() == 443
-                        && path.startsWith("/github-production-release-asset/");
-            }
-            return false;
+            return sameOrigin(metadataOrigin, to) && to.encodedQuery() == null;
         }
     }
 

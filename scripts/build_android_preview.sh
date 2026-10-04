@@ -4,6 +4,8 @@ set -euo pipefail
 
 readonly PREVIEW_VERSION_NAME='0.4.1'
 readonly PREVIEW_VERSION_CODE='18'
+readonly DEFAULT_UPDATE_MANIFEST_URL='https://888413.xyz/apk/latest.json'
+readonly DEFAULT_UPDATE_APK_URL="https://888413.xyz/apk/sensefieldv${PREVIEW_VERSION_NAME}.apk"
 readonly PREVIEW_ABI='arm64-v8a'
 readonly PREVIEW_MIN_SDK='29'
 readonly PREVIEW_TARGET_SDK='35'
@@ -17,6 +19,11 @@ usage() {
   cat <<'EOF'
 用法：bash scripts/build_android_preview.sh
 
+默认版本清单：https://888413.xyz/apk/latest.json
+APK 从清单中的同源 HTTPS 地址下载。如需更换清单地址，设置 SENSEFIELD_UPDATE_MANIFEST_URL。
+构建后自动生成 cdn-upload/ 中的 APK 和 latest.json；无需手写清单。
+更换 APK 地址时设置 SENSEFIELD_UPDATE_APK_URL，两个地址须同源。
+
 默认只构建并核验 Debug candidate，输出文件名包含 debug-candidate。
 如需构建签名的 release candidate，请在环境变量中同时提供：
 
@@ -25,7 +32,7 @@ usage() {
   SENSEFIELD_KEYSTORE_PASSWORD
   SENSEFIELD_KEY_PASSWORD
 
-脚本只读取已有发布 keystore，不创建、复制或提交发布 keystore；无签名参数时沿用 Android Gradle 的标准 debug signing，也不会调用 GitHub Release。
+脚本只读取已有发布 keystore，不创建、复制或提交发布 keystore；无签名参数时沿用 Android Gradle 的标准 debug signing。
 EOF
 }
 
@@ -56,6 +63,8 @@ gradle_wrapper="$android_dir/gradlew"
   "升级测试的临时 CA 仍在，请停止测试并清理后再构建交付包。"
 [[ -z "${ORG_GRADLE_PROJECT_sensefieldTestVersionCode:-}${ORG_GRADLE_PROJECT_sensefieldTestVersionName:-}${ORG_GRADLE_PROJECT_sensefieldUpdateManifestUrl:-}" ]] || fail \
   "交付构建不能继承升级测试的版本或更新源覆盖参数。"
+export SENSEFIELD_UPDATE_MANIFEST_URL="${SENSEFIELD_UPDATE_MANIFEST_URL:-$DEFAULT_UPDATE_MANIFEST_URL}"
+export SENSEFIELD_UPDATE_APK_URL="${SENSEFIELD_UPDATE_APK_URL:-$DEFAULT_UPDATE_APK_URL}"
 
 configured_version_code="$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]+([0-9]+).*/\1/p' "$build_gradle" | head -n 1)"
 configured_version_name="$(sed -nE "s/^[[:space:]]*versionName[[:space:]]+['\"]([^'\"]+)['\"].*/\1/p" "$build_gradle" | head -n 1)"
@@ -171,7 +180,8 @@ fi
 
 (
   cd "$android_dir"
-  ./gradlew --no-daemon "-PsensefieldAbi=$PREVIEW_ABI" "$gradle_task"
+  ./gradlew --no-daemon "-PsensefieldAbi=$PREVIEW_ABI" \
+    "-PsensefieldUpdateManifestUrl=$SENSEFIELD_UPDATE_MANIFEST_URL" "$gradle_task"
 )
 
 [[ -f "$source_apk" ]] || fail "Gradle 完成但没有生成预期 APK：$source_apk"
@@ -199,4 +209,26 @@ printf '候选类型：%s\n' "$candidate_label"
 printf '文件大小：%s bytes\n' "$apk_bytes"
 printf 'SHA-256：%s\n' "$apk_sha256"
 printf '校验文件：%s\n' "$checksum_file"
-printf '%s\n' '脚本未创建或上传发布 keystore，也未发布 GitHub Release。'
+printf '%s\n' '脚本未创建或上传发布 keystore，也未上传 CDN 文件。'
+
+# Hash the exact signed candidate; never hand-maintain a revision checksum.
+python_bin="$repo_root/.venv/bin/python"
+if [[ ! -x "$python_bin" ]]; then
+  python_bin="$(command -v python3)" || fail "生成 CDN 清单需要 Python 3。"
+fi
+"$python_bin" - <<'PY'
+import os
+from urllib.parse import urlsplit
+def origin(name):
+    value = urlsplit(os.environ[name])
+    return value.scheme, value.hostname, value.port or 443
+if origin('SENSEFIELD_UPDATE_MANIFEST_URL') != origin('SENSEFIELD_UPDATE_APK_URL'):
+    raise SystemExit('CDN APK 与版本清单必须同源。')
+PY
+cdn_dir="$preview_dir/cdn-upload"
+mkdir -p "$cdn_dir"
+cp "$candidate_apk" "$cdn_dir/sensefieldv${PREVIEW_VERSION_NAME}.apk"
+"$python_bin" "$repo_root/scripts/build_app_update_manifest.py" \
+  --apk "$cdn_dir/sensefieldv${PREVIEW_VERSION_NAME}.apk" \
+  --apk-url "$SENSEFIELD_UPDATE_APK_URL" --output "$cdn_dir/latest.json"
+printf 'CDN 上传文件：%s\n' "$cdn_dir"

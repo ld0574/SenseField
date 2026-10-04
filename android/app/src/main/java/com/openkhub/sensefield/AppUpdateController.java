@@ -61,7 +61,8 @@ final class AppUpdateController implements AutoCloseable {
         } catch (android.content.pm.PackageManager.NameNotFoundException ignored) { }
         versionName = name;
         versionCode = code;
-        message = "当前版本 " + versionName + "。可检查公开新版。";
+        message = "当前版本 " + versionName + (client.isConfigured()
+                ? "。可检查新版。" : "。更新服务尚未配置。");
     }
 
     void attach(Activity activity, LinearLayout page) {
@@ -89,6 +90,7 @@ final class AppUpdateController implements AutoCloseable {
         auto.setTextSize(20);
         UiKit.styleCheckable(auto, activity);
         auto.setChecked(preferences.getBoolean(AUTO_CHECK, true));
+        auto.setEnabled(client.isConfigured());
         auto.setOnCheckedChangeListener((button, checked) -> {
             preferences.edit().putBoolean(AUTO_CHECK, checked).apply();
             if (checked) {
@@ -128,7 +130,7 @@ final class AppUpdateController implements AutoCloseable {
     }
 
     private void check(boolean manual) {
-        if (closed || checking || downloading) return;
+        if (closed || checking || downloading || !client.isConfigured()) return;
         if (!manual && !preferences.getBoolean(AUTO_CHECK, true)) return;
         // Check once per cold launch, preserving the attempt across rotation and permission return.
         if (!manual && automaticCheckAttempted) return;
@@ -141,7 +143,9 @@ final class AppUpdateController implements AutoCloseable {
                 checking = false;
                 offered = release;
                 promptShown = false;
-                setMessage("发现新版 " + release.getVersionName() + "，当前 " + versionName + "。");
+                setMessage(sameVersion(release)
+                        ? "发现 " + versionName + " 的修订更新。"
+                        : "发现新版 " + release.getVersionName() + "，当前 " + versionName + "。");
                 maybePrompt();
             }
             @Override public void onNoUpdate() {
@@ -166,12 +170,14 @@ final class AppUpdateController implements AutoCloseable {
         scroll.addView(body);
         String notes = offered.getNotes();
         if (notes != null && notes.length() > 1200) notes = notes.substring(0, 1200) + "…";
-        String detail = "当前版本 " + versionName + "，新版 " + offered.getVersionName()
+        String detail = (sameVersion(offered)
+                ? "当前版本 " + versionName + "，本次为该版本的修订安装包"
+                : "当前版本 " + versionName + "，新版 " + offered.getVersionName())
                 + "。下载约 " + String.format(Locale.CHINA, "%.1f", offered.getBytes() / (1024.0 * 1024.0))
                 + " MB，移动网络会消耗流量。下载完成后，请在系统安装界面确认。";
         if (notes != null && !notes.trim().isEmpty()) detail += "\n\n更新内容：\n" + notes;
         UiKit.add(body, UiKit.body(activity, detail), 0);
-        prompt = new AlertDialog.Builder(activity).setTitle("听野有新版本")
+        prompt = new AlertDialog.Builder(activity).setTitle("听野有更新")
                 .setView(scroll).setPositiveButton("下载并安装", (dialog, which) -> beginDownloadOrInstall())
                 .setNegativeButton("稍后", (dialog, which) -> { }).create();
         prompt.setOnDismissListener(dialog -> prompt = null);
@@ -271,13 +277,16 @@ final class AppUpdateController implements AutoCloseable {
     }
 
     private boolean visible() { return !closed && resumed && activity != null && !activity.isFinishing() && !activity.isDestroyed(); }
+    private boolean sameVersion(AppUpdateRelease release) {
+        return release.getVersionCode() == versionCode && versionName.equals(release.getVersionName());
+    }
     private static boolean running() { return CaptureService.isRunning() || Match3LiveService.isRunning(); }
     private void setMessage(String value) { message = value; render(); }
     private void render() {
         if (status == null) return;
         status.setText(message);
         checkButton.setText(downloading ? "取消下载" : "检查更新");
-        checkButton.setEnabled(!checking);
+        checkButton.setEnabled(client.isConfigured() && !checking);
         actionButton.setVisibility(offered == null ? View.GONE : View.VISIBLE);
         actionButton.setText(downloaded == null ? "下载并安装" : "继续安装");
         actionButton.setEnabled(!checking && !downloading);

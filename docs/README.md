@@ -11,7 +11,7 @@
 | 了解玩家问题与产品边界 | [赛题背景](design/赛题背景.md) |
 | 安装公开体验版 | [0.3.8 安装与使用说明](releases/0.3.8/RELEASE_NOTES.md) |
 | 查看最新版本变化 | [0.3.8 公开体验版](releases/0.3.8/RELEASE_NOTES.md) |
-| 查看当前源码候选 | [0.4.1 自动更新候选说明](releases/0.4.1/RELEASE_NOTES.md)（未发布、自动更新专项验证通过） |
+| 查看当前源码候选 | [0.4.1 自动更新候选说明](releases/0.4.1/RELEASE_NOTES.md) · [CDN 同版本修订记录](../validation/APP_UPDATE_CDN_0.4.1_2026-10-04.md)（未发布，CDN 清单上传待完成） |
 | 参与开发或标注 | [团队协作与本地运行](development/团队协作与本地运行.md) |
 | 查看版本历史与发布要求 | [发布索引](releases/README.md) |
 
@@ -40,7 +40,7 @@
 | [外部数据引入与预训练](development/外部数据引入与预训练.md) | 来源审计、导入要求与训练顺序 |
 | [Android 真实助手传输测试](development/assistant-android-transport-test.md) | 合成输入、临时证书、真实 GLM/CPU ASR 与正式客户端联调 |
 | [Linux 测试网关部署](development/assistant-gateway-test-deployment.md) | 隔离测试部署、CPU 依赖、HTTPS/WSS 与未覆盖门禁 |
-| [Android 自动更新](development/app-update.md) | GitHub 普通稳定 Release、同源 HTTPS 清单与 loopback HTTPS fixture |
+| [Android 自动更新](development/app-update.md) | 0.4.1/code18：CDN APK GET/hash 仍为旧包，`latest.json` 当前 404；本地同版本 UI 安装已验证，手动上传与缓存刷新待完成。见[CDN 修订记录](../validation/APP_UPDATE_CDN_0.4.1_2026-10-04.md) |
 
 ## 发布记录 · `releases/`
 

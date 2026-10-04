@@ -32,11 +32,15 @@ if (releaseSigningConfigured && !file(releaseSigningInputs.keystorePath).isFile(
 }
 
 def updateMetadataUrl = (findProperty('sensefieldUpdateManifestUrl')
-        ?: 'https://api.github.com/repos/ld0574/SenseField/releases/latest').toString()
-def updateMetadataUri = new URI(updateMetadataUrl)
-if (updateMetadataUri.scheme != 'https' || !updateMetadataUri.host
-        || updateMetadataUri.userInfo || updateMetadataUri.query || updateMetadataUri.fragment) {
-    throw new GradleException('Update metadata must be an HTTPS URL without credentials, query or fragment.')
+        ?: System.getenv('SENSEFIELD_UPDATE_MANIFEST_URL')
+        ?: 'https://888413.xyz/apk/latest.json').toString().trim()
+// Default to the user-selected CDN; HTTPS overrides support isolated update tests.
+if (!updateMetadataUrl.isEmpty()) {
+    def updateMetadataUri = new URI(updateMetadataUrl)
+    if (updateMetadataUri.scheme != 'https' || !updateMetadataUri.host
+            || updateMetadataUri.userInfo || updateMetadataUri.query || updateMetadataUri.fragment) {
+        throw new GradleException('CDN update manifest must be an HTTPS URL without credentials, query or fragment.')
+    }
 }
 
 android {

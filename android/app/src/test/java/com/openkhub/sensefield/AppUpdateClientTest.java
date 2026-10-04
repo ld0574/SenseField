@@ -1,6 +1,5 @@
 package com.openkhub.sensefield;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Rule;
 import org.junit.Test;
@@ -23,9 +22,8 @@ import static org.junit.Assert.assertTrue;
 
 public class AppUpdateClientTest {
     private static final String PACKAGE_NAME = "com.openkhub.sensefield";
-    private static final HttpUrl GITHUB_METADATA = HttpUrl.get(AppUpdateClient.DEFAULT_METADATA_URL);
     private static final HttpUrl SELF_HOSTED_METADATA =
-            HttpUrl.get("https://updates.example.test/android/manifest.json");
+            HttpUrl.get("https://updates.example.test/android/latest.json");
     private static final byte[] APK_FIXTURE = "apk!".getBytes(StandardCharsets.UTF_8);
     private static final String APK_HASH = sha256(APK_FIXTURE);
 
@@ -33,137 +31,45 @@ public class AppUpdateClientTest {
     public TemporaryFolder temporaryFolder = new TemporaryFolder();
 
     @Test
-    public void numericSemverComparesComponentsNumericallyAndRejectsNonSemver() throws Exception {
-        assertTrue(AppUpdateClient.compareNumericVersions("0.10.0", "0.9.9") > 0);
-        assertEquals(0, AppUpdateClient.compareNumericVersions("12.2.3", "12.2.3"));
-        assertTrue(AppUpdateClient.compareNumericVersions("0.4.1", "0.4.0") > 0);
-        assertThrows(java.io.IOException.class,
-                () -> AppUpdateClient.compareNumericVersions("v0.4.1", "0.4.0"));
-        assertThrows(java.io.IOException.class,
-                () -> AppUpdateClient.compareNumericVersions("0.04.1", "0.4.0"));
-        assertThrows(java.io.IOException.class,
-                () -> AppUpdateClient.compareNumericVersions("0.4.1-beta", "0.4.0"));
-        assertThrows(java.io.IOException.class,
-                () -> AppUpdateClient.compareNumericVersions("1234567890.0.1", "0.0.1"));
-    }
-
-    @Test
-    public void githubStableReleaseReturnsOnlyNewerVersionAndUnknownVersionCode() throws Exception {
-        AppUpdateRelease release = AppUpdateClient.parseGithubRelease(githubRelease(),
-                "0.4.0", PACKAGE_NAME, GITHUB_METADATA);
-
-        assertNotNull(release);
-        assertEquals("0.4.1", release.getVersionName());
-        assertEquals(-1, release.getVersionCode());
-        assertEquals(4L, release.getBytes());
-        assertEquals(APK_HASH, release.getSha256());
-        assertEquals("Small fix", release.getNotes());
-        assertEquals("https://github.com/ld0574/SenseField/releases/download/v0.4.1/sensefield.apk",
-                release.getApkUrl());
-        assertNull(AppUpdateClient.parseGithubRelease(githubRelease(), "0.4.1",
-                PACKAGE_NAME, GITHUB_METADATA));
-    }
-
-    @Test
-    public void olderStableGithubReleaseIsNoUpdateEvenWithoutApkMetadata() throws Exception {
-        JSONObject oldRelease = githubRelease()
-                .put("tag_name", "v0.3.9")
-                .put("assets", new JSONArray());
-
-        assertNull(AppUpdateClient.parseGithubRelease(oldRelease, "0.4.0",
-                PACKAGE_NAME, GITHUB_METADATA));
-
-        JSONObject missingDigest = githubRelease().put("tag_name", "v0.3.9");
-        missingDigest.getJSONArray("assets").getJSONObject(0).remove("digest");
-        assertNull(AppUpdateClient.parseGithubRelease(missingDigest, "0.4.0",
-                PACKAGE_NAME, GITHUB_METADATA));
-    }
-
-    @Test
-    public void githubReleaseRejectsDraftPrereleaseDuplicateApkAndMissingDigest() throws Exception {
-        JSONObject draft = githubRelease();
-        draft.put("draft", true);
-        assertThrows(java.io.IOException.class, () -> AppUpdateClient.parseGithubRelease(draft,
-                "0.4.0", PACKAGE_NAME, GITHUB_METADATA));
-
-        JSONObject prerelease = githubRelease();
-        prerelease.put("prerelease", true);
-        assertThrows(java.io.IOException.class, () -> AppUpdateClient.parseGithubRelease(prerelease,
-                "0.4.0", PACKAGE_NAME, GITHUB_METADATA));
-
-        JSONObject duplicate = githubRelease();
-        JSONObject secondApk = duplicate.getJSONArray("assets").getJSONObject(0);
-        duplicate.getJSONArray("assets").put(new JSONObject(secondApk.toString())
-                .put("name", "second.apk"));
-        assertThrows(java.io.IOException.class, () -> AppUpdateClient.parseGithubRelease(duplicate,
-                "0.4.0", PACKAGE_NAME, GITHUB_METADATA));
-
-        JSONObject noDigest = githubRelease();
-        noDigest.getJSONArray("assets").getJSONObject(0).remove("digest");
-        assertThrows(java.io.IOException.class, () -> AppUpdateClient.parseGithubRelease(noDigest,
-                "0.4.0", PACKAGE_NAME, GITHUB_METADATA));
-    }
-
-    @Test
-    public void githubReleaseRejectsOutOfRepositoryAndMalformedPackageUrls() throws Exception {
-        JSONObject outsideHost = githubRelease();
-        outsideHost.getJSONArray("assets").getJSONObject(0)
-                .put("browser_download_url", "https://evil.example/sensefield.apk");
-        assertThrows(java.io.IOException.class, () -> AppUpdateClient.parseGithubRelease(outsideHost,
-                "0.4.0", PACKAGE_NAME, GITHUB_METADATA));
-
-        JSONObject wrongPath = githubRelease();
-        wrongPath.getJSONArray("assets").getJSONObject(0).put("browser_download_url",
-                "https://github.com/another/repo/releases/download/v0.4.1/sensefield.apk");
-        assertThrows(java.io.IOException.class, () -> AppUpdateClient.parseGithubRelease(wrongPath,
-                "0.4.0", PACKAGE_NAME, GITHUB_METADATA));
-
-        JSONObject queryCredential = githubRelease();
-        queryCredential.getJSONArray("assets").getJSONObject(0).put("browser_download_url",
-                "https://github.com/ld0574/SenseField/releases/download/v0.4.1/sensefield.apk?token=secret");
-        assertThrows(java.io.IOException.class, () -> AppUpdateClient.parseGithubRelease(queryCredential,
-                "0.4.0", PACKAGE_NAME, GITHUB_METADATA));
-
-        JSONObject malformedVersion = githubRelease();
-        malformedVersion.put("tag_name", "v0.4.1-beta");
-        assertThrows(java.io.IOException.class, () -> AppUpdateClient.parseGithubRelease(malformedVersion,
-                "0.4.0", PACKAGE_NAME, GITHUB_METADATA));
-    }
-
-    @Test
-    public void githubReleaseRejectsMissingAndOversizedAssets() throws Exception {
-        JSONObject missingApk = githubRelease();
-        missingApk.put("assets", new JSONArray());
-        assertThrows(java.io.IOException.class, () -> AppUpdateClient.parseGithubRelease(missingApk,
-                "0.4.0", PACKAGE_NAME, GITHUB_METADATA));
-
-        JSONObject oversized = githubRelease();
-        oversized.getJSONArray("assets").getJSONObject(0)
-                .put("size", AppUpdateRelease.MAX_APK_BYTES + 1);
-        assertThrows(java.io.IOException.class, () -> AppUpdateClient.parseGithubRelease(oversized,
-                "0.4.0", PACKAGE_NAME, GITHUB_METADATA));
-    }
-
-    @Test
-    public void selfHostedManifestRequiresSamePackageNewCodeAndSameHttpsOrigin() throws Exception {
+    public void manifestReturnsOnlyVersionCodesNewerThanTheInstalledApp() throws Exception {
         AppUpdateRelease release = AppUpdateClient.parseSelfHostedManifest(manifest(), 17,
                 PACKAGE_NAME, SELF_HOSTED_METADATA);
+
         assertNotNull(release);
         assertEquals("0.4.1", release.getVersionName());
         assertEquals(18, release.getVersionCode());
         assertEquals(4L, release.getBytes());
-        assertNull(AppUpdateClient.parseSelfHostedManifest(manifest(), 18,
-                PACKAGE_NAME, SELF_HOSTED_METADATA));
+        assertEquals(APK_HASH, release.getSha256());
+        assertEquals("Small fix", release.getNotes());
+        assertEquals("https://updates.example.test/android/sensefield.apk", release.getApkUrl());
+        AppUpdateRelease sameBuild = AppUpdateClient.parseSelfHostedManifest(manifest(), 18,
+                PACKAGE_NAME, SELF_HOSTED_METADATA);
+        assertNotNull("same-code releases must reach the installed APK hash check", sameBuild);
+        assertTrue(AppUpdateClient.isSameVersionNoOp(sameBuild, "0.4.1", 18, APK_HASH));
+        assertFalse(AppUpdateClient.isSameVersionNoOp(sameBuild, "0.4.1", 18,
+                "0".repeat(64)));
+        assertThrows(java.io.IOException.class,
+                () -> AppUpdateClient.isSameVersionNoOp(sameBuild, "0.4.0", 18, APK_HASH));
+        assertThrows(java.io.IOException.class, () -> AppUpdateClient.parseSelfHostedManifest(
+                manifest().put("version_code", 17), 18, PACKAGE_NAME, SELF_HOSTED_METADATA));
+    }
 
+    @Test
+    public void manifestRejectsDifferentPackageAndNonSameOriginApkUrls() throws Exception {
         JSONObject differentPackage = manifest();
         differentPackage.put("package_name", "com.attacker.app");
         assertThrows(java.io.IOException.class, () -> AppUpdateClient.parseSelfHostedManifest(
                 differentPackage, 17, PACKAGE_NAME, SELF_HOSTED_METADATA));
 
         JSONObject otherOrigin = manifest();
-        otherOrigin.put("apk_url", "https://attacker.example/sensefield.apk");
+        otherOrigin.put("apk_url", "https://cdn.example.test/sensefield.apk");
         assertThrows(java.io.IOException.class, () -> AppUpdateClient.parseSelfHostedManifest(
                 otherOrigin, 17, PACKAGE_NAME, SELF_HOSTED_METADATA));
+
+        JSONObject cleartext = manifest();
+        cleartext.put("apk_url", "http://updates.example.test/android/sensefield.apk");
+        assertThrows(java.io.IOException.class, () -> AppUpdateClient.parseSelfHostedManifest(
+                cleartext, 17, PACKAGE_NAME, SELF_HOSTED_METADATA));
 
         JSONObject urlCredential = manifest();
         urlCredential.put("apk_url", "https://user:secret@updates.example.test/sensefield.apk");
@@ -177,11 +83,16 @@ public class AppUpdateClientTest {
     }
 
     @Test
-    public void selfHostedManifestRejectsMalformedVersionAndSize() throws Exception {
+    public void manifestRejectsMalformedVersionAndUnsafeMetadata() throws Exception {
         JSONObject malformedVersion = manifest();
         malformedVersion.put("version_name", "0.04.1");
         assertThrows(java.io.IOException.class, () -> AppUpdateClient.parseSelfHostedManifest(
                 malformedVersion, 17, PACKAGE_NAME, SELF_HOSTED_METADATA));
+
+        JSONObject invalidCode = manifest();
+        invalidCode.put("version_code", 0);
+        assertThrows(java.io.IOException.class, () -> AppUpdateClient.parseSelfHostedManifest(
+                invalidCode, 17, PACKAGE_NAME, SELF_HOSTED_METADATA));
 
         JSONObject tooLarge = manifest();
         tooLarge.put("apk_bytes", AppUpdateRelease.MAX_APK_BYTES + 1);
@@ -207,13 +118,13 @@ public class AppUpdateClientTest {
     @Test
     public void metadataUrlRejectsCleartextCredentialsQueriesAndFragments() {
         assertThrows(IllegalArgumentException.class,
-                () -> AppUpdateClient.validateMetadataUrl("http://updates.example.test/manifest.json"));
+                () -> AppUpdateClient.validateMetadataUrl("http://updates.example.test/latest.json"));
         assertThrows(IllegalArgumentException.class,
-                () -> AppUpdateClient.validateMetadataUrl("https://user:secret@updates.example.test/manifest.json"));
+                () -> AppUpdateClient.validateMetadataUrl("https://user:secret@updates.example.test/latest.json"));
         assertThrows(IllegalArgumentException.class,
-                () -> AppUpdateClient.validateMetadataUrl("https://updates.example.test/manifest.json?token=secret"));
+                () -> AppUpdateClient.validateMetadataUrl("https://updates.example.test/latest.json?token=secret"));
         assertThrows(IllegalArgumentException.class,
-                () -> AppUpdateClient.validateMetadataUrl("https://updates.example.test/manifest.json#latest"));
+                () -> AppUpdateClient.validateMetadataUrl("https://updates.example.test/latest.json#latest"));
     }
 
     @Test
@@ -259,21 +170,6 @@ public class AppUpdateClientTest {
         assertFalse(stalePart.exists());
         assertTrue(activePart.exists());
         assertTrue(unrelated.exists());
-    }
-
-    private static JSONObject githubRelease() throws Exception {
-        JSONObject asset = new JSONObject()
-                .put("name", "sensefield.apk")
-                .put("size", APK_FIXTURE.length)
-                .put("digest", "sha256:" + APK_HASH)
-                .put("browser_download_url",
-                        "https://github.com/ld0574/SenseField/releases/download/v0.4.1/sensefield.apk");
-        return new JSONObject()
-                .put("draft", false)
-                .put("prerelease", false)
-                .put("tag_name", "v0.4.1")
-                .put("body", "Small fix")
-                .put("assets", new JSONArray().put(asset));
     }
 
     private static JSONObject manifest() throws Exception {

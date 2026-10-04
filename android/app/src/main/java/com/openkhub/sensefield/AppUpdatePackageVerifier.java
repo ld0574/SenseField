@@ -78,8 +78,12 @@ public final class AppUpdatePackageVerifier {
 
         long archiveCode = archive.getLongVersionCode();
         long installedCode = installed.getLongVersionCode();
-        if (archiveCode <= installedCode) {
-            return invalid("更新安装包版本不高于当前已安装版本。");
+        if (archiveCode < installedCode) {
+            return invalid("更新安装包版本低于当前已安装版本。");
+        }
+        if (archiveCode == installedCode
+                && !archive.versionName.equals(installed.versionName)) {
+            return invalid("版本号相同但版本名称不同，已拒绝此更新。");
         }
         if (release.getVersionCode() > 0 && archiveCode != release.getVersionCode()) {
             return invalid("更新安装包版本号与发布信息不一致。");
@@ -101,6 +105,20 @@ public final class AppUpdatePackageVerifier {
         }
         if (!archiveCertificates.equals(installedCertificates)) {
             return invalid("更新安装包使用了不同的应用签名证书。");
+        }
+        if (archiveCode == installedCode) {
+            final String installedHash;
+            try {
+                installedHash = AppUpdateClient.installedApkSha256(context);
+            } catch (IOException unreadableInstalledApk) {
+                return invalid("无法校验当前安装包，已拒绝此同版本更新。");
+            }
+            if (MessageDigest.isEqual(release.getSha256().toLowerCase(Locale.US)
+                    .getBytes(java.nio.charset.StandardCharsets.US_ASCII),
+                    installedHash.toLowerCase(Locale.US)
+                            .getBytes(java.nio.charset.StandardCharsets.US_ASCII))) {
+                return invalid("更新安装包与当前安装包内容相同。");
+            }
         }
         return new Result(true, "更新安装包已验证，可以交由 Android 安装器处理。");
     }
