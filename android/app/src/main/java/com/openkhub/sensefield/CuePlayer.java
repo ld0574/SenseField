@@ -74,6 +74,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
     private TextToSpeech tts;
     private AudioTrack assistantTrack;
     private volatile AssistantPlaybackListener assistantPlaybackListener;
+    private volatile AssistantTtsTimingListener assistantTtsTimingListener;
     private volatile boolean closed;
     private volatile boolean ttsReady;
     private volatile boolean offlineTtsReady;
@@ -81,6 +82,11 @@ final class CuePlayer implements CueDispatcher.Renderer {
     interface AssistantPlaybackListener {
         /** Receives a copied 160-sample mono render frame at 16 kHz. */
         void onPcmReference(short[] frame16kMono);
+    }
+
+    interface AssistantTtsTimingListener {
+        /** Receives a text-free phase timestamp measured with elapsedRealtime(). */
+        void onAssistantTtsTiming(String cueId, int segmentIndex, String phase, long monoMs);
     }
 
     private static final class AssistantReply {
@@ -442,6 +448,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
                                     }
                                     if (!readyForPlayback) return;
                                     logAssistantSegment("ready", assistant);
+                                    notifyAssistantTtsTiming(assistant, "synthesis-ready");
                                     try {
                                         assistantAudioWorker.execute(
                                                 () -> playAssistantFile(assistant));
@@ -742,6 +749,9 @@ final class CuePlayer implements CueDispatcher.Renderer {
         }
 
         if (transition != null) {
+            if (!setupFailed)
+                notifyAssistantTtsTiming(reply.request.cueId, transition.dropped.index,
+                        "expired");
             if (!transition.dropped.isEmpty())
                 logAssistantDrop(reply.request.cueId, transition.dropped.index,
                         transition.dropped.segments, transition.dropped.chars,
@@ -781,6 +791,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
             }
             if (expired == null) {
                 try {
+                    notifyAssistantTtsTiming(utterance, "synthesis-submit");
                     result = voice.synthesizeToFile(utterance.segment.text, parameters,
                             utterance.outputFile, utterance.utteranceId);
                 } catch (RuntimeException error) {
@@ -789,6 +800,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
             }
         }
         if (expired != null) {
+            notifyAssistantTtsTiming(utterance, "expired");
             if (!expired.dropped.isEmpty())
                 logAssistantDrop(reply.request.cueId, expired.dropped.index,
                         expired.dropped.segments, expired.dropped.chars, "expired");
@@ -801,6 +813,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
     }
 
     private void playAssistantFile(AssistantUtterance utterance) {
+        notifyAssistantTtsTiming(utterance, "worker-start");
         AudioTrack track = null;
         boolean trackStarted = false;
         boolean completed = false;
@@ -809,6 +822,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
             if (isCurrentAssistant(utterance)) {
                 PcmWav wav = readPcmWav(utterance.outputFile);
                 short[] pcm16k = VoiceEchoProcessor.resampleTo16k(wav.samples, wav.sampleRateHz);
+                notifyAssistantTtsTiming(utterance, "pcm-ready");
                 if (pcm16k.length > 0 && isCurrentAssistant(utterance)) {
                     int minBuffer = AudioTrack.getMinBufferSize(VoiceEchoProcessor.SAMPLE_RATE_HZ,
                             AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
@@ -829,6 +843,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
                             .setBufferSizeInBytes(bufferBytes)
                             .setTransferMode(AudioTrack.MODE_STREAM)
                             .build();
+                    notifyAssistantTtsTiming(utterance, "audio-track-ready");
                     track.setVolume(volume());
                     synchronized (audioLock) {
                         if (isCurrentAssistantLocked(utterance)
@@ -844,6 +859,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
                             }
                         }
                     }
+                    if (expired) notifyAssistantTtsTiming(utterance, "expired");
                     if (trackStarted) {
                         AssistantPlaybackListener reference = assistantPlaybackListener;
                         short[] referenceFrame = reference == null ? null
@@ -869,6 +885,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
                                 if (!current) break;
                                 firstWrite = false;
                                 logAssistantSegment("playback-first-write", utterance);
+                                notifyAssistantTtsTiming(utterance, "first-write");
                                 if (notifyStarted)
                                     utterance.reply.callback.onStarted(
                                             SystemClock.elapsedRealtime());
@@ -1195,6 +1212,28 @@ final class CuePlayer implements CueDispatcher.Renderer {
 
     void setAssistantPlaybackListener(AssistantPlaybackListener listener) {
         assistantPlaybackListener = listener;
+    }
+
+    void setAssistantTtsTimingListener(AssistantTtsTimingListener listener) {
+        assistantTtsTimingListener = listener;
+    }
+
+    private void notifyAssistantTtsTiming(AssistantUtterance utterance, String phase) {
+        notifyAssistantTtsTiming(utterance.reply.request.cueId, utterance.segment.index, phase);
+    }
+
+    private void notifyAssistantTtsTiming(String cueId, int segmentIndex, String phase) {
+        AssistantTtsTimingListener listener = assistantTtsTimingListener;
+        if (listener == null) return;
+        long monoMs = SystemClock.elapsedRealtime();
+        mainHandler.post(() -> {
+            if (assistantTtsTimingListener != listener) return;
+            try {
+                listener.onAssistantTtsTiming(cueId, segmentIndex, phase, monoMs);
+            } catch (RuntimeException error) {
+                Log.w(TAG, "Assistant TTS timing listener failed", error);
+            }
+        });
     }
 
     boolean speechReady() { return ttsReady && !closed; }

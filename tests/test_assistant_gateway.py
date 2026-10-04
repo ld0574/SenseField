@@ -293,6 +293,54 @@ def test_stable_equipment_explanation_keeps_longer_freshness_kind() -> None:
     assert parsed.kind == "ui_text"
 
 
+_SCREEN_OVERVIEW_QUESTION = (
+    "请结合最近画面分析当前页面：装备页给购买建议，选人页给英雄建议，对战页给打法建议，"
+    "大厅或菜单页说明下一步可用的入口。先说最重要的一条，忽略连杀横幅。看不清就说明。"
+)
+_AUTOMATIC_OVERVIEW_QUESTION = (
+    "只在当前画面出现影响下一步操作的新变化时给一条简短建议，先说行动再说依据；"
+    "忽略连杀横幅、金币和计时变化，没有可靠依据就回答不确定。"
+)
+
+
+@pytest.mark.parametrize(
+    ("question", "answer", "expected_kind"),
+    [
+        (_SCREEN_OVERVIEW_QUESTION, "练习场菜单中有单人练习和基础训练入口。", "ui_text"),
+        (_SCREEN_OVERVIEW_QUESTION, "根据双方阵容建议选择控制型英雄。", "hud"),
+        (_SCREEN_OVERVIEW_QUESTION, "当前团战中我方生命值较低，建议先撤退。", "hud"),
+        (_SCREEN_OVERVIEW_QUESTION, "装备页建议购买法术防御装备。", "hud"),
+        ("根据双方队伍阵容，这局我应该选哪个英雄？", "英雄选择页有几个选项。", "hud"),
+        (_AUTOMATIC_OVERVIEW_QUESTION, "大厅菜单中出现新的训练入口。", "ui_text"),
+    ],
+)
+def test_only_explicit_stable_menu_overview_gets_ui_text_freshness(
+    question: str, answer: str, expected_kind: str
+) -> None:
+    parsed = parse_visual_answer(
+        '{"kind":"ui_text","answer":' + json.dumps(answer, ensure_ascii=False) + ',"uncertain":false}',
+        question=question,
+    )
+    assert parsed.kind == expected_kind
+    assert parsed.answer == answer
+
+
+def test_current_match_next_action_remains_short_lived_hud() -> None:
+    parsed = parse_visual_answer(
+        '{"kind":"ui_text","answer":"先跟队友打龙。","uncertain":false}',
+        question="我这局下一步应该做什么？",
+    )
+    assert parsed.kind == "hud"
+
+
+def test_current_board_move_remains_short_lived_hud() -> None:
+    parsed = parse_visual_answer(
+        '{"kind":"ui_text","answer":"先消右侧蓝色方块。","uncertain":false}',
+        question="当前棋盘下一步该怎么消？",
+    )
+    assert parsed.kind == "hud"
+
+
 def test_dynamic_question_does_not_reclassify_unknown() -> None:
     parsed = parse_visual_answer(
         '{"kind":"unknown","answer":"","uncertain":true}',

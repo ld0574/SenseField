@@ -47,6 +47,22 @@ _DYNAMIC_ADVICE_QUESTION_RE = re.compile(
     r"which .{0,30} should i (?:use|buy|build|choose|pick)|who should i (?:pick|choose))\b",
     re.IGNORECASE,
 )
+_SCREEN_OVERVIEW_QUESTION = (
+    "请结合最近画面分析当前页面：装备页给购买建议，选人页给英雄建议，对战页给打法建议，"
+    "大厅或菜单页说明下一步可用的入口。先说最重要的一条，忽略连杀横幅。看不清就说明。"
+)
+_AUTOMATIC_OVERVIEW_QUESTION = (
+    "只在当前画面出现影响下一步操作的新变化时给一条简短建议，先说行动再说依据；"
+    "忽略连杀横幅、金币和计时变化，没有可靠依据就回答不确定。"
+)
+_STABLE_MENU_ANSWER_RE = re.compile(r"大厅|主菜单|菜单|首页|主页|练习场|训练场|设置页|设置界面|登录页|登录界面")
+_DYNAMIC_STATE_ANSWER_RE = re.compile(
+    r"对战|战局|对局|这局|本局|这把|局内|团战|敌方|敌人|对手|我方|队友|阵容|"
+    r"血量|生命值|血条|弹药|护盾|蓝量|法力|能量|技能冷却|冷却|金币|金钱|经济|等级|"
+    r"小地图|坐标|比分|击杀|死亡|助攻|倒计时|计时|时间|分钟|秒钟|"
+    r"装备|购买|出装|选人|选英雄|选择英雄|英雄建议|英雄推荐|阵容搭配|"
+    r"打龙|推塔|撤退|反制|打法|战术|进攻|防守"
+)
 _NON_WORD_RE = re.compile(r"[\s\d０-９.,，:：;；!！?？。+\-/]+")
 UNKNOWN_ANSWER = "无法从清晰可见的界面文字中可靠确认。"
 
@@ -171,6 +187,16 @@ def _requires_live_hud(question: str | None) -> bool:
     return bool(question and _DYNAMIC_ADVICE_QUESTION_RE.search(question))
 
 
+def _is_stable_menu_overview(question: str | None, answer: str) -> bool:
+    """Keep only an explicit stable-menu description out of the HUD expiry bucket."""
+    if question not in {_SCREEN_OVERVIEW_QUESTION, _AUTOMATIC_OVERVIEW_QUESTION}:
+        return False
+    return bool(
+        _STABLE_MENU_ANSWER_RE.search(answer)
+        and not _DYNAMIC_STATE_ANSWER_RE.search(answer)
+    )
+
+
 _TRANSIENT_BANNER_RE = re.compile(
     r"不可阻挡|无人能挡|大杀特杀|杀人如麻|主宰比赛|天下无双|超神|双杀|三杀|四杀|五杀",
 )
@@ -229,6 +255,8 @@ def parse_visual_answer(raw: str, *, question: str | None = None) -> VisualAnswe
     if (not answer or _is_progress_only_build_answer(answer, question)
             or _is_transient_banner_only(answer, question)):
         return VisualAnswer("unknown", UNKNOWN_ANSWER, True)
-    if _requires_live_hud(question):
+    if _requires_live_hud(question) and not (
+        kind == "ui_text" and _is_stable_menu_overview(question, answer)
+    ):
         kind = "hud"
     return VisualAnswer(kind, answer, uncertain)

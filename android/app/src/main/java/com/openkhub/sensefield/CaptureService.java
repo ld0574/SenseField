@@ -329,6 +329,15 @@ public final class CaptureService extends Service {
                         new CueAuditListener(), SystemClock::elapsedRealtime);
                 if (assistantConfig.enabled()) {
                     assistant = new AssistantController(this, auditSessionId, assistantConfig, new AssistantHost());
+                    final String timingSessionId = auditSessionId;
+                    cuePlayer.setAssistantTtsTimingListener((cueId, segmentIndex, phase, monoMs) -> {
+                        DiagnosticRecorder recorder = diagnostics;
+                        if (recorder != null && !recorder.finished
+                                && timingSessionId.equals(auditSessionId)) {
+                            recorder.audit("AssistantTts event=" + phase + " cueId=" + cueId
+                                    + " segment=" + segmentIndex + " monotonicMs=" + monoMs);
+                        }
+                    });
                     cuePlayer.setAssistantPlaybackListener(pcm -> {
                         AssistantController current = assistant;
                         if (current != null) current.feedRender(pcm);

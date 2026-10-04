@@ -587,7 +587,13 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
                 + audioGeneration + " monotonicMs=" + SystemClock.elapsedRealtime());
     }
     static boolean isRequest(String text) {
+        if (text == null || text.trim().isEmpty()) return false;
         String compact = text.replaceAll("[\\s，。！？!?、,.]", "");
+        // A negated quantity statement is not a question. In continuous listening, treating
+        // "也没多少呀" as a request would replace the player's pending visual question.
+        // Keep the whole-string guard narrow so "没多少血，应该怎么办" still asks for help.
+        if (compact.matches("(?:也|其实|感觉)?(?:没|没有|不|并不)(?:有)?多少(?:啊|呀|哦|吧|呢|嘛|了)*"))
+            return false;
         String polite = "(请问|请|麻烦|能不能|能否|可以|能)?";
         String lead = "(?:我(能不能|能否|可以)|" + polite + "(你)?|(你)?" + polite + ")";
         String action = "(看|分析|推荐|建议|选|选择)";

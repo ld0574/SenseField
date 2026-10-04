@@ -180,6 +180,17 @@ public class AssistantContractsTest {
         assertFalse(AssistantController.isRequest("我刚刚跑过去了"));
         assertFalse(AssistantController.isRequest("他们刚刚聊到听野"));
     }
+    @Test public void negatedQuantityCommentDoesNotReplaceAQuestionButRealQuantityQuestionsRemain() {
+        assertFalse(AssistantController.isRequest("也没多少呀。"));
+        assertFalse(AssistantController.isRequest("其实没有多少。"));
+        assertFalse(AssistantController.isRequest(null));
+        assertFalse(AssistantController.isRequest(" "));
+        assertTrue(AssistantController.isRequest("还要多少金币？"));
+        assertTrue(AssistantController.isRequest("现在金币多少？"));
+        assertTrue(AssistantController.isRequest("没多少血，应该怎么办？"));
+        assertTrue(AssistantController.isRequest("这件装备没有多少伤害吗？"));
+        assertTrue(AssistantController.isRequest("那这个呢？"));
+    }
     @Test public void greetingsAndMicrophoneChecksStayLocalWithoutSwallowingVisualQuestions() {
         AssistantConversationIntent.Match repeatedGreeting =
                 AssistantConversationIntent.classify("你好你好");
@@ -199,6 +210,20 @@ public class AssistantContractsTest {
         assertNull(AssistantConversationIntent.classify("你好，我想问装备建议"));
         assertNull(AssistantConversationIntent.classify("听到这个音效了吗"));
         assertNull(AssistantConversationIntent.classify("这个英雄适合出什么装备？"));
+    }
+    @Test public void assistantAvailabilityAndWaitingQuestionsStayLocalWithoutSwallowingGameQuestions() {
+        for (String question : Arrays.asList("怎么就又不可用了呀？", "你怎么还是看不清啊？",
+                "怎么还没回答？", "还要等多久？", "你还在吗？")) {
+            AssistantConversationIntent.Match match = AssistantConversationIntent.classify(question);
+            assertNotNull(question, match);
+            assertEquals(question, AssistantConversationIntent.Type.ASSISTANT_STATUS, match.type);
+            assertTrue(question, match.answer.contains("再说一次"));
+        }
+
+        for (String question : Arrays.asList("你怎么还是看不清对面装备？",
+                "你怎么还是看不清这张装备图？", "现在金币有多少？",
+                "这个英雄适合出什么装备？", "也没多少呀"))
+            assertNull(question, AssistantConversationIntent.classify(question));
     }
     @Test public void whichQuestionsReadOptionsWithoutPromotingOrdinaryChoiceStatements() {
         for (String question : Arrays.asList("这个画面我应该选哪个", "选哪一个", "哪项比较合适",
