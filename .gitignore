@@ -153,3 +153,4 @@ android/app/src/main/assets/sensevoice/tokens.txt
 # Generated assistant credentials and backend private keys are server-local.
 deploy/assistant/runtime/
 !docs/development/assistant-online-deployment.md
+!docs/development/assistant-native-deployment.md

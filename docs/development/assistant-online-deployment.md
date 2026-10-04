@@ -2,6 +2,8 @@
 
 本文是自部署操作说明，不是上线报告。生产主机尚未连接或部署，DNS、证书、反向代理和模型请求均未在生产环境验证；请由部署负责人在自己的主机上完成以下步骤。
 
+**没有 Docker 时，改用[原生 Linux/systemd 部署说明](assistant-native-deployment.md)。** 当前是轻量视觉网关，不在服务器运行 ASR 或 VLM；2 核 4GB 可作为少量体验者的试运行起点，并不代表并发或延迟已通过实测。下文保留 Docker 路线，原生路线无需安装 Docker。
+
 目标是使用 Docker Compose、Python 3.12 和轻量 `assistant-vision-gateway` 依赖运行 Qwen 视觉网关。服务使用 `vision_only` 模式，服务端 ASR 关闭，监听只发布在主机 `127.0.0.1:18765`。用户手机以 `https://sf.888413.xyz` 连接已有 HTTPS 反向代理；反代再通过经过严格证书校验的 HTTPS 连接本机网关。
 
 ## 准备配置

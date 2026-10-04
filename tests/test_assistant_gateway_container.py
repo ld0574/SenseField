@@ -51,7 +51,13 @@ def test_configuration_cannot_override_python_startup_environment(tmp_path, monk
     assert "PYTHONPATH" not in os.environ
 
 
-def test_initializer_generates_private_distinct_player_codes_without_echoing_key(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("runtime,host,tls_dir", [
+    ("container", "0.0.0.0", "/run/tls"),
+    ("native", "127.0.0.1", "/etc/sensefield-assistant/tls"),
+])
+def test_initializer_generates_private_distinct_player_codes_without_echoing_key(
+    tmp_path, monkeypatch, capsys, runtime, host, tls_dir
+):
     import sys
     import stat
     values = iter(["https://vision.example/v1", ""])
@@ -59,14 +65,33 @@ def test_initializer_generates_private_distinct_player_codes_without_echoing_key
     monkeypatch.setattr(_configure.getpass, "getpass", lambda _prompt: "test-provider-key")
     config_path = tmp_path / "gateway.json"
     codes_path = tmp_path / "codes.txt"
-    monkeypatch.setattr(sys, "argv", ["configure.py", "--output", str(config_path), "--codes-output", str(codes_path)])
+    monkeypatch.setattr(sys, "argv", ["configure.py", "--output", str(config_path),
+                                    "--codes-output", str(codes_path), "--runtime", runtime])
     _configure.main()
     config = json.loads(config_path.read_text())
     tokens = config["ASSISTANT_GATEWAY_DEVICE_TOKENS"].split(",")
     assert len(set(tokens)) == 2 and all(len(token) >= 24 for token in tokens)
     assert config["ASSISTANT_GATEWAY_VISION_MODEL"] == "qwen/qwen3.8-27b"
     assert config["ASSISTANT_GATEWAY_ASR_BACKEND"] == "disabled"
+    assert config["ASSISTANT_GATEWAY_HOST"] == host
+    assert config["ASSISTANT_GATEWAY_TLS_CERT"] == tls_dir + "/backend.crt"
+    assert config["ASSISTANT_GATEWAY_TLS_KEY"] == tls_dir + "/backend.key"
     assert stat.S_IMODE(config_path.stat().st_mode) == 0o600
     assert stat.S_IMODE(codes_path.stat().st_mode) == 0o600
     output = capsys.readouterr().out
     assert "test-provider-key" not in output and all(token not in output for token in tokens)
+
+
+@pytest.mark.parametrize("existing_file", ["config", "codes"])
+def test_initializer_preserves_existing_configuration_and_codes(tmp_path, monkeypatch, existing_file):
+    import sys
+    config_path = tmp_path / "gateway.json"
+    codes_path = tmp_path / "codes.txt"
+    existing_path = config_path if existing_file == "config" else codes_path
+    existing_path.write_text("preserve-private-configuration")
+    monkeypatch.setattr(sys, "argv", ["configure.py", "--output", str(config_path),
+                                    "--codes-output", str(codes_path), "--runtime", "native"])
+    with pytest.raises(SystemExit, match="2"):
+        _configure.main()
+    assert existing_path.read_text() == "preserve-private-configuration"
+    assert not (codes_path if existing_file == "config" else config_path).exists()
