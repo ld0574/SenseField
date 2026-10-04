@@ -90,16 +90,35 @@ public class SenseFieldReaderService extends AccessibilityService {
         if (pkg.equals(getPackageName())) return;   // 不读自己
         if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
                 || SystemClock.elapsedRealtime() - latestAt > 2000) {
-            captureNow(pkg);
+            captureNow(pkg, event.getClassName());
         }
     }
 
-    /** 压缩当前窗口树为判定状态。 */
-    private void captureNow(String pkg) {
+    /** 操作结果确认（阶段二）：标记当前状态为「操作前」，判定时带 before/after。 */
+    private static volatile String beforeState;
+
+    static void markBefore() {
+        beforeState = latestState;
+    }
+
+    static String beforeState() {
+        return beforeState;
+    }
+
+    /** 压缩当前窗口树为判定状态（状态头含 app/activity/深色模式，节点行含 EC 状态位）。 */
+    private void captureNow(String pkg, CharSequence activityHint) {
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null) return;
         StringBuilder sb = new StringBuilder();
-        sb.append("app=").append(pkg).append('\n');
+        sb.append("app=").append(pkg);
+        if (activityHint != null && activityHint.length() > 0) {
+            sb.append(" activity=").append(shorten(activityHint));
+        }
+        boolean dark = (getResources().getConfiguration().uiMode
+                & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        sb.append(" dark=").append(dark);
+        sb.append('\n');
         int screenHeight = getResources().getDisplayMetrics().heightPixels;
         List<String> lines = new ArrayList<>();
         walk(root, 0, screenHeight, lines);
@@ -123,8 +142,10 @@ public class SenseFieldReaderService extends AccessibilityService {
                     : b.centerY() < screenHeight * 2 / 3 ? "主内容" : "底栏";
             String label = hasText ? text.toString() : (hasDesc ? desc.toString() : "");
             if (label.length() > MAX_TEXT) label = label.substring(0, MAX_TEXT) + "…";
+            String state2 = (node.isEnabled() ? "E" : "-") + (node.isCheckable() ? (node.isChecked() ? "1" : "0") : "-");
             out.add("n" + out.size() + " [" + zone + "] "
                     + shorten(node.getClassName()) + (node.isClickable() ? " 可点" : "")
+                    + " 状态=" + state2
                     + (hasText || hasDesc ? " \"" + label + "\"" : " \"\"")
                     + " @" + b.toShortString());
         }

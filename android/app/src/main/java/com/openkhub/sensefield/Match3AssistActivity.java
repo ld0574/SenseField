@@ -135,6 +135,7 @@ public class Match3AssistActivity extends Activity {
         bottomIn = pctInput(pct2, "右下Y%", 82);
         calib.addView(pct2);
         loadCalibration();
+        loadGating();
         Button autoFit = UiKit.button(this, "自动适配棋盘（对当前截图自动找棋盘范围）", false);
         autoFit.setOnClickListener(v -> autoFitBoard());
         calib.addView(autoFit);
@@ -210,6 +211,15 @@ public class Match3AssistActivity extends Activity {
         Button a11yGo = UiKit.button(this, "读屏→Jev 屏幕判定（类型＋弹窗门控）", true);
         a11yGo.setOnClickListener(v -> judgeScreen());
         readerCard.addView(a11yGo);
+        Button iconGo = UiKit.button(this, "图标消歧判定", false);
+        iconGo.setOnClickListener(v -> judgeIcon());
+        readerCard.addView(iconGo);
+        Button priGo = UiKit.button(this, "播报优先级排序（前 5 候选）", false);
+        priGo.setOnClickListener(v -> judgePriority());
+        readerCard.addView(priGo);
+        Button markBtn = UiKit.button(this, "标记操作前状态（结果确认用）", false);
+        markBtn.setOnClickListener(v -> { SenseFieldReaderService.markBefore(); toast("已标记操作前状态"); });
+        readerCard.addView(markBtn);
         Button a11ySet = UiKit.button(this, "打开系统无障碍设置", false);
         a11ySet.setOnClickListener(v -> startActivity(
                 new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)));
@@ -560,6 +570,22 @@ public class Match3AssistActivity extends Activity {
 
     private boolean exploreOn;
     private int kbIndex;
+    private float gateHigh = 0.85f;
+    private float gateMid = 0.60f;
+
+    private void loadGating() {
+        try (InputStream in = getAssets().open("jev/gating.json")) {
+            byte[] buf = new byte[4096];
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            int n;
+            while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+            org.json.JSONObject cfg = new org.json.JSONObject(new String(bos.toByteArray(), StandardCharsets.UTF_8));
+            gateHigh = (float) cfg.getJSONObject("screen_type").optDouble("high", 0.85);
+            gateMid = (float) cfg.getJSONObject("screen_type").optDouble("mid", 0.60);
+        } catch (Exception e) {
+            // 配置缺失用默认阈值，不阻断
+        }
+    }
     private boolean regionPick;
     private int[] regionFirst;
 
@@ -634,6 +660,13 @@ public class Match3AssistActivity extends Activity {
             return;
         }
         final String state = SenseFieldReaderService.latestState();
+        final String sensitive = Match3Gate.sensitiveHit(state);
+        if (sensitive != null) {
+            String block = "本地敏感闸门命中：当前为「" + sensitive + "」相关页面，内容不上云、不播报细节，建议手动处理。";
+            output.setText(block);
+            announce(block);
+            return;
+        }
         final String pkg = SenseFieldReaderService.latestPackage();
         output.setText("读屏判定中（来源 " + pkg + "，状态 " + state.length() + " 字符）…\n");
         new Thread(() -> {
@@ -651,6 +684,7 @@ public class Match3AssistActivity extends Activity {
                 types.put("加载中", "正在加载或骨架屏");
                 types.put("广告/推广", "以广告或推广内容为主");
                 types.put("其他", "以上都不是");
+                types.put("ABSTAIN", "信息不足以判断");
                 qs.put("screen_type", new JevQuestion("screen_type", JevQuestion.TYPE_CHOICE,
                         "当前屏幕属于下列哪一类？只选一个。", types));
                 qs.put("has_modal", new JevQuestion("has_modal", JevQuestion.TYPE_NOUL,
@@ -664,8 +698,9 @@ public class Match3AssistActivity extends Activity {
                 if (st != null) {
                     double c = st.surety();
                     String speech;
-                    if (c >= 0.85) speech = "当前是「" + st.choice + "」。";
-                    else if (c >= 0.60) speech = "可能是「" + st.choice + "」，这个我不太确定。";
+                    if ("ABSTAIN".equals(st.choice)) speech = "这一屏我没看清楚，要我从上往下逐条读吗？";
+                    else if (c >= gateHigh) speech = "当前是「" + st.choice + "」。";
+                    else if (c >= gateMid) speech = "可能是「" + st.choice + "」，这个我不太确定。";
                     else speech = "这一屏我没看清楚，要我从上往下逐条读吗？";
                     sb.append("[screen_type] ").append(st.choice)
                       .append(" (conf=").append(String.format(java.util.Locale.US, "%.2f", c)).append(")\n")
@@ -695,6 +730,76 @@ public class Match3AssistActivity extends Activity {
         Map<String, String> m = new java.util.LinkedHashMap<>();
         for (int i = 0; i + 1 < kv.length; i += 2) m.put(kv[i], kv[i + 1]);
         return m;
+    }
+
+    /** 图标消歧：对状态中第一个无文本可点图标发起 Choice 判定（候选固定＋ABSTAIN）。 */
+    private void judgeIcon() {
+        final JevClient client = JevSettings.clientOrNull(this);
+        if (client == null) { output.setText("判定层未启用"); return; }
+        final String nodeLine = Match3Gate.firstIconOnlyNode(SenseFieldReaderService.latestState());
+        if (nodeLine == null) { output.setText("当前状态里没有「无文本可点图标」可消歧。"); return; }
+        output.setText("图标消歧中…\n对象：" + nodeLine);
+        new Thread(() -> {
+            try {
+                Map<String, JevQuestion> qs = new java.util.LinkedHashMap<>();
+                Map<String, String> crit = new java.util.LinkedHashMap<>();
+                for (String c : Match3Gate.ICON_CANDIDATES) {
+                    crit.put(c, "ABSTAIN".equals(c) ? "信息不足，不要猜" : c + "功能");
+                }
+                qs.put("icon_meaning", new JevQuestion("icon_meaning", JevQuestion.TYPE_CHOICE,
+                        "这个无文字图标最可能是什么功能？位置与上下文见状态。", crit));
+                JevResult r = client.judge(SenseFieldReaderService.latestState(), qs);
+                JevAnswer a = r.answers.get("icon_meaning");
+                boolean abstain = "ABSTAIN".equals(a.choice);
+                String speech = abstain ? "这个图标我看不出来是什么。" : "这个图标可能是「" + a.choice + "」。";
+                String text = nodeLine + "\n→ " + speech + " (conf=" + a.confidence + ")\n";
+                runOnUiThread(() -> output.setText(text));
+                announce(speech);
+            } catch (Exception e) {
+                runOnUiThread(() -> output.setText("【消歧失败】" + e.getMessage()));
+            }
+        }, "icon-jev").start();
+    }
+
+    /** 播报优先级：对前 5 个有文本候选各打一票 Score（0-3 档量规），按分排序播报。 */
+    private void judgePriority() {
+        final JevClient client = JevSettings.clientOrNull(this);
+        if (client == null) { output.setText("判定层未启用"); return; }
+        new Thread(() -> {
+            try {
+                String st = SenseFieldReaderService.latestState();
+                List<String> cands = new ArrayList<>();
+                for (String line : st.split("\n")) {
+                    if (line.contains("\"") && cands.size() < 5) cands.add(line);
+                }
+                if (cands.isEmpty()) { runOnUiThread(() -> output.setText("无候选")); return; }
+                Map<String, JevQuestion> qs = new java.util.LinkedHashMap<>();
+                for (int i = 0; i < cands.size(); i++) {
+                    qs.put("pri_" + i, new JevQuestion("pri_" + i, JevQuestion.TYPE_SCORE,
+                            "这条信息现在应该优先播报给视障用户的程度（0=不必播，3=必须立即播）： " + cands.get(i),
+                            new String[]{"不必播报", "可播报", "应播报", "必须立即播报"}));
+                }
+                JevResult r = client.judge(st, qs);
+                List<int[]> ranked = new ArrayList<>();
+                for (int i = 0; i < cands.size(); i++) {
+                    JevAnswer a = r.answers.get("pri_" + i);
+                    ranked.add(new int[]{i, a == null ? 0 : (int) Math.round(a.score)});
+                }
+                java.util.Collections.sort(ranked, (x, y) -> y[1] - x[1]);
+                StringBuilder sb = new StringBuilder("播报优先级（高→低）：\n");
+                List<String> order = new ArrayList<>();
+                for (int[] e : ranked) {
+                    if (e[1] < 3) continue;
+                    sb.append("  ").append(cands.get(e[0])).append(" → ").append(e[1]).append("\n");
+                    order.add(cands.get(e[0]));
+                }
+                for (String line : order) announce(line);
+                String text = sb.toString();
+                runOnUiThread(() -> output.setText(text));
+            } catch (Exception e) {
+                runOnUiThread(() -> output.setText("【优先级失败】" + e.getMessage()));
+            }
+        }, "pri-jev").start();
     }
 
     /* ---------- 播报（宽容策略真链路，与演示播报一致） ---------- */

@@ -1,0 +1,10 @@
+{
+  "_note": "判定门控配置（阶段一：阈值从硬编码移入配置）。分层依据 specs/screen-jev-integration-plan.md 阶段一。",
+  "screen_type": { "high": 0.85, "mid": 0.60 },
+  "has_modal": { "gate": 0.70 },
+  "sensitive": { "gate": 0.60, "localRuleOnly": true },
+  "icon_disambiguation": { "high": 0.60, "note": "低于 0.60 必须返回 ABSTAIN，不得硬猜" },
+  "high_risk": { "threshold": 0.95, "needConfirm": true, "scenes": ["支付/金额确认", "删除", "授权"] },
+  "abstain": { "alwaysInCandidates": true, "speech": "这一屏我没看清楚，要我从上往下逐条读吗？" },
+  "escalate": { "lowConfidence": 0.50, "toCloudLLM": false, "note": "升级云端大模型待领导选定模型后启用" }
+}
