@@ -69,6 +69,8 @@ public class Match3LiveService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && ACTION_EXPLORE_ON.equals(intent.getAction())) { exploreMode = true; Log.i(TAG, "触屏点读模式开启（背景播报已抑制）"); return START_STICKY; }
+        if (intent != null && ACTION_EXPLORE_OFF.equals(intent.getAction())) { exploreMode = false; Log.i(TAG, "触屏点读模式关闭"); return START_STICKY; }
         if (intent == null || ACTION_STOP.equals(intent.getAction())) {
             stopSelf();
             return START_NOT_STICKY;
@@ -193,6 +195,11 @@ public class Match3LiveService extends Service {
     private int dpi;
 
     private void processFrame(Bitmap frame) {
+        /* 连续触屏点读模式：只处理触摸报点，完全抑制局面变化播报（优先级=触屏识别准确率） */
+        if (exploreMode) {
+            handleExploreTouch();
+            return;
+        }
         /* 自适应：服务启动后的第一帧自动检测棋盘包围盒（深色棋盘格区域），
          * 覆盖标定并持久化——玩家不用手调百分比。检测不到沿用现有标定。 */
         if (sampler == null) {
@@ -295,6 +302,44 @@ public class Match3LiveService extends Service {
         }
     }
 
+    static final String ACTION_EXPLORE_ON = "com.openkhub.sensefield.m3live.EXPLORE_ON";
+    static final String ACTION_EXPLORE_OFF = "com.openkhub.sensefield.m3live.EXPLORE_OFF";
+
+    /* 连续触屏点读模式：开启后完全抑制背景局面播报（消灭胡乱虚报），
+     * 只按玩家每一次触摸播报对应格子（模板优先识别），触摸坐标来自读屏服务的观察模式。 */
+    private volatile boolean exploreMode;
+    private static volatile boolean serviceRunning;
+
+    static boolean isRunning() { return serviceRunning; }
+    private long lastTouchHandledAt;
+
+    private void handleExploreTouch() {
+        if (!exploreMode || sampler == null || latestFrame == null) return;
+        int tx = SenseFieldReaderService.latestTouchX();
+        int ty = SenseFieldReaderService.latestTouchY();
+        long ta = SenseFieldReaderService.latestTouchAt();
+        if (ta == 0 || ta == lastTouchHandledAt) return;
+        lastTouchHandledAt = ta;
+        int[] hit = sampler.touchRead(latestFrame, tx, ty);
+        if (hit == null) {
+            announce("点在棋盘范围外了。");
+            return;
+        }
+        String name = Match3Coach.pieceName((char) hit[2]);
+        String speech = "第 " + (hit[0] + 1) + " 行，第 " + (hit[1] + 1) + " 列："
+                + name + "，" + Match3Coach.quadrantOf(hit[0], hit[1], rows(), cols()) + "区域。";
+        Log.i(TAG, "Match3Touch: row=" + (hit[0] + 1) + " col=" + (hit[1] + 1) + " piece=" + (char) hit[2]);
+        announce(speech);
+    }
+
+    private int rows() {
+        return sampler == null ? 8 : sampler.rowCount();
+    }
+
+    private int cols() {
+        return sampler == null ? 8 : sampler.colCount();
+    }
+
     private void announce(String speech) {
         if (dispatcher == null) {
             player = new CuePlayer(this);
@@ -352,11 +397,13 @@ public class Match3LiveService extends Service {
         android.app.NotificationManager nm = getSystemService(android.app.NotificationManager.class);
         if (nm != null) nm.createNotificationChannel(channel);
         running = true;
+        serviceRunning = true;
     }
 
     @Override
     public void onDestroy() {
         running = false;
+        serviceRunning = false;
         teardownMedia();
         if (dispatcher != null) dispatcher.close();
         if (player != null) player.close();

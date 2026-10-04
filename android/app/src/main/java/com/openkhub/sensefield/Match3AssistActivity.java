@@ -103,6 +103,15 @@ public class Match3AssistActivity extends Activity {
         Button pick = UiKit.button(this, "选择游戏截图（相册，截图式识别）", false);
         pick.setOnClickListener(v -> pickScreenshot());
         actions.addView(pick);
+        Button exploreBtn = UiKit.button(this, "触屏点读模式 开/关（需先开实时识别；Android 14+）", false);
+        exploreBtn.setOnClickListener(v -> {
+            if (!Match3LiveService.isRunning()) { toast("先点「开始实时识别」再开触屏点读"); return; }
+            exploreOn = !exploreOn;
+            startService(new Intent(this, Match3LiveService.class)
+                    .setAction(exploreOn ? Match3LiveService.ACTION_EXPLORE_ON : Match3LiveService.ACTION_EXPLORE_OFF));
+            toast(exploreOn ? "触屏点读已开启：直接在游戏里点棋子，每次点击播报该格" : "触屏点读已关闭");
+        });
+        actions.addView(exploreBtn);
         Button demo = UiKit.button(this, "判定示例局面（Jev 真请求）", false);
         demo.setOnClickListener(v -> judgeSample());
         actions.addView(demo);
@@ -297,6 +306,8 @@ public class Match3AssistActivity extends Activity {
                     .putExtra(Match3LiveService.EXTRA_RESULT_CODE, resultCode)
                     .putExtra(Match3LiveService.EXTRA_DATA, data);
             startForegroundService(service);
+            if (exploreOn) startService(new Intent(this, Match3LiveService.class)
+                    .setAction(Match3LiveService.ACTION_EXPLORE_ON));
             output.setText("实时识别已启动：约每秒采样一次，局面变化时自动播报。切到游戏全屏即可。\n停止：回本页点「停止实时识别」。");
             return;
         }
@@ -547,6 +558,7 @@ public class Match3AssistActivity extends Activity {
 
     /* ---------- 预览点读 / 框选 / 道具栏 ---------- */
 
+    private boolean exploreOn;
     private int kbIndex;
     private boolean regionPick;
     private int[] regionFirst;

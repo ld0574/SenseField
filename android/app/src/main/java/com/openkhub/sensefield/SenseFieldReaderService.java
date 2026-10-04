@@ -54,7 +54,33 @@ public class SenseFieldReaderService extends AccessibilityService {
                 | AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
         /* capabilities（含 canRetrieveWindowContent）来自 XML 元数据，setServiceInfo 不会清除 */
         setServiceInfo(info);
+        /* Android 14（API 34）+：只观察不消费触摸屏事件——「连续触屏点读」的坐标来源。
+         * 观察模式不干扰游戏本身的触摸处理。低版本无此能力，点读降级为截图预览内点读。 */
+        if (android.os.Build.VERSION.SDK_INT >= 34) {
+            getServiceInfo().setMotionEventSources(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+            Log.i(TAG, "触摸观察已启用（API 34+，只观察不消费）");
+        }
         Log.i(TAG, "读屏状态服务已连接");
+    }
+
+    /* 连续触屏点读：最新一次按下屏幕的坐标（观察模式由系统投递，不消费） */
+    private static volatile int touchX = -1;
+    private static volatile int touchY = -1;
+    private static volatile long touchAt;
+
+    static int latestTouchX() { return touchX; }
+
+    static int latestTouchY() { return touchY; }
+
+    static long latestTouchAt() { return touchAt; }
+
+    @Override
+    public void onMotionEvent(android.view.MotionEvent event) {
+        if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
+            touchX = (int) event.getX();
+            touchY = (int) event.getY();
+            touchAt = SystemClock.elapsedRealtime();
+        }
     }
 
     @Override

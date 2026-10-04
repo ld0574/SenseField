@@ -92,6 +92,27 @@ final class Match3Sampler {
         return board;
     }
 
+    int rowCount() { return rows; }
+
+    int colCount() { return cols; }
+
+    /** 触屏点读：把屏幕坐标映射到格子并分类该格（模板优先）。返回 {row,col,piece}，null=点在棋盘外。 */
+    int[] touchRead(Bitmap frame, int px, int py) {
+        int l = frame.getWidth() * lPct / 100;
+        int t = frame.getHeight() * tPct / 100;
+        int r = frame.getWidth() * rPct / 100;
+        int b = frame.getHeight() * bPct / 100;
+        if (px < l || px >= r || py < t || py >= b) return null;
+        int col = (px - l) * cols / (r - l);
+        int row = (py - t) * rows / (b - t);
+        if (row < 0 || row >= rows || col < 0 || col >= cols) return null;
+        int cellW = (r - l) / cols, cellH = (b - t) / rows;
+        int cx = l + cellW * col + cellW / 2, cy = t + cellH * row + cellH / 2;
+        int half = Math.max(3, Math.min(cellW, cellH) / 8);
+        char piece = classifyCell(frame, cx, cy, half, templates);
+        return new int[]{row, col, piece};
+    }
+
     static char classifyCell(Bitmap bitmap, int cx, int cy, int half,
                              List<SpecialTemplate> templates) {
         /* 模板优先：玩家对真实画面学习过的棋子（基础动物＋特殊棋子）最可信，
