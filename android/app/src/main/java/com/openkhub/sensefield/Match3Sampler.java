@@ -94,6 +94,12 @@ final class Match3Sampler {
 
     static char classifyCell(Bitmap bitmap, int cx, int cy, int half,
                              List<SpecialTemplate> templates) {
+        /* 模板优先：玩家对真实画面学习过的棋子（基础动物＋特殊棋子）最可信，
+         * 先比模板（对狐狸红与棕熊棕这类相近色相远比 HSV 桶可靠），HSV 桶只做兜底。 */
+        if (templates != null && !templates.isEmpty()) {
+            char byTemplate = matchTemplate(bitmap, cx, cy, half, templates);
+            if (byTemplate != UNKNOWN) return byTemplate;
+        }
         long sumR = 0, sumG = 0, sumB = 0, n = 0;
         for (int y = Math.max(0, cy - half); y <= Math.min(bitmap.getHeight() - 1, cy + half); y++) {
             for (int x = Math.max(0, cx - half); x <= Math.min(bitmap.getWidth() - 1, cx + half); x++) {
@@ -127,17 +133,30 @@ final class Match3Sampler {
         Bitmap cell = cropSquare(bitmap, cx, cy, half * 4);
         if (cell == null) return UNKNOWN;
         Bitmap small = Bitmap.createScaledBitmap(cell, 16, 16, true);
-        char code = UNKNOWN;
+        String bestName = null;
         float best = Float.MAX_VALUE;
         for (SpecialTemplate t : templates) {
             float diff = meanAbsDiff(small, t.thumb);
             if (diff < best) {
                 best = diff;
-                code = templateCode(t.name);
+                bestName = t.name;
             }
         }
         if (best > 30f) return UNKNOWN;   // 都不像 → 未识别，不硬猜
-        return code;
+        char letter = nameToLetter(bestName);
+        return letter != UNKNOWN ? letter : templateCode(bestName);
+    }
+
+    /** 学习到的动物名 → 矩阵字母（基础棋子模板用固定字母，与播报名一致）。 */
+    static char nameToLetter(String name) {
+        if (name == null) return UNKNOWN;
+        if (name.contains("狐狸") || name.contains("红")) return 'R';
+        if (name.contains("小鸡") || name.contains("黄")) return 'Y';
+        if (name.contains("青蛙") || name.contains("绿")) return 'G';
+        if (name.contains("河马") || name.contains("蓝")) return 'B';
+        if (name.contains("棕熊") || name.contains("熊")) return 'O';
+        if (name.contains("紫猫") || name.contains("紫")) return 'P';
+        return UNKNOWN;
     }
 
     /** 模板名 → 矩阵字母（'1'..'9' 供扩展矩阵用；名字在播报层还原）。 */

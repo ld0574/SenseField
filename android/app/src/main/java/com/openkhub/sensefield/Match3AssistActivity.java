@@ -63,6 +63,7 @@ public class Match3AssistActivity extends Activity {
     private Spinner markRowSpin;
     private Spinner markColSpin;
     private EditText markNameIn;
+    private Spinner markNameSpin;
     private TextView output;
     private final CueDispatcher.Listener silentListener = new CueDispatcher.Listener() {
         @Override public void onDispatch(CueRequest request, CueDispatcher.DispatchResult result) { }
@@ -135,15 +136,20 @@ public class Match3AssistActivity extends Activity {
 
         /* ---------- 特殊棋子模板库 ---------- */
         LinearLayout special = UiKit.card(this);
-        special.addView(sectionLabel("特殊棋子模板库（颜色判不出的格子与模板比对，不再显示「.」）"));
+        special.addView(sectionLabel("棋子学习库（先各学一次基础动物，识别会用学习的画面而非颜色猜测；特殊棋子同样标注）"));
         LinearLayout mark = UiKit.horizontal(this);
         briefLabel(mark, "行");
         markRowSpin = spinner(mark, "行", new String[]{"1", "2", "3", "4", "5", "6", "7", "8", "9"}, 0);
         briefLabel(mark, "列");
         markColSpin = spinner(mark, "列", new String[]{"1", "2", "3", "4", "5", "6", "7", "8", "9"}, 0);
         special.addView(mark);
+        LinearLayout nameRow = UiKit.horizontal(this);
+        briefLabel(nameRow, "棋子");
+        markNameSpin = spinner(nameRow, "棋子", new String[]{
+                "红狐狸", "小鸡", "青蛙", "河马", "棕熊", "紫猫", "自定义…"}, 0);
+        special.addView(nameRow);
         markNameIn = new EditText(this);
-        markNameIn.setHint("棋子名称，如：炸弹 / 魔法石");
+        markNameIn.setHint("选「自定义…」时填名称，如：炸弹");
         markNameIn.setSingleLine(true);
         special.addView(markNameIn);
         Button markSave = UiKit.button(this, "从当前截图裁剪该格，保存为模板", false);
@@ -415,9 +421,11 @@ public class Match3AssistActivity extends Activity {
             toast("先选一张截图再标注");
             return;
         }
-        String name = markNameIn.getText().toString().trim();
-        if (name.isEmpty()) {
-            toast("先填棋子名称");
+        String preset = (String) markNameSpin.getSelectedItem();
+        String name = ("自定义…".equals(preset) || markNameIn.getText().toString().trim().isEmpty())
+                ? preset : markNameIn.getText().toString().trim();
+        if (name == null || name.isEmpty() || "自定义…".equals(name)) {
+            toast("先选或填棋子名称");
             return;
         }
         saveCalibration();
@@ -442,7 +450,7 @@ public class Match3AssistActivity extends Activity {
             Match3Sampler.saveTemplate(this, name,
                     Bitmap.createBitmap(screenshot, cl, ct, cr - cl, cb - ct));
             int count = Match3Sampler.loadTemplates(this).size();
-            announce("特殊棋子模板已保存：" + name + "，当前共 " + count + " 个模板。");
+            announce("棋子模板已保存：" + name + "，当前共 " + count + " 个。学全五种基础动物后识别最准。");
             output.setText("已保存模板「" + name + "」，共 " + count + " 个。下次采样时颜色判不出的格子会自动与模板比对。");
             hideKeyboard();
         } catch (Exception e) {
