@@ -43,6 +43,30 @@ if (!updateMetadataUrl.isEmpty()) {
     }
 }
 
+def assistantEndpointInput = findProperty('sensefieldAssistantEndpoint')
+if (assistantEndpointInput == null) {
+    assistantEndpointInput = System.getenv('SENSEFIELD_ASSISTANT_ENDPOINT')
+}
+def assistantDefaultEndpoint = (assistantEndpointInput ?: '').toString().trim()
+        .replaceAll('/+$', '')
+if (!assistantDefaultEndpoint.isEmpty()) {
+    try {
+        def assistantEndpointUri = new URI(assistantDefaultEndpoint)
+        if (!'https'.equalsIgnoreCase(assistantEndpointUri.scheme)
+                || !assistantEndpointUri.host || assistantEndpointUri.userInfo != null
+                || assistantEndpointUri.query != null || assistantEndpointUri.fragment != null
+                || (assistantEndpointUri.path && assistantEndpointUri.path != '/')
+                || assistantEndpointUri.port > 65535) {
+            throw new GradleException(
+                    'Assistant default endpoint must be an HTTPS host root without credentials, query or fragment.')
+        }
+    } catch (java.net.URISyntaxException invalidEndpoint) {
+        throw new GradleException(
+                'Assistant default endpoint must be an HTTPS host root without credentials, query or fragment.',
+                invalidEndpoint)
+    }
+}
+
 android {
     namespace 'com.openkhub.sensefield'
     compileSdk 36
@@ -55,6 +79,7 @@ android {
         versionCode 18
         versionName '0.4.1'
         buildConfigField 'String', 'APP_UPDATE_METADATA_URL', groovy.json.JsonOutput.toJson(updateMetadataUrl)
+        buildConfigField 'String', 'ASSISTANT_DEFAULT_ENDPOINT', groovy.json.JsonOutput.toJson(assistantDefaultEndpoint)
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         ndk {
             // 默认仅 arm64-v8a（真机）；构建模拟器变体用 -PsensefieldAbi=x86_64

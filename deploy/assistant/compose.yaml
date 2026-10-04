@@ -1,0 +1,33 @@
+name: sensefield-assistant
+services:
+  gateway:
+    image: sensefield-assistant:0.4.1
+    build:
+      context: ../..
+      dockerfile: deploy/assistant/Dockerfile
+    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    ports:
+      - "127.0.0.1:18765:18765"
+    volumes:
+      - ./runtime/gateway.json:/run/secrets/assistant-gateway.json:ro
+      - ./runtime/tls:/run/tls:ro
+    healthcheck:
+      test: [CMD, python, /app/verify.py, --health-only, --base-url, "https://localhost:18765", --ca, /run/tls/backend.crt]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"

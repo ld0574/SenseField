@@ -1,0 +1,12 @@
+**
+!pyproject.toml
+!python/
+!python/**
+!scripts/
+!scripts/assistant_gateway_container_entrypoint.py
+!deploy/
+!deploy/assistant/
+!deploy/assistant/Dockerfile
+!deploy/assistant/verify.py
+python/**/__pycache__/
+python/**/*.pyc

@@ -149,3 +149,7 @@ android/app/src/main/assets/minimap-yolox-nano-320.bin
 android/app/src/main/assets/minimap-yolox-nano-dual-512.bin
 android/app/src/main/assets/sensevoice/model.int8.onnx
 android/app/src/main/assets/sensevoice/tokens.txt
+
+# Generated assistant credentials and backend private keys are server-local.
+deploy/assistant/runtime/
+!docs/development/assistant-online-deployment.md

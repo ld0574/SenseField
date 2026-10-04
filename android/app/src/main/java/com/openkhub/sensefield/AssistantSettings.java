@@ -19,7 +19,10 @@ final class AssistantSettings {
         voice = preferences.getBoolean(VOICE, false) && preferences.getBoolean(AUDIO_CONSENT, false);
         vision = preferences.getBoolean(VISION, false) && preferences.getBoolean(IMAGE_CONSENT, false);
         proactive = vision && preferences.getBoolean(PROACTIVE, false);
-        endpoint = preferences.getString(ENDPOINT, "").trim().replaceAll("/+$", "");
+        String configuredEndpoint = preferences.contains(ENDPOINT)
+                ? preferences.getString(ENDPOINT, "") : BuildConfig.ASSISTANT_DEFAULT_ENDPOINT;
+        endpoint = (configuredEndpoint == null ? "" : configuredEndpoint)
+                .trim().replaceAll("/+$", "");
         token = preferences.getString(TOKEN, "").trim();
     }
     static AssistantSettings from(Context context) { return new AssistantSettings(GameProfile.settings(context)); }
