@@ -94,6 +94,56 @@ final class CloudVision {
         }
     }
 
+    /** 自托管模型服务（腾讯云）：POST <base>/read_board，body {image:b64jpeg, rows, cols}，
+     *  回包 {rows, cols, grid:[[颜色名...]]}（颜色名与 OpenRouter 路径同一套，走 letterOf）。
+     *  自家服务器无配额无限速，配置了 match3_cloud_url 时优先走它；失败返回 null 回退。 */
+    static char[][] readBoardFromServer(Bitmap boardCrop, String baseUrl, int rows, int cols) {
+        if (baseUrl == null || baseUrl.trim().isEmpty()) return null;
+        try {
+            String base = baseUrl.trim();
+            String b64 = toBase64Jpeg(scaleForUpload(boardCrop));
+            JSONObject body = new JSONObject();
+            body.put("image", b64);
+            body.put("rows", rows);
+            body.put("cols", cols);
+            HttpURLConnection conn = (HttpURLConnection) new URL(
+                    base + (base.endsWith("/") ? "" : "/") + "read_board").openConnection();
+            conn.setRequestMethod("POST");
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(15000);
+            conn.setDoOutput(true);
+            conn.setRequestProperty("Content-Type", "application/json");
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body.toString().getBytes(StandardCharsets.UTF_8));
+            }
+            int code = conn.getResponseCode();
+            String text = readStream(code >= 400 ? conn.getErrorStream() : conn.getInputStream());
+            if (code < 200 || code >= 300) {
+                Log.w(TAG, "自托管识别 HTTP " + code + ": " + safe(text));
+                return null;
+            }
+            JSONObject o = new JSONObject(text);
+            JSONArray grid = o.optJSONArray("grid");
+            int rr = o.optInt("rows", 0), cc = o.optInt("cols", 0);
+            if (grid == null || rr != rows || cc != cols) {
+                Log.w(TAG, "自托管回包行列不符: " + rr + "x" + cc);
+                return null;
+            }
+            char[][] out = new char[rr][cc];
+            for (int r = 0; r < rr; r++) {
+                JSONArray row = grid.optJSONArray(r);
+                for (int c = 0; c < cc; c++) {
+                    out[r][c] = row == null ? '.' : letterOf(row.optString(c, "未知"));
+                }
+            }
+            Log.i(TAG, "自托管识别 " + rr + "x" + cc + " 成功");
+            return out;
+        } catch (Exception e) {
+            Log.w(TAG, "自托管识别失败: " + e.getMessage());
+            return null;
+        }
+    }
+
     /** 从模型回复中提取棋盘矩阵（容忍 ```json 围栏与行列数自适应）。 */
     static char[][] parseMatrix(String content) {
         try {

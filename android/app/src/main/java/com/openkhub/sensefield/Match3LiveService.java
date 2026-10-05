@@ -51,8 +51,9 @@ public class Match3LiveService extends Service {
     private Match3Sampler sampler;
 
     private Bitmap latestFrame;              // onImageAvailable 只负责存最新帧
-    private char[][] lastRawMatrix;          // 上一采样帧的矩阵（稳定窗用）
-    private int sameRawCount;                // 连续一致的帧数
+    private char[][][] rawWindow = new char[STABLE_FRAMES][][];   // 最近 STABLE_FRAMES 帧原始矩阵
+    private int rawIdx;                      // 环形写入位置
+    private int rawFill;                     // 已入窗帧数
     private char[][] lastAnnouncedMatrix;    // 上次已播报的局面（签名去重用）
     private List<Match3Board.Swap> lastSwaps;
     private long lastChangeAt;
@@ -281,14 +282,14 @@ public class Match3LiveService extends Service {
         }
         if (popup) return;   // 弹窗期间的棋盘是暗的，不参与识别
 
-        /* 稳定窗：连续 STABLE_FRAMES 帧一致才认账（吸收消除动画/棋子摇摆中间态） */
-        if (lastRawMatrix != null && matrixEquals(lastRawMatrix, matrix)) {
-            sameRawCount++;
-        } else {
-            lastRawMatrix = matrix;
-            sameRawCount = 1;
-        }
-        if (sameRawCount < STABLE_FRAMES) return;
+        /* 稳定窗改为三帧逐格多数票：棋子 idle 摇摆会让个别格的逐帧读数来回抖，
+         * 严格相等的三帧几乎凑不齐 → 播报时断时续且重复；逐格多数票把摇摆抹平
+         *（三帧各不相同算未定，留 '.' 交给未知格逻辑），再走后面的去重/门槛。 */
+        rawWindow[rawIdx] = matrix;
+        rawIdx = (rawIdx + 1) % STABLE_FRAMES;
+        if (rawFill < STABLE_FRAMES) rawFill++;
+        if (rawFill < STABLE_FRAMES) return;
+        matrix = majorityMatrix(rawWindow);
 
         /* 云端 VLM 兜底：真机截图对拍证明本地采样 49/49 全对（REAL_VIDEO_FINDINGS.md），
          * 所以本地读数优先播报；只有本地不确定（未知格 >25%）或玩家显式开启
@@ -311,10 +312,19 @@ public class Match3LiveService extends Service {
             int b = frame.getHeight() * prefsNow.getInt("match3_b", 82) / 100;
             if (r - l > 40 && b - t > 40) {
                 Bitmap crop = Bitmap.createBitmap(frame, l, t, r - l, b - t);
-                char[][] cloud = CloudVision.readBoard(crop,
-                        prefsNow.getString("jev_api_key", ""),
-                        prefsNow.getString("jev_vlm_model", "z-ai/glm-4.5v"),
-                        matrix.length, matrix[0].length);
+                /* 自托管模型服务（腾讯云）优先：无配额无限速；未配置或失败回退 OpenRouter */
+                String selfUrl = prefsNow.getString("match3_cloud_url", "");
+                char[][] cloud = null;
+                if (selfUrl != null && !selfUrl.trim().isEmpty()) {
+                    cloud = CloudVision.readBoardFromServer(crop, selfUrl,
+                            matrix.length, matrix[0].length);
+                }
+                if (cloud == null) {
+                    cloud = CloudVision.readBoard(crop,
+                            prefsNow.getString("jev_api_key", ""),
+                            prefsNow.getString("jev_vlm_model", "z-ai/glm-4.5v"),
+                            matrix.length, matrix[0].length);
+                }
                 if (cloud != null && cloud.length == matrix.length
                         && cloud[0].length == matrix[0].length) {
                     Log.i(TAG, "云端识别接管: " + cloud.length + "x" + cloud[0].length);
@@ -399,6 +409,19 @@ public class Match3LiveService extends Service {
         }
         Log.i(TAG, sb.toString());
         announce(sb.toString());
+    }
+
+    /** 逐格多数票：三帧里 ≥2 帧相同的字母胜出；三帧各不相同 → '.'（未定）。 */
+    static char[][] majorityMatrix(char[][][] window) {
+        int rows = window[0].length, cols = window[0][0].length;
+        char[][] out = new char[rows][cols];
+        for (int r = 0; r < rows; r++) {
+            for (int c = 0; c < cols; c++) {
+                char a = window[0][r][c], b = window[1][r][c], d = window[2][r][c];
+                out[r][c] = (a == b || a == d) ? a : (b == d ? b : '.');
+            }
+        }
+        return out;
     }
 
     private static int countUnknown(char[][] m) {
