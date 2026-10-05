@@ -404,7 +404,7 @@ final class Match3Sampler {
         int[] rowBuf = new int[cw];
         float[] hsv = new float[3];
         for (int y = y0; y < y1; y += 2) {
-            frame.getPixels(rowBuf, 0, cw, x0, y, cw, 1);
+            frame.getPixels(rowBuf, cw, 0, x0, y, cw, 1);
             nRows++;
             for (int c = 0; c < nCols; c++) {
                 Color.colorToHSV(rowBuf[Math.min(cw - 1, c * stride)], hsv);

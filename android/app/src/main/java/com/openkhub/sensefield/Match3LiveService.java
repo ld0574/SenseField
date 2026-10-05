@@ -390,15 +390,18 @@ public class Match3LiveService extends Service {
             matrix = fixed;
         }
         boolean isFirst = lastAnnouncedMatrix == null;
-        lastAnnouncedMatrix = matrix;
         lastChangeAt = SystemClock.elapsedRealtime();
-        hintCount = 0;
         List<Match3Board.Swap> swaps = Match3Board.findSwaps(matrix);
         lastSwaps = swaps;
         long now = SystemClock.elapsedRealtime();
         if (!isFirst && now - lastAnnounceAt < MIN_ANNOUNCE_GAP_MS) {
-            return;   // 间隔内：局面已被记住，间隔过后有变化再播
+            /* 间隔内绝不改 lastAnnouncedMatrix：改了下一帧就会在上面「同局面静默」处判成已播过，
+             * 这一步棋永久没了播报（真机视频实锤：21s 走子被吞，30.8s 播的是过时犹豫提示）。
+             * 只更新 lastChangeAt/lastSwaps，等间隔过后同一局面再播一次。 */
+            return;
         }
+        lastAnnouncedMatrix = matrix;
+        hintCount = 0;
         lastAnnounceAt = now;
         StringBuilder sb = new StringBuilder(isFirst ? "棋盘识别完成。" : "局面更新。");
         if (!swaps.isEmpty()) {
