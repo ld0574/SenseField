@@ -6,6 +6,12 @@ import java.util.List;
 
 /** Individually replayable examples, resolved from the same enabled outputs as live cues. */
 final class ReminderGuideCatalog {
+    enum Section {
+        TONE("提示音"), DIRECTION("方位语音"), HAPTIC("振动"), VOICE("其他语音");
+        final String title;
+        Section(String title) { this.title = title; }
+    }
+
     static final class Item {
         final String id;
         final String title;
@@ -39,16 +45,18 @@ final class ReminderGuideCatalog {
         }
         if (has(outputs.near, CueRequest.CHANNEL_SPEECH)) {
             String[] labels = {"右侧", "右上", "上方", "左上", "左侧", "左下", "下方", "右下"};
-            for (int sector = 1; sector <= 8; sector++) {
+            for (int sector : new int[]{4, 3, 2, 5, 0, 1, 6, 7, 8}) {
                 String speech = twoWord ? NearZoneRouting.twoWordSpeech(sector) : NearZoneRouting.speech(sector);
-                items.add(new Item("near_speech_" + sector, labels[sector - 1] + "方位语音",
-                        "方向以小地图上的自己为中心，不随主画面镜头转动。当前示例会说“" + speech + "”。",
-                        sample(labels[sector - 1] + "方位语音", CueRequest.CHANNEL_SPEECH, 7, speech, Float.NaN)));
+                if (sector == 0) {
+                    items.add(new Item("near_speech_unknown", "方向不明确时的语音",
+                            "附近发现敌人但方向不明确时，会说“" + speech + "”。没有提醒不能当作周围没有敌人。",
+                            sample("方向不明确时的语音", CueRequest.CHANNEL_SPEECH, 7, speech, Float.NaN)));
+                } else {
+                    items.add(new Item("near_speech_" + sector, labels[sector - 1] + "方位语音",
+                            "方向以小地图上的自己为中心，不随主画面镜头转动。当前示例会说“" + speech + "”。",
+                            sample(labels[sector - 1] + "方位语音", CueRequest.CHANNEL_SPEECH, 7, speech, Float.NaN)));
+                }
             }
-            String speech = twoWord ? NearZoneRouting.twoWordSpeech(0) : NearZoneRouting.speech(0);
-            items.add(new Item("near_speech_unknown", "方向不明确时的语音",
-                    "附近发现敌人但方向不明确时，会说“" + speech + "”。没有提醒不能当作周围没有敌人。",
-                    sample("方向不明确时的语音", CueRequest.CHANNEL_SPEECH, 7, speech, Float.NaN)));
         }
         if (has(outputs.near, CueRequest.CHANNEL_HAPTIC)) {
             items.add(new Item("near_haptic", "附近敌人振动",
@@ -118,6 +126,40 @@ final class ReminderGuideCatalog {
     static Item find(List<Item> items, String id) {
         for (Item item : items) if (item.id.equals(id)) return item;
         return null;
+    }
+
+    static Section section(Item item) {
+        if (item.id.startsWith("near_speech_")) return Section.DIRECTION;
+        int channel = item.samples.get(0).channel;
+        if (channel == CueRequest.CHANNEL_TONE) return Section.TONE;
+        if (channel == CueRequest.CHANNEL_HAPTIC) return Section.HAPTIC;
+        return Section.VOICE;
+    }
+
+    static String compactLabel(Item item) {
+        switch (item.id) {
+            case "near_tone": case "near_haptic": return "附近";
+            case "near_speech_unknown": return "不明";
+            case "left_tone": case "near_speech_5": return "左侧";
+            case "right_tone": case "near_speech_1": return "右侧";
+            case "near_speech_2": return "右上";
+            case "near_speech_3": return "上方";
+            case "near_speech_4": return "左上";
+            case "near_speech_6": return "左下";
+            case "near_speech_7": return "下方";
+            case "near_speech_8": return "右下";
+            case "near_haptic_close": return "较近";
+            case "near_haptic_far": return "较远";
+            case "portrait_tone": case "portrait_speech": case "portrait_haptic": return "新头像";
+            case "peripheral_left": return "左边缘";
+            case "peripheral_right": return "右边缘";
+            case "danger_tone": case "danger_speech": return "危险标记";
+            case "player_dead": return "阵亡";
+            case "player_alive": return "复活";
+            case "player_haptic": return "角色状态";
+            case "system_projection": return "授权结束";
+            default: return item.title;
+        }
     }
 
     static List<ReminderGuide.Step> fullGuide(ReminderGuide.Outputs outputs, boolean twoWord) {

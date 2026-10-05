@@ -1,6 +1,6 @@
 # 患者反馈改进 Goal：学习、设置与震感
 
-日期：2026-10-05。范围：0.4.1/code18 本地工程候选，尚未发布或安装到真实手机。
+日期：2026-10-05。范围：0.4.1/code18 工程候选，未发布；目录精简续改后，按用户新授权无线覆盖安装到手机，见下方安装记录。
 
 ## Goal 与完成条件
 
@@ -33,7 +33,7 @@
 
 模型、profile、识别阈值、近区范围、热档与截图采样未修改。没有读取封存视频、训练或扫描阈值。`verified`／`release_ready` 与历史评分保持原状态。
 
-## 本轮验证
+## 初轮验证（目录精简续改之前）
 
 | 项目 | 结果与范围 |
 | --- | --- |
@@ -53,15 +53,27 @@ cd android
 adb -s emulator-5554 shell am instrument -w -r -e class com.openkhub.sensefield.PatientLearningInstrumentedTest com.openkhub.sensefield.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-本地证据目录：`output/patient-feedback/2026-10-05/`，包含 `build-final.log`、`ui-font100-final.log`、`ui-font200-final.log` 与 `screenshots-final/`。模拟器的临时字体／动画设置在检查后恢复；没有连接测试服务器、生产服务器或用户手机，没有模型 API 请求。
+初轮本地证据目录：`output/patient-feedback/2026-10-05/`，包含 `build-final.log`、`ui-font100-final.log`、`ui-font200-final.log` 与 `screenshots-final/`。模拟器的临时字体／动画设置在检查后恢复；该初轮没有连接测试服务器、生产服务器或用户手机，没有模型 API 请求。
 
-本地保存的验证 APK：`sensefield-patient-feedback-0.4.1-local-debug.apk`，0.4.1/code18，214,823,228 bytes，SHA-256：
+初轮保存的验证 APK（对应 `e1fae4c`，不包含下方目录精简续改）：`sensefield-patient-feedback-0.4.1-local-debug.apk`，0.4.1/code18，214,823,228 bytes，SHA-256：
 
 ```text
 9fb1222b1dfb919836456ab736192a7736b6dcdd5e0017f208571ea35773f0d0
 ```
 
-这是 UI 工程候选，不是最终生产交付。仍按[服务端先部署再 APK](ASSISTANT_NATIVE_DEPLOY_HANDOFF_2026-10-05.md)的顺序进行；没有 push、Release、CDN 上传或真实手机覆盖安装。
+这是初轮 UI 工程候选，不是最终生产交付。最终生产配套仍按[服务端先部署再 APK](ASSISTANT_NATIVE_DEPLOY_HANDOFF_2026-10-05.md)的顺序进行；该初轮没有 push、Release、CDN 上传或真实手机覆盖安装。
+
+## 试听目录精简续改
+
+患者指出目录按钮太多且每项独占一行。目录改为“提示音／方位语音／振动／其他语音”非空分组，最多三列短选项；普通手机宽度下，八方向按九宫格顺序排列，中间“不明”仍播放原有方向不明确示例。完整说明放在标题旁，设置与返回并排放在底部，页首说明缩短。单项详情、当前开启事件筛选、示例及播放／停止路径不变。
+
+`ReminderSampleGrid` 按实际组宽和当前字体测量列数，高度可随换行增长，触控目标最小56dp；不固定列宽、裁字或缩小系统控件字号。短标签保留完整读屏名称与原稳定ID的详情导航。180dp窄组宽与320dp组宽的实测检查覆盖重排、触控边界、不重叠及不省略文字；这不是折叠屏真机验收。
+
+目录相关4项JVM回归通过；扩展后的目录／完整说明同一个instrumentation场景在Android14模拟器普通与200%字号下均通过，进入目录及完整说明仍静默。Debug/Test APK与lint通过（0错误、22项已有警告）；新网格的两项lint警告已修正。截图人工查看确认默认配置在普通字号下可同屏显示全部选项与底部操作；200%字号允许纵向滚动。此续改没有重跑初轮269项全套测试，不能把其计数作为新目录的全套回归结果。
+
+续改证据保存在 `output/patient-feedback/2026-10-05/compact-directory/`：`build-final.log`、`catalog-unit.log`、`ui-font100.log`、`ui-font200.log`、两张目录截图、`apk-build.json`和后续安装记录。新候选仍为0.4.1/code18；初轮已保存APK保持不变。公开仓库扫描500个候选文件和 `git diff --check` 通过，未push、发布或上传CDN。
+
+用户随后明确要求通过其无线ADB地址安装已经编译的最新版。使用 `adb install -r -t` 覆盖安装成功，保留应用数据，不改写助手连接配置。回读手机包管理器确认为0.4.1/code18；安装后 `base.apk` SHA-256 与构建文件一致：`029bb36a1d63ccb4fc25797967e3b2793b715f8942e535d62e042d9e9cca4774`（214,829,964 bytes）。这是安装与制品一致性验证，尚未在手机上取得实际目录操作、TalkBack、震感、语音或温控结果；没有连接测试或生产服务器，也没有模型API请求。最终生产服务验证仍待用户自部署完成。
 
 ## 下一轮真人与设备验收
 

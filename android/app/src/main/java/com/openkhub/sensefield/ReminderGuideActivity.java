@@ -90,14 +90,31 @@ public final class ReminderGuideActivity extends Activity {
         scroll.setBackgroundColor(UiKit.PAGE);
         LinearLayout content = UiKit.page(this);
         scroll.addView(content);
-        UiKit.addBrandHeader(content, "王者荣耀");
         boolean full = getIntent().getBooleanExtra(EXTRA_FULL, false);
         String itemId = getIntent().getStringExtra(EXTRA_ITEM);
         boolean detail = full || itemId != null;
-        TextView title = UiKit.text(this, detail ? full ? "完整提醒说明" : "提醒试听" : "提醒说明与试听", 32, UiKit.INK, true);
+        if (detail) UiKit.addBrandHeader(content, "王者荣耀");
+        else UiKit.add(content, UiKit.text(this, "王者荣耀", 18, UiKit.MUTED, false), 8);
+        TextView title = UiKit.text(this, full ? "完整提醒说明" : "提醒试听",
+                detail ? 32 : 28, UiKit.INK, true);
         title.setAccessibilityHeading(true);
-        UiKit.add(content, title, 12);
-        status = body(detail ? "可单独播放和重听。这里都是示例。" : "选择想了解的提醒，可以单独反复试听。列表对应当前开启的提示。");
+        if (detail) UiKit.add(content, title, 12);
+        else {
+            LinearLayout header = UiKit.horizontal(this);
+            UiKit.addWeighted(header, title, 1f);
+            Button explanation = compactButton("完整说明");
+            explanation.setTextSize(18);
+            explanation.setContentDescription("完整提醒说明，打开独立说明页");
+            explanation.setOnClickListener(view -> startActivity(new Intent(this,
+                    ReminderGuideActivity.class).putExtra(EXTRA_FULL, true)));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            params.setMarginStart(UiKit.dp(this, 8));
+            header.addView(explanation, params);
+            UiKit.add(content, header, 8);
+        }
+        status = detail ? body("可单独播放和重听。这里都是示例。")
+                : UiKit.body(this, "点选试听，可反复播放。");
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         UiKit.add(content, status, 18);
         repeat = null;
@@ -113,15 +130,9 @@ public final class ReminderGuideActivity extends Activity {
             PresentationAudioPolicy policy = PresentationAudioPolicy.from(GameProfile.settings(this));
             List<ReminderGuideCatalog.Item> items = ReminderGuideCatalog.build(outputs, policy.nearTwoWord, policy.distanceHaptic);
             if (!detail) {
-                button(content, "完整说明").setOnClickListener(view -> startActivity(
-                        new Intent(this, ReminderGuideActivity.class).putExtra(EXTRA_FULL, true)));
                 if (items.isEmpty()) UiKit.add(content, body("当前没有可试听的提示，请到提示偏好中检查开启的通道与事件。"), 12);
-                for (ReminderGuideCatalog.Item item : items) {
-                    Button entry = button(content, item.title);
-                    entry.setContentDescription(item.title + "，打开说明与单项试听");
-                    entry.setOnClickListener(view -> startActivity(new Intent(this, ReminderGuideActivity.class)
-                            .putExtra(EXTRA_ITEM, item.id)));
-                }
+                for (ReminderGuideCatalog.Section section : ReminderGuideCatalog.Section.values())
+                    sampleSection(content, items, section);
             } else if (full) {
                 steps = ReminderGuideCatalog.fullGuide(outputs, policy.nearTwoWord);
                 playbackControls(content, "朗读完整说明");
@@ -153,14 +164,60 @@ public final class ReminderGuideActivity extends Activity {
             status.setText("无法读取当前提醒配置，请到提示配置中检查。");
             Log.w("ReminderGuide", "Could not resolve guide outputs", failure);
         }
-        button(content, "声音与提示配置").setOnClickListener(view ->
-                startActivity(new Intent(this, GameTuningActivity.class)));
-        button(content, detail ? "返回试听列表" : "返回").setOnClickListener(view -> finish());
+        if (detail) {
+            button(content, "声音与提示配置").setOnClickListener(view ->
+                    startActivity(new Intent(this, GameTuningActivity.class)));
+            button(content, "返回试听列表").setOnClickListener(view -> finish());
+        } else {
+            ReminderSampleGrid footer = new ReminderSampleGrid(this, 2);
+            Button settings = compactButton("提示设置");
+            settings.setContentDescription("声音与提示配置");
+            settings.setOnClickListener(view -> startActivity(new Intent(this, GameTuningActivity.class)));
+            footer.addView(settings);
+            Button back = compactButton("返回");
+            back.setOnClickListener(view -> finish());
+            footer.addView(back);
+            UiKit.add(content, footer, 0);
+        }
         setContentView(scroll);
         refreshAvailability();
     }
 
     private Button button(LinearLayout parent, String text) { return button(parent, text, false); }
+
+    private Button compactButton(String label) {
+        Button button = UiKit.button(this, label, false);
+        button.setTextSize(20);
+        button.setMinHeight(UiKit.dp(this, 56));
+        button.setMinimumHeight(UiKit.dp(this, 56));
+        button.setMinWidth(UiKit.dp(this, 56));
+        button.setMinimumWidth(UiKit.dp(this, 56));
+        button.setPadding(UiKit.dp(this, 8), UiKit.dp(this, 6), UiKit.dp(this, 8), UiKit.dp(this, 6));
+        return button;
+    }
+
+    private void sampleSection(LinearLayout content, List<ReminderGuideCatalog.Item> items,
+                               ReminderGuideCatalog.Section section) {
+        ReminderSampleGrid grid = new ReminderSampleGrid(this, 3);
+        for (ReminderGuideCatalog.Item item : items) {
+            if (ReminderGuideCatalog.section(item) != section) continue;
+            Button entry = compactButton(ReminderGuideCatalog.compactLabel(item));
+            entry.setTag(item.id);
+            entry.setBackground(UiKit.ripple(this, UiKit.PRIMARY_SOFT,
+                    android.graphics.Color.TRANSPARENT, 12, 0x18000000));
+            entry.setContentDescription(section.title + "，" + item.title + "，打开说明与单项试听");
+            entry.setOnClickListener(view -> startActivity(new Intent(this, ReminderGuideActivity.class)
+                    .putExtra(EXTRA_ITEM, item.id)));
+            grid.addView(entry);
+        }
+        if (grid.getChildCount() == 0) return;
+        LinearLayout group = UiKit.vertical(this);
+        TextView heading = UiKit.text(this, section.title, 20, UiKit.INK, true);
+        heading.setAccessibilityHeading(true);
+        UiKit.add(group, heading, 8);
+        UiKit.add(group, grid, 0);
+        UiKit.add(content, group, 20);
+    }
 
     private void playbackControls(LinearLayout content, String label) {
         repeat = button(content, label, true);

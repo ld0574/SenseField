@@ -40,6 +40,23 @@ public final class PatientLearningInstrumentedTest {
             scenario.onActivity(activity -> {
                 assertNotNull(find(activity.getWindow().getDecorView(), "完整说明"));
                 assertNull("The directory does not create a sound player", player(activity));
+                View left = findTag(activity.getWindow().getDecorView(), "left_tone");
+                assertNotNull(left);
+                assertTrue(left.getContentDescription().toString().contains("左侧短音"));
+                View direction = findTag(activity.getWindow().getDecorView(), "near_speech_4");
+                assertNotNull(direction);
+                assertEquals("左上", ((TextView) direction).getText().toString());
+                ReminderSampleGrid grid = (ReminderSampleGrid) direction.getParent();
+                int wide = UiKit.dp(activity, 320);
+                measureGrid(grid, wide);
+                assertEquals("Short options share a row", grid.getChildAt(0).getTop(),
+                        grid.getChildAt(1).getTop());
+                int wideHeight = grid.getMeasuredHeight();
+                assertGridFits(grid);
+                measureGrid(grid, UiKit.dp(activity, 180));
+                assertTrue("Narrow windows reflow rather than overlap", grid.getMeasuredHeight() > wideHeight);
+                assertGridFits(grid);
+                grid.requestLayout();
             });
             screenshot("directory");
         }
@@ -167,6 +184,44 @@ public final class PatientLearningInstrumentedTest {
             field.setAccessible(true);
             return field.get(activity);
         } catch (ReflectiveOperationException error) { throw new AssertionError(error); }
+    }
+
+    private static void measureGrid(ReminderSampleGrid grid, int width) {
+        grid.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        grid.layout(0, 0, width, grid.getMeasuredHeight());
+    }
+
+    private static void assertGridFits(ReminderSampleGrid grid) {
+        for (int index = 0; index < grid.getChildCount(); index++) {
+            TextView button = (TextView) grid.getChildAt(index);
+            assertTrue(button.isClickable());
+            assertTrue(button.getWidth() >= UiKit.dp(button.getContext(), 56));
+            assertTrue(button.getHeight() >= UiKit.dp(button.getContext(), 56));
+            assertTrue(button.getLeft() >= 0);
+            assertTrue(button.getRight() <= grid.getWidth());
+            assertTrue(button.getBottom() <= grid.getHeight());
+            assertNotNull(button.getLayout());
+            for (int line = 0; line < button.getLineCount(); line++)
+                assertEquals("No label is ellipsized", 0, button.getLayout().getEllipsisCount(line));
+            for (int previous = 0; previous < index; previous++) {
+                View other = grid.getChildAt(previous);
+                assertFalse("Touch targets must not overlap", android.graphics.Rect.intersects(
+                        new android.graphics.Rect(button.getLeft(), button.getTop(), button.getRight(), button.getBottom()),
+                        new android.graphics.Rect(other.getLeft(), other.getTop(), other.getRight(), other.getBottom())));
+            }
+        }
+    }
+
+    private static View findTag(View view, String tag) {
+        if (tag.equals(view.getTag())) return view;
+        if (view instanceof ViewGroup) {
+            for (int index = 0; index < ((ViewGroup) view).getChildCount(); index++) {
+                View found = findTag(((ViewGroup) view).getChildAt(index), tag);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     private static TextView find(View view, String text) {
