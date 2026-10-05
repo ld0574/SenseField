@@ -255,14 +255,14 @@ public class Match3LiveService extends Service {
          * 以云端结果为准（对任意美术风格通用）。走 OpenRouter，Key 复用判定层。 */
         var prefsNow = GameProfile.settings(this);
         boolean autoCloud = prefsNow.getBoolean("match3_cloud_escalate", true);
-        int unknown = 0, total = 0;
+        int cloudUnknown = 0, cloudTotal = 0;
         for (char[] row : matrix) {
             for (char c : row) {
-                total++;
-                if (c == '.') unknown++;
+                cloudTotal++;
+                if (c == '.') cloudUnknown++;
             }
         }
-        boolean suspicious = unknown * 100 > total * 25;
+        boolean suspicious = cloudUnknown * 100 > cloudTotal * 25;
         if ((suspicious || autoCloud) && "openrouter".equals(prefsNow.getString("jev_channel", "openrouter"))) {
             int l = frame.getWidth() * prefsNow.getInt("match3_l", 4) / 100;
             int t = frame.getHeight() * prefsNow.getInt("match3_t", 18) / 100;
