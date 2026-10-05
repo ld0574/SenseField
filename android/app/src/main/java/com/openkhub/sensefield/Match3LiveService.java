@@ -56,6 +56,7 @@ public class Match3LiveService extends Service {
     private char[][] lastAnnouncedMatrix;    // 上次已播报的局面（签名去重用）
     private List<Match3Board.Swap> lastSwaps;
     private long lastChangeAt;
+    private int hintCount;   // 同一局面的犹豫提示次数（上限 2 次，防无限重复）
     private long lastAnnounceAt;
     private boolean popupAnnounced;
     private int liveRows = 8;
@@ -253,9 +254,43 @@ public class Match3LiveService extends Service {
         if (matrixEquals(lastAnnouncedMatrix, matrix)) {
             return;
         }
+        /* 变化幅度门槛：只差 1 格多半是选中高亮/动画残影，不算新局面（防重复虚报） */
+        int diffCells = countDiffCells(lastAnnouncedMatrix, matrix);
+        if (lastAnnouncedMatrix != null && diffCells < 2) {
+            return;
+        }
+        /* 自我修复检测：未知格占比 >40% 说明采样坏了（弹窗/切屏/标定漂移）→
+         * 重新自动适配棋盘并重采样一次；仍坏则静默（宁可不说，不播垃圾） */
+        int unknown = 0, total = 0;
+        for (char[] row : matrix) {
+            for (char c : row) {
+                total++;
+                if (c == '.') unknown++;
+            }
+        }
+        if (unknown * 100 > total * 40) {
+            Log.i(TAG, "自我修复：未知格 " + unknown + "/" + total + "，重新自动适配");
+            int[] auto = Match3Sampler.autoDetectBoard(frame);
+            if (auto != null) {
+                var prefs = GameProfile.settings(this);
+                prefs.edit().putInt("match3_l", auto[0]).putInt("match3_t", auto[1])
+                        .putInt("match3_r", auto[2]).putInt("match3_b", auto[3]).apply();
+                sampler = new Match3Sampler(this, rows(), cols(), auto[0], auto[1], auto[2], auto[3]);
+                matrix = sampler.sample(frame);
+            }
+            int unknown2 = 0;
+            for (char[] row : matrix) {
+                for (char c : row) if (c == '.') unknown2++;
+            }
+            if (unknown2 * 100 > total * 40) {
+                Log.i(TAG, "自我修复后仍未识别，本轮静默");
+                return;
+            }
+        }
         boolean isFirst = lastAnnouncedMatrix == null;
         lastAnnouncedMatrix = matrix;
         lastChangeAt = SystemClock.elapsedRealtime();
+        hintCount = 0;
         List<Match3Board.Swap> swaps = Match3Board.findSwaps(matrix);
         lastSwaps = swaps;
         long now = SystemClock.elapsedRealtime();
@@ -272,6 +307,17 @@ public class Match3LiveService extends Service {
         }
         Log.i(TAG, sb.toString());
         announce(sb.toString());
+    }
+
+    private static int countDiffCells(char[][] a, char[][] b) {
+        if (a == null || b == null) return Integer.MAX_VALUE;
+        int diff = 0;
+        for (int r = 0; r < Math.min(a.length, b.length); r++) {
+            for (int c = 0; c < Math.min(a[r].length, b[r].length); c++) {
+                if (a[r][c] != b[r][c]) diff++;
+            }
+        }
+        return diff;
     }
 
     private static boolean matrixEquals(char[][] a, char[][] b) {
@@ -292,12 +338,16 @@ public class Match3LiveService extends Service {
         if (!running) return;
         long now = SystemClock.elapsedRealtime();
         if (lastAnnouncedMatrix != null && lastSwaps != null && !lastSwaps.isEmpty()
+                && hintCount < 2
                 && now - lastChangeAt >= IDLE_HINT_MS
                 && now - lastAnnounceAt >= MIN_ANNOUNCE_GAP_MS) {
             lastAnnounceAt = now;
             lastChangeAt = now;
-            String speech = "还在犹豫的话，" + Match3Board.swapSpeech(lastSwaps.get(0)) + "。";
-            Log.i(TAG, "犹豫提示: " + speech);
+            hintCount++;
+            String speech = hintCount == 1
+                    ? "还在犹豫的话，" + Match3Board.swapSpeech(lastSwaps.get(0)) + "。"
+                    : "仍然可以：" + Match3Board.swapSpeech(lastSwaps.get(0)) + "。不需要时忽略即可。";
+            Log.i(TAG, "犹豫提示#" + hintCount + ": " + speech);
             announce(speech);
         }
     }
