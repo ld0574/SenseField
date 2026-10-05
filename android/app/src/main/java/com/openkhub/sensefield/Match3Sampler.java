@@ -387,7 +387,9 @@ final class Match3Sampler {
     /**
      * 格数自检：棋盘裁剪区 V 通道列均值剖面的自相关周期 ≈ 格宽
      * （棋子以格宽为周期重复；开心消消乐真机美术没有可见格线，暗线计数不可行，
-     * 自相关在真机 7×7 与合成 8×8/9×9 上 5/5 命中，见 REAL_VIDEO_FINDINGS.md）。
+     * 自相关在真机 7×7 抽帧上逐帧命中 7，合成 7×7 有守卫测试锁住；
+     * 但只在按棋盘裁剪后的框内可信——喂进含天空／道具栏的宽框会自信地数成 9，
+     * 调用方须先拿到 autoDetectBoard 的框。实测数据见 research/board-recognition/REAL_VIDEO_FINDINGS.md）。
      * 返回 6..9；不可信返回 -1（调用方回退到已存格数）。
      */
     static int detectGridCount(Bitmap frame, int[] boundsPct) {
