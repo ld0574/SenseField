@@ -220,7 +220,7 @@ public final class PatientLearningInstrumentedTest {
                 assertNotNull(panel);
                 assertEquals(View.VISIBLE, panel.getVisibility());
                 assertNotNull(findTag(content, "setting_help_panel"));
-                assertNotNull(find(panel, SettingHelpContent.text("events_group")));
+                assertGroupHelpContentsInOrder(panel, "events_group");
                 assertNull("Group help is passive and has no playback action", find(panel, "播放"));
                 assertNull("Group help is passive and has no narration action", find(panel, "朗读"));
                 assertTrue("Opening group help does not change settings",
@@ -231,7 +231,7 @@ public final class PatientLearningInstrumentedTest {
                 channels.performClick();
                 assertSame("Switching groups updates the active panel", panel,
                         findTag(content, "setting_help_panel_view"));
-                assertNotNull(find(panel, SettingHelpContent.text("channel_group")));
+                assertGroupHelpContentsInOrder(panel, "channel_group");
                 assertNull(find(panel, SettingHelpContent.text("events_group")));
                 assertTrue("Switching groups does not change settings",
                         before.equals(GameProfile.settings(activity).getAll()));
@@ -387,13 +387,69 @@ public final class PatientLearningInstrumentedTest {
                 TextView body = find(panel, SettingHelpContent.text("events_group"));
                 assertNotNull(body);
                 assertEquals(Integer.MAX_VALUE, body.getMaxLines());
+                assertGroupHelpContentsInOrder(panel, "events_group");
                 assertTrue("The long group explanation and item details remain scrollable",
                         explanation.canScrollVertically(1));
                 Button close = (Button) findTag(panel, "setting_help_close_button");
                 assertNotNull(close);
                 assertTrue(close.getMinimumHeight() >= UiKit.dp(activity, 56));
+                assertTrue("The close target is at least 56dp wide",
+                        close.getWidth() >= UiKit.dp(activity, 56));
+                assertTrue("The close target is at least 56dp tall",
+                        close.getHeight() >= UiKit.dp(activity, 56));
+
+                TextView header = find(panel, SettingHelpContent.title("events_group"));
+                assertNotNull(header);
+                assertTrue(header.isAccessibilityHeading());
+                int[] headerBefore = new int[2];
+                int[] closeBefore = new int[2];
+                header.getLocationOnScreen(headerBefore);
+                close.getLocationOnScreen(closeBefore);
+
+                List<String> itemKeys = SettingHelpContent.itemKeys("events_group");
+                String lastItemKey = itemKeys.get(itemKeys.size() - 1);
+                TextView lastItemBody = find(explanation, SettingHelpContent.text(lastItemKey));
+                assertNotNull(lastItemBody);
+                explanation.scrollTo(0, explanation.getChildAt(0).getMeasuredHeight());
+                assertTrue("Scrolling reaches the end of the long group explanation",
+                        explanation.canScrollVertically(-1) && !explanation.canScrollVertically(1));
+                assertTrue("The last setting detail is visible at the end of the panel",
+                        isVisibleInWindow(lastItemBody));
+                assertTrue("The close target remains visible while the explanation scrolls",
+                        isVisibleInWindow(close));
+                int[] headerAfter = new int[2];
+                int[] closeAfter = new int[2];
+                header.getLocationOnScreen(headerAfter);
+                close.getLocationOnScreen(closeAfter);
+                assertArrayEquals("The fixed panel heading does not scroll with its body",
+                        headerBefore, headerAfter);
+                assertArrayEquals("The close target stays in the fixed panel header",
+                        closeBefore, closeAfter);
             });
         }
+    }
+
+    private static void assertGroupHelpContentsInOrder(View panel, String key) {
+        TextView header = find(panel, SettingHelpContent.title(key));
+        assertNotNull("Group help keeps its title in the fixed header", header);
+
+        ScrollView explanation = firstScrollView(panel);
+        assertNotNull("Group help keeps its copy in a scrollable body", explanation);
+        List<TextView> textViews = new ArrayList<>();
+        collectTextViews(explanation, textViews);
+        List<String> actual = new ArrayList<>();
+        for (TextView textView : textViews) actual.add(textView.getText().toString());
+
+        List<String> expected = new ArrayList<>();
+        expected.add(SettingHelpContent.text(key));
+        for (String itemKey : SettingHelpContent.itemKeys(key)) {
+            expected.add(SettingHelpContent.title(itemKey));
+            expected.add(SettingHelpContent.text(itemKey));
+        }
+        assertEquals("The complete group introduction and ordered item details stay intact: " + key,
+                expected, actual);
+        assertNull("Group help does not add a second full-explanation navigation link",
+                find(panel, "查看完整说明"));
     }
 
     private static void layoutAt(Activity activity, View view, int widthDp, int heightDp) {

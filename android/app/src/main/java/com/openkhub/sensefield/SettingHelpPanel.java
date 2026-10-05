@@ -3,9 +3,16 @@ package com.openkhub.sensefield;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
-import android.content.Intent;
+import android.content.res.ColorStateList;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.InsetDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.Gravity;
 import android.view.View;
@@ -176,27 +183,32 @@ final class SettingHelpPanel {
             panel = new PanelView(activity);
             panel.setTag(PANEL_VIEW_TAG);
             panel.setOrientation(LinearLayout.VERTICAL);
-            panel.setPadding(UiKit.dp(activity, 16), UiKit.dp(activity, 14),
-                    UiKit.dp(activity, 16), UiKit.dp(activity, 14));
-            panel.setBackground(UiKit.shape(activity, UiKit.SURFACE, UiKit.BORDER, 18));
-            panel.setElevation(UiKit.dp(activity, 8));
+            panel.setPadding(UiKit.dp(activity, 18), UiKit.dp(activity, 12),
+                    UiKit.dp(activity, 18), UiKit.dp(activity, 18));
+            panel.setBackground(UiKit.shape(activity, UiKit.SURFACE, UiKit.BORDER, 22));
+            panel.setElevation(UiKit.dp(activity, 1));
             panel.setClipToOutline(true);
             panel.setFitsSystemWindows(true);
 
             LinearLayout headerRow = UiKit.horizontal(activity);
             heading = UiKit.heading(activity, "设置说明");
+            heading.setTextSize(20);
             heading.setFocusable(true);
             heading.setFocusableInTouchMode(true);
             headerRow.addView(heading, new LinearLayout.LayoutParams(0,
                     ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
             closeButton = UiKit.button(activity, "关闭", false);
-            closeButton.setText("×");
-            closeButton.setTextSize(22);
-            closeButton.setTextColor(UiKit.MUTED);
+            closeButton.setText("");
             closeButton.setPadding(0, 0, 0, 0);
-            closeButton.setBackground(UiKit.ripple(activity, UiKit.SURFACE, UiKit.BORDER,
-                    28, 0x18000000));
+            // Keep the low-vision touch target large without a large outlined button.
+            GradientDrawable closeMask = new GradientDrawable();
+            closeMask.setShape(GradientDrawable.OVAL);
+            closeMask.setColor(Color.WHITE);
+            Drawable closeIcon = new InsetDrawable(new CloseDrawable(activity),
+                    UiKit.dp(activity, 18));
+            closeButton.setBackground(new RippleDrawable(ColorStateList.valueOf(0x18000000),
+                    closeIcon, closeMask));
             closeButton.setMinWidth(UiKit.dp(activity, 56));
             closeButton.setMinimumWidth(UiKit.dp(activity, 56));
             closeButton.setMinHeight(UiKit.dp(activity, 56));
@@ -208,7 +220,7 @@ final class SettingHelpPanel {
                     UiKit.dp(activity, 56), UiKit.dp(activity, 56));
             closeParams.setMarginStart(UiKit.dp(activity, 8));
             headerRow.addView(closeButton, closeParams);
-            UiKit.add(panel, headerRow, 12);
+            UiKit.add(panel, headerRow, 8);
 
             explanationScroll = new ScrollView(activity);
             explanationScroll.setFillViewport(false);
@@ -261,26 +273,31 @@ final class SettingHelpPanel {
             heading.setAccessibilityHeading(true);
             explanationContent.removeAllViews();
 
-            TextView mainText = UiKit.readingBody(activity, SettingHelpContent.text(key), 22);
-            UiKit.add(explanationContent, mainText, 16);
+            TextView mainText = explanationText(SettingHelpContent.text(key));
+            mainText.setTextColor(UiKit.MUTED);
+            UiKit.add(explanationContent, mainText, 24);
 
             List<String> itemKeys = SettingHelpContent.itemKeys(key);
             if (itemKeys != null) {
                 for (String itemKey : itemKeys) {
                     if (itemKey == null || itemKey.isEmpty()) continue;
+                    TextView itemHeading = UiKit.heading(activity,
+                            SettingHelpContent.title(itemKey));
+                    itemHeading.setTextSize(18);
+                    UiKit.add(explanationContent, itemHeading, 6);
                     UiKit.add(explanationContent,
-                            UiKit.heading(activity, SettingHelpContent.title(itemKey)), 4);
-                    UiKit.add(explanationContent,
-                            UiKit.readingBody(activity, SettingHelpContent.text(itemKey), 20), 14);
+                            explanationText(SettingHelpContent.text(itemKey)), 24);
                 }
             }
 
-            Button completeHelp = UiKit.button(activity, "查看完整说明", false);
-            completeHelp.setOnClickListener(view -> activity.startActivity(new Intent(activity,
-                    SettingHelpActivity.class).putExtra(SettingHelp.EXTRA_KEY, key)));
-            UiKit.add(explanationContent, completeHelp, 0);
             explanationScroll.scrollTo(0, 0);
             heading.sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);
+        }
+
+        private TextView explanationText(String text) {
+            TextView body = UiKit.readingBody(activity, text, 18);
+            body.setLineSpacing(UiKit.dp(activity, 2), 1.15f);
+            return body;
         }
 
         boolean close() {
@@ -429,6 +446,40 @@ final class SettingHelpPanel {
                 }
             }
             panel.setLayoutParams(panelParams);
+        }
+    }
+
+    /** Fixed-size icon independent of system font scale; its Button keeps the full touch area. */
+    private static final class CloseDrawable extends Drawable {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        CloseDrawable(Context context) {
+            paint.setColor(UiKit.MUTED);
+            paint.setStrokeWidth(UiKit.dp(context, 2));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+        }
+
+        @Override public void draw(Canvas canvas) {
+            Rect bounds = getBounds();
+            float inset = paint.getStrokeWidth() / 2f;
+            canvas.drawLine(bounds.left + inset, bounds.top + inset,
+                    bounds.right - inset, bounds.bottom - inset, paint);
+            canvas.drawLine(bounds.left + inset, bounds.bottom - inset,
+                    bounds.right - inset, bounds.top + inset, paint);
+        }
+
+        @Override public void setAlpha(int alpha) {
+            paint.setAlpha(alpha);
+            invalidateSelf();
+        }
+
+        @Override public void setColorFilter(android.graphics.ColorFilter filter) {
+            paint.setColorFilter(filter);
+            invalidateSelf();
+        }
+
+        @Override public int getOpacity() {
+            return PixelFormat.TRANSLUCENT;
         }
     }
 

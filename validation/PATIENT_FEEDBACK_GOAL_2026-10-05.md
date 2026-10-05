@@ -87,7 +87,15 @@ adb -s emulator-5554 shell am instrument -w -r -e class com.openkhub.sensefield.
 
 底部布局检查包含390×844dp测量；侧栏使用同一模拟器的1400×900dp手工测量与View树绘制截图，不是实体平板、实际宽屏窗口或游戏适配验收。普通／200%的真实模拟器窗口截图已查看，允许换行和纵向滚动。局部无障碍焦点只响应用户打开／关闭帮助，并检查窗口焦点、生命周期和当前触发项；对应lint提示有方法级理由注释，仍需要真实TalkBack验证。
 
-证据位于`output/patient-feedback/2026-10-05/contextual-help/`，包含`build-initial.log`、`build-final.log`、`ui-font100-final.log`、`ui-font200-final.log`、两种字号截图及`apk-build.json`。最终候选`sensefield-contextual-help-0.4.1-debug.apk`仍为0.4.1/code18，214,854,140 bytes，SHA-256：`0ccd262e4933f65f571428e6846c2288790feef0be0d3a787375db9c9c6b19c2`。仅安装到本地模拟器，本轮未覆盖用户手机；上节的无线安装摘要对应上一候选。公开仓库扫描502个候选文件及`git diff --check`通过。模拟器字体／动画设置已恢复，没有模型API、测试服务器或生产连接，没有发布／CDN上传。
+证据位于`output/patient-feedback/2026-10-05/contextual-help/`，包含`build-initial.log`、`build-final.log`、`ui-font100-final.log`、`ui-font200-final.log`、两种字号截图及`apk-build.json`。最终候选`sensefield-contextual-help-0.4.1-debug.apk`仍为0.4.1/code18，214,854,140 bytes，SHA-256：`0ccd262e4933f65f571428e6846c2288790feef0be0d3a787375db9c9c6b19c2`。截至该候选的构建与模拟器验证记录，它仅安装到本地模拟器；随后在2026-10-05 23:22:54，用户手机安装了这个旧的10-05候选，并已核对前台状态与`base.apk` SHA-256为上述值。该后续安装记录对应旧候选，不代表10-06续改候选已经构建或安装。上节无线安装摘要仍对应更早的目录精简候选。公开仓库扫描502个候选文件及`git diff --check`通过。模拟器字体／动画设置已恢复，没有模型API、测试服务器或生产连接，没有发布／CDN上传。
+
+## 2026-10-06 上下文帮助视觉续改
+
+本次约定仅调整设置帮助面板样式并移除重复的“查看完整说明”链接；`SettingHelpContent` 文案、名称、顺序与显示条件须保持字节级不变。面板标题20sp、条目标题18sp加粗、正文18sp并保留既有系统字号150%上限；关闭按钮为透明或半透明背景、20dp灰色 X 图形与56×56dp触控区域。白色卡片圆角22dp、elevation 1；面板几何、滚动、返回及焦点行为不变。独立提醒指南、阅读页与试听／播放流程不受影响。设计约定见[分组上下文说明](../docs/design/SETTINGS_CONTEXTUAL_HELP.md)。
+
+本轮Debug/Test APK构建与lint通过（0错误、22项已有警告）；同9个Android14/API34模拟器界面场景在普通／200%系统字号下各自全部通过。扩展原有场景核对组概述和所有条目的原文与顺序、重复入口移除、滚动到最后一项、固定标题及56dp关闭触控区域；切组、真实返回键与焦点恢复回归继续通过。普通／200%底部面板截图已查看，正文允许纵向滚动；宽屏仍为1400×900dp的View测量与绘制，不作实体平板验收。本轮未重跑269项JVM全套。
+
+`SettingHelpContent.java`与`11c2273`字节一致，SHA-256为`c3755fdb8b409a81b71f66668d01340ea67eb95930ae07ba0f8b233103c74ca7`。证据位于`output/patient-feedback/2026-10-06/help-visual/`，包含构建／lint、两种字号UI日志与截图、签名、安装及制品信息。新候选`sensefield-help-visual-0.4.1-debug.apk`为0.4.1/code18，214,854,404 bytes，SHA-256：`2b4a98c2dff7e6a34b952350640441b3d5359cefab99f7bcb134784c0cc8190d`。2026-10-06 00:25:08无线覆盖用户手机成功；包管理器版本、已安装`base.apk`摘要与应用前台状态已回读核对，保留应用数据。安装记录只证明制品一致，当前不据此声称患者或TalkBack验证完成。10-05的模拟器及旧候选安装证据仍分别保留。评分及`verified`／`release_ready`状态保持原值，未连接测试／生产服务器，没有模型API请求或发布／CDN上传。
 
 ## 下一轮真人与设备验收
 
