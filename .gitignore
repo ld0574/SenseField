@@ -153,3 +153,21 @@ android/app/src/main/assets/sensevoice/tokens.txt
 # Generated assistant credentials and backend private keys are server-local.
 deploy/assistant/runtime/
 !docs/development/assistant-online-deployment.md
+# ===== feature/sensefield-dev 本地工作区追加规则 =====
+node_modules/
+bower_components/
+playwright-report/
+test-results/
+allure-results/
+allure-report/
+
+# Agent 工具内部文件
+.arts/
+.codeartsdoer/
+.merkle-snapshot.json
+
+# 训练数据集与训练过程产物（权重已由上方 *.pt/*.pth 规则排除）
+research/board-recognition/data/synth/
+research/board-recognition/models/yolo_dataset/
+research/board-recognition/models/yolo_runs/
+research/board-recognition/data/real/

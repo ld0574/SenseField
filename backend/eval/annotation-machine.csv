@@ -1,0 +1,12 @@
+frame_id,场景说明,正确操作(next_action 选项名),announce_rank(0-4),danger_level(0-3),should_interrupt(yes/no),机器参考,人工确认,备注
+（机器推导标注：仅用 state 内嵌 potential_matches 事实推导 next_action；主观项留空不参与寻优。生成：gen-frames.js 构造逻辑。）
+m3-with-01,棋盘含已知可消除组合（state 内 potential_matches 可机器推导参考）,announce_match,,,,state 自带 potential_matches,机器推导,事实型标注，待领导抽查
+m3-with-02,棋盘含已知可消除组合（state 内 potential_matches 可机器推导参考）,announce_match,,,,state 自带 potential_matches,机器推导,事实型标注，待领导抽查
+m3-with-03,棋盘含已知可消除组合（state 内 potential_matches 可机器推导参考）,announce_match,,,,state 自带 potential_matches,机器推导,事实型标注，待领导抽查
+m3-with-04,棋盘含已知可消除组合（state 内 potential_matches 可机器推导参考）,announce_match,,,,state 自带 potential_matches,机器推导,事实型标注，待领导抽查
+m3-with-05,棋盘含已知可消除组合（state 内 potential_matches 可机器推导参考）,announce_match,,,,state 自带 potential_matches,机器推导,事实型标注，待领导抽查
+m3-with-06,棋盘含已知可消除组合（state 内 potential_matches 可机器推导参考）,announce_match,,,,state 自带 potential_matches,机器推导,事实型标注，待领导抽查
+m3-with-07,棋盘含已知可消除组合（state 内 potential_matches 可机器推导参考）,announce_match,,,,state 自带 potential_matches,机器推导,事实型标注，待领导抽查
+m3-with-08,棋盘含已知可消除组合（state 内 potential_matches 可机器推导参考）,announce_match,,,,state 自带 potential_matches,机器推导,事实型标注，待领导抽查
+m3-with-09,棋盘含已知可消除组合（state 内 potential_matches 可机器推导参考）,announce_match,,,,state 自带 potential_matches,机器推导,事实型标注，待领导抽查
+m3-with-10,棋盘含已知可消除组合（state 内 potential_matches 可机器推导参考）,announce_match,,,,state 自带 potential_matches,机器推导,事实型标注，待领导抽查
