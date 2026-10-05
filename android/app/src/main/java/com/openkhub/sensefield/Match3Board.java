@@ -7,10 +7,10 @@ import java.util.List;
  * 消消乐棋盘纯逻辑：颜色矩阵 → 三连检测 + 相邻交换枚举。
  * 只依赖 char[][]，可在 JVM 单元测试中覆盖（不碰 Bitmap/Android API）。
  * 字母表：R O Y G B P 基础动物；1-9/a-z 玩家学过的特殊棋子（见 Match3Sampler.assignCodes）；
- * ' ' 空格；'.' 未识别。播报叫法一律走 Match3Coach.pieceName，本类不再自带词表。
+ * ' ' 空格；'.' 未识别。播报叫法一律走 Match3Coach.pieceName，本类不再自带词表；
+ * 哪些字符算「一颗棋子」一律走 Match3Sampler.isUnreadable，本类不另立名单。
  */
 final class Match3Board {
-    static final String PIECE_COLORS = "ROYGBP";
 
     static final class Run {
         final int row;
@@ -45,8 +45,13 @@ final class Match3Board {
     private Match3Board() {
     }
 
+    /**
+     * 能参与三连的格 = 既不是空格也不是未识别。
+     * 以前这里写死只认 6 个基础色字母，玩家学过的特殊棋子（1-9/a-z）在走法枚举里等于不存在，
+     * 提示永远不会推荐涉及特效棋子的交换。同字母即同棋子，特殊棋子按自己的字母匹配。
+     */
     static boolean isPiece(char c) {
-        return PIECE_COLORS.indexOf(c) >= 0;
+        return !Match3Sampler.isUnreadable(c);
     }
 
     /** 横纵两个方向的三连及以上（同一长连只报一次，起点为其最左/最上格）。 */
