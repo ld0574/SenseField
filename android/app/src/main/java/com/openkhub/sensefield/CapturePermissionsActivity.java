@@ -72,10 +72,12 @@ public final class CapturePermissionsActivity extends Activity {
         UiKit.add(screen, screenStatus, 10);
         capture = button(screen, "授权截屏并开始");
         capture.setOnClickListener(view -> requestCapture());
+        SettingHelp.add(this, screen, "capture_screen", 8);
 
         LinearLayout notifications = card(content, "运行通知");
         notificationStatus = UiKit.body(this, "");
         UiKit.add(notifications, notificationStatus, 10);
+        SettingHelp.add(this, notifications, "capture_notifications", 8);
         button(notifications, "授权运行通知").setOnClickListener(view -> {
             if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(
                     Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -90,6 +92,7 @@ public final class CapturePermissionsActivity extends Activity {
         LinearLayout overlay = card(content, "置顶视觉提示");
         overlayStatus = UiKit.body(this, "");
         UiKit.add(overlay, overlayStatus, 6);
+        SettingHelp.add(this, overlay, "capture_overlay", 8);
         CheckBox visual = new CheckBox(this);
         visual.setText("允许使用视觉提示");
         visual.setTextSize(22);
@@ -102,6 +105,7 @@ public final class CapturePermissionsActivity extends Activity {
             refreshPermissions();
         });
         UiKit.add(overlay, visual, 6);
+        SettingHelp.add(this, overlay, "capture_visual", 8);
         button(overlay, "授权置顶显示").setOnClickListener(view -> startActivity(new Intent(
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 Uri.parse("package:" + getPackageName()))));
@@ -109,11 +113,14 @@ public final class CapturePermissionsActivity extends Activity {
         LinearLayout battery = card(content, "后台省电策略");
         batteryStatus = UiKit.body(this, "");
         UiKit.add(battery, batteryStatus, 10);
+        SettingHelp.add(this, battery, "capture_battery", 8);
         button(battery, "设置后台省电策略").setOnClickListener(view -> startActivity(new Intent(
                 Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 Uri.parse("package:" + getPackageName()))));
+        SettingHelp.add(this, battery, "capture_battery_app", 8);
         button(battery, "系统省电优化设置").setOnClickListener(view -> startActivity(
                 new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)));
+        SettingHelp.add(this, battery, "capture_battery_system", 8);
         UiKit.add(battery, UiKit.body(this,
                 "小米手机还需检查电量与性能，允许此应用后台运行；各品牌设置可能不同。"), 0);
 

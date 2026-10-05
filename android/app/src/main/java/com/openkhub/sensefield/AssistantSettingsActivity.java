@@ -26,10 +26,12 @@ public final class AssistantSettingsActivity extends Activity {
         LinearLayout page = UiKit.page(this); scroll.addView(page);
         UiKit.addBrandHeader(page, "语音与画面助手");
         UiKit.add(page, UiKit.heading(this, "实验助手设置"), 12);
+        SettingHelp.add(this, page, "assistant_group", 8);
         UiKit.add(page, UiKit.body(this, "实时预警和中文语音识别都在手机本地运行，支持 Android 10 及以上。进入游戏前开始辅助，等待离线识别就绪后即可直接说话。请戴耳机并确认游戏声音也在耳机中；游戏开麦期间助手会暂停语音输入。画面问答需要配置画面服务连接。"), 12);
         AssistantSettings settings = AssistantSettings.from(this);
         endpoint = field(page, "画面服务地址（HTTPS）", settings.endpoint, false);
         token = field(page, "体验连接码", settings.token, true);
+        SettingHelp.add(this, page, "assistant_connection", 8);
         if (!BuildConfig.ASSISTANT_DEFAULT_ENDPOINT.isEmpty()) {
             button(page, "使用听野线上服务").setOnClickListener(v -> {
                 String onlineEndpoint = BuildConfig.ASSISTANT_DEFAULT_ENDPOINT;
@@ -54,16 +56,24 @@ public final class AssistantSettingsActivity extends Activity {
         });
         consentSwitch(page, "连续语音（可以插话）", AssistantSettings.VOICE, AssistantSettings.AUDIO_CONSENT,
                 "听野会持续检测说话，在你说完后离线识别。原始语音只在手机内存里临时处理，不上传、不保存音频文件。第一次开启需要等待本地模型加载。\n\n请戴耳机，并确认游戏声音也在耳机里。听野只能检查自己的声音路线，无法确认游戏的实际路线；蓝牙音箱和外放不适合此实验。普通蓝牙耳机连接时，识别可能使用手机麦克风。游戏开麦、其他录音活动或路线不明时，助手暂停输入。\n\n开启画面理解后，问题文字和授权画面会发送到画面服务及其视觉模型。背景人声也可能被识别成问题，请留意周围环境。", true);
+        SettingHelp.add(this, page, "assistant_voice", 8);
         consentSwitch(page, "画面理解", AssistantSettings.VISION, AssistantSettings.IMAGE_CONSENT,
                 "开启后，提问会把当前共享画面和最多两张最近画面的缩图发送到画面服务及其配置的视觉模型；低频主动观察只发送当前画面。助手可以结合可见信息解释装备、选人和对战建议，信息不足时会说明。授权画面可能包含游戏聊天或系统通知，请留意共享范围。助手近期画面只缓存在内存，诊断截图由独立设置管理；第三方服务按其条款处理数据。", false);
+        SettingHelp.add(this, page, "assistant_vision", 8);
         simpleSwitch(page, "低频主动描述（需要画面理解）", AssistantSettings.PROACTIVE);
+        SettingHelp.add(this, page, "assistant_proactive", 8);
         button(page, "授权左侧小圆点").setOnClickListener(v -> startActivity(new Intent(
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()))));
         UiKit.add(page, UiKit.body(this, "小圆点默认收起，点击后展开记录。没有置顶权限时仍可使用语音，并从运行通知暂停或标记问题。"), 14);
+        SettingHelp.add(this, page, "assistant_overlay", 8);
         UiKit.add(page, UiKit.heading(this, "呈现层实验（默认关闭）"), 14);
+        SettingHelp.add(this, page, "presentation_group", 8);
         simpleSwitch(page, "左右双耳线索（需双耳耳机）", "presentation_spatial");
+        SettingHelp.add(this, page, "presentation_spatial", 8);
         simpleSwitch(page, "距离强度与节奏震动", "presentation_distance_haptic");
+        SettingHelp.add(this, page, "presentation_haptic", 8);
         simpleSwitch(page, "两字方位提示", "near_two_word");
+        SettingHelp.add(this, page, "presentation_two_word", 8);
         UiKit.add(page, UiKit.body(this, "这些模式尚需玩家对照验证，开启双耳线索后请重新开始辅助。左右双耳线索不提供完整 HRTF；普通手机的单马达不提供左右分离震动。"), 12);
         button(page, "返回").setOnClickListener(v -> finish());
         setContentView(scroll);

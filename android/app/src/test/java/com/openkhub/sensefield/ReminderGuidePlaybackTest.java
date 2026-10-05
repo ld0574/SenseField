@@ -81,6 +81,20 @@ public final class ReminderGuidePlaybackTest {
         assertEquals(1, endings.size());
     }
 
+    @Test public void repeatingOneSampleNeverAdvancesIntoAnotherItem() {
+        ReminderGuide.Step sample = steps.stream().filter(step -> step.sample).findFirst().get();
+        playback.start(Collections.singletonList(sample));
+        ReminderGuidePlayback.Completion old = output.completions.get(0);
+        playback.start(Collections.singletonList(sample));
+        old.finish(true);
+        assertTrue(playback.isRunning());
+        assertEquals(2, output.played.size());
+        output.completions.get(1).finish(true);
+        assertFalse(playback.isRunning());
+        assertEquals(Collections.singletonList(true), endings);
+        assertEquals(2, output.played.size());
+    }
+
     private static final class FakeOutput implements ReminderGuidePlayback.Output {
         final List<ReminderGuide.Step> played = new ArrayList<>();
         final List<ReminderGuidePlayback.Completion> completions = new ArrayList<>();

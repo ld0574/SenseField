@@ -3,6 +3,7 @@ package com.openkhub.sensefield;
 import android.app.Activity;
 import android.content.Context;
 import android.content.res.ColorStateList;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -10,10 +11,12 @@ import android.graphics.drawable.RippleDrawable;
 import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
+import android.util.TypedValue;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.FrameLayout;
 
 /** Small platform-only visual system shared by the app's screens. */
 final class UiKit {
@@ -57,7 +60,27 @@ final class UiKit {
     }
 
     static LinearLayout page(Context context) {
-        LinearLayout page = vertical(context);
+        LinearLayout page = new LinearLayout(context) {
+            @Override protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                int mode = MeasureSpec.getMode(widthMeasureSpec);
+                if (mode != MeasureSpec.UNSPECIFIED) {
+                    int width = PageGeometry.readingWidthPx(MeasureSpec.getSize(widthMeasureSpec),
+                            getResources().getDisplayMetrics().density);
+                    widthMeasureSpec = MeasureSpec.makeMeasureSpec(width, mode);
+                }
+                super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+            }
+
+            @Override protected void onAttachedToWindow() {
+                super.onAttachedToWindow();
+                if (getLayoutParams() instanceof FrameLayout.LayoutParams) {
+                    FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) getLayoutParams();
+                    params.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+                    setLayoutParams(params);
+                }
+            }
+        };
+        page.setOrientation(LinearLayout.VERTICAL);
         int inset = dp(context, 20);
         page.setPadding(inset, dp(context, 20), inset, dp(context, 28));
         return page;
@@ -106,11 +129,28 @@ final class UiKit {
 
     static TextView heading(Context context, CharSequence value) {
         TextView title = text(context, value, 22, INK, true);
+        title.setAccessibilityHeading(true);
         return title;
     }
 
     static TextView body(Context context, CharSequence value) {
         return text(context, value, 20, MUTED, false);
+    }
+
+    /** Continuous reading only: controls and live status retain the user's full font scale. */
+    static TextView readingBody(Context context, CharSequence value, float sp) {
+        TextView text = text(context, value, sp, INK, false);
+        Configuration configuration = context.getResources().getConfiguration();
+        if (configuration.fontScale > 1.5f) {
+            Configuration reading = new Configuration(configuration);
+            reading.fontScale = 1.5f;
+            Context readingContext = context.createConfigurationContext(reading);
+            // Use Android's SP conversion, including its nonlinear large-font scaling.
+            text.setTextSize(TypedValue.COMPLEX_UNIT_PX, TypedValue.applyDimension(
+                    TypedValue.COMPLEX_UNIT_SP, sp,
+                    readingContext.getResources().getDisplayMetrics()));
+        }
+        return text;
     }
 
     static void add(LinearLayout parent, View child, float bottomDp) {
@@ -189,7 +229,7 @@ final class UiKit {
         labels.addView(text(context, "听野", 20, INK, true));
         labels.addView(text(context, contextLabel, 20, MUTED, false));
         row.addView(labels, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         add(parent, row, 24);
     }
 

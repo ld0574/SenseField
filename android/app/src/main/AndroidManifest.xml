@@ -59,6 +59,8 @@
         <activity android:name=".DiagnosticsActivity" android:exported="false" />
         <activity android:name=".AssistantSettingsActivity" android:exported="false" />
         <activity android:name=".ReminderGuideActivity" android:exported="false" />
+        <activity android:name=".SettingHelpActivity" android:exported="false" />
+        <activity android:name=".HapticSettingsActivity" android:exported="false" />
         <activity
             android:name=".AppSettingsActivity"
             android:exported="false" />

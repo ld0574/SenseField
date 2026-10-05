@@ -38,15 +38,32 @@ final class ReminderGuide {
         final int tone;
         final float pan;
         final boolean sample;
+        final float distance;
+        final float urgency;
 
         private Step(String title, String text, int channel, int tone,
                      float pan, boolean sample) {
+            this(title, text, channel, tone, pan, sample, Float.NaN, 0f);
+        }
+
+        private Step(String title, String text, int channel, int tone,
+                     float pan, boolean sample, float distance, float urgency) {
             this.title = title;
             this.text = text;
             this.channel = channel;
             this.tone = tone;
             this.pan = pan;
             this.sample = sample;
+            this.distance = distance;
+            this.urgency = urgency;
+        }
+
+        Step withText(String value) {
+            return new Step(title, value, channel, tone, pan, sample, distance, urgency);
+        }
+
+        Step withRange(float value, float urgency) {
+            return new Step(title, text, channel, tone, pan, sample, value, urgency);
         }
 
         CueRequest request(String id, long now) {
@@ -55,7 +72,8 @@ final class ReminderGuide {
                     sample ? SAMPLE_KIND : NARRATION_KIND,
                     nearSample ? CueRequest.Category.NEAR_ZONE : CueRequest.Category.SYSTEM,
                     80, now, now + (sample ? 2000 : NARRATION_TIMEOUT_MS), channel,
-                    tone, 0, 0, channel == CueRequest.CHANNEL_SPEECH ? text : null, pan);
+                    tone, 0, 0, channel == CueRequest.CHANNEL_SPEECH ? text : null,
+                    pan, distance, urgency, -1, () -> true);
         }
     }
 
@@ -151,6 +169,10 @@ final class ReminderGuide {
 
     private static void sample(List<Step> steps, String title, int channel,
                                int tone, String speech, float pan) {
-        steps.add(new Step(title, speech, channel, tone, pan, true));
+        steps.add(sampleStep(title, channel, tone, speech, pan));
+    }
+
+    static Step sampleStep(String title, int channel, int tone, String speech, float pan) {
+        return new Step(title, speech, channel, tone, pan, true);
     }
 }

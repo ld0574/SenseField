@@ -39,13 +39,16 @@ final class CuePlayer implements CueDispatcher.Renderer {
     static final String PREF_TTS_ENGINE = "cue_tts_engine";
     static final String PREF_TTS_RATE = "cue_speech_rate_percent";
     static final int DEFAULT_TTS_RATE_PERCENT = 180;
-    static final long NEAR_HAPTIC_ON_MS = 100;
-    static final long NEAR_HAPTIC_GAP_MS = 140;
+    static final long NEAR_HAPTIC_ON_MS = HapticPolicy.NEAR_DEFAULT_ON_MS;
+    static final long NEAR_HAPTIC_GAP_MS = HapticPolicy.NEAR_DEFAULT_GAP_MS;
     private static final String TAG = "MapAssistAudio";
     private static final long TONE_DURATION_MS = 90;
     private static final long SPEECH_TIMEOUT_MS = 4000;
     private static final long ASSISTANT_SYNTHESIS_TIMEOUT_MS = 15_000;
     private static final long ASSISTANT_PLAYBACK_DRAIN_TIMEOUT_MS = 2_000;
+    private static final Object HAPTIC_OWNER_LOCK = new Object();
+    /** Vibrator.cancel() is process-wide for this app, so only the latest CuePlayer may cancel. */
+    private static CuePlayer activeHapticOwner;
 
     private final Context context;
     private final SoundPool pool;
@@ -651,6 +654,39 @@ final class CuePlayer implements CueDispatcher.Renderer {
         synchronized (audioLock) {
             return !closed && SystemClock.elapsedRealtime() <= request.expiresAtMs
                     && vibrateEffect(request);
+        }
+    }
+
+    /** Duration of the configured effect on this device, for preview stop timers. */
+    long hapticDurationMs(CueRequest request) {
+        try {
+            Vibrator vibrator = defaultVibrator();
+            if (vibrator == null || !vibrator.hasVibrator()) return 0;
+            android.content.SharedPreferences preferences = GameProfile.settings(context);
+            HapticPolicy.Pattern pattern = HapticPolicy.create(request,
+                    PresentationAudioPolicy.from(preferences).distanceHaptic,
+                    vibrator.hasAmplitudeControl(),
+                    preferences.getString(HapticPolicy.PREF_MODE, HapticPolicy.MODE_ORIGINAL),
+                    preferences.getString(HapticPolicy.PREF_STRENGTH,
+                            HapticPolicy.STRENGTH_SYSTEM));
+            return pattern.durationMs();
+        } catch (RuntimeException error) {
+            Log.w(TAG, "Could not estimate accessibility haptic duration", error);
+            return 0;
+        }
+    }
+
+    /** Stops a haptic only while this player still owns the app's latest request. */
+    void cancelHaptics() {
+        synchronized (HAPTIC_OWNER_LOCK) {
+            if (activeHapticOwner != this) return;
+            activeHapticOwner = null;
+            try {
+                Vibrator vibrator = defaultVibrator();
+                if (vibrator != null) vibrator.cancel();
+            } catch (RuntimeException error) {
+                Log.w(TAG, "Could not cancel accessibility haptic", error);
+            }
         }
     }
 
@@ -1329,66 +1365,52 @@ final class CuePlayer implements CueDispatcher.Renderer {
 
     private boolean vibrateEffect(CueRequest request) {
         try {
-            Vibrator vibrator;
-            if (android.os.Build.VERSION.SDK_INT >= 31) {
-                VibratorManager manager = context.getSystemService(VibratorManager.class);
-                vibrator = manager == null ? null : manager.getDefaultVibrator();
-            } else {
-                vibrator = context.getSystemService(Vibrator.class);
-            }
+            Vibrator vibrator = defaultVibrator();
             if (vibrator == null || !vibrator.hasVibrator()) {
                 Log.w(TAG, "HapticRequest unavailable=no_vibrator cueId=" + request.cueId);
                 return false;
             }
-            int direction = request.hapticCode;
-            long[] pattern;
-            int[] amplitudes = null;
-            if (request.category == CueRequest.Category.NEAR_ZONE
-                    && PresentationAudioPolicy.from(GameProfile.settings(context)).distanceHaptic
-                    && Float.isFinite(request.distance)) {
-                if (vibrator.hasAmplitudeControl()) {
-                    int amplitude = PresentationAudioPolicy.distanceHapticAmplitude(
-                            request.distance, request.urgency);
-                    pattern = new long[]{0, NEAR_HAPTIC_ON_MS, NEAR_HAPTIC_GAP_MS,
-                            NEAR_HAPTIC_ON_MS};
-                    amplitudes = new int[]{0, amplitude, 0, amplitude};
-                } else {
-                    long onMs = PresentationAudioPolicy.distanceHapticDurationMs(
-                            request.distance, request.urgency);
-                    pattern = new long[]{0, onMs, NEAR_HAPTIC_GAP_MS, onMs};
-                }
-            } else if (request.category == CueRequest.Category.NEAR_ZONE)
-                pattern = new long[]{0, NEAR_HAPTIC_ON_MS, NEAR_HAPTIC_GAP_MS,
-                        NEAR_HAPTIC_ON_MS};
-            else if (direction == 1) pattern = new long[]{0, 35, 45, 80};
-            else if (direction == 2) pattern = new long[]{0, 80, 45, 35};
-            else if (direction == 3) pattern = new long[]{0, 35};
-            else if (direction == 4) pattern = new long[]{0, 35, 45, 35};
-            else pattern = new long[]{0, 45};
-            VibrationEffect effect = amplitudes == null
-                    ? VibrationEffect.createWaveform(pattern, -1)
-                    : VibrationEffect.createWaveform(pattern, amplitudes, -1);
+            android.content.SharedPreferences preferences = GameProfile.settings(context);
+            HapticPolicy.Pattern pattern = HapticPolicy.create(request,
+                    PresentationAudioPolicy.from(preferences).distanceHaptic,
+                    vibrator.hasAmplitudeControl(),
+                    preferences.getString(HapticPolicy.PREF_MODE, HapticPolicy.MODE_ORIGINAL),
+                    preferences.getString(HapticPolicy.PREF_STRENGTH,
+                            HapticPolicy.STRENGTH_SYSTEM));
+            VibrationEffect effect = pattern.amplitudes == null
+                    ? VibrationEffect.createWaveform(pattern.timingsMs, -1)
+                    : VibrationEffect.createWaveform(pattern.timingsMs,
+                    pattern.amplitudes, -1);
             // Untagged short effects become TOUCH and are silently suppressed
             // when touch feedback is off. These are accessibility cues, not
             // taps; keep all system interruption settings in force.
-            if (android.os.Build.VERSION.SDK_INT >= 33) {
-                vibrator.vibrate(effect, VibrationAttributes.createForUsage(
-                        VibrationAttributes.USAGE_ACCESSIBILITY));
-            } else {
-                vibrator.vibrate(effect, new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+            synchronized (HAPTIC_OWNER_LOCK) {
+                if (android.os.Build.VERSION.SDK_INT >= 33) {
+                    vibrator.vibrate(effect, VibrationAttributes.createForUsage(
+                            VibrationAttributes.USAGE_ACCESSIBILITY));
+                } else {
+                    vibrator.vibrate(effect, new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+                }
+                activeHapticOwner = this;
             }
-            long durationMs = 0;
-            for (long part : pattern) durationMs += part;
             // The API is void: submission is not proof the user felt vibration.
             Log.i(TAG, "HapticRequest cueId=" + request.cueId
-                    + " usage=ACCESSIBILITY durationMs=" + durationMs);
+                    + " usage=ACCESSIBILITY durationMs=" + pattern.durationMs());
             return true;
         } catch (RuntimeException error) {
             Log.w(TAG, "Could not request accessibility haptic", error);
             return false;
         }
+    }
+
+    private Vibrator defaultVibrator() {
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            VibratorManager manager = context.getSystemService(VibratorManager.class);
+            return manager == null ? null : manager.getDefaultVibrator();
+        }
+        return context.getSystemService(Vibrator.class);
     }
 
     void close() {
@@ -1411,6 +1433,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
             }
             cancelSpatialTones(null);
         }
+        cancelHaptics();
         logAssistantDrops(dropped);
         if (voice != null) {
             synchronized (assistantTtsSubmissionLock) {

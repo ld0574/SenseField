@@ -20,9 +20,11 @@ import org.json.JSONException;
 import java.io.IOException;
 import java.util.List;
 
-/** A skippable spoken introduction before consent, separate from live capture output. */
+/** Silent learning directory with separate narration and individual reminder previews. */
 public final class ReminderGuideActivity extends Activity {
     static final String EXTRA_START = "start_after_reminder_guide";
+    static final String EXTRA_ITEM = "reminder_guide_item";
+    static final String EXTRA_FULL = "reminder_guide_full";
     private static final int REQUEST_START = 1201;
     private static final CueDispatcher.Policy GUIDE_POLICY = new CueDispatcher.Policy() {
         @Override public boolean categoryEnabled(CueRequest.Category category) { return true; }
@@ -51,9 +53,9 @@ public final class ReminderGuideActivity extends Activity {
                 @Override public void onEnded(boolean success) {
                     stopExplanation();
                     status.setText(success ? hapticUnavailable
-                            ? "说明已播完。手机未能请求震动，可使用语音和短音，并到设置中检查震动。"
-                            : "说明已播完。可以重听，也可以继续。"
-                            : "说明未能播完。请检查媒体音量和中文语音引擎，再重听。");
+                            ? "手机未能请求振动，请检查设备及系统振动设置。"
+                            : "已播放完。可以再次播放，也可以返回列表。"
+                            : "未能播放完。请检查音量或中文语音引擎，再重试。");
                 }
             });
     private List<ReminderGuide.Step> steps;
@@ -77,7 +79,7 @@ public final class ReminderGuideActivity extends Activity {
         UiKit.configureWindow(this);
         setVolumeControlStream(AudioManager.STREAM_MUSIC);
         startAfterGuide = getIntent().getBooleanExtra(EXTRA_START, false);
-        autoPending = state == null;
+        autoPending = state == null && getIntent().hasExtra(EXTRA_ITEM);
         authorizationInFlight = state != null && state.getBoolean("authorization_in_flight", false);
     }
 
@@ -89,51 +91,89 @@ public final class ReminderGuideActivity extends Activity {
         LinearLayout content = UiKit.page(this);
         scroll.addView(content);
         UiKit.addBrandHeader(content, "王者荣耀");
-        TextView title = UiKit.text(this, "提醒说明与试听", 32, UiKit.INK, true);
+        boolean full = getIntent().getBooleanExtra(EXTRA_FULL, false);
+        String itemId = getIntent().getStringExtra(EXTRA_ITEM);
+        boolean detail = full || itemId != null;
+        TextView title = UiKit.text(this, detail ? full ? "完整提醒说明" : "提醒试听" : "提醒说明与试听", 32, UiKit.INK, true);
         title.setAccessibilityHeading(true);
         UiKit.add(content, title, 12);
-        UiKit.add(content, body("说明对应当前开启的提示。这里的声音和震动都是示例。"), 18);
-        status = body("可以先听说明，也可以直接开始。");
+        status = body(detail ? "可单独播放和重听。这里都是示例。" : "选择想了解的提醒，可以单独反复试听。列表对应当前开启的提示。");
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         UiKit.add(content, status, 18);
+        repeat = null;
+        stop = null;
+        proceed = null;
+        steps = null;
         if (startAfterGuide) {
-            proceed = button(content, "继续开始（可跳过说明）", true);
+            proceed = button(content, "继续开始（可跳过试听）", true);
             proceed.setOnClickListener(view -> continueStart());
         }
-        repeat = button(content, "重听说明", false);
-        repeat.setOnClickListener(view -> startExplanation());
-        stop = button(content, "停止朗读", false);
-        stop.setEnabled(false);
-        stop.setOnClickListener(view -> {
-            stopExplanation();
-            status.setText("已停止朗读。可以重听，也可以继续。");
-        });
-        String error = null;
         try {
-            steps = currentSteps();
-            for (ReminderGuide.Step step : steps) {
-                if (step.sample) continue;
-                LinearLayout card = UiKit.card(this);
-                TextView heading = UiKit.text(this, step.title, 26, UiKit.INK, true);
-                heading.setAccessibilityHeading(true);
-                UiKit.add(card, heading, 8);
-                UiKit.add(card, body(step.text), 0);
-                UiKit.add(content, card, 14);
+            ReminderGuide.Outputs outputs = currentOutputs();
+            PresentationAudioPolicy policy = PresentationAudioPolicy.from(GameProfile.settings(this));
+            List<ReminderGuideCatalog.Item> items = ReminderGuideCatalog.build(outputs, policy.nearTwoWord, policy.distanceHaptic);
+            if (!detail) {
+                button(content, "完整说明").setOnClickListener(view -> startActivity(
+                        new Intent(this, ReminderGuideActivity.class).putExtra(EXTRA_FULL, true)));
+                if (items.isEmpty()) UiKit.add(content, body("当前没有可试听的提示，请到提示偏好中检查开启的通道与事件。"), 12);
+                for (ReminderGuideCatalog.Item item : items) {
+                    Button entry = button(content, item.title);
+                    entry.setContentDescription(item.title + "，打开说明与单项试听");
+                    entry.setOnClickListener(view -> startActivity(new Intent(this, ReminderGuideActivity.class)
+                            .putExtra(EXTRA_ITEM, item.id)));
+                }
+            } else if (full) {
+                steps = ReminderGuideCatalog.fullGuide(outputs, policy.nearTwoWord);
+                playbackControls(content, "朗读完整说明");
+                for (ReminderGuide.Step step : steps) {
+                    if (step.sample) continue;
+                    LinearLayout card = UiKit.card(this);
+                    TextView heading = UiKit.heading(this, step.title);
+                    UiKit.add(card, heading, 8);
+                    UiKit.add(card, UiKit.readingBody(this, step.text, 24), 0);
+                    UiKit.add(content, card, 14);
+                }
+            } else {
+                ReminderGuideCatalog.Item item = ReminderGuideCatalog.find(items, itemId);
+                if (item == null) {
+                    autoPending = false;
+                    status.setText("这项提醒当前未开启，请返回列表或检查提示偏好。");
+                } else {
+                    title.setText(item.title);
+                    UiKit.add(content, UiKit.readingBody(this, item.explanation, 24), 18);
+                    steps = item.samples;
+                    playbackControls(content, "播放示例／再次播放");
+                    if (steps.get(0).channel == CueRequest.CHANNEL_HAPTIC)
+                        button(content, "震感与节奏设置").setOnClickListener(view ->
+                                startActivity(new Intent(this, HapticSettingsActivity.class)));
+                }
             }
         } catch (IOException | JSONException failure) {
-            steps = null;
-            error = "无法读取当前提醒配置，请到声音与语音设置中检查。";
+            autoPending = false;
+            status.setText("无法读取当前提醒配置，请到提示配置中检查。");
             Log.w("ReminderGuide", "Could not resolve guide outputs", failure);
         }
-        button(content, "声音与语音设置", false).setOnClickListener(view ->
+        button(content, "声音与提示配置").setOnClickListener(view ->
                 startActivity(new Intent(this, GameTuningActivity.class)));
-        button(content, "返回", false).setOnClickListener(view -> finish());
+        button(content, detail ? "返回试听列表" : "返回").setOnClickListener(view -> finish());
         setContentView(scroll);
-        if (error != null) status.setText(error);
         refreshAvailability();
     }
 
-    private List<ReminderGuide.Step> currentSteps() throws IOException, JSONException {
+    private Button button(LinearLayout parent, String text) { return button(parent, text, false); }
+
+    private void playbackControls(LinearLayout content, String label) {
+        repeat = button(content, label, true);
+        repeat.setOnClickListener(view -> startExplanation());
+        stop = button(content, "停止播放", false);
+        stop.setEnabled(false);
+        stop.setOnClickListener(view -> {
+            stopExplanation();
+            status.setText("已停止。可以再次播放当前示例。");
+        });
+    }
+
+    private ReminderGuide.Outputs currentOutputs() throws IOException, JSONException {
         GameProfile profile = GameProfile.load(this);
         CueSettings settings = new CueSettings(this);
         int near = profile.relation != null && settings.categoryEnabled(CueRequest.Category.NEAR_ZONE)
@@ -143,28 +183,23 @@ public final class ReminderGuideActivity extends Activity {
                         GameProfile.PREF_VISION_MEMORY, GameProfile.DEFAULT_VISION_MEMORY),
                         settings.categoryEnabled(CueRequest.Category.VISION_MEMORY))
                 && NearZoneRouting.farAppearAudible(profile.relation != null,
-                        settings.categoryEnabled(CueRequest.Category.NEAR_ZONE),
-                        settings.farAppearPreference());
+                        settings.categoryEnabled(CueRequest.Category.NEAR_ZONE), settings.farAppearPreference());
         int appearance = appearances ? settings.enabledChannels(CueRequest.Category.VISION_MEMORY)
                 & (CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_HAPTIC
                     | (settings.speakAppear() ? CueRequest.CHANNEL_SPEECH : 0)) : 0;
-        int playerChannels = profile.playerLife != null
-                && settings.categoryEnabled(CueRequest.Category.PLAYER_STATE)
+        int playerChannels = profile.playerLife != null && settings.categoryEnabled(CueRequest.Category.PLAYER_STATE)
                 ? settings.enabledChannels(CueRequest.Category.PLAYER_STATE)
                         & (CueRequest.CHANNEL_SPEECH | CueRequest.CHANNEL_HAPTIC) : 0;
         int danger = profile.flags[3] != 0 && settings.categoryEnabled(CueRequest.Category.DANGER)
-                ? settings.enabledChannels(CueRequest.Category.DANGER)
-                        & CueRouting.directCueRequestedChannels(3, 0) : 0;
-        boolean peripheral = profile.flags[0] != 0
-                && settings.categoryEnabled(CueRequest.Category.PERIPHERAL_THREAT)
-                && (settings.enabledChannels(CueRequest.Category.PERIPHERAL_THREAT)
-                        & CueRequest.CHANNEL_TONE) != 0;
+                ? settings.enabledChannels(CueRequest.Category.DANGER) & CueRouting.directCueRequestedChannels(3, 0) : 0;
+        boolean peripheral = profile.flags[0] != 0 && settings.categoryEnabled(CueRequest.Category.PERIPHERAL_THREAT)
+                && (settings.enabledChannels(CueRequest.Category.PERIPHERAL_THREAT) & CueRequest.CHANNEL_TONE) != 0;
         boolean systemSpeech = settings.categoryEnabled(CueRequest.Category.SYSTEM)
-                && (settings.enabledChannels(CueRequest.Category.SYSTEM)
-                        & CueRequest.CHANNEL_SPEECH) != 0;
-        return ReminderGuide.build(new ReminderGuide.Outputs(near, appearance, playerChannels,
-                danger, peripheral, systemSpeech));
+                && (settings.enabledChannels(CueRequest.Category.SYSTEM) & CueRequest.CHANNEL_SPEECH) != 0;
+        return new ReminderGuide.Outputs(near, appearance, playerChannels, danger, peripheral, systemSpeech);
     }
+
+    private boolean liveRunning() { return CaptureService.isRunning() || Match3LiveService.isRunning(); }
 
     private TextView body(String text) { return UiKit.text(this, text, 24, UiKit.INK, false); }
 
@@ -178,22 +213,23 @@ public final class ReminderGuideActivity extends Activity {
     }
 
     private void refreshAvailability() {
-        boolean running = CaptureService.isRunning();
-        repeat.setEnabled(!running && steps != null);
+        boolean running = liveRunning();
+        if (repeat != null) repeat.setEnabled(!running && steps != null);
         if (proceed != null) proceed.setEnabled(!running && !authorizationInFlight);
         if (running) status.setText("辅助正在运行。请先在辅助首页停止，再听说明，避免错过游戏提醒。");
     }
 
     private void startExplanation() {
         stopExplanation();
-        if (steps == null || CaptureService.isRunning()) { refreshAvailability(); return; }
+        if (steps == null || liveRunning()) { refreshAvailability(); return; }
+        boolean audioNeeded = steps.stream().anyMatch(step -> step.channel != CueRequest.CHANNEL_HAPTIC);
         AudioManager audio = getSystemService(AudioManager.class);
-        if (audio == null || audio.getStreamVolume(AudioManager.STREAM_MUSIC) == 0
-                || audio.isStreamMute(AudioManager.STREAM_MUSIC)) {
+        if (audioNeeded && (audio == null || audio.getStreamVolume(AudioManager.STREAM_MUSIC) == 0
+                || audio.isStreamMute(AudioManager.STREAM_MUSIC))) {
             status.setText("媒体音量为 0 或已静音。请按音量＋调高，再重听说明。");
             return;
         }
-        if (GameProfile.settings(this).getInt("volume", 45) == 0) {
+        if (audioNeeded && GameProfile.settings(this).getInt("volume", 45) == 0) {
             status.setText("应用提示音量为 0。请到声音与语音设置中调高，再重听说明。");
             return;
         }
@@ -215,8 +251,11 @@ public final class ReminderGuideActivity extends Activity {
         repeat.setEnabled(false);
         stop.setEnabled(true);
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_NONE);
-        status.setText("正在准备中文语音……");
-        waitForVoice(generation, SystemClock.elapsedRealtime() + 3000);
+        boolean voiceNeeded = steps.stream().anyMatch(step -> step.channel == CueRequest.CHANNEL_SPEECH);
+        if (voiceNeeded) {
+            status.setText("正在准备中文语音……");
+            waitForVoice(generation, SystemClock.elapsedRealtime() + 3000);
+        } else playback.start(steps);
     }
 
     private void waitForVoice(int run, long until) {
@@ -234,7 +273,7 @@ public final class ReminderGuideActivity extends Activity {
     }
 
     private void playStep(ReminderGuide.Step step, ReminderGuidePlayback.Completion completion) {
-        if (CaptureService.isRunning() || dispatcher == null) { completion.finish(false); return; }
+        if (liveRunning() || dispatcher == null) { completion.finish(false); return; }
         int run = generation;
         pending = completion;
         pendingId = "guide:" + nextId++;
@@ -250,7 +289,7 @@ public final class ReminderGuideActivity extends Activity {
             String id = pendingId;
             handler.postDelayed(() -> {
                 if (run == generation && id.equals(pendingId)) finishStep(true);
-            }, 2 * CuePlayer.NEAR_HAPTIC_ON_MS + CuePlayer.NEAR_HAPTIC_GAP_MS + 200);
+            }, player.hapticDurationMs(step.request("duration", SystemClock.elapsedRealtime())) + 200);
         }
     }
 
@@ -266,16 +305,16 @@ public final class ReminderGuideActivity extends Activity {
         handler.removeCallbacksAndMessages(null);
         playback.stop();
         if (dispatcher != null) dispatcher.close();
-        if (player != null) player.close();
+        if (player != null) { player.cancelHaptics(); player.close(); }
         dispatcher = null;
         player = null;
-        if (repeat != null) repeat.setEnabled(steps != null && !CaptureService.isRunning());
+        if (repeat != null) repeat.setEnabled(steps != null && !liveRunning());
         if (stop != null) stop.setEnabled(false);
         if (status != null) status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
     }
 
     private void continueStart() {
-        if (CaptureService.isRunning() || authorizationInFlight) return;
+        if (liveRunning() || authorizationInFlight) return;
         stopExplanation();
         authorizationInFlight = true;
         proceed.setEnabled(false);
@@ -286,11 +325,11 @@ public final class ReminderGuideActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         render();
-        if (!autoPending || CaptureService.isRunning() || authorizationInFlight) return;
+        if (!autoPending || steps == null || liveRunning() || authorizationInFlight) return;
         autoPending = false;
         AccessibilityManager accessibility = getSystemService(AccessibilityManager.class);
         if (accessibility != null && accessibility.isTouchExplorationEnabled()) {
-            status.setText("正在使用屏幕阅读器。可点击“重听说明”，播放声音与震动示例。");
+            status.setText("正在使用屏幕阅读器，请点击“播放示例／再次播放”试听当前这一项。");
         } else startExplanation();
     }
 

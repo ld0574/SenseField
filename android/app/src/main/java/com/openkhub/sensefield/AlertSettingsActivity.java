@@ -30,6 +30,7 @@ public final class AlertSettingsActivity extends Activity {
 
         LinearLayout channels = UiKit.card(this);
         UiKit.add(channels, UiKit.heading(this, "输出方式"), 8);
+        SettingHelp.add(this, channels, "channel_group", 8);
         addToggle(channels, "视觉提示", "cue_channel_visual", true);
         addToggle(channels, "提示音", "cue_channel_tone", true);
         addToggle(channels, "语音", "cue_channel_speech", true);
@@ -38,6 +39,7 @@ public final class AlertSettingsActivity extends Activity {
 
         LinearLayout categories = UiKit.card(this);
         UiKit.add(categories, UiKit.heading(this, "事件提示"), 8);
+        SettingHelp.add(this, categories, "events_group", 8);
         addToggle(categories, "附近敌人提醒（小地图近区）", CueSettings.PREF_CATEGORY_NEAR, true);
         addToggle(categories, "附近敌人震动", CueSettings.PREF_NEAR_HAPTIC, true);
         addToggle(categories, "远处新敌人提示音", CueSettings.PREF_FAR_APPEAR, false);
@@ -69,5 +71,24 @@ public final class AlertSettingsActivity extends Activity {
             CueSettings.markCustom(preferences);
         });
         UiKit.add(content, toggle, 2);
+        SettingHelp.add(this, content, helpKey(key), 8);
+    }
+
+    private String helpKey(String key) {
+        switch (key) {
+            case "cue_channel_visual": return "channel_visual";
+            case "cue_channel_tone": return "channel_tone";
+            case "cue_channel_speech": return "channel_speech";
+            case "cue_channel_haptic": return "channel_haptic";
+            case CueSettings.PREF_CATEGORY_NEAR: return "event_near";
+            case CueSettings.PREF_NEAR_HAPTIC: return "event_near_haptic";
+            case CueSettings.PREF_FAR_APPEAR: return "event_far_appear";
+            case "cue_category_vision": return "event_new_target";
+            case "cue_category_peripheral": return "event_edge";
+            case "cue_category_danger": return "event_danger";
+            case "cue_category_player": return "event_player";
+            case "cue_category_system": return "event_system";
+            default: return "events_group";
+        }
     }
 }
