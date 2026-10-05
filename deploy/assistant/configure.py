@@ -24,7 +24,13 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--codes-output", type=Path, required=True)
     parser.add_argument("--runtime", choices=("container", "native"), default="container")
+    parser.add_argument("--transport", choices=("backend-tls", "local-proxy"))
     args = parser.parse_args()
+    # Containers retain their existing TLS backend contract. Native installs
+    # default to loopback HTTP behind the public HTTPS reverse proxy.
+    transport = args.transport or ("local-proxy" if args.runtime == "native" else "backend-tls")
+    if args.runtime == "container" and transport != "backend-tls":
+        parser.error("Container runtime requires --transport backend-tls.")
     if args.output.exists() or args.codes_output.exists():
         parser.error("Configuration or player codes already exist; preserve them or move them explicitly.")
     base_url = input("视觉服务商接口地址（HTTPS）：").strip().rstrip("/")
@@ -39,7 +45,6 @@ def main() -> None:
     if not key or "\x00" in key or "\n" in key or "\r" in key:
         parser.error("A valid provider key is required.")
     tokens = [secrets.token_hex(24) for _ in range(2)]
-    tls_dir = "/etc/sensefield-assistant/tls" if args.runtime == "native" else "/run/tls"
     config = {
         "ASSISTANT_GATEWAY_VISION_PROVIDER": "compatible",
         "ASSISTANT_GATEWAY_VISION_BASE_URL": base_url,
@@ -51,9 +56,13 @@ def main() -> None:
         "ASSISTANT_GATEWAY_ACCOUNT_CONCURRENCY": "1",
         "ASSISTANT_GATEWAY_HOST": "127.0.0.1" if args.runtime == "native" else "0.0.0.0",
         "ASSISTANT_GATEWAY_PORT": "18765",
-        "ASSISTANT_GATEWAY_TLS_CERT": tls_dir + "/backend.crt",
-        "ASSISTANT_GATEWAY_TLS_KEY": tls_dir + "/backend.key",
     }
+    if transport == "local-proxy":
+        config["ASSISTANT_GATEWAY_LOCAL_TLS_PROXY"] = "1"
+    else:
+        tls_dir = "/etc/sensefield-assistant/tls" if args.runtime == "native" else "/run/tls"
+        config["ASSISTANT_GATEWAY_TLS_CERT"] = tls_dir + "/backend.crt"
+        config["ASSISTANT_GATEWAY_TLS_KEY"] = tls_dir + "/backend.key"
     write_private(args.output, json.dumps(config, ensure_ascii=False, indent=2) + "\n")
     write_private(args.codes_output, "听野体验连接码（逐人私下提供，不上传 CDN 或 GitHub）\n\n"
                   + "\n".join(f"体验者{i + 1}：{value}" for i, value in enumerate(tokens)) + "\n")

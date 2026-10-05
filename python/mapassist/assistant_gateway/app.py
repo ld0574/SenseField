@@ -18,6 +18,7 @@ from .asr import FunAsrStreamingRecognizer, MockStreamingRecognizer
 from .sensevoice import SenseVoiceRecognizer
 from .audio import AudioProtocolError, AudioWebSocketSession, GenerationHighWater, validate_start
 from .config import GatewaySettings, safe_configuration_status
+from .local_proxy import LocalProxyPeerMiddleware
 from .errors import GatewayError
 from .glm import GlmVisionClient
 from .compatible import CompatibleVisionClient
@@ -312,6 +313,8 @@ def create_app(
         else None
     )
     app.add_middleware(HttpBodyLimitMiddleware)
+    if settings.local_tls_proxy:
+        app.add_middleware(LocalProxyPeerMiddleware)
 
     @app.exception_handler(GatewayError)
     async def gateway_error_handler(_request: Request, exc: GatewayError) -> JSONResponse:

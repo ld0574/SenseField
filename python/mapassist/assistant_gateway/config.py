@@ -25,6 +25,7 @@ class GatewaySettings:
     account_concurrency: int = 1
     request_timeout_seconds: float = 8.0
     require_tls: bool = True
+    local_tls_proxy: bool = False
     mode: str = "production"
     # Explicit opt-in for supervised tests, including production-provider tests.
     test_text_log_dir: Path | None = field(default=None, repr=False)
@@ -53,7 +54,10 @@ class GatewaySettings:
                 raise ValueError("ASSISTANT_GATEWAY_VISION_MODEL must be a model identifier")
 
     @classmethod
-    def from_env(cls, *, require_tls: bool = True, mode: str = "production") -> "GatewaySettings":
+    def from_env(
+        cls, *, require_tls: bool = True, local_tls_proxy: bool = False,
+        mode: str = "production",
+    ) -> "GatewaySettings":
         values: list[str] = []
         for key in ("ASSISTANT_GATEWAY_DEVICE_TOKENS", "ASSISTANT_GATEWAY_DEVICE_TOKEN"):
             raw = os.environ.get(key, "")
@@ -92,6 +96,7 @@ class GatewaySettings:
             sensevoice_model_dir=Path(sensevoice_dir).expanduser() if sensevoice_dir else None,
             account_concurrency=concurrency,
             require_tls=require_tls,
+            local_tls_proxy=local_tls_proxy,
             mode=mode,
             test_text_log_dir=Path(text_log_dir).expanduser() if text_log_dir else None,
             test_text_log_seconds=text_log_seconds,
@@ -102,7 +107,9 @@ class GatewaySettings:
             raise ValueError("Production startup requires production mode")
         if not self.device_tokens:
             raise ValueError("Set ASSISTANT_GATEWAY_DEVICE_TOKEN or ASSISTANT_GATEWAY_DEVICE_TOKENS")
-        if not self.require_tls:
+        if self.local_tls_proxy and (self.require_tls or self.asr_backend != "disabled"):
+            raise ValueError("Local TLS proxy mode requires an HTTP vision-only loopback backend")
+        if not self.require_tls and not self.local_tls_proxy:
             raise ValueError("Production startup requires TLS for HTTPS and WSS")
 
 

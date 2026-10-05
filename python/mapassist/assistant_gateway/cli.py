@@ -1,4 +1,4 @@
-"""Run the self-hosted gateway with TLS or an explicit local mock mode."""
+"""Run the gateway with backend TLS, a local HTTPS proxy, or local mocks."""
 
 from __future__ import annotations
 
@@ -41,6 +41,7 @@ def _uvicorn_logging_config() -> dict[str, object]:
 
 
 def main() -> None:
+    local_proxy = os.environ.get("ASSISTANT_GATEWAY_LOCAL_TLS_PROXY", "0")
     parser = argparse.ArgumentParser(
         description="Run the authenticated MapAssist assistant gateway.",
         epilog=(
@@ -55,25 +56,44 @@ def main() -> None:
     parser.add_argument("--tls-cert", default=os.environ.get("ASSISTANT_GATEWAY_TLS_CERT"))
     parser.add_argument("--tls-key", default=os.environ.get("ASSISTANT_GATEWAY_TLS_KEY"))
     parser.add_argument(
+        "--behind-local-proxy", action="store_true", default=local_proxy == "1",
+        help="Use the existing HTTPS proxy with an HTTP vision-only backend on 127.0.0.1.",
+    )
+    parser.add_argument(
         "--devtest-mock",
         action="store_true",
         help="Run deterministic mock adapters on loopback only; never use this mode for production.",
     )
     args = parser.parse_args()
-    host = args.host or ("127.0.0.1" if args.devtest_mock else os.environ.get("ASSISTANT_GATEWAY_HOST", "0.0.0.0"))
+    if local_proxy not in {"0", "1"}:
+        parser.error("ASSISTANT_GATEWAY_LOCAL_TLS_PROXY must be 0 or 1")
+    default_host = "127.0.0.1" if args.devtest_mock or args.behind_local_proxy else "0.0.0.0"
+    host = args.host or ("127.0.0.1" if args.devtest_mock
+                         else os.environ.get("ASSISTANT_GATEWAY_HOST", default_host))
     if args.port < 1 or args.port > 65535:
         parser.error("--port must be from 1 to 65535")
     if args.devtest_mock:
+        if args.behind_local_proxy:
+            parser.error("--devtest-mock cannot be combined with --behind-local-proxy")
         if not _is_loopback(host):
             parser.error("--devtest-mock can bind only to localhost or a loopback IP")
         settings = GatewaySettings.from_env(require_tls=False, mode="development_mock")
         if not settings.device_tokens:
             parser.error("Set ASSISTANT_GATEWAY_DEVICE_TOKEN before starting mock mode")
     else:
-        if not args.tls_cert or not args.tls_key:
+        if args.behind_local_proxy:
+            if host != "127.0.0.1":
+                parser.error("--behind-local-proxy can bind only to 127.0.0.1")
+            if args.tls_cert or args.tls_key:
+                parser.error("Local proxy mode must not set backend TLS certificate or key paths")
+        elif not args.tls_cert or not args.tls_key:
             parser.error("production requires --tls-cert and --tls-key (or their environment variables)")
-        settings = GatewaySettings.from_env(require_tls=True, mode="production")
         try:
+            settings = GatewaySettings.from_env(
+                require_tls=not args.behind_local_proxy,
+                local_tls_proxy=args.behind_local_proxy,
+                mode="production",
+            )
             settings.validate_production()
         except ValueError as exc:
             parser.error(str(exc))
@@ -89,8 +109,8 @@ def main() -> None:
         create_app(settings),
         host=host,
         port=args.port,
-        ssl_certfile=None if args.devtest_mock else args.tls_cert,
-        ssl_keyfile=None if args.devtest_mock else args.tls_key,
+        ssl_certfile=None if args.devtest_mock or args.behind_local_proxy else args.tls_cert,
+        ssl_keyfile=None if args.devtest_mock or args.behind_local_proxy else args.tls_key,
         proxy_headers=False,
         access_log=False,
         ws_max_size=128 * 1024,

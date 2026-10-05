@@ -9,11 +9,12 @@ StartLimitBurst=5
 Type=simple
 User=sensefield-gateway
 Group=sensefield-gateway
-WorkingDirectory=/opt/sensefield-assistant
+WorkingDirectory=@APP_DIR@
 Environment=ASSISTANT_GATEWAY_ENV_FILE=/etc/sensefield-assistant/gateway.json
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
-ExecStart=/opt/sensefield-assistant/.venv/bin/python /opt/sensefield-assistant/serve.py
+@LOCAL_PROXY_ENV@
+ExecStart=@APP_DIR@/.venv/bin/python @APP_DIR@/serve.py
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=15
