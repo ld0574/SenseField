@@ -250,6 +250,37 @@ public class Match3LiveService extends Service {
         }
         if (sameRawCount < STABLE_FRAMES) return;
 
+        /* 云端 VLM 兜底（自动云端调用，领导已授权）：本地颜色采样在真实美术上不稳——
+         * 未知格 >25% 或每次局面变化时，把棋盘裁剪图交云端多模态模型读取矩阵，
+         * 以云端结果为准（对任意美术风格通用）。走 OpenRouter，Key 复用判定层。 */
+        var prefsNow = GameProfile.settings(this);
+        boolean autoCloud = prefsNow.getBoolean("match3_cloud_escalate", true);
+        int unknown = 0, total = 0;
+        for (char[] row : matrix) {
+            for (char c : row) {
+                total++;
+                if (c == '.') unknown++;
+            }
+        }
+        boolean suspicious = unknown * 100 > total * 25;
+        if ((suspicious || autoCloud) && "openrouter".equals(prefsNow.getString("jev_channel", "openrouter"))) {
+            int l = frame.getWidth() * prefsNow.getInt("match3_l", 4) / 100;
+            int t = frame.getHeight() * prefsNow.getInt("match3_t", 18) / 100;
+            int r = frame.getWidth() * prefsNow.getInt("match3_r", 96) / 100;
+            int b = frame.getHeight() * prefsNow.getInt("match3_b", 82) / 100;
+            if (r - l > 40 && b - t > 40) {
+                Bitmap crop = Bitmap.createBitmap(frame, l, t, r - l, b - t);
+                char[][] cloud = CloudVision.readBoard(crop,
+                        prefsNow.getString("jev_api_key", ""),
+                        prefsNow.getString("jev_vlm_model", "z-ai/glm-4.5v"),
+                        matrix.length, matrix[0].length);
+                if (cloud != null) {
+                    Log.i(TAG, "云端识别接管: " + cloud.length + "x" + cloud[0].length);
+                    matrix = cloud;
+                }
+            }
+        }
+
         /* 播报签名去重：与上次已播报局面相同 → 完全静默 */
         if (matrixEquals(lastAnnouncedMatrix, matrix)) {
             return;
