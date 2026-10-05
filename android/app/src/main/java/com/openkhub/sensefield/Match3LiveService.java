@@ -218,7 +218,10 @@ public class Match3LiveService extends Service {
                 candCols = n > 0 ? n : Math.max(6, Math.min(9, prefs.getInt("match3_cols", 8)));
                 candidate = new Match3Sampler(this, candRows, candCols, auto[0], auto[1], auto[2], auto[3]);
                 /* 采纳前先试采：弹窗/切屏/动画等坏帧也可能「检出」一块假棋盘，
-                 * 采出来一片未知就丢弃——绝不拿坏标定占坑（真机乱播第二成因） */
+                 * 采出来一片未知就丢弃——绝不拿坏标定占坑（真机乱播第二成因）。
+                 * 40% 这条线在 1235 帧真机抽帧上留了很大余量：格数正确的 1140 帧未知率
+                 * 0–10%（均值 0.09%）全部采纳，语音助手遮屏造成的 68 帧错格 55–75% 全部拦下。
+                 * 数据见 research/board-recognition/REAL_VIDEO_FINDINGS.md */
                 char[][] probe = candidate.sample(frame);
                 if (countUnknown(probe) * 100 > probe.length * probe[0].length * 40) {
                     Log.i(TAG, "自动适配命中但采样验证失败（未知过多），本帧不采纳");
@@ -366,9 +369,12 @@ public class Match3LiveService extends Service {
                 candidate = new Match3Sampler(this, candRows, candCols, auto[0], auto[1], auto[2], auto[3]);
             }
             /* 先验证再采纳：修复采样仍一片未知 → 保留原标定静默，绝不把坏边界持久化
-             * （旧逻辑先持久化后验证，动画帧能把好标定永久改坏——真机「对两次后一直错」主嫌疑） */
+             * （旧逻辑先持久化后验证，动画帧能把好标定永久改坏——真机「对两次后一直错」主嫌疑）。
+             * 分母必须用 fixed 自己的格数：新旧格数不同时沿用旧 total 会把阈值算错
+             * （旧 8×8=64 → 新 6×6=36 时阈值变成 71%，几乎全未知的标定也能被采纳）。 */
             char[][] fixed = (candidate != null ? candidate : sampler).sample(frame);
-            if (countUnknown(fixed) * 100 > total * 40) {
+            int fixedCells = fixed.length * fixed[0].length;
+            if (countUnknown(fixed) * 100 > fixedCells * 40) {
                 Log.i(TAG, "自我修复后仍未识别，本轮静默且不采纳新标定");
                 if (!abstainAnnounced
                         && !GameProfile.settings(this).getBoolean("match3_calibrated", false)) {
