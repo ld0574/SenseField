@@ -116,8 +116,10 @@ final class Match3Coach {
             case 'G': return "青蛙";
             case 'B': return "河马";
             case 'P': return "紫猫";
-            default: return "未识别";
+            default: break;
         }
+        String learned = Match3Sampler.nameForCode(c);
+        return learned != null ? learned : "未识别";
     }
 
     /** 区域摘要播报文案。 */

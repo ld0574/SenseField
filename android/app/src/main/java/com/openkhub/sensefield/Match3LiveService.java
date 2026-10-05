@@ -59,6 +59,7 @@ public class Match3LiveService extends Service {
     private int hintCount;   // 同一局面的犹豫提示次数（上限 2 次，防无限重复）
     private long lastAnnounceAt;
     private boolean popupAnnounced;
+    private boolean abstainAnnounced;   // ABSTAIN 防线提示每轮服务只播一次
     private int liveRows = 8;
     private int liveCols = 8;
     private volatile boolean running;
@@ -201,27 +202,54 @@ public class Match3LiveService extends Service {
             handleExploreTouch();
             return;
         }
-        /* 自适应：服务启动后的第一帧自动检测棋盘包围盒（深色棋盘格区域），
-         * 覆盖标定并持久化——玩家不用手调百分比。检测不到沿用现有标定。 */
+        /* 自适应：服务启动后的第一帧自动检测棋盘包围盒＋格数（深色棋盘格区域＋列剖面自相关），
+         * 覆盖标定并持久化——玩家不用手调百分比。真机视频对拍（REAL_VIDEO_FINDINGS.md）实锤：
+         * 检测不到时绝不能拿默认 8×8 标定硬读——那会把蓝天读成满屏河马再反复播报。 */
         if (sampler == null) {
             var prefs = GameProfile.settings(this);
-            int l = prefs.getInt("match3_l", 4), t = prefs.getInt("match3_t", 18);
-            int r = prefs.getInt("match3_r", 96), b = prefs.getInt("match3_b", 82);
+            boolean calibrated = prefs.getBoolean("match3_calibrated", false);
             int[] auto = Match3Sampler.autoDetectBoard(frame);
             if (auto != null) {
-                l = auto[0]; t = auto[1]; r = auto[2]; b = auto[3];
-                prefs.edit().putInt("match3_l", l).putInt("match3_t", t)
-                        .putInt("match3_r", r).putInt("match3_b", b).apply();
-                Log.i(TAG, "棋盘自动适配: l=" + l + "% t=" + t + "% r=" + r + "% b=" + b + "%");
+                int n = Match3Sampler.detectGridCount(frame, auto);
+                int rows = n > 0 ? n : Math.max(6, Math.min(9, prefs.getInt("match3_rows", 8)));
+                int cols = n > 0 ? n : Math.max(6, Math.min(9, prefs.getInt("match3_cols", 8)));
+                prefs.edit().putInt("match3_l", auto[0]).putInt("match3_t", auto[1])
+                        .putInt("match3_r", auto[2]).putInt("match3_b", auto[3])
+                        .putInt("match3_rows", rows).putInt("match3_cols", cols)
+                        .putBoolean("match3_calibrated", true).apply();
+                liveRows = rows;
+                liveCols = cols;
+                sampler = new Match3Sampler(this, rows, cols, auto[0], auto[1], auto[2], auto[3]);
+                abstainAnnounced = false;
+                Log.i(TAG, "棋盘自动适配: l=" + auto[0] + "% t=" + auto[1] + "% r=" + auto[2]
+                        + "% b=" + auto[3] + "% 格数=" + rows + "x" + cols
+                        + (n > 0 ? "（自检）" : "（沿用已存）"));
+            } else if (calibrated) {
+                /* 检测不到但玩家框选过：沿用手动标定；格数仍尝试自检
+                 * （7×7 的局按 8×8 读会整盘错位，这正是真机乱播的另一半成因） */
+                int l = prefs.getInt("match3_l", 4), t = prefs.getInt("match3_t", 18);
+                int r = prefs.getInt("match3_r", 96), b = prefs.getInt("match3_b", 82);
+                int n = Match3Sampler.detectGridCount(frame, new int[]{l, t, r, b});
+                int rows = n > 0 ? n : Math.max(6, Math.min(9, prefs.getInt("match3_rows", 8)));
+                int cols = n > 0 ? n : Math.max(6, Math.min(9, prefs.getInt("match3_cols", 8)));
+                if (n > 0) {
+                    prefs.edit().putInt("match3_rows", rows).putInt("match3_cols", cols).apply();
+                }
+                liveRows = rows;
+                liveCols = cols;
+                sampler = new Match3Sampler(this, rows, cols, l, t, r, b);
+                abstainAnnounced = false;
+                Log.i(TAG, "沿用手动标定 " + rows + "x" + cols
+                        + (n > 0 ? "（格数自检=" + n + "）" : ""));
             } else {
-                Log.i(TAG, "棋盘自动适配未命中，沿用手动标定");
+                /* ABSTAIN 防线：检测不到且从没框选过 → 明确播报并等待，绝不静默硬读 */
+                if (!abstainAnnounced) {
+                    announce("还没找到棋盘位置。请先框选标定棋盘区域，或者多等几秒我再试。");
+                    abstainAnnounced = true;
+                    Log.i(TAG, "棋盘自动适配未命中且无手动标定，ABSTAIN 等待框选或后续帧重试");
+                }
+                return;
             }
-            sampler = new Match3Sampler(this,
-                    Math.max(6, Math.min(9, prefs.getInt("match3_rows", 8))),
-                    Math.max(6, Math.min(9, prefs.getInt("match3_cols", 8))),
-                    l, t, r, b);
-            liveRows = Math.max(6, Math.min(9, prefs.getInt("match3_rows", 8)));
-            liveCols = Math.max(6, Math.min(9, prefs.getInt("match3_cols", 8)));
         }
         char[][] matrix = sampler.sample(frame);
 
@@ -304,10 +332,21 @@ public class Match3LiveService extends Service {
             int[] auto = Match3Sampler.autoDetectBoard(frame);
             if (auto != null) {
                 var prefs = GameProfile.settings(this);
+                int n = Match3Sampler.detectGridCount(frame, auto);
+                int rows = n > 0 ? n : rows();
+                int cols = n > 0 ? n : cols();
                 prefs.edit().putInt("match3_l", auto[0]).putInt("match3_t", auto[1])
-                        .putInt("match3_r", auto[2]).putInt("match3_b", auto[3]).apply();
-                sampler = new Match3Sampler(this, rows(), cols(), auto[0], auto[1], auto[2], auto[3]);
+                        .putInt("match3_r", auto[2]).putInt("match3_b", auto[3])
+                        .putInt("match3_rows", rows).putInt("match3_cols", cols)
+                        .putBoolean("match3_calibrated", true).apply();
+                liveRows = rows;
+                liveCols = cols;
+                sampler = new Match3Sampler(this, rows, cols, auto[0], auto[1], auto[2], auto[3]);
                 matrix = sampler.sample(frame);
+            } else if (!abstainAnnounced
+                    && !GameProfile.settings(this).getBoolean("match3_calibrated", false)) {
+                announce("棋盘位置变了但认不出来。请框选标定棋盘区域。");
+                abstainAnnounced = true;
             }
             int unknown2 = 0;
             for (char[] row : matrix) {

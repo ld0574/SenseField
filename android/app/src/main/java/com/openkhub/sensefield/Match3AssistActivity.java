@@ -367,6 +367,9 @@ public class Match3AssistActivity extends Activity {
                 .putInt("match3_t", parseInt(topIn, 18))
                 .putInt("match3_r", parseInt(rightIn, 96))
                 .putInt("match3_b", parseInt(bottomIn, 82))
+                /* 标记「玩家亲手标定过」：实时服务在自动检测失败时只信这份标定，
+                 * 没有此标志一律 ABSTAIN 播报，绝不拿默认 8×8 硬读（防满屏河马式乱播） */
+                .putBoolean("match3_calibrated", true)
                 .apply();
     }
 

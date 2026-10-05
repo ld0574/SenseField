@@ -8,7 +8,10 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /** 消消乐识别采样器：Bitmap＋标定 → 颜色矩阵；含特殊棋子模板匹配。
  *  Activity（截图式）与 Match3LiveService（实时式）共用，保证两条链路行为一致。 */
@@ -86,7 +89,9 @@ final class Match3Sampler {
             for (int col = 0; col < cols; col++) {
                 int cx = l + cellW * col + cellW / 2;
                 int cy = t + cellH * row + cellH / 2;
-                board[row][col] = classifyCell(bitmap, cx, cy, half, templates);
+                board[row][col] = looksEmpty(bitmap, cx, cy, cellW, cellH)
+                        ? UNKNOWN
+                        : classifyCell(bitmap, cx, cy, half, templates);
             }
         }
         return board;
@@ -109,7 +114,9 @@ final class Match3Sampler {
         int cellW = (r - l) / cols, cellH = (b - t) / rows;
         int cx = l + cellW * col + cellW / 2, cy = t + cellH * row + cellH / 2;
         int half = Math.max(3, Math.min(cellW, cellH) / 8);
-        char piece = classifyCell(frame, cx, cy, half, templates);
+        char piece = looksEmpty(frame, cx, cy, cellW, cellH)
+                ? UNKNOWN
+                : classifyCell(frame, cx, cy, half, templates);
         return new int[]{row, col, piece};
     }
 
@@ -121,18 +128,8 @@ final class Match3Sampler {
             char byTemplate = matchTemplate(bitmap, cx, cy, half, templates);
             if (byTemplate != UNKNOWN) return byTemplate;
         }
-        long sumR = 0, sumG = 0, sumB = 0, n = 0;
-        for (int y = Math.max(0, cy - half); y <= Math.min(bitmap.getHeight() - 1, cy + half); y++) {
-            for (int x = Math.max(0, cx - half); x <= Math.min(bitmap.getWidth() - 1, cx + half); x++) {
-                int px = bitmap.getPixel(x, y);
-                sumR += Color.red(px);
-                sumG += Color.green(px);
-                sumB += Color.blue(px);
-                n++;
-            }
-        }
-        if (n == 0) return UNKNOWN;
-        int rgb = Color.rgb((int) (sumR / n), (int) (sumG / n), (int) (sumB / n));
+        int rgb = avgColor(bitmap, cx, cy, half);
+        if (rgb == NO_PIXELS) return UNKNOWN;
         float[] hsv = new float[3];
         Color.colorToHSV(rgb, hsv);
         if (hsv[1] < 0.18f || hsv[2] < 0.15f) {
@@ -145,6 +142,55 @@ final class Match3Sampler {
         if (h < 165) return 'G';
         if (h < 262) return 'B';
         return 'P';
+    }
+
+    /** 以 (cx,cy) 为中心、half 为半径取平均色，返回 packed RGB；区域越界无像素时返回 NO_PIXELS。 */
+    private static int avgColor(Bitmap bitmap, int cx, int cy, int half) {
+        long sumR = 0, sumG = 0, sumB = 0, n = 0;
+        for (int y = Math.max(0, cy - half); y <= Math.min(bitmap.getHeight() - 1, cy + half); y++) {
+            for (int x = Math.max(0, cx - half); x <= Math.min(bitmap.getWidth() - 1, cx + half); x++) {
+                int px = bitmap.getPixel(x, y);
+                sumR += Color.red(px);
+                sumG += Color.green(px);
+                sumB += Color.blue(px);
+                n++;
+            }
+        }
+        if (n == 0) return NO_PIXELS;
+        return Color.rgb((int) (sumR / n), (int) (sumG / n), (int) (sumB / n));
+    }
+
+    /** Color.rgb 打包后恒为负数（alpha 占高位），所以「取不到像素」必须用落在有效色域外的哨兵。 */
+    private static final int NO_PIXELS = Integer.MIN_VALUE;
+
+    /** 空格判定阈值：中心与四角的逐通道平均色差上限。棋子会盖住中心、盖不住四角，实测余量见基准。 */
+    static final int EMPTY_COLOR_DISTANCE = 12;
+
+    /** 格心与格四角（棋子覆盖不到的位置）的逐通道平均色差。空格≈0，有子时远大于此。 */
+    static int centerCornerDistance(Bitmap bitmap, int cx, int cy, int cellW, int cellH) {
+        int centre = avgColor(bitmap, cx, cy, Math.max(3, Math.min(cellW, cellH) / 8));
+        if (centre == NO_PIXELS) return Integer.MAX_VALUE;
+        int ox = cellW * 42 / 100, oy = cellH * 42 / 100;
+        int probe = Math.max(2, Math.min(cellW, cellH) / 16);
+        int[][] corners = {
+                {cx - ox, cy - oy}, {cx + ox, cy - oy}, {cx - ox, cy + oy}, {cx + ox, cy + oy}
+        };
+        long total = 0;
+        int counted = 0;
+        for (int[] p : corners) {
+            int c = avgColor(bitmap, p[0], p[1], probe);
+            if (c == NO_PIXELS) continue;
+            total += Math.abs(Color.red(centre) - Color.red(c))
+                    + Math.abs(Color.green(centre) - Color.green(c))
+                    + Math.abs(Color.blue(centre) - Color.blue(c));
+            counted++;
+        }
+        return counted == 0 ? Integer.MAX_VALUE : (int) (total / (counted * 3L));
+    }
+
+    /** 棋盘底色常落在 HSV 弃权闸门（v<0.15）之上，光靠颜色阈值挡不住空格，改用格心与格角的局部对比。 */
+    static boolean looksEmpty(Bitmap bitmap, int cx, int cy, int cellW, int cellH) {
+        return centerCornerDistance(bitmap, cx, cy, cellW, cellH) <= EMPTY_COLOR_DISTANCE;
     }
 
     /** 颜色判不出的格子 → 与特殊棋子模板比对（16×16 缩放后平均绝对差），阈值内取最像的。 */
@@ -180,11 +226,45 @@ final class Match3Sampler {
         return UNKNOWN;
     }
 
-    /** 模板名 → 矩阵字母（'1'..'9' 供扩展矩阵用；名字在播报层还原）。 */
+    /** 模板名 → 矩阵字母。字母由本轮载入的模板集合按名字排序稳定分配，不撞车。 */
     static char templateCode(String name) {
-        int idx = Math.abs(name.hashCode()) % 9;
-        return (char) ('1' + idx);
+        Character code = NAME_TO_CODE.get(name);
+        return code != null ? code : UNKNOWN;
     }
+
+    /** 矩阵字母 → 玩家学的棋子名（播报层用）。非特殊棋子字母返回 null。 */
+    static String nameForCode(char code) {
+        return CODE_TO_NAME.get(code);
+    }
+
+    /** 按模板集合重建字母分配表。字母池用满后多余的模板返回 UNKNOWN 而非挤占同一字母。 */
+    private static void assignCodes(List<SpecialTemplate> templates) {
+        CODE_TO_NAME.clear();
+        NAME_TO_CODE.clear();
+        List<String> names = new ArrayList<>();
+        for (SpecialTemplate t : templates) {
+            if (nameToLetter(t.name) == UNKNOWN) names.add(t.name);
+        }
+        Collections.sort(names);
+        for (int i = 0; i < names.size() && i < CODE_POOL.length; i++) {
+            CODE_TO_NAME.put(CODE_POOL[i], names.get(i));
+            NAME_TO_CODE.put(names.get(i), CODE_POOL[i]);
+        }
+    }
+
+    /** 数字 9 个 + 小写字母 26 个：避开 R/O/Y/G/B/P 六个基础色字母与 '.'。 */
+    private static final char[] CODE_POOL = buildCodePool();
+
+    private static char[] buildCodePool() {
+        char[] pool = new char[9 + 26];
+        int i = 0;
+        for (char c = '1'; c <= '9'; c++) pool[i++] = c;
+        for (char c = 'a'; c <= 'z'; c++) pool[i++] = c;
+        return pool;
+    }
+
+    private static final Map<Character, String> CODE_TO_NAME = new LinkedHashMap<>();
+    private static final Map<String, Character> NAME_TO_CODE = new LinkedHashMap<>();
 
     private static Bitmap cropSquare(Bitmap bitmap, int cx, int cy, int halfSide) {
         int side = Math.max(8, halfSide);
@@ -213,7 +293,10 @@ final class Match3Sampler {
 
     /**
      * 纯逻辑：给定逐像素「是棋盘格」掩码（降采样网格），返回棋盘包围盒（百分比）。
-     * 算法：行剖面找最长的密集行带（≥25% 像素是格），带内列剖面（≥30%）定左右。
+     * v3（真机视频对拍后重设计，见 research/board-recognition/REAL_VIDEO_FINDINGS.md）：
+     * 行阈值 cols/20（真机棋子几乎填满格子，暗底只在格缝露，cols/4 会把行带切碎→检测失败）；
+     * 带内列阈值 15% 定左右；方形约束取边长；带内滑窗取暗底密度最高处锚定
+     * （侧边栏/底部导航等暗色 UI 污染列剖面时不跑偏）；窗口密度 <5% 判不可信返回 null。
      * 返回 {l,t,r,b}（百分比，0-100）；检测不到返回 null。
      */
     static int[] detectBoundsFromMask(boolean[][] mask) {
@@ -224,7 +307,7 @@ final class Match3Sampler {
             for (int c = 0; c < cols; c++) if (mask[r][c]) n++;
             rowCount[r] = n;
         }
-        int minRowCount = cols / 4;
+        int minRowCount = Math.max(2, cols / 20);
         int bestTop = -1, bestBottom = -1, bestLen = 0;
         int top = -1;
         for (int r = 0; r <= rows; r++) {
@@ -236,21 +319,46 @@ final class Match3Sampler {
                 top = -1;
             }
         }
-        if (bestTop < 0 || bestLen < rows / 10) return null;
+        if (bestTop < 0 || bestLen < rows / 8) return null;
         int[] colCount = new int[cols];
         for (int r = bestTop; r <= bestBottom; r++) {
             for (int c = 0; c < cols; c++) if (mask[r][c]) colCount[c]++;
         }
         int bandRows = bestBottom - bestTop + 1;
-        int minColCount = bandRows * 3 / 10;
+        int minColCount = Math.max(2, bandRows * 15 / 100);
         int left = -1, right = -1;
         for (int c = 0; c < cols; c++) {
             if (colCount[c] >= minColCount) { if (left < 0) left = c; right = c; }
         }
         if (left < 0 || right - left < cols / 10) return null;
+        /* 方形约束 + 密度锚定：棋盘是正方形，在行带×列带范围内滑动 side×side 窗口，
+         * 取暗底密度最高的位置作为棋盘左上角（降采样网格两个轴 step 相同，方格即正方形） */
+        int side = Math.min(bandRows, right - left + 1);
+        if (side * 10 < Math.min(rows, cols) * 3) return null;   // 边长不足短边 30%
+        long[][] integral = new long[rows + 1][cols + 1];
+        for (int r = 0; r < rows; r++) {
+            long rowSum = 0;
+            for (int c = 0; c < cols; c++) {
+                rowSum += mask[r][c] ? 1 : 0;
+                integral[r + 1][c + 1] = integral[r][c + 1] + rowSum;
+            }
+        }
+        long bestSum = -1;
+        int anchorTop = bestTop, anchorLeft = left;
+        int maxRowStart = Math.min(bestBottom - side + 1, bestTop + 40);
+        int maxColStart = Math.min(right - side + 1, left + 40);
+        for (int rt = bestTop; rt <= maxRowStart; rt++) {
+            for (int cl = left; cl <= maxColStart; cl++) {
+                long s = integral[rt + side][cl + side] - integral[rt][cl + side]
+                        - integral[rt + side][cl] + integral[rt][cl];
+                if (s > bestSum) { bestSum = s; anchorTop = rt; anchorLeft = cl; }
+            }
+        }
+        if (bestSum * 20 < (long) side * side) return null;      // 窗口内暗底 <5%，不可信
         return new int[]{
-                left * 100 / cols, bestTop * 100 / rows,
-                (right + 1) * 100 / cols, (bestBottom + 1) * 100 / rows
+                Math.min(100, anchorLeft * 100 / cols), Math.min(100, anchorTop * 100 / rows),
+                Math.min(100, (anchorLeft + side) * 100 / cols),
+                Math.min(100, (anchorTop + side) * 100 / rows)
         };
     }
 
@@ -276,6 +384,59 @@ final class Match3Sampler {
         return detectBoundsFromMask(mask);
     }
 
+    /**
+     * 格数自检：棋盘裁剪区 V 通道列均值剖面的自相关周期 ≈ 格宽
+     * （棋子以格宽为周期重复；开心消消乐真机美术没有可见格线，暗线计数不可行，
+     * 自相关在真机 7×7 与合成 8×8/9×9 上 5/5 命中，见 REAL_VIDEO_FINDINGS.md）。
+     * 返回 6..9；不可信返回 -1（调用方回退到已存格数）。
+     */
+    static int detectGridCount(Bitmap frame, int[] boundsPct) {
+        int w = frame.getWidth(), h = frame.getHeight();
+        int x0 = w * boundsPct[0] / 100, y0 = h * boundsPct[1] / 100;
+        int x1 = Math.min(w, w * boundsPct[2] / 100), y1 = Math.min(h, h * boundsPct[3] / 100);
+        int cw = x1 - x0, ch = y1 - y0;
+        if (cw < 60 || ch < 60) return -1;
+        int stride = Math.max(1, cw / 240);
+        int nCols = cw / stride;
+        if (nCols < 30) return -1;
+        double[] prof = new double[nCols];
+        int nRows = 0;
+        int[] rowBuf = new int[cw];
+        float[] hsv = new float[3];
+        for (int y = y0; y < y1; y += 2) {
+            frame.getPixels(rowBuf, 0, cw, x0, y, cw, 1);
+            nRows++;
+            for (int c = 0; c < nCols; c++) {
+                Color.colorToHSV(rowBuf[Math.min(cw - 1, c * stride)], hsv);
+                prof[c] += hsv[2];
+            }
+        }
+        if (nRows == 0) return -1;
+        double mean = 0;
+        for (int c = 0; c < nCols; c++) prof[c] /= nRows;
+        for (double v : prof) mean += v;
+        mean /= nCols;
+        double var = 0;
+        for (int c = 0; c < nCols; c++) {
+            prof[c] -= mean;
+            var += prof[c] * prof[c];
+        }
+        var /= nCols;
+        if (var < 1e-6) return -1;
+        int dMin = Math.max(2, nCols / 10), dMax = Math.min(nCols / 5, nCols - 1);
+        int bestD = -1;
+        double bestV = -2;
+        for (int d = dMin; d <= dMax; d++) {
+            double s = 0;
+            for (int c = 0; c + d < nCols; c++) s += prof[c] * prof[c + d];
+            s /= (nCols - d) * var;
+            if (s > bestV) { bestV = s; bestD = d; }
+        }
+        if (bestD < 0) return -1;
+        int n = (int) Math.round((double) nCols / bestD);
+        return (n >= 6 && n <= 9) ? n : -1;
+    }
+
     /* ---------- 特殊棋子模板存取（app 私有目录 special_templates/） ---------- */
 
     static File templateDir(android.content.Context context) {
@@ -295,6 +456,7 @@ final class Match3Sampler {
             Bitmap bmp = android.graphics.BitmapFactory.decodeFile(f.getAbsolutePath());
             if (bmp != null) out.add(new SpecialTemplate(name, bmp));
         }
+        assignCodes(out);
         return out;
     }
 
