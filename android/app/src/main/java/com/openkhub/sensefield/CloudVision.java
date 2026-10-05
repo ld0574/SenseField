@@ -30,15 +30,20 @@ final class CloudVision {
         if (m != null && !m.trim().isEmpty()) model = m.trim();
     }
 
-    /** 把棋盘矩阵读成颜色字母矩阵；失败返回 null。必须在后台线程调用。 */
+    /** 把棋盘矩阵读成颜色字母矩阵；失败返回 null。必须在后台线程调用。
+     *  真机对拍（REAL_VIDEO_FINDINGS.md）：本地采样在真实截图上 49/49 全对，
+     *  云端只作为本地不确定时的兜底——因此行列数强制锁定为采样给出的 rows×cols，
+     *  不许模型自改（自改行列会让覆盖结果整盘错位）；失败后冷却 60s 防限速连环打。 */
+    private static volatile long cooldownUntil = 0;
+
     static char[][] readBoard(Bitmap boardCrop, String apiKey, String model, int rows, int cols) {
+        if (android.os.SystemClock.elapsedRealtime() < cooldownUntil) return null;
         try {
             String b64 = toBase64Jpeg(scaleForUpload(boardCrop));
             String prompt = "这是三消游戏棋盘截图。输出 JSON：{\"rows\":" + rows + ",\"cols\":" + cols
-                    + ",\"grid\":[[...]]}，grid 为 " + rows + " 行 " + cols
+                    + ",\"grid\":[[...]]}，grid 必须是恰好 " + rows + " 行 " + cols
                     + " 列的二维数组，每个元素是棋子颜色名，限定：红狐狸/小鸡/青蛙/河马/棕熊/紫猫/未知。"
-                    + "按从上到下、从左到右顺序。只输出 JSON，禁止任何其他文字。"
-                    + "若图中可见棋盘行列数与给定不同，按实际可见行列数输出 rows/cols。";
+                    + "按从上到下、从左到右顺序。只输出 JSON，禁止任何其他文字。";
             JSONObject body = new JSONObject();
             body.put("model", model);
             JSONArray messages = new JSONArray();
@@ -69,15 +74,22 @@ final class CloudVision {
             String text = readStream(code >= 400 ? conn.getErrorStream() : conn.getInputStream());
             if (code < 200 || code >= 300) {
                 Log.w(TAG, "HTTP " + code + ": " + safe(text));
+                cooldownUntil = android.os.SystemClock.elapsedRealtime() + 60_000L;
                 return null;
             }
             String reply = new JSONObject(text).getJSONArray("choices").getJSONObject(0)
                     .getJSONObject("message").getString("content");
             char[][] matrix = parseMatrix(reply);
             Log.i(TAG, "云端识别 " + (matrix == null ? "解析失败" : matrix.length + "x" + matrix[0].length));
+            if (matrix == null) {
+                cooldownUntil = android.os.SystemClock.elapsedRealtime() + 60_000L;
+            } else {
+                cooldownUntil = 0;
+            }
             return matrix;
         } catch (Exception e) {
             Log.w(TAG, "云端识别失败: " + e.getMessage());
+            cooldownUntil = android.os.SystemClock.elapsedRealtime() + 60_000L;
             return null;
         }
     }

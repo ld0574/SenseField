@@ -209,21 +209,33 @@ public class Match3LiveService extends Service {
             var prefs = GameProfile.settings(this);
             boolean calibrated = prefs.getBoolean("match3_calibrated", false);
             int[] auto = Match3Sampler.autoDetectBoard(frame);
+            Match3Sampler candidate = null;
+            int candRows = 0, candCols = 0;
             if (auto != null) {
                 int n = Match3Sampler.detectGridCount(frame, auto);
-                int rows = n > 0 ? n : Math.max(6, Math.min(9, prefs.getInt("match3_rows", 8)));
-                int cols = n > 0 ? n : Math.max(6, Math.min(9, prefs.getInt("match3_cols", 8)));
+                candRows = n > 0 ? n : Math.max(6, Math.min(9, prefs.getInt("match3_rows", 8)));
+                candCols = n > 0 ? n : Math.max(6, Math.min(9, prefs.getInt("match3_cols", 8)));
+                candidate = new Match3Sampler(this, candRows, candCols, auto[0], auto[1], auto[2], auto[3]);
+                /* 采纳前先试采：弹窗/切屏/动画等坏帧也可能「检出」一块假棋盘，
+                 * 采出来一片未知就丢弃——绝不拿坏标定占坑（真机乱播第二成因） */
+                char[][] probe = candidate.sample(frame);
+                if (countUnknown(probe) * 100 > probe.length * probe[0].length * 40) {
+                    Log.i(TAG, "自动适配命中但采样验证失败（未知过多），本帧不采纳");
+                    candidate = null;
+                }
+            }
+            if (candidate != null) {
                 prefs.edit().putInt("match3_l", auto[0]).putInt("match3_t", auto[1])
                         .putInt("match3_r", auto[2]).putInt("match3_b", auto[3])
-                        .putInt("match3_rows", rows).putInt("match3_cols", cols)
+                        .putInt("match3_rows", candRows).putInt("match3_cols", candCols)
                         .putBoolean("match3_calibrated", true).apply();
-                liveRows = rows;
-                liveCols = cols;
-                sampler = new Match3Sampler(this, rows, cols, auto[0], auto[1], auto[2], auto[3]);
+                liveRows = candRows;
+                liveCols = candCols;
+                sampler = candidate;
                 abstainAnnounced = false;
                 Log.i(TAG, "棋盘自动适配: l=" + auto[0] + "% t=" + auto[1] + "% r=" + auto[2]
-                        + "% b=" + auto[3] + "% 格数=" + rows + "x" + cols
-                        + (n > 0 ? "（自检）" : "（沿用已存）"));
+                        + "% b=" + auto[3] + "% 格数=" + candRows + "x" + candCols
+                        + "（试采验证通过）");
             } else if (calibrated) {
                 /* 检测不到但玩家框选过：沿用手动标定；格数仍尝试自检
                  * （7×7 的局按 8×8 读会整盘错位，这正是真机乱播的另一半成因） */
@@ -278,11 +290,12 @@ public class Match3LiveService extends Service {
         }
         if (sameRawCount < STABLE_FRAMES) return;
 
-        /* 云端 VLM 兜底（自动云端调用，领导已授权）：本地颜色采样在真实美术上不稳——
-         * 未知格 >25% 或每次局面变化时，把棋盘裁剪图交云端多模态模型读取矩阵，
-         * 以云端结果为准（对任意美术风格通用）。走 OpenRouter，Key 复用判定层。 */
+        /* 云端 VLM 兜底：真机截图对拍证明本地采样 49/49 全对（REAL_VIDEO_FINDINGS.md），
+         * 所以本地读数优先播报；只有本地不确定（未知格 >25%）或玩家显式开启
+         * match3_cloud_escalate 时才走云端。此前默认每次稳定帧都打 VLM 并用其结果
+         * 覆盖本地——VLM 读矩阵会错位，免费档还限速，正是「对两次后一直错」的元凶。 */
         var prefsNow = GameProfile.settings(this);
-        boolean autoCloud = prefsNow.getBoolean("match3_cloud_escalate", true);
+        boolean autoCloud = prefsNow.getBoolean("match3_cloud_escalate", false);
         int cloudUnknown = 0, cloudTotal = 0;
         for (char[] row : matrix) {
             for (char c : row) {
@@ -302,9 +315,13 @@ public class Match3LiveService extends Service {
                         prefsNow.getString("jev_api_key", ""),
                         prefsNow.getString("jev_vlm_model", "z-ai/glm-4.5v"),
                         matrix.length, matrix[0].length);
-                if (cloud != null) {
+                if (cloud != null && cloud.length == matrix.length
+                        && cloud[0].length == matrix[0].length) {
                     Log.i(TAG, "云端识别接管: " + cloud.length + "x" + cloud[0].length);
                     matrix = cloud;
+                } else if (cloud != null) {
+                    Log.i(TAG, "云端行列 " + cloud.length + "x" + cloud[0].length
+                            + " 与本地 " + matrix.length + "x" + matrix[0].length + " 不符，丢弃");
                 }
             }
         }
@@ -330,32 +347,37 @@ public class Match3LiveService extends Service {
         if (unknown * 100 > total * 40) {
             Log.i(TAG, "自我修复：未知格 " + unknown + "/" + total + "，重新自动适配");
             int[] auto = Match3Sampler.autoDetectBoard(frame);
+            Match3Sampler candidate = null;
+            int candRows = rows(), candCols = cols();
             if (auto != null) {
-                var prefs = GameProfile.settings(this);
                 int n = Match3Sampler.detectGridCount(frame, auto);
-                int rows = n > 0 ? n : rows();
-                int cols = n > 0 ? n : cols();
-                prefs.edit().putInt("match3_l", auto[0]).putInt("match3_t", auto[1])
-                        .putInt("match3_r", auto[2]).putInt("match3_b", auto[3])
-                        .putInt("match3_rows", rows).putInt("match3_cols", cols)
-                        .putBoolean("match3_calibrated", true).apply();
-                liveRows = rows;
-                liveCols = cols;
-                sampler = new Match3Sampler(this, rows, cols, auto[0], auto[1], auto[2], auto[3]);
-                matrix = sampler.sample(frame);
-            } else if (!abstainAnnounced
-                    && !GameProfile.settings(this).getBoolean("match3_calibrated", false)) {
-                announce("棋盘位置变了但认不出来。请框选标定棋盘区域。");
-                abstainAnnounced = true;
+                candRows = n > 0 ? n : rows();
+                candCols = n > 0 ? n : cols();
+                candidate = new Match3Sampler(this, candRows, candCols, auto[0], auto[1], auto[2], auto[3]);
             }
-            int unknown2 = 0;
-            for (char[] row : matrix) {
-                for (char c : row) if (c == '.') unknown2++;
-            }
-            if (unknown2 * 100 > total * 40) {
-                Log.i(TAG, "自我修复后仍未识别，本轮静默");
+            /* 先验证再采纳：修复采样仍一片未知 → 保留原标定静默，绝不把坏边界持久化
+             * （旧逻辑先持久化后验证，动画帧能把好标定永久改坏——真机「对两次后一直错」主嫌疑） */
+            char[][] fixed = (candidate != null ? candidate : sampler).sample(frame);
+            if (countUnknown(fixed) * 100 > total * 40) {
+                Log.i(TAG, "自我修复后仍未识别，本轮静默且不采纳新标定");
+                if (!abstainAnnounced
+                        && !GameProfile.settings(this).getBoolean("match3_calibrated", false)) {
+                    announce("棋盘位置变了但认不出来。请框选标定棋盘区域。");
+                    abstainAnnounced = true;
+                }
                 return;
             }
+            if (candidate != null) {
+                var prefs = GameProfile.settings(this);
+                prefs.edit().putInt("match3_l", auto[0]).putInt("match3_t", auto[1])
+                        .putInt("match3_r", auto[2]).putInt("match3_b", auto[3])
+                        .putInt("match3_rows", candRows).putInt("match3_cols", candCols)
+                        .putBoolean("match3_calibrated", true).apply();
+                liveRows = candRows;
+                liveCols = candCols;
+                sampler = candidate;
+            }
+            matrix = fixed;
         }
         boolean isFirst = lastAnnouncedMatrix == null;
         lastAnnouncedMatrix = matrix;
@@ -377,6 +399,12 @@ public class Match3LiveService extends Service {
         }
         Log.i(TAG, sb.toString());
         announce(sb.toString());
+    }
+
+    private static int countUnknown(char[][] m) {
+        int n = 0;
+        for (char[] row : m) for (char c : row) if (c == '.') n++;
+        return n;
     }
 
     private static int countDiffCells(char[][] a, char[][] b) {
