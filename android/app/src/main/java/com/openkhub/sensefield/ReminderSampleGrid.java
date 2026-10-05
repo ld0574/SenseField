@@ -3,12 +3,14 @@ package com.openkhub.sensefield;
 import android.content.Context;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.TextView;
 import java.util.Arrays;
 
 /** Wraps short sample buttons using their actual font size and the available page width. */
 final class ReminderSampleGrid extends ViewGroup {
     private final int maximumColumns;
     private final int gap;
+    private final boolean wrapNames;
     private int columns = 1;
     private int cellWidth;
     private int rowCount;
@@ -17,8 +19,13 @@ final class ReminderSampleGrid extends ViewGroup {
     public ReminderSampleGrid(Context context) { this(context, 3); }
 
     ReminderSampleGrid(Context context, int maximumColumns) {
+        this(context, maximumColumns, false);
+    }
+
+    ReminderSampleGrid(Context context, int maximumColumns, boolean wrapNames) {
         super(context);
         this.maximumColumns = Math.max(1, maximumColumns);
+        this.wrapNames = wrapNames;
         gap = UiKit.dp(context, 8);
     }
 
@@ -34,7 +41,16 @@ final class ReminderSampleGrid extends ViewGroup {
             if (child.getVisibility() == GONE) continue;
             child.measure(MeasureSpec.makeMeasureSpec(available, MeasureSpec.AT_MOST),
                     MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
-            desiredCellWidth = Math.max(desiredCellWidth, child.getMeasuredWidth());
+            int preferredWidth = child.getMeasuredWidth();
+            if (wrapNames && child instanceof TextView) {
+                TextView label = (TextView) child;
+                // Keep full sound names, allowing two-line labels at ordinary font sizes.
+                // Measuring the actual font also reflows large text to fewer columns.
+                int readableWidth = Math.round(label.getPaint().measureText("方位语音"))
+                        + child.getPaddingLeft() + child.getPaddingRight();
+                preferredWidth = Math.min(preferredWidth, Math.max(child.getMinimumWidth(), readableWidth));
+            }
+            desiredCellWidth = Math.max(desiredCellWidth, preferredWidth);
             count++;
         }
         columns = Math.max(1, Math.min(maximumColumns,

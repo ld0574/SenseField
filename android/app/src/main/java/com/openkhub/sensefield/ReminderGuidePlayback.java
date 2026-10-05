@@ -20,6 +20,7 @@ final class ReminderGuidePlayback {
     private int generation;
     private int index;
     private boolean running;
+    private boolean paused;
 
     ReminderGuidePlayback(Output output, Listener listener) {
         this.output = output;
@@ -31,19 +32,41 @@ final class ReminderGuidePlayback {
         this.steps = steps;
         index = 0;
         running = true;
+        paused = false;
+        next(generation);
+    }
+
+    /** Pauses the current item and keeps it as the next item to play on resume. */
+    void pause() {
+        if (!running || paused) return;
+        paused = true;
+        generation++;
+        output.stop();
+    }
+
+    /** Repeats the unfinished current item, ignoring callbacks from before the pause. */
+    void resume() {
+        if (!running || !paused) return;
+        paused = false;
+        generation++;
         next(generation);
     }
 
     void stop() {
         running = false;
+        paused = false;
         generation++;
         output.stop();
     }
 
     boolean isRunning() { return running; }
+    boolean isPaused() { return paused; }
+
+    /** The index of the current unfinished step, or the list size when playback ended. */
+    int currentIndex() { return index; }
 
     private void next(int run) {
-        if (!running || run != generation) return;
+        if (!running || paused || run != generation) return;
         if (index == steps.size()) {
             running = false;
             listener.onEnded(true);
@@ -52,8 +75,10 @@ final class ReminderGuidePlayback {
         int expected = index;
         ReminderGuide.Step step = steps.get(index);
         listener.onStep(step);
+        // A listener can synchronously pause or stop playback while updating its UI.
+        if (!running || paused || run != generation) return;
         output.play(step, success -> {
-            if (!running || run != generation || index != expected) return;
+            if (!running || paused || run != generation || index != expected) return;
             if (!success) {
                 running = false;
                 output.stop();

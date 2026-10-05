@@ -95,6 +95,84 @@ public final class ReminderGuidePlaybackTest {
         assertEquals(2, output.played.size());
     }
 
+    @Test public void pauseRetainsUnfinishedStepAndResumeIgnoresTheOldCallback() {
+        playback.start(steps);
+        ReminderGuidePlayback.Completion beforePause = output.completions.get(0);
+
+        playback.pause();
+        assertTrue(playback.isRunning());
+        assertTrue(playback.isPaused());
+        assertEquals(0, playback.currentIndex());
+
+        beforePause.finish(true);
+        assertEquals(1, output.played.size());
+        assertEquals(0, playback.currentIndex());
+
+        playback.resume();
+        assertFalse(playback.isPaused());
+        assertTrue(playback.isRunning());
+        assertEquals(2, output.played.size());
+        assertTrue(output.played.get(0) == output.played.get(1));
+
+        beforePause.finish(true);
+        assertEquals(2, output.played.size());
+        assertEquals(0, playback.currentIndex());
+        output.completions.get(1).finish(true);
+        assertEquals(1, playback.currentIndex());
+        assertEquals(3, output.played.size());
+        assertTrue(output.played.get(2) == steps.get(1));
+    }
+
+    @Test public void stopWhilePausedClearsPausedStateAndCannotResumeOldRun() {
+        playback.start(steps);
+        playback.pause();
+        playback.stop();
+
+        assertFalse(playback.isRunning());
+        assertFalse(playback.isPaused());
+        playback.resume();
+        assertEquals(1, output.played.size());
+        output.completions.get(0).finish(true);
+        assertEquals(1, output.played.size());
+        assertTrue(endings.isEmpty());
+    }
+
+    @Test public void pauseAfterTheIntroductionResumesTheUnfinishedSentence() {
+        playback.start(steps);
+        output.completions.get(0).finish(true);
+        ReminderGuidePlayback.Completion unfinished = output.completions.get(1);
+        assertEquals(1, playback.currentIndex());
+
+        playback.pause();
+        unfinished.finish(true);
+        playback.resume();
+        assertEquals(1, playback.currentIndex());
+        assertEquals(3, output.played.size());
+        assertEquals(steps.get(1), output.played.get(2));
+        assertFalse(output.played.get(2).sample);
+
+        unfinished.finish(true);
+        assertEquals(3, output.played.size());
+        output.completions.get(2).finish(true);
+        assertEquals(2, playback.currentIndex());
+        assertTrue(output.played.get(3).sample);
+    }
+
+    @Test public void startingWhilePausedReplacesRunAtItsFirstStep() {
+        playback.start(steps);
+        playback.pause();
+        ReminderGuidePlayback.Completion old = output.completions.get(0);
+
+        playback.start(Collections.singletonList(steps.get(steps.size() - 1)));
+        old.finish(true);
+
+        assertFalse(playback.isPaused());
+        assertTrue(playback.isRunning());
+        assertEquals(0, playback.currentIndex());
+        assertEquals(2, output.played.size());
+        assertTrue(output.played.get(1) == steps.get(steps.size() - 1));
+    }
+
     private static final class FakeOutput implements ReminderGuidePlayback.Output {
         final List<ReminderGuide.Step> played = new ArrayList<>();
         final List<ReminderGuidePlayback.Completion> completions = new ArrayList<>();

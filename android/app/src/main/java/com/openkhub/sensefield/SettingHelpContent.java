@@ -13,8 +13,7 @@ final class SettingHelpContent {
             case "voice_group": return "提醒测试与语音";
             case "speech_engine": return "选择语音引擎";
             case "speech_rate": return "语速";
-            case "test_cue": return "测试提醒";
-            case "test_haptic": return "测试震动";
+            case "test_cue": return "测试提醒与振动";
             case "haptic_settings_link": return "震感与节奏";
             case "before_start_read": return "每次开始前打开提醒说明与试听";
             case "reminder_guide": return "提醒说明与试听";
@@ -84,7 +83,7 @@ final class SettingHelpContent {
     /** One-sentence descriptions shown beside each group's help entry. */
     static String summary(String key) {
         switch (key) {
-            case "voice_group": return "选择语音、测试提醒和查看试听。";
+            case "voice_group": return "选择语音、测试提醒与振动，并查看试听。";
             case "recognition_group": return "设置实验识别与新头像提醒。";
             case "preset_group": return "选择预设，调整通道与事件。";
             case "tuning_group": return "调整音量、间隔和中央免提示区。";
@@ -108,7 +107,7 @@ final class SettingHelpContent {
     static List<String> itemKeys(String key) {
         switch (key) {
             case "voice_group":
-                return keys("speech_engine", "speech_rate", "test_cue", "test_haptic",
+                return keys("speech_engine", "speech_rate", "test_cue",
                         "haptic_settings_link", "before_start_read", "reminder_guide");
             case "recognition_group":
                 return keys("recognition_experiment", "new_avatar");
@@ -161,21 +160,19 @@ final class SettingHelpContent {
     static String text(String key) {
         switch (key) {
             case "voice_group":
-                return "选择语音引擎、调整语速后，可以分别测试语音提醒和震动。提醒说明与试听目录会按当前开启的声音、语音和震动设置提供示例；可选择每次开始前自动打开，也能随时手动查看。测试或试听时请先停止游戏辅助。";
+                return "选择语音引擎、调整语速后，可以测试附近敌人提醒当前开启的声音和振动。提醒说明与试听目录会按当前开启的声音、语音和震动设置提供示例；可选择每次开始前自动打开，也能随时手动查看。测试或试听时请先停止游戏辅助或实时对局。";
             case "speech_engine":
                 return "选择“跟随手机系统”会使用系统当前的文字转语音引擎，也可以指定手机已安装的引擎。不同引擎的音色和可用语言由手机提供。更换引擎后请试听一次。";
             case "speech_rate":
                 return "页面会显示当前语速倍数。这个滑杆只调整听野提醒语音的播放速度，不改变识别速度或提示音；数值越大，语音越快。如果方向词不容易听清，可以适当调慢。";
             case "test_cue":
-                return "测试提醒会按当前附近敌人提醒设置发送一次提示。若相关事件或输出通道已关闭，页面会提示原因；测试期间媒体音量和应用提示音量都需要大于零。";
-            case "test_haptic":
-                return "测试震动会检查附近敌人事件与触觉通道是否开启，再发送一次测试提醒。辅助运行时不能测试；请先停止辅助。";
+                return "点击“测试提醒与振动”会按当前附近敌人事件、提示方案和输出通道，发送一次近区提醒示例，并使用当前震感档位与节奏。声音与振动可一起测试；媒体静音或媒体／应用提示音量为 0 时会跳过声音，仍可测试已开启的振动。辅助或实时对局运行时不能测试。请确认是否听到声音或感觉到振动。";
             case "haptic_settings_link":
                 return "打开“震感与节奏”后，可以调整所有触觉提醒使用的节奏和震感档位，并试听当前设置。";
             case "before_start_read":
-                return "开启后，每次开始新的辅助会话前会打开“提醒说明与试听”目录。进入完整说明后，可以按朗读按钮播放；点击某一项会打开解释并播放该项示例。开启系统屏幕阅读器时，请使用页面内的播放按钮，以免朗读与示例抢声。关闭此选项后仍可手动打开目录，不影响其他提醒。";
+                return "开启后，每次开始新的辅助会话前会打开“提醒说明与试听”目录。进入完整说明后，可以单独听某一段，也可以播放全文、暂停后继续；点击目录中的某一项会打开解释并播放该项示例。开启系统屏幕阅读器时，请使用页面内的播放按钮，以免朗读与示例抢声。关闭此选项后仍可手动打开目录，不影响其他提醒。";
             case "reminder_guide":
-                return "目录列出当前开启的声音、语音和振动示例。每项可以单独反复播放与停止；完整说明有独立入口。示例使用当前设置，辅助运行时请先停止对局辅助再试听。";
+                return "目录列出当前开启的声音、语音和振动示例，并显示各项名称；方位语音只保留一个方向示例。每项可以单独反复播放与停止；完整说明有独立入口，可按段收听、播放全文和暂停后继续。示例使用当前设置，辅助运行时请先停止对局辅助再试听。";
             case "recognition_group":
                 return "识别配置由应用自动选择，画面位置会按屏幕比例适配；如果设备不支持高清模型，会自动回退到兼容配置。实验开关和新头像开关分别控制实验识别器与新头像提醒。";
             case "recognition_experiment":

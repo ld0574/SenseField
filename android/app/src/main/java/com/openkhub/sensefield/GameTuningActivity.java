@@ -39,7 +39,6 @@ public final class GameTuningActivity extends Activity {
     private RadioGroup presets;
     private boolean awaitingOverlayPermission;
     private Button test;
-    private Button hapticTest;
     private TextView testStatus;
     private CuePlayer testPlayer;
     private CueDispatcher testDispatcher;
@@ -64,18 +63,16 @@ public final class GameTuningActivity extends Activity {
 
         LinearLayout voices = UiKit.card(this);
         SettingHelp.addGroup(this, voices, "voice_group", 8);
-        testStatus = UiKit.body(this, "调高媒体音量，标准模式直接播报方位。");
+        testStatus = UiKit.body(this,
+                "按当前附近敌人提醒设置测试声音和振动；结果受设备与系统状态影响。");
         UiKit.add(voices, testStatus, 10);
         Button engines = button("选择语音引擎", false);
         engines.setOnClickListener(view -> chooseVoiceEngine());
         UiKit.add(voices, engines, 12);
         addSpeechRateControl(voices);
-        test = button("测试提醒", false);
+        test = button("测试提醒与振动", false);
         test.setOnClickListener(view -> testCue());
         UiKit.add(voices, test, 0);
-        hapticTest = button("测试震动", false);
-        hapticTest.setOnClickListener(view -> testHaptic());
-        UiKit.add(voices, hapticTest, 10);
         Button hapticSettings = button("震感与节奏", false);
         hapticSettings.setOnClickListener(view ->
                 startActivity(new Intent(this, HapticSettingsActivity.class)));
@@ -151,31 +148,48 @@ public final class GameTuningActivity extends Activity {
     }
 
     private void testCue() {
-        if (GameProfile.settings(this).getBoolean("capture_active", false)) {
-            toast("请先停止辅助，再测试提醒");
+        if (isLiveSessionRunning()
+                || GameProfile.settings(this).getBoolean("capture_active", false)) {
+            testStatus.setText("请先停止游戏辅助或实时对局，再测试提醒与振动。");
             return;
         }
-        AudioManager audio = getSystemService(AudioManager.class);
-        if (audio == null || audio.getStreamVolume(AudioManager.STREAM_MUSIC) == 0
-                || audio.isStreamMute(AudioManager.STREAM_MUSIC)) {
-            testStatus.setText("媒体音量为 0 或已静音。请按音量＋调高，再点击测试提醒。");
-            Log.w("MapAssistAudio", "AudioSelfTest blocked=media_muted");
-            return;
-        }
-        if (GameProfile.settings(this).getInt("volume", 45) == 0) {
-            testStatus.setText("应用提示音量为 0，请在配置与调参中调高。");
-            return;
-        }
+
         CueSettings settings = new CueSettings(this);
-        int channels = settings.nearRequestedChannels();
-        if (!settings.categoryEnabled(CueRequest.Category.NEAR_ZONE) || channels == 0) {
+        if (!settings.categoryEnabled(CueRequest.Category.NEAR_ZONE)) {
             testStatus.setText("附近敌人提醒已关闭，请在配置与调参中开启。");
             return;
         }
+        int configuredChannels = settings.nearRequestedChannels();
+        if (configuredChannels == 0) {
+            testStatus.setText("当前提示方案下附近敌人没有开启可用输出通道。");
+            return;
+        }
+
+        AudioManager audio = getSystemService(AudioManager.class);
+        boolean audioAvailable = audio != null
+                && NearCueTestPolicy.audioAvailable(
+                        audio.getStreamVolume(AudioManager.STREAM_MUSIC),
+                        audio.isStreamMute(AudioManager.STREAM_MUSIC),
+                        GameProfile.settings(this).getInt("volume", 45));
+        int channels = NearCueTestPolicy.channelsForTest(configuredChannels, audioAvailable);
+        if (channels == 0) {
+            testStatus.setText(audioAvailable
+                    ? "当前附近敌人设置没有可测试的声音或振动通道。"
+                    : "媒体静音或媒体／应用提示音量为 0，且当前没有开启振动；请调整设置后重试。");
+            Log.w("MapAssistAudio", "AudioSelfTest blocked=no_audible_test_channel");
+            return;
+        }
+        boolean audioSkipped = (channels & NearCueTestPolicy.AUDIO_CHANNELS) == 0
+                && (configuredChannels & NearCueTestPolicy.AUDIO_CHANNELS) != 0;
+        if (audioSkipped) {
+            Log.i("MapAssistAudio", "AudioSelfTest audio_skipped=media_muted_or_volume_zero");
+        }
+
         stopTestCue();
         final int generation = testGeneration;
         test.setEnabled(false);
-        testStatus.setText("正在准备测试提醒……");
+        testStatus.setText((channels & CueRequest.CHANNEL_SPEECH) != 0
+                ? "正在准备测试提醒……" : "正在发送测试提醒……");
         testPlayer = new CuePlayer(this);
         testDispatcher = new CueDispatcher(testPlayer, settings, new CueDispatcher.Listener() {
             @Override public void onDispatch(CueRequest request,
@@ -190,12 +204,18 @@ public final class GameTuningActivity extends Activity {
                         || "UNAVAILABLE".equals(result))) {
                     testHandler.post(() -> {
                         if (generation == testGeneration) testStatus.setText(
-                                "语音未能正常播放，请选择其他语音引擎，再测试提醒。");
+                                "语音引擎未能完成这次测试播放；请检查语音引擎和音量设置。");
+                    });
+                } else if ("TONE".equals(channel) && "FAILED".equals(result)) {
+                    testHandler.post(() -> {
+                        if (generation == testGeneration) testStatus.setText(
+                                "系统未能完成这次提示音播放；请检查媒体音量和设备设置。");
                     });
                 }
             }
         }, SystemClock::elapsedRealtime);
-        prepareTestCue(generation, channels, SystemClock.elapsedRealtime() + 3000);
+        prepareTestCue(generation, channels, audioSkipped,
+                SystemClock.elapsedRealtime() + 3000);
     }
 
     private void chooseVoiceEngine() {
@@ -233,50 +253,64 @@ public final class GameTuningActivity extends Activity {
         picker.getButton(AlertDialog.BUTTON_NEGATIVE).setTextSize(22);
     }
 
-    private void testHaptic() {
-        if (CaptureService.isRunning()) {
-            testStatus.setText("请先停止辅助，再测试震动。");
-            return;
-        }
-        CueSettings settings = new CueSettings(this);
-        if (!settings.nearHapticEnabled()
-                || (settings.enabledChannels() & CueRequest.CHANNEL_HAPTIC) == 0) {
-            testStatus.setText("请先在提示通道与事件中开启触觉和附近敌人震动。");
-            return;
-        }
-        stopTestCue();
-        final int generation = testGeneration;
-        hapticTest.setEnabled(false);
-        testPlayer = new CuePlayer(this);
-        long now = SystemClock.elapsedRealtime();
-        boolean requested = testPlayer.vibrate(new CueRequest("haptic-test",
-                "haptic-test:" + now, "haptic-test:" + now, "HAPTIC_TEST",
-                CueRequest.Category.NEAR_ZONE, NearZoneRouting.NEAR_PRIORITY,
-                now, now + 1200, CueRequest.CHANNEL_HAPTIC, 0, 0, 0, null));
-        testStatus.setText(requested ? "已请求两次短震动，请确认能否感觉到。"
-                : "未能请求震动，请检查手机是否支持震动。");
-        testHandler.postDelayed(() -> {
-            if (generation == testGeneration) hapticTest.setEnabled(true);
-        }, 600);
-    }
-
-    private void prepareTestCue(int generation, int channels, long prepareUntilMs) {
+    private void prepareTestCue(int generation, int channels, boolean audioSkipped,
+                                long prepareUntilMs) {
         if (generation != testGeneration || testPlayer == null) return;
         long now = SystemClock.elapsedRealtime();
         if ((channels & CueRequest.CHANNEL_SPEECH) != 0 && !testPlayer.speechReady()
                 && now < prepareUntilMs) {
-            testHandler.postDelayed(() -> prepareTestCue(generation, channels, prepareUntilMs), 100);
+            testHandler.postDelayed(() -> prepareTestCue(generation, channels, audioSkipped,
+                    prepareUntilMs), 100);
             return;
         }
-        testStatus.setText((channels & CueRequest.CHANNEL_SPEECH) != 0
-                ? "请确认能否听到“上方有敌人”。" : "请确认能否听到提示音。");
-        testDispatcher.submit(new CueRequest("audio-test", "audio-test:" + now,
-                "audio-test:" + now, "AUDIO_TEST", CueRequest.Category.NEAR_ZONE, 80,
+        CueDispatcher.DispatchResult result = testDispatcher.submit(new CueRequest(
+                "near-cue-test", "near-cue-test:" + now, "near-cue-test:" + now,
+                "NEAR_CUE_TEST", CueRequest.Category.NEAR_ZONE, NearZoneRouting.NEAR_PRIORITY,
                 now, now + 1200, channels, NearZoneRouting.TONE_NEAR, 0, 0,
                 NearZoneRouting.speech(3), 0f));
+        testStatus.setText(testDispatchStatus(result, channels, audioSkipped));
         testHandler.postDelayed(() -> {
             if (generation == testGeneration) test.setEnabled(true);
         }, 4500);
+    }
+
+    private static String testDispatchStatus(CueDispatcher.DispatchResult result, int channels,
+                                             boolean audioSkipped) {
+        int accepted = result.acceptedChannels & channels;
+        if (accepted == 0) {
+            if ((channels & CueRequest.CHANNEL_HAPTIC) != 0) {
+                return "未能播放这次测试，请检查语音或振动设置。";
+            }
+            return "未能播放声音，请检查语音引擎和媒体音量。";
+        }
+        StringBuilder status = new StringBuilder();
+        if (audioSkipped) status.append("声音通道因媒体静音或音量为 0 已跳过；");
+        status.append("已发送").append(channelNames(accepted)).append("测试");
+        int notAccepted = channels & ~accepted;
+        if (notAccepted != 0) {
+            status.append("；未能发送").append(channelNames(notAccepted)).append("测试");
+        }
+        status.append("。请确认是否能听到声音或感觉到振动。");
+        return status.toString();
+    }
+
+    private static String channelNames(int channels) {
+        StringBuilder names = new StringBuilder();
+        appendChannelName(names, channels, CueRequest.CHANNEL_TONE, "提示音");
+        appendChannelName(names, channels, CueRequest.CHANNEL_SPEECH, "语音");
+        appendChannelName(names, channels, CueRequest.CHANNEL_HAPTIC, "振动");
+        return names.toString();
+    }
+
+    private static void appendChannelName(StringBuilder names, int channels, int bit,
+                                          String name) {
+        if ((channels & bit) == 0) return;
+        if (names.length() > 0) names.append("、");
+        names.append(name);
+    }
+
+    private boolean isLiveSessionRunning() {
+        return CaptureService.isRunning() || Match3LiveService.isRunning();
     }
 
     private void stopTestCue() {
@@ -287,7 +321,6 @@ public final class GameTuningActivity extends Activity {
         testDispatcher = null;
         testPlayer = null;
         if (test != null) test.setEnabled(true);
-        if (hapticTest != null) hapticTest.setEnabled(true);
     }
 
     @Override protected void onPause() {

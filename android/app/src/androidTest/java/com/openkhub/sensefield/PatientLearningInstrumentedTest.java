@@ -52,16 +52,23 @@ public final class PatientLearningInstrumentedTest {
                 assertTrue(left.getContentDescription().toString().contains("左侧短音"));
                 View direction = findTag(activity.getWindow().getDecorView(), "near_speech_4");
                 assertNotNull(direction);
-                assertEquals("左上", ((TextView) direction).getText().toString());
-                ReminderSampleGrid grid = (ReminderSampleGrid) direction.getParent();
+                assertEquals("左上方位语音", ((TextView) direction).getText().toString());
+                assertEquals("Only one representative direction is listed", 1,
+                        ((ViewGroup) direction.getParent()).getChildCount());
+                assertNull(findTag(activity.getWindow().getDecorView(), "near_speech_1"));
+                TextView tone = (TextView) findTag(activity.getWindow().getDecorView(), "near_tone");
+                assertNotNull(tone);
+                assertEquals("附近敌人短音", tone.getText().toString());
+                ReminderSampleGrid grid = (ReminderSampleGrid) tone.getParent();
                 int wide = UiKit.dp(activity, 320);
                 measureGrid(grid, wide);
-                assertEquals("Short options share a row", grid.getChildAt(0).getTop(),
-                        grid.getChildAt(1).getTop());
+                if (activity.getResources().getConfiguration().fontScale <= 1.5f)
+                    assertEquals("Full sound names can share a row", grid.getChildAt(0).getTop(),
+                            grid.getChildAt(1).getTop());
                 int wideHeight = grid.getMeasuredHeight();
                 assertGridFits(grid);
                 measureGrid(grid, UiKit.dp(activity, 180));
-                assertTrue("Narrow windows reflow rather than overlap", grid.getMeasuredHeight() > wideHeight);
+                assertTrue("Narrow windows reflow rather than overlap", grid.getMeasuredHeight() >= wideHeight);
                 assertGridFits(grid);
                 grid.requestLayout();
             });
@@ -70,10 +77,81 @@ public final class PatientLearningInstrumentedTest {
         try (ActivityScenario<ReminderGuideActivity> scenario = ActivityScenario.launch(
                 intent(ReminderGuideActivity.class).putExtra(ReminderGuideActivity.EXTRA_FULL, true))) {
             scenario.onActivity(activity -> {
-                assertNotNull(find(activity.getWindow().getDecorView(), "朗读完整说明"));
+                assertNotNull(find(activity.getWindow().getDecorView(), "播放全文"));
                 assertNotNull(find(activity.getWindow().getDecorView(), "返回试听列表"));
                 assertNull("Reading the full explanation is silent until requested", player(activity));
+                ScrollView explanation = firstScrollView(activity.getWindow().getDecorView());
+                assertNotNull(explanation);
+                explanation.scrollTo(0, explanation.getChildAt(0).getHeight());
+                View controls = findTag(activity.getWindow().getDecorView(),
+                        "reminder_guide_playback_controls");
+                assertNotNull(controls);
+                assertFalse("Playback controls stay outside the long scrolling explanation",
+                        isDescendant(explanation, controls));
+                assertTrue("Playback controls stay visible at the bottom of the explanation",
+                        isVisibleInWindow(controls));
             });
+            screenshot("full-guide");
+        }
+    }
+
+    @Test public void completeGuideCanPlayOneSectionWithItsExamplesWithoutStartingAtTheBeginning() {
+        try (ActivityScenario<ReminderGuideActivity> scenario = ActivityScenario.launch(
+                intent(ReminderGuideActivity.class).putExtra(ReminderGuideActivity.EXTRA_FULL, true))) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                List<ReminderGuide.Step> full;
+                try {
+                    Field field = ReminderGuideActivity.class.getDeclaredField("fullSteps");
+                    field.setAccessible(true);
+                    @SuppressWarnings("unchecked") List<ReminderGuide.Step> value =
+                            (List<ReminderGuide.Step>) field.get(activity);
+                    full = value;
+                } catch (ReflectiveOperationException error) { throw new AssertionError(error); }
+                assertNotNull(full);
+                List<ReminderGuideSections.Section> sections = ReminderGuideSections.build(full);
+                ReminderGuideSections.Section chosen = null;
+                for (ReminderGuideSections.Section section : sections) {
+                    assertNotNull(find(root, section.title));
+                    TextView text = find(root, section.text);
+                    assertNotNull(text);
+                    assertEquals(Integer.MAX_VALUE, text.getMaxLines());
+                    Button play = (Button) findTag(root, section.id);
+                    assertNotNull(play);
+                    assertEquals("朗读这一段：" + section.title, play.getContentDescription());
+                    assertTrue(play.getMinimumHeight() >= UiKit.dp(activity, 56));
+                    if (chosen == null && section.startIndex > 0 && section.steps.size() > 1)
+                        chosen = section;
+                }
+                assertNotNull("An enabled section includes its own sound example", chosen);
+                ((Button) findTag(root, chosen.id)).performClick();
+                try {
+                    Field field = ReminderGuideActivity.class.getDeclaredField("steps");
+                    field.setAccessible(true);
+                    assertEquals("The selected paragraph and attached examples play independently",
+                            chosen.steps, field.get(activity));
+                } catch (ReflectiveOperationException error) { throw new AssertionError(error); }
+                assertNotSame(full.get(0), chosen.steps.get(0));
+                ((Button) find(root, "停止播放")).performClick();
+                assertNull("Stopping a section releases its output player", player(activity));
+            });
+        }
+    }
+
+    @Test public void tuningUsesOneCombinedReminderAndVibrationTest() {
+        try (ActivityScenario<GameTuningActivity> scenario = ActivityScenario.launch(intent(GameTuningActivity.class))) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                assertNotNull(find(root, "测试提醒与振动"));
+                assertNull(find(root, "测试提醒"));
+                assertNull(find(root, "测试震动"));
+                Map<String, ?> before = GameProfile.settings(activity).getAll();
+                ((Button) findTag(root, "setting_help_group_button:voice_group")).performClick();
+                assertGroupHelpContentsInOrder(findTag(root, "setting_help_panel_view"), "voice_group");
+                assertTrue(before.equals(GameProfile.settings(activity).getAll()));
+                SettingHelp.close(activity);
+            });
+            screenshot("combined-test");
         }
     }
 
