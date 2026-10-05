@@ -6,7 +6,8 @@ import java.util.List;
 /**
  * 消消乐棋盘纯逻辑：颜色矩阵 → 三连检测 + 相邻交换枚举。
  * 只依赖 char[][]，可在 JVM 单元测试中覆盖（不碰 Bitmap/Android API）。
- * 字母表：R红 O橙 Y黄 G绿 B蓝 P紫 .未知/空 —— 与截图采样器(Match3AssistActivity)约定一致。
+ * 字母表：R O Y G B P 基础动物；1-9/a-z 玩家学过的特殊棋子（见 Match3Sampler.assignCodes）；
+ * ' ' 空格；'.' 未识别。播报叫法一律走 Match3Coach.pieceName，本类不再自带词表。
  */
 final class Match3Board {
     static final String PIECE_COLORS = "ROYGBP";
@@ -137,23 +138,11 @@ final class Match3Board {
         for (int r = 0; r < board.length; r++) {
             StringBuilder sb = new StringBuilder("第 " + (r + 1) + " 行：");
             for (int c = 0; c < board[r].length; c++) {
-                sb.append(charName(board[r][c]));
+                sb.append(Match3Coach.pieceName(board[r][c]));
                 if (c < board[r].length - 1) sb.append("、");
             }
             lines.add(sb.toString());
         }
         return lines;
-    }
-
-    private static String charName(char c) {
-        switch (c) {
-            case 'R': return "红";
-            case 'O': return "橙";
-            case 'Y': return "黄";
-            case 'G': return "绿";
-            case 'B': return "蓝";
-            case 'P': return "紫";
-            default: return "空";
-        }
     }
 }

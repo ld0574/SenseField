@@ -118,12 +118,13 @@ public class Match3BoardTest {
         assertEquals(0, Match3Board.findSwaps(of(src)).size());
     }
 
+    /** 逐行扫描与点读共用一套词表（Match3Coach.pieceName）：念动物名，弃权格念「未识别」而不是「空」。 */
     @Test
-    public void scanSpeechUsesOneBasedChineseNames() {
+    public void scanSpeechUsesTheSharedAnimalVocabulary() {
         String[][] src = {{"R", "Y"}, {"B", "."}};
         List<String> lines = Match3Board.scanSpeech(of(src));
         assertEquals(2, lines.size());
-        assertEquals("第 1 行：红、黄", lines.get(0));
-        assertEquals("第 2 行：蓝、空", lines.get(1));
+        assertEquals("第 1 行：红狐狸、小鸡", lines.get(0));
+        assertEquals("第 2 行：河马、未识别", lines.get(1));
     }
 }

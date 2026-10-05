@@ -108,7 +108,9 @@ final class Match3Coach {
         return new RegionSummary(counts, total, unknown);
     }
 
+    /** 棋盘格字母 → 玩家听到的唯一叫法（全项目播报只有这一个词表来源）。 */
     static String pieceName(char c) {
+        if (c == Match3Sampler.EMPTY_CELL) return "空";
         switch (c) {
             case 'R': return "红狐狸";
             case 'O': return "棕熊";

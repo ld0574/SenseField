@@ -351,7 +351,7 @@ public class Match3LiveService extends Service {
         for (char[] row : matrix) {
             for (char c : row) {
                 total++;
-                if (c == '.') unknown++;
+                if (Match3Sampler.isUnreadable(c)) unknown++;
             }
         }
         if (unknown * 100 > total * 40) {
@@ -429,7 +429,7 @@ public class Match3LiveService extends Service {
 
     private static int countUnknown(char[][] m) {
         int n = 0;
-        for (char[] row : m) for (char c : row) if (c == '.') n++;
+        for (char[] row : m) for (char c : row) if (Match3Sampler.isUnreadable(c)) n++;
         return n;
     }
 

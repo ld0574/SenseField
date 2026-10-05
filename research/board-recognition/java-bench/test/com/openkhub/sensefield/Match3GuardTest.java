@@ -125,4 +125,42 @@ public class Match3GuardTest {
         }
         assertEquals(20, codes.size());
     }
+
+    /** 采样矩阵必须把「没棋子」和「认不出」分开：两者旧代码同为 '.'，逐行播报就会把空格和
+     *  未识别念成同一个词，特殊棋子更会被念成「空」。真机单测里 Bitmap 取像素恒为 0，只能在这跑。 */
+    @Test
+    public void sampleSeparatesEmptyCellFromUnknown() {
+        int w = 576, h = 1280;
+        BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = img.createGraphics();
+        g.setColor(new java.awt.Color(0x5AE0F5));          // 天空
+        g.fillRect(0, 0, w, h);
+        int l = 88, t = 508, r = 490, b = 918;
+        g.setColor(new java.awt.Color(0x1E2A58));          // 棋盘底
+        g.fillRect(l, t, r - l, b - t);
+        int cw = (r - l) / 7, ch = (b - t) / 7;
+        java.awt.Color[] pal = {new java.awt.Color(0xD87830), new java.awt.Color(0xF0D060),
+                new java.awt.Color(0x40B040), new java.awt.Color(0x50A0E0)};
+        for (int row = 0; row < 7; row++)
+            for (int col = 0; col < 7; col++) {
+                if (row == 3 && col == 3) continue;        // 留一个真空位
+                g.setColor(pal[(row * 3 + col) % pal.length]);
+                g.fillOval(l + cw * col + 3, t + ch * row + 3, cw - 6, ch - 6);
+            }
+        g.dispose();
+        Bitmap frame = new Bitmap(img);
+
+        char[][] board = Match3Sampler.sample(frame, 7, 7, 15, 39, 85, 72, null);
+        assertEquals("真空位应读成空格标记", Match3Sampler.EMPTY_CELL, board[3][3]);
+        for (int row = 0; row < 7; row++)
+            for (int col = 0; col < 7; col++)
+                if (row != 3 || col != 3)
+                    assertTrue("有子格 " + row + "," + col + " 读成了 " + board[row][col],
+                            Match3Board.isPiece(board[row][col]));
+
+        String line4 = Match3Board.scanSpeech(board).get(3);
+        assertTrue("逐行播报要把空格念成「空」：" + line4, line4.contains("空"));
+        assertFalse("不许再出现颜色词单字表：" + line4, line4.contains("橙"));
+        assertEquals("空格念空、未识别念未识别", "空", Match3Coach.pieceName(Match3Sampler.EMPTY_CELL));
+    }
 }

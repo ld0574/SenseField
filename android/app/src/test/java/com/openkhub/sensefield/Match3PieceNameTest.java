@@ -5,6 +5,8 @@ import static org.junit.Assert.assertNotEquals;
 
 import org.junit.Test;
 
+import java.util.List;
+
 /** 播报层字母→棋子名映射测试。特殊棋子模板名还原（需真实图片）在 research/board-recognition/java-bench 里跑。 */
 public class Match3PieceNameTest {
 
@@ -46,5 +48,35 @@ public class Match3PieceNameTest {
     public void unregisteredCodeFallsBack() {
         assertEquals(Match3Sampler.UNKNOWN, Match3Sampler.templateCode("尚未学习的棋子"));
         assertEquals(null, Match3Sampler.nameForCode('Z'));
+    }
+
+    /** 空格与未识别是两个词：没棋子 ≠ 认不出。 */
+    @Test
+    public void emptyAndUnknownAreDifferentWords() {
+        assertEquals("空", Match3Coach.pieceName(Match3Sampler.EMPTY_CELL));
+        assertEquals("未识别", Match3Coach.pieceName(Match3Sampler.UNKNOWN));
+        assertNotEquals(Match3Coach.pieceName(Match3Sampler.EMPTY_CELL),
+                Match3Coach.pieceName(Match3Sampler.UNKNOWN));
+    }
+
+    /** 自我修复检测按「读不出棋子」数格，两种标记都要算进去（与改用两个标记前口径一致）。 */
+    @Test
+    public void unreadableCoversBothMarkers() {
+        org.junit.Assert.assertTrue(Match3Sampler.isUnreadable(Match3Sampler.UNKNOWN));
+        org.junit.Assert.assertTrue(Match3Sampler.isUnreadable(Match3Sampler.EMPTY_CELL));
+        org.junit.Assert.assertFalse(Match3Sampler.isUnreadable('O'));
+        org.junit.Assert.assertFalse(Match3Sampler.isUnreadable('1'));
+    }
+
+    /** 逐行扫描必须与点读/区域摘要同一套词表——旧 charName 念颜色词，玩家听到两套命名。 */
+    @Test
+    public void scanSpeechUsesTheSameVocabularyAsPieceName() {
+        char[][] board = {
+                {'O', 'Y', Match3Sampler.EMPTY_CELL},
+                {'G', 'B', Match3Sampler.UNKNOWN},
+        };
+        List<String> lines = Match3Board.scanSpeech(board);
+        assertEquals("第 1 行：棕熊、小鸡、空", lines.get(0));
+        assertEquals("第 2 行：青蛙、河马、未识别", lines.get(1));
     }
 }

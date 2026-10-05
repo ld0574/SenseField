@@ -17,6 +17,13 @@ import java.util.Map;
  *  Activity（截图式）与 Match3LiveService（实时式）共用，保证两条链路行为一致。 */
 final class Match3Sampler {
     static final char UNKNOWN = '.';
+    /** 确认的空格（格心与四角同色）。与 UNKNOWN 分开，否则「没棋子」和「认不出」在播报里同一个词。 */
+    static final char EMPTY_CELL = ' ';
+
+    /** 该格读不出棋子（真空位或认不出）——自我修复检测按这个口径数。 */
+    static boolean isUnreadable(char c) {
+        return c == UNKNOWN || c == EMPTY_CELL;
+    }
 
     /** 特殊棋子模板：一张 32×32 裁剪图＋名字。 */
     static final class SpecialTemplate {
@@ -90,7 +97,7 @@ final class Match3Sampler {
                 int cx = l + cellW * col + cellW / 2;
                 int cy = t + cellH * row + cellH / 2;
                 board[row][col] = looksEmpty(bitmap, cx, cy, cellW, cellH)
-                        ? UNKNOWN
+                        ? EMPTY_CELL
                         : classifyCell(bitmap, cx, cy, half, templates);
             }
         }
@@ -115,7 +122,7 @@ final class Match3Sampler {
         int cx = l + cellW * col + cellW / 2, cy = t + cellH * row + cellH / 2;
         int half = Math.max(3, Math.min(cellW, cellH) / 8);
         char piece = looksEmpty(frame, cx, cy, cellW, cellH)
-                ? UNKNOWN
+                ? EMPTY_CELL
                 : classifyCell(frame, cx, cy, half, templates);
         return new int[]{row, col, piece};
     }
