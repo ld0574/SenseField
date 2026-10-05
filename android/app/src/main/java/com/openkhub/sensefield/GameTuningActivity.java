@@ -63,19 +63,16 @@ public final class GameTuningActivity extends Activity {
         UiKit.add(content, UiKit.text(this, "配置与调参", 28, UiKit.INK, true), 20);
 
         LinearLayout voices = UiKit.card(this);
-        UiKit.add(voices, UiKit.heading(this, "提醒测试与语音"), 10);
-        SettingHelp.add(this, voices, "voice_group", 8);
+        SettingHelp.addGroup(this, voices, "voice_group", 8);
         testStatus = UiKit.body(this, "调高媒体音量，标准模式直接播报方位。");
         UiKit.add(voices, testStatus, 10);
         Button engines = button("选择语音引擎", false);
         engines.setOnClickListener(view -> chooseVoiceEngine());
         UiKit.add(voices, engines, 12);
-        SettingHelp.add(this, voices, "speech_engine", 8);
         addSpeechRateControl(voices);
         test = button("测试提醒", false);
         test.setOnClickListener(view -> testCue());
         UiKit.add(voices, test, 0);
-        SettingHelp.add(this, voices, "test_cue", 8);
         hapticTest = button("测试震动", false);
         hapticTest.setOnClickListener(view -> testHaptic());
         UiKit.add(voices, hapticTest, 10);
@@ -89,19 +86,14 @@ public final class GameTuningActivity extends Activity {
         introduction.setOnCheckedChangeListener((view, checked) -> GameProfile.settings(this)
                 .edit().putBoolean(ReminderGuide.PREF_READ_BEFORE_START, checked).apply());
         UiKit.add(voices, introduction, 10);
-        SettingHelp.add(this, voices, "before_start_read", 8);
         Button guide = button("提醒说明与试听", false);
         guide.setOnClickListener(view ->
                 startActivity(new Intent(this, ReminderGuideActivity.class)));
         UiKit.add(voices, guide, 0);
-        SettingHelp.add(this, voices, "reminder_guide", 4);
         UiKit.add(content, voices, 14);
 
         LinearLayout recognition = UiKit.card(this);
-        UiKit.add(recognition, UiKit.heading(this, "识别功能"), 8);
-        SettingHelp.add(this, recognition, "recognition_group", 8);
-        UiKit.add(recognition, UiKit.body(this,
-                "识别配置由应用自动选择，画面位置会按屏幕比例适配；如果设备不支持高清模型，会自动回退到兼容配置。"), 4);
+        SettingHelp.addGroup(this, recognition, "recognition_group", 8);
         CheckBox experimental = checkBox("启用小地图识别（实验）");
         experimental.setChecked(GameProfile.settings(this)
                 .getBoolean(GameProfile.PREF_ALLOW_EXPERIMENTAL,
@@ -110,7 +102,6 @@ public final class GameTuningActivity extends Activity {
                 GameProfile.settings(this).edit()
                         .putBoolean(GameProfile.PREF_ALLOW_EXPERIMENTAL, checked).apply());
         UiKit.add(recognition, experimental, 4);
-        SettingHelp.add(this, recognition, "recognition_experiment", 8);
 
         minimapOverlay = checkBox("提醒新出现的敌方头像");
         minimapOverlay.setChecked(GameProfile.settings(this)
@@ -128,13 +119,11 @@ public final class GameTuningActivity extends Activity {
             }
         });
         UiKit.add(recognition, minimapOverlay, 4);
-        SettingHelp.add(this, recognition, "new_avatar", 8);
 
         UiKit.add(content, recognition, 14);
 
         LinearLayout cueCard = UiKit.card(this);
-        UiKit.add(cueCard, UiKit.heading(this, "提示方案"), 8);
-        SettingHelp.add(this, cueCard, "preset_group", 8);
+        SettingHelp.addGroup(this, cueCard, "preset_group", 8);
         presets = new RadioGroup(this);
         addPreset("精简", CueSettings.PRESET_COMPACT);
         addPreset("标准", CueSettings.PRESET_STANDARD);
@@ -148,8 +137,7 @@ public final class GameTuningActivity extends Activity {
         UiKit.add(content, cueCard, 14);
 
         LinearLayout tuning = UiKit.card(this);
-        UiKit.add(tuning, UiKit.heading(this, "提示调节"), 10);
-        SettingHelp.add(this, tuning, "tuning_group", 8);
+        SettingHelp.addGroup(this, tuning, "tuning_group", 8);
         addVolumeControl(tuning);
         addIntervalControl(tuning);
         addCenterControl(tuning);
@@ -324,7 +312,10 @@ public final class GameTuningActivity extends Activity {
         }));
         UiKit.add(parent, label, 0);
         UiKit.add(parent, rate, 12);
-        SettingHelp.add(this, parent, "speech_rate", 8);
+    }
+
+    @Override @SuppressWarnings("deprecation") public void onBackPressed() {
+        if (!SettingHelp.close(this)) super.onBackPressed();
     }
 
     private CheckBox checkBox(String label) {

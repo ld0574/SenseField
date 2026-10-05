@@ -8,7 +8,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-/** Scrollable, setting-specific help page. Opening it never reads or writes preferences. */
+/** Full group help, secondary to the panel. Opening it never changes preferences. */
 public final class SettingHelpActivity extends Activity {
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -33,6 +33,11 @@ public final class SettingHelpActivity extends Activity {
         LinearLayout card = UiKit.card(this);
         TextView explanation = UiKit.readingBody(this, SettingHelpContent.text(key), 22);
         UiKit.add(card, explanation, 0);
+        for (String itemKey : SettingHelpContent.itemKeys(key)) {
+            UiKit.gap(card, 18);
+            UiKit.add(card, UiKit.heading(this, SettingHelpContent.title(itemKey)), 6);
+            UiKit.add(card, UiKit.readingBody(this, SettingHelpContent.text(itemKey), 20), 0);
+        }
         UiKit.add(page, card, 20);
 
         Button back = UiKit.button(this, "返回", false);

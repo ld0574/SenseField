@@ -211,6 +211,7 @@ def workspace_candidates(root: Path) -> list[str]:
         "docs/README.md",
         "docs/公开文档范围.md",
         "docs/design/技术方案.md",
+        "docs/design/SETTINGS_CONTEXTUAL_HELP.md",
         "docs/design/端侧事件感知与可靠性增强技术方案.md",
         "docs/design/视野记忆.md",
         "docs/design/赛题背景.md",

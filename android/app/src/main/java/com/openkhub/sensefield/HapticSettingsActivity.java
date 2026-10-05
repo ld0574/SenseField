@@ -48,9 +48,7 @@ public final class HapticSettingsActivity extends Activity {
                 "调整节奏和震感后，可以试听并比较效果。这些设置会用于所有触觉提醒。"), 16);
 
         LinearLayout rhythmCard = UiKit.card(this);
-        UiKit.add(rhythmCard, UiKit.heading(this, "提醒节奏"), 8);
-        UiKit.add(rhythmCard, UiKit.body(this,
-                "短促节奏会缩短每次震动和间隔，保留原有次数与顺序。"), 8);
+        SettingHelp.addGroup(this, rhythmCard, "haptic_rhythm", 8);
         RadioGroup rhythm = new RadioGroup(this);
         addChoice(rhythm, "保留原有节奏（默认）", "保留各类提醒原有的震动节奏。",
                 HapticPolicy.PREF_MODE, HapticPolicy.MODE_ORIGINAL);
@@ -62,7 +60,7 @@ public final class HapticSettingsActivity extends Activity {
         selectSaved(rhythm, HapticPolicy.PREF_MODE, HapticPolicy.MODE_ORIGINAL);
 
         LinearLayout strengthCard = UiKit.card(this);
-        UiKit.add(strengthCard, UiKit.heading(this, "震感档位"), 8);
+        SettingHelp.addGroup(this, strengthCard, "haptic_strength", 8);
         RadioGroup strength = new RadioGroup(this);
         addChoice(strength, "设备默认（默认）", "使用设备默认振幅或原有脉冲时长。",
                 HapticPolicy.PREF_STRENGTH, HapticPolicy.STRENGTH_SYSTEM);
@@ -78,9 +76,7 @@ public final class HapticSettingsActivity extends Activity {
         refreshCapabilityText();
 
         LinearLayout testCard = UiKit.card(this);
-        UiKit.add(testCard, UiKit.heading(this, "试听"), 8);
-        UiKit.add(testCard, UiKit.body(this,
-                "试听会发出一次附近提醒的震动，帮助你比较当前节奏和震感。"), 10);
+        SettingHelp.addGroup(this, testCard, "haptic_preview", 8);
         testButton = UiKit.button(this, "试听当前触觉设置", true);
         testButton.setContentDescription("发送一次当前节奏与震感档位的触觉试听");
         testButton.setOnClickListener(view -> playPreview());
@@ -93,6 +89,10 @@ public final class HapticSettingsActivity extends Activity {
         done.setOnClickListener(view -> finish());
         UiKit.add(content, done, 0);
         setContentView(scroll);
+    }
+
+    @Override @SuppressWarnings("deprecation") public void onBackPressed() {
+        if (!SettingHelp.close(this)) super.onBackPressed();
     }
 
     private void addChoice(RadioGroup group, String label, String explanation,

@@ -67,17 +67,15 @@ public final class CapturePermissionsActivity extends Activity {
         UiKit.add(content, UiKit.text(this, "授权与运行设置", 28, UiKit.INK, true), 8);
         UiKit.add(content, UiKit.body(this, "先完成必要授权，再开始辅助。"), 18);
 
-        LinearLayout screen = card(content, "屏幕采集");
+        LinearLayout screen = card(content, "capture_screen");
         screenStatus = UiKit.body(this, "每次开始新会话时，由系统确认共享整个屏幕。");
         UiKit.add(screen, screenStatus, 10);
         capture = button(screen, "授权截屏并开始");
         capture.setOnClickListener(view -> requestCapture());
-        SettingHelp.add(this, screen, "capture_screen", 8);
 
-        LinearLayout notifications = card(content, "运行通知");
+        LinearLayout notifications = card(content, "capture_notifications");
         notificationStatus = UiKit.body(this, "");
         UiKit.add(notifications, notificationStatus, 10);
-        SettingHelp.add(this, notifications, "capture_notifications", 8);
         button(notifications, "授权运行通知").setOnClickListener(view -> {
             if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(
                     Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -89,10 +87,9 @@ public final class CapturePermissionsActivity extends Activity {
             }
         });
 
-        LinearLayout overlay = card(content, "置顶视觉提示");
+        LinearLayout overlay = card(content, "capture_overlay");
         overlayStatus = UiKit.body(this, "");
         UiKit.add(overlay, overlayStatus, 6);
-        SettingHelp.add(this, overlay, "capture_overlay", 8);
         CheckBox visual = new CheckBox(this);
         visual.setText("允许使用视觉提示");
         visual.setTextSize(22);
@@ -105,24 +102,18 @@ public final class CapturePermissionsActivity extends Activity {
             refreshPermissions();
         });
         UiKit.add(overlay, visual, 6);
-        SettingHelp.add(this, overlay, "capture_visual", 8);
         button(overlay, "授权置顶显示").setOnClickListener(view -> startActivity(new Intent(
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 Uri.parse("package:" + getPackageName()))));
 
-        LinearLayout battery = card(content, "后台省电策略");
+        LinearLayout battery = card(content, "capture_battery");
         batteryStatus = UiKit.body(this, "");
         UiKit.add(battery, batteryStatus, 10);
-        SettingHelp.add(this, battery, "capture_battery", 8);
         button(battery, "设置后台省电策略").setOnClickListener(view -> startActivity(new Intent(
                 Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 Uri.parse("package:" + getPackageName()))));
-        SettingHelp.add(this, battery, "capture_battery_app", 8);
         button(battery, "系统省电优化设置").setOnClickListener(view -> startActivity(
                 new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)));
-        SettingHelp.add(this, battery, "capture_battery_system", 8);
-        UiKit.add(battery, UiKit.body(this,
-                "小米手机还需检查电量与性能，允许此应用后台运行；各品牌设置可能不同。"), 0);
 
         button(content, "声音与提示配置").setOnClickListener(view ->
                 startActivity(new Intent(this, GameTuningActivity.class)));
@@ -131,11 +122,15 @@ public final class CapturePermissionsActivity extends Activity {
         refreshPermissions();
     }
 
-    private LinearLayout card(LinearLayout parent, String title) {
+    private LinearLayout card(LinearLayout parent, String helpKey) {
         LinearLayout card = UiKit.card(this);
-        UiKit.add(card, UiKit.heading(this, title), 8);
+        SettingHelp.addGroup(this, card, helpKey, 8);
         UiKit.add(parent, card, 14);
         return card;
+    }
+
+    @Override @SuppressWarnings("deprecation") public void onBackPressed() {
+        if (!SettingHelp.close(this)) super.onBackPressed();
     }
 
     private Button button(LinearLayout parent, String title) {
