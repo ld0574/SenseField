@@ -1,4 +1,6 @@
-# 听野视觉网关：Linux 原生部署
+# 听野助手：可选的Linux系统服务部署
+
+已有配置时，推荐先用[直接启动](assistant-direct-start.md)：在解压目录运行 `bash start.sh`。本页安装器仅用于需要systemd管理的场景，直接启动不依赖本页迁移流程。
 
 本文面向由负责人自行管理的 Linux 服务器。网关以 Python 和 systemd 运行，不需要 Docker。服务端 ASR 关闭，语音识别由手机本地完成。安装脚本会安装服务文件、准备私有配置并执行 `systemctl daemon-reload`；首次安装还会用 pip 安装 Python 依赖，因此需要访问所配置的 Python 包仓库。它不会启动服务或修改 Nginx，也不会对公网或生产服务执行连接验收。
 
