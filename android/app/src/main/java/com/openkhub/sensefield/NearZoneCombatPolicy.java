@@ -22,22 +22,17 @@ final class NearZoneCombatPolicy {
         final boolean dense;
         final boolean enteredDense;
         final boolean exitedDense;
-        final boolean allowSpeech;
         final String denseReason;
-        final float bestWindowScore;
 
         Decision(int freshEnemyCount, float score, int priority, boolean dense,
-                 boolean enteredDense, boolean exitedDense, boolean allowSpeech,
-                 String denseReason, float bestWindowScore) {
+                 boolean enteredDense, boolean exitedDense, String denseReason) {
             this.freshEnemyCount = freshEnemyCount;
             this.score = score;
             this.priority = priority;
             this.dense = dense;
             this.enteredDense = enteredDense;
             this.exitedDense = exitedDense;
-            this.allowSpeech = allowSpeech;
             this.denseReason = denseReason;
-            this.bestWindowScore = bestWindowScore;
         }
     }
 
@@ -45,8 +40,6 @@ final class NearZoneCombatPolicy {
     private boolean dense;
     private String lastMultiTargetSignature = "";
     private long lastChangeAtMs = Long.MIN_VALUE / 2;
-    private float bestDenseScore;
-    private long scoreWindowStartedAtMs = -1;
 
     Decision observe(NativeFrameResult frame, long observedAtMs, int maxAgeMs) {
         int freshEnemies = 0;
@@ -89,34 +82,21 @@ final class NearZoneCombatPolicy {
         if (!dense && denseTrigger) {
             dense = true;
             entered = true;
-            bestDenseScore = 0f;
-            scoreWindowStartedAtMs = -1;
             reason = multiTargetChange ? "multiple_fresh_enemies" : "multiple_near_events";
         } else if (dense && observedAtMs - lastChangeAtMs > DENSE_QUIET_MS) {
             dense = false;
             exited = true;
-            bestDenseScore = 0f;
-            scoreWindowStartedAtMs = -1;
             reason = "quiet_window";
             nearEventTimes.clear();
         }
 
         float score = score(freshEnemies, nearEvent, relation == null
                 ? -1f : relation.nearestDistance);
-        boolean allowSpeech = true;
-        if (dense && nearEvent) {
-            // A non-event frame is not a spoken competitor. Each new window
-            // also expires the previous winner, even if dense mode continues.
-            if (scoreWindowStartedAtMs < 0 || observedAtMs < scoreWindowStartedAtMs
-                    || observedAtMs - scoreWindowStartedAtMs >= DENSE_WINDOW_MS) {
-                scoreWindowStartedAtMs = observedAtMs;
-                bestDenseScore = 0f;
-            }
-            allowSpeech = score >= bestDenseScore;
-            if (allowSpeech) bestDenseScore = score;
-        }
+        // Every confirmed near appearance is a new warning opportunity,
+        // including a lower-scored returning target. Dense mode still reduces
+        // far/vision-memory output; the dispatcher bounds fresh near playback.
         return new Decision(freshEnemies, score, priorityForScore(score), dense, entered,
-                exited, allowSpeech, reason, bestDenseScore);
+                exited, reason);
     }
 
     void reset() {
@@ -124,8 +104,6 @@ final class NearZoneCombatPolicy {
         dense = false;
         lastMultiTargetSignature = "";
         lastChangeAtMs = Long.MIN_VALUE / 2;
-        bestDenseScore = 0f;
-        scoreWindowStartedAtMs = -1;
     }
 
     boolean isDense() { return dense; }

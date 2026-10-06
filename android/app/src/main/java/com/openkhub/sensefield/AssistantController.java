@@ -94,7 +94,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     }
     void start() {
         main.post(() -> {
-            if (closed) return;
+            if (closed || !settings.enabled()) return;
             overlay = new AssistantOverlay(context, new AssistantOverlay.Listener() {
                 @Override public void readScreen() {
                     host.audit("AssistantInteraction event=READ_SCREEN");
@@ -325,6 +325,14 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     }
     /** Revocation is immediate; enabling new capabilities requires a fresh, foreground start. */
     void settingsChanged(AssistantSettings current) {
+        if (closed) return;
+        if (!current.optedIn) {
+            voiceEnabled = false; visionEnabled = false; proactiveEnabled = false;
+            invalidate("consent_revoked");
+            close();
+            main.post(() -> host.status("实验助手已关闭，本地预警继续"));
+            return;
+        }
         boolean disconnect = !settings.endpoint.equals(current.endpoint) || !settings.token.equals(current.token);
         boolean revokeVoice = voiceEnabled && !current.voice;
         boolean revokeVision = visionEnabled && (!current.vision || !current.configured() || disconnect);

@@ -73,6 +73,15 @@ public:
     Harness &operator=(const Harness &) = delete;
 
     ma_relation_output step(const Entities &entities, int map_valid = 1) {
+        // Synthetic snapshots represent a new sighting unless a test uses
+        // step_snapshot() to keep the tracker's original observation time.
+        Entities snapshot = entities;
+        for (ma_tracked_entity &item : snapshot)
+            item.last_seen_ms = now_ - item.freshness_ms;
+        return step_snapshot(snapshot, map_valid);
+    }
+
+    ma_relation_output step_snapshot(const Entities &entities, int map_valid = 1) {
         ma_relation_output out{};
         CHECK(ma_relation_update(relation_, entities.data(),
                                  static_cast<int>(entities.size()), kMapBody, map_valid,
@@ -184,39 +193,247 @@ void continuous_occupancy_stays_quiet() {
     }
 }
 
-// Several enemies entering, leaving and swapping track ids inside one
-// episode are one cue: identity is not the dedupe key.
-void multiple_enemies_and_id_swaps_cue_once() {
+// Simultaneous appearances coalesce, and continuously visible tracks remain
+// quiet. Track ids are spatial association ids, not hero identities.
+void multiple_continuously_visible_enemies_cue_once() {
     Harness harness;
     int enters = 0;
     for (int index = 0; index < 60; ++index) {
         Entities entities{self_at()};
-        entities.push_back(enemy_at(0.10f, 45.0f, index % 2 == 0 ? 1 : 2));
-        if (index % 3 != 0) entities.push_back(enemy_at(0.15f, 45.0f, 3 + index));
+        entities.push_back(enemy_at(0.10f, 45.0f, 1));
+        entities.push_back(enemy_at(0.15f, 45.0f, 2));
         const ma_relation_output out = harness.step(entities);
         if (out.event == MA_RELATION_EVENT_NEAR_ENTER) ++enters;
     }
     CHECK(enters == 1);
 }
 
-// Leaving beyond REARM re-arms; there is no 15-second global cooldown.
-void return_after_rearm_window_cues_again() {
-    Harness harness;
-    const int64_t first_at = harness.now() + 83;
-    const ma_relation_output first = confirm(harness, {self_at(), enemy_at(0.15f, 0.0f)});
-    CHECK(first.episode_id == 1);
-    for (int index = 0; index < 40; ++index) {
-        const ma_relation_output out = harness.step({self_at(), enemy_at(0.40f, 0.0f)});
-        CHECK(out.event == MA_RELATION_EVENT_NONE);
+// Short detector dropouts are uncertainty, not confirmed visual disappearance.
+// Only sustained reliable absence rearms; after confirmation there is no
+// additional return cooldown. This deliberately replaces the v1 one-LOST test.
+void disappearance_requires_stable_reliable_absence() {
+    for (bool retained_ghost : {false, true}) {
+        for (int missing_frames : {1, 10, 30, 38, 45, 150}) {
+            Harness harness;
+            const Entities near{self_at(), enemy_at(0.15f, 0.0f)};
+            const ma_relation_output first = confirm(harness, near);
+            for (int index = 0; index < missing_frames; ++index) {
+                Entities missing{self_at()};
+                if (retained_ghost)
+                    missing.push_back(enemy_at(0.15f, 0.0f, 1, MA_TRACK_STATE_LOST));
+                CHECK(harness.step(missing).event == MA_RELATION_EVENT_NONE);
+            }
+            if (missing_frames < 38) {
+                for (int index = 0; index < 4; ++index)
+                    CHECK(harness.step(near).event != MA_RELATION_EVENT_NEAR_ENTER);
+            } else {
+                const ma_relation_output second = confirm(harness, near);
+                CHECK(second.episode_id == first.episode_id + 1);
+            }
+        }
     }
-    CHECK(harness.step({self_at()}).state == MA_RELATION_CLEAR);
-    const int64_t second_at = harness.now() + 83;
-    const ma_relation_output second = confirm(harness, {self_at(), enemy_at(0.15f, 0.0f)});
-    CHECK(second.episode_id == 2);
-    CHECK(second_at - first_at < 15000);
 }
 
-// Coming back before the REARM window completes stays silent.
+// Alternating LOST/visible every 1-2 seconds must not manufacture new alerts.
+// Replacement ids at the retained position keep the same announced state.
+void repeated_dropouts_and_rebuilt_ids_stay_quiet() {
+    Harness harness;
+    const ma_tracked_entity staying = enemy_at(.10f, 0.f, 2);
+    confirm(harness, {self_at(), staying, enemy_at(.15f, 135.f, 1)});
+    int id = 1;
+    for (int cycle = 0; cycle < 12; ++cycle) {
+        for (int i = 0; i < 20; ++i)
+            CHECK(harness.step({self_at(), staying,
+                    enemy_at(.15f, 135.f, id, MA_TRACK_STATE_LOST)}).event
+                    != MA_RELATION_EVENT_NEAR_ENTER);
+        id = 10 + cycle;
+        for (int i = 0; i < 8; ++i)
+            CHECK(harness.step({self_at(), staying,
+                    enemy_at(.16f, 135.f, id)}).event != MA_RELATION_EVENT_NEAR_ENTER);
+    }
+}
+
+// Continuity only maps an uncertain old track to a nearby, unmatched id.
+// It must neither steal a distant new target nor reuse one id twice.
+void continuity_is_bounded_and_one_to_one() {
+    Harness harness;
+    confirm(harness, {self_at(), enemy_at(.15f, 0.f, 1)});
+    harness.step({self_at(), enemy_at(.15f, 0.f, 1, MA_TRACK_STATE_LOST)});
+    const Entities rebuilt{self_at(), enemy_at(.15f, 0.f, 9), enemy_at(.16f, 180.f, 10)};
+    CHECK(harness.step(rebuilt).event != MA_RELATION_EVENT_NEAR_ENTER);
+    const auto out = harness.step(rebuilt);
+    CHECK(out.event == MA_RELATION_EVENT_NEAR_ENTER);
+    CHECK(out.sector == MA_SECTOR_LEFT);
+    CHECK(std::fabs(out.nearest_distance - .16f) < 1e-4f);
+    for (int i = 0; i < 20; ++i)
+        CHECK(harness.step(rebuilt).event != MA_RELATION_EVENT_NEAR_ENTER);
+}
+
+// Time spent with an invalid map/self or stale visible record is not evidence
+// of disappearance, even when it lies between two reliable absence runs.
+void technical_gaps_interrupt_absence_confirmation() {
+    for (int failure : {0, 1, 2}) {
+        Harness harness;
+        const Entities near{self_at(), enemy_at(.15f, 0.f)};
+        confirm(harness, near);
+        for (int i = 0; i < 20; ++i) harness.step({self_at()});
+        for (int i = 0; i < 10; ++i) {
+            if (failure == 0) harness.step({self_at()}, 0);
+            else if (failure == 1) harness.step({});
+            else harness.step({self_at(), enemy_at(.15f, 0.f, 1,
+                    MA_TRACK_STATE_VISIBLE, 900)});
+        }
+        for (int i = 0; i < 20; ++i) harness.step({self_at()});
+        for (int i = 0; i < 4; ++i)
+            CHECK(harness.step(near).event != MA_RELATION_EVENT_NEAR_ENTER);
+        for (int i = 0; i < 38; ++i) harness.step({self_at()});
+        CHECK(confirm(harness, near).episode_id == 2);
+    }
+}
+
+// The returning target gets its own direction/distance even if an already
+// announced enemy remains nearer in another direction.
+void returning_enemy_is_not_hidden_by_continuous_occupancy() {
+    Harness harness;
+    const ma_tracked_entity returning = enemy_at(0.18f, 135.0f, 1);
+    const ma_tracked_entity staying = enemy_at(0.10f, 0.0f, 2);
+    const Entities both{self_at(), returning, staying};
+    const ma_relation_output first = confirm(harness, both);
+    for (int i = 0; i < 38; ++i)
+        CHECK(harness.step({self_at(), staying,
+                enemy_at(0.18f, 135.0f, 1, MA_TRACK_STATE_LOST)}).event
+                == MA_RELATION_EVENT_NONE);
+    CHECK(harness.step(both).event == MA_RELATION_EVENT_NONE);
+    const ma_relation_output back = harness.step(both);
+    CHECK(back.event == MA_RELATION_EVENT_NEAR_ENTER);
+    CHECK(back.episode_id == first.episode_id + 1);
+    CHECK(back.sector == MA_SECTOR_UP_LEFT);
+    CHECK(std::fabs(back.nearest_distance - 0.18f) < 1e-4f);
+    for (int index = 0; index < 40; ++index)
+        CHECK(harness.step(both).event == MA_RELATION_EVENT_NONE);
+}
+
+void new_enemy_can_enter_while_another_stays_nearby() {
+    Harness harness;
+    const ma_tracked_entity staying = enemy_at(0.10f, 0.0f, 1);
+    confirm(harness, {self_at(), staying});
+    const Entities both{self_at(), staying, enemy_at(0.18f, 90.0f, 2)};
+    CHECK(harness.step(both).event == MA_RELATION_EVENT_NONE);
+    const ma_relation_output out = harness.step(both);
+    CHECK(out.event == MA_RELATION_EVENT_NEAR_ENTER);
+    CHECK(out.sector == MA_SECTOR_UP);
+    CHECK(std::fabs(out.nearest_distance - 0.18f) < 1e-4f);
+}
+
+void simultaneous_returns_merge_into_one_event() {
+    Harness harness;
+    const Entities both{self_at(), enemy_at(0.12f, 0.0f, 1),
+                        enemy_at(0.125f, 180.0f, 2)};
+    confirm(harness, both);
+    for (int i = 0; i < 38; ++i) harness.step({self_at()});
+    const ma_relation_output back = confirm(harness, both);
+    CHECK(back.episode_id == 2);
+    CHECK(back.sector == MA_SECTOR_NONE);
+    for (int index = 0; index < 20; ++index)
+        CHECK(harness.step(both).event == MA_RELATION_EVENT_NONE);
+}
+
+void returned_enemy_waits_until_it_reaches_the_near_zone() {
+    Harness harness;
+    confirm(harness, {self_at(), enemy_at(0.15f, 0.0f)});
+    for (int i = 0; i < 38; ++i) harness.step({self_at()});
+    for (int index = 0; index < 10; ++index)
+        CHECK(harness.step({self_at(), enemy_at(0.40f, 0.0f)}).event
+                == MA_RELATION_EVENT_NONE);
+    CHECK(confirm(harness, {self_at(), enemy_at(0.15f, 0.0f)}).episode_id == 2);
+}
+
+// A single returned sighting followed by a cached VISIBLE box is not two
+// detections. The relation must wait for another actual detector timestamp.
+void cached_boxes_do_not_confirm_a_one_frame_return() {
+    Harness harness;
+    confirm(harness, {self_at(), enemy_at(0.15f, 0.0f)});
+    for (int i = 0; i < 38; ++i)
+        harness.step({self_at(), enemy_at(0.15f, 0.0f, 1, MA_TRACK_STATE_LOST)});
+    CHECK(harness.step({self_at(), enemy_at(0.15f, 0.0f)}).event
+            == MA_RELATION_EVENT_NONE);
+    CHECK(harness.step({self_at(), enemy_at(0.15f, 0.0f, 1,
+            MA_TRACK_STATE_VISIBLE, 83)}).event == MA_RELATION_EVENT_NONE);
+    CHECK(harness.step({self_at(), enemy_at(0.15f, 0.0f, 1,
+            MA_TRACK_STATE_VISIBLE, 166)}).event == MA_RELATION_EVENT_NONE);
+    CHECK(harness.step({self_at(), enemy_at(0.15f, 0.0f, 1,
+            MA_TRACK_STATE_LOST)}).event == MA_RELATION_EVENT_NONE);
+    CHECK(confirm(harness, {self_at(), enemy_at(0.15f, 0.0f)}).episode_id == 2);
+}
+
+// Invalid map/self evidence and stale VISIBLE records cannot prove that an
+// enemy disappeared. Brief technical failures hold the announced state.
+void technical_gaps_do_not_rearm_a_visible_enemy() {
+    for (int failure : {0, 1, 2}) {
+        Harness harness;
+        const Entities near{self_at(), enemy_at(0.15f, 0.0f)};
+        confirm(harness, near);
+        for (int index = 0; index < 4; ++index) {
+            if (failure == 0) harness.step({self_at()}, 0);
+            else if (failure == 1) harness.step({});
+            else harness.step({self_at(), enemy_at(0.15f, 0.0f, 1,
+                    MA_TRACK_STATE_VISIBLE, 900)});
+        }
+        for (int index = 0; index < 4; ++index)
+            CHECK(harness.step(near).event != MA_RELATION_EVENT_NEAR_ENTER);
+    }
+}
+
+// The layout locator clears native tracking while SEARCHING. A short
+// recovery can therefore rebuild ids without a real game disappearance.
+void short_map_gap_with_rebuilt_ids_holds_each_announced_target() {
+    Harness harness;
+    const Entities first{self_at(), enemy_at(.10f, 0.0f, 1), enemy_at(.18f, 135.0f, 2)};
+    confirm(harness, first);
+    for (int index = 0; index < 4; ++index) harness.step({}, 0);
+    // Reverse input/id order to exercise positional continuity, not ordinal
+    // pairing. A third genuinely new track still needs its own confirmation.
+    const Entities rebuilt{self_at(), enemy_at(.18f, 135.0f, 9),
+                           enemy_at(.10f, 0.0f, 8), enemy_at(.16f, 270.0f, 10)};
+    CHECK(harness.step(rebuilt).event == MA_RELATION_EVENT_SUPPRESSED);
+    const ma_relation_output out = harness.step(rebuilt);
+    CHECK(out.event == MA_RELATION_EVENT_NEAR_ENTER);
+    CHECK(out.episode_id == 2);
+    CHECK(out.sector == MA_SECTOR_DOWN);
+    CHECK(std::fabs(out.nearest_distance - .16f) < 1e-4f);
+    for (int index = 0; index < 20; ++index)
+        CHECK(harness.step(rebuilt).event == MA_RELATION_EVENT_NONE);
+}
+
+// Continuously visible targets can move out for any duration and back in;
+// radius crossings alone never constitute a new disappearance/appearance.
+void continuously_visible_range_returns_stay_quiet() {
+    Harness harness;
+    confirm(harness, {self_at(), enemy_at(0.15f, 0.0f)});
+    for (int index = 0; index < 400; ++index) {
+        const auto out = harness.step({self_at(), enemy_at(0.40f, 0.0f)});
+        CHECK(out.event != MA_RELATION_EVENT_NEAR_ENTER);
+        CHECK(out.state == MA_RELATION_REARM);
+    }
+    for (int index = 0; index < 20; ++index)
+        CHECK(harness.step({self_at(), enemy_at(0.15f, 0.0f)}).event
+                != MA_RELATION_EVENT_NEAR_ENTER);
+    for (int index = 0; index < 38; ++index) harness.step({self_at()});
+    CHECK(confirm(harness, {self_at(), enemy_at(0.15f, 0.0f)}).episode_id == 2);
+}
+
+void smaller_radius_excludes_previous_outer_band() {
+    auto config = default_config();
+    config.enter_radius = .16f;
+    config.exit_radius = .20f;
+    Harness harness(config);
+    for (int i = 0; i < 30; ++i)
+        CHECK(harness.step({self_at(), enemy_at(.18f, 0.f)}).event
+                != MA_RELATION_EVENT_NEAR_ENTER);
+    CHECK(confirm(harness, {self_at(), enemy_at(.15f, 0.f)}).episode_id == 1);
+}
+
+// A brief radius crossing also stays silent, with a diagnostic suppression.
 void return_inside_rearm_window_is_suppressed() {
     Harness harness;
     const ma_relation_output first = confirm(harness, {self_at(), enemy_at(0.15f, 0.0f)});
@@ -497,8 +714,20 @@ int main() {
     player_walking_in_cues_once();
     boundary_jitter_cues_once();
     continuous_occupancy_stays_quiet();
-    multiple_enemies_and_id_swaps_cue_once();
-    return_after_rearm_window_cues_again();
+    multiple_continuously_visible_enemies_cue_once();
+    disappearance_requires_stable_reliable_absence();
+    repeated_dropouts_and_rebuilt_ids_stay_quiet();
+    continuity_is_bounded_and_one_to_one();
+    technical_gaps_interrupt_absence_confirmation();
+    smaller_radius_excludes_previous_outer_band();
+    returning_enemy_is_not_hidden_by_continuous_occupancy();
+    new_enemy_can_enter_while_another_stays_nearby();
+    simultaneous_returns_merge_into_one_event();
+    returned_enemy_waits_until_it_reaches_the_near_zone();
+    cached_boxes_do_not_confirm_a_one_frame_return();
+    technical_gaps_do_not_rearm_a_visible_enemy();
+    short_map_gap_with_rebuilt_ids_holds_each_announced_target();
+    continuously_visible_range_returns_stay_quiet();
     return_inside_rearm_window_is_suppressed();
     short_self_loss_holds_episode();
     long_self_loss_pauses_and_resumes();

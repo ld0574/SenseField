@@ -1,8 +1,8 @@
 # Android 自动更新开发说明
 
-更新日期：2026-10-04。当前源码与预览版本为 `0.4.1 / versionCode 18`，更新器清单默认值已配置为项目 CDN 的 `https://888413.xyz/apk/latest.json`；APK 地址为 `https://888413.xyz/apk/sensefieldv0.4.1.apk`。APK 对象已可 GET，当前返回的仍是旧构建（21,400,339 bytes，SHA-256 `b2a4dd6a0ea2b699a72500f10af69ef97b3a870ba1c2f760733db4c76b71203a`）；清单端点返回 404，新的同版本修订包尚未上传。外网 CDN 更新链路因此仍未验证。
+2026-10-06当前策略：固定版本清单保留`https://888413.xyz/apk/latest.json`，APK改为听野Gitee Release，例如`https://gitee.com/leda/SenseField/releases/download/0.4.1/sensefieldv0.4.1.apk`。语音模型拆成两个小于100MB的固定资源附件，由APP拼接校验解压，后续Release不重复上传模型。迁移APK必须先手动覆盖安装一次，旧客户端同源规则不能自动接收Gitee地址。迁移版允许固定自有清单指向本项目Gitee Release，并适配实际附件/foruda签名跳转；其他跨域仍拒绝。APK大小、SHA、包名、版本与签名检查均保留。队友发布操作见[Gitee下载分发与后续发布](../../deploy/assistant/CDN发布.md)，工程证据见[Gitee迁移记录](../../validation/GITEE_DISTRIBUTION_2026-10-06.md)。
 
-本轮本地候选为 `0.4.1/code18`，21,400,339 bytes，SHA-256 `88992f7ef9323ad58558fcf5b4ee8ff8ad384f8e7405a567beaeb2389be8539d`。JVM 212 项、Python 自动更新专项 28 项、Android updater instrumentation 7 项、arm64 build/lint 均通过。真实同版本更新 UI 在 Mac localhost TLS fixture 上通过 Android 系统 UPDATE 将已安装包替换为本轮 APK；追加的安装后指纹/no-op 检查确认安装内容 SHA 和缓存失效正确。该流程不是 CDN 实时清单检查；系统安装界面通过 fixture 验证，CDN `latest.json` 仍为 404。详细边界见[本轮 CDN 修订验证记录](../../validation/APP_UPDATE_CDN_0.4.1_2026-10-04.md)。
+当前源码与预览版本为 `0.4.1 / versionCode 18`。历史测试包大小与当时线上状态单独保留在文末，当前交付以2026-10-06迁移记录为准。
 
 ## 应用内更新流程
 
@@ -14,33 +14,33 @@
 
 ## 0.4.1 / code18 CDN 构建与发布
 
-本次同版本修订使用以下同源 HTTPS 地址：
+本次同版本修订使用固定清单与本项目 Gitee Release 两个 HTTPS 地址：
 
 - 清单：`https://888413.xyz/apk/latest.json`
-- APK：`https://888413.xyz/apk/sensefieldv0.4.1.apk`
+- APK：`https://gitee.com/leda/SenseField/releases/download/0.4.1/sensefieldv0.4.1.apk`
 
-Gradle 默认清单地址已配置为上述 `latest.json` 路径；该路径是项目配置选在 APK 同目录的稳定清单名。APK 对象 URL 用于版本包，用户负责手动上传本轮 APK 和工具生成的清单。在新 `latest.json` 上传并可读前，客户端实际不能从 CDN 检查到本轮修订。客户端要求清单和 APK 使用同一个 HTTPS origin（协议、主机和端口相同），且不会跟随到另一个 origin 下载。
+Gradle 默认清单地址已配置为上述 `latest.json` 路径；它是独立于版本 tag 的稳定入口。APK 对象 URL 用于版本包，用户负责手动上传最终 APK 和工具生成的清单。在新 `latest.json` 上传并可读前，客户端实际不能检查到本轮修订。客户端默认保持同源HTTPS；固定清单允许本项目Gitee Release这个明确例外，仅跟随本仓库附件及foruda的同文件名签名URL，不放开任意外站。
 
-运行 `bash scripts/build_android_preview.sh` 时，会在 `android/app/build/outputs/preview/cdn-upload/` 自动生成 APK 和 `latest.json`，默认使用上述 CDN 地址。清单总是从本次签名后的安装包读取元数据并计算哈希。更换下载地址可设置 `SENSEFIELD_UPDATE_APK_URL`，需与清单同源。下面的独立工具命令也适用于其他构建方式。
+运行 `bash scripts/build_android_preview.sh` 时，会在 `android/app/build/outputs/preview/cdn-upload/` 自动生成 APK 和 `latest.json`，默认使用上述 CDN 地址。清单总是从本次签名后的安装包读取元数据并计算哈希。更换下载地址可设置 `SENSEFIELD_UPDATE_APK_URL`，需同源，或由固定清单指向听野Gitee Release。下面的独立工具命令也适用于其他构建方式。
 
 按下面顺序准备同版本修订包：
 
-1. 从当前源码重建 `versionName=0.4.1`、`versionCode=18` 的 APK，并使用与已安装应用相同的签名证书。不要因同版本修订递增应用版本号；本轮已核实的候选为 21,400,339 bytes、SHA-256 `88992f7ef9323ad58558fcf5b4ee8ff8ad384f8e7405a567beaeb2389be8539d`。
+1. 从当前源码重建 `versionName=0.4.1`、`versionCode=18` 的 APK，并使用与已安装应用相同的签名证书。同版本修订不递增应用版本号，具体大小和SHA-256以最终APK自动生成的清单为准。
 2. 将最终 APK 交给仓库已有工具生成清单。该工具调用 Android SDK `aapt2` 读取 APK 的包名与版本，并从同一文件计算字节数和 SHA-256；不要手写或事后修改 manifest 字段：
 
    ```sh
    python3 scripts/build_app_update_manifest.py \
      --apk /path/to/sensefield-v0.4.1-arm64-v8a.apk \
-     --apk-url https://888413.xyz/apk/sensefieldv0.4.1.apk \
+     --apk-url https://gitee.com/leda/SenseField/releases/download/0.4.1/sensefieldv0.4.1.apk \
      --output output/app-update/release/latest.json \
      --notes-file /path/to/release-notes.txt
    ```
 
    `latest.json` 在本地由工具生成。脚本不上传文件，也不替用户操作 CDN；无需另写 manifest 生成器或缓存模板。
 
-3. 用户手动先上传本轮 APK 到 `https://888413.xyz/apk/sensefieldv0.4.1.apk`，再上传工具生成的 `latest.json` 到 `https://888413.xyz/apk/latest.json`。不要先发布清单，以免客户端拿到尚不可读的 APK 地址。目前检查到 APK 路径仍返回旧构建，清单路径返回 404。
-4. 为 `latest.json` 设置 `Cache-Control: no-cache`，并在 CDN 规则中关闭其长时间缓存。当前 APK URL 允许同路径覆盖，不应按不可变对象处理；覆盖后对 APK 和 `latest.json` 两个路径都执行 CDN 缓存刷新/失效，避免客户端下载旧 APK 后因 SHA-256 不匹配而拒绝安装。未来普通新版本可以使用带版本号的新文件名，减少与旧缓存混淆。
-5. 从 CDN 实际读取清单和 APK，核对生成的 `apk_bytes`、`apk_sha256` 与本轮 APK 字节一致，并确认响应 URL 没有跳转到其他 origin。只有上传、缓存刷新和外网读取核验完成后，才记录为 CDN 链路已验证。本轮 APK 尚未上传，不能用当前旧 APK 的成功 GET 代替此核验。
+3. 用户手动先上传最终 APK 到 `https://gitee.com/leda/SenseField/releases/download/0.4.1/sensefieldv0.4.1.apk`，下载公开附件核对大小与SHA-256，再上传配套的 `latest.json` 到 `https://888413.xyz/apk/latest.json`。首次迁移还需先准备0.4.1的两个模型分片，后续无需重复上传模型。不要先发布清单，以免客户端拿到尚不可读的 APK 地址。
+4. 为 `latest.json` 设置 `Cache-Control: no-cache`，并在自有站点/CDN规则中关闭其长时间缓存，覆盖后刷新清单缓存。同版本APK替换后确认Gitee永久地址返回新内容，附件缓存按Gitee后台能力处理。普通新版本使用新tag与文件名，模型仍引用原0.4.1资源地址。
+5. 从公网实际读取清单和 APK，核对 `apk_bytes`、`apk_sha256` 与最终 APK 字节一致；APK跳转只能经过当前允许的本项目附件/foruda同名文件路径，清单仍要求同源。公开读取核验完成才记录下载分发通过，另需安卓手机实际验证更新安装和模型准备。
 
 构建使用已配置的 CDN 清单地址；命令仅重建客户端，不会写入 CDN 或上传文件：
 
@@ -49,7 +49,7 @@ cd android
 ./gradlew -PsensefieldUpdateManifestUrl=https://888413.xyz/apk/latest.json assembleDebug
 ```
 
-清单端点不能包含用户名、密码、查询参数或片段。清单中的 APK 地址也必须是无凭据的 HTTPS 地址，并与清单端点严格同源。
+清单端点不能包含用户名、密码、查询参数或片段。清单中的 APK 地址也必须是无凭据、无查询参数或片段的 HTTPS 地址；默认与清单同源，唯一跨域例外是上述固定清单指向听野 Gitee Release。
 
 ## 清单格式
 
@@ -71,5 +71,9 @@ python3 scripts/app_update_https_fixture.py \
 fixture 仅用于本地 debug 复现。只把临时 CA 加入隔离的 debug 构建信任配置；不要把它带入正式构建。按 Ctrl+C 或发送 SIGTERM 后，fixture 会删除自己创建的密钥、证书、运行配置和 APK 副本，不会删除输入 APK。需要保留请求计数时，可增加 `--stats-file output/app-update/test/stats.json`；结果只含请求数与传输字节数。
 
 ## 此前 0.4.1 / code18 构建的历史验证边界
+
+2026-10-04时，更新器清单已配置为 `https://888413.xyz/apk/latest.json`，APK地址仍为同源的 `https://888413.xyz/apk/sensefieldv0.4.1.apk`。当时公开APK为21,400,339 bytes，SHA-256 `b2a4dd6a0ea2b699a72500f10af69ef97b3a870ba1c2f760733db4c76b71203a`；清单返回404，新的同版本包未上传。这是当时的状态，不是2026-10-06 Gitee附件的核对结果。
+
+该轮本地候选为 `0.4.1/code18`，21,400,339 bytes，SHA-256 `88992f7ef9323ad58558fcf5b4ee8ff8ad384f8e7405a567beaeb2389be8539d`。JVM 212项、Python自动更新专项28项、Android updater instrumentation 7项、arm64 build/lint通过。本地TLS fixture通过Android系统UPDATE安装该包，追加安装后指纹/no-op检查；这些结果不代表公网CDN清单或当前Gitee手机链路通过，见[历史CDN修订记录](../../validation/APP_UPDATE_CDN_0.4.1_2026-10-04.md)。
 
 此前的 0.4.1 GitHub stable Release 解析器使用合成 metadata 验证；工作站直接请求 GitHub Latest API 遇到匿名限流，应用显示可重试状态且游戏入口仍可用，没有证明真实 GitHub 检查或下载成功。Linux loopback fixture 和真实系统 UPDATE UI 流程使用隔离测试 APK 完成，不代表 GitHub 或当前 CDN 已联通。该轮冷启动检查频率及旋转/权限设置返回行为经代码审查确认，没有专门的生命周期 instrumentation。旧 APK 的文件信息和验证证据继续保留在[原 0.4.1 自动更新验证记录](../../validation/APP_UPDATE_0.4.1_2026-10-04.md)，本次同版本修订的产物和 CDN 读取结果应另行记录，不覆盖旧 hash 或旧构建结果。

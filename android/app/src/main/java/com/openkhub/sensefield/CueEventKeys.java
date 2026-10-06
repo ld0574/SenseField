@@ -8,7 +8,7 @@ final class CueEventKeys {
         return "vision:" + nativeResetGeneration + ":" + trackId + ":" + event;
     }
 
-    /** One key per native occupancy episode; track ids are never part of it. */
+    /** One key per native appearance batch, including each confirmed return. */
     static String nearZone(long nativeResetGeneration, int episodeId) {
         return "near:" + nativeResetGeneration + ":" + episodeId;
     }

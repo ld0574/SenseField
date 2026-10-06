@@ -102,6 +102,7 @@ public final class OnDeviceAssistantGatewayInstrumentedTest {
 
     private void createController(boolean vision) {
         preferences.edit().clear()
+                .putBoolean(AssistantSettings.ENABLED, true)
                 .putBoolean(AssistantSettings.VOICE, true)
                 .putBoolean(AssistantSettings.VISION, vision)
                 .putBoolean(AssistantSettings.PROACTIVE, false)

@@ -896,7 +896,8 @@ public final class CaptureService extends Service {
                         playVisionMemoryTransitions(frame, decision.minimapAppearances,
                                 observedAtMs, decision.suppressedMinimap, combat);
                         // Near-zone events bypass the minimap APPEAR cooldown:
-                        // native occupancy episodes and REARM are their dedupe.
+                        // native appearance batches own their dedupe. A LOST
+                        // return gets a new batch even while others stay near.
                         handleNearZone(frame, observedAtMs, combat);
                     } else if (diagnostics != null) {
                         diagnostics.frame(NativeFrameResult.empty(), DiagnosticSnapshot.parse(null),
@@ -1124,13 +1125,9 @@ public final class CaptureService extends Service {
             return;
         }
         int channels = cueSettings.nearRequestedChannels();
-        if (combat != null && combat.dense && !combat.allowSpeech) {
-            channels &= ~CueRequest.CHANNEL_SPEECH;
-            if (diagnostics != null) diagnostics.audit("CombatSuppressed kind=NEAR_ZONE"
-                    + " reason=lower_priority_in_window score=" + combat.score
-                    + " bestWindowScore=" + combat.bestWindowScore
-                    + " windowMs=" + NearZoneCombatPolicy.DENSE_WINDOW_MS);
-        }
+        // Confirmed new/returning near targets retain their configured speech
+        // channel even during dense combat. Playback still expires old cues
+        // and keeps only the newest pending near utterance.
         int priority = combat == null ? NearZoneRouting.NEAR_PRIORITY : combat.priority;
         String cueId = auditSessionId + ":" + nextCueId++;
         CueRequest request = new CueRequest(auditSessionId, cueId,
@@ -1187,6 +1184,7 @@ public final class CaptureService extends Service {
                                   String cueId, String outcome) {
         Log.i(TAG, "NearZoneEvent sessionId=" + auditSessionId
                 + " event=" + NearZoneRouting.eventName(relation.event)
+                + " policy=" + NearZoneRouting.EVENT_POLICY
                 + " episode=" + relation.episodeId
                 + " sector=" + relation.sector
                 + " panMilli=" + Math.round(relation.pan * 1000f)
@@ -1196,7 +1194,8 @@ public final class CaptureService extends Service {
                 + " outcome=" + outcome
                 + " atMs=" + observedAtMs);
         if (diagnostics != null) diagnostics.audit("NearZoneEvent event="
-                + NearZoneRouting.eventName(relation.event) + " episode=" + relation.episodeId
+                + NearZoneRouting.eventName(relation.event) + " policy="
+                + NearZoneRouting.EVENT_POLICY + " episode=" + relation.episodeId
                 + " sector=" + relation.sector + " suppression="
                 + NearZoneRouting.suppressionName(relation.suppression) + " outcome=" + outcome);
     }

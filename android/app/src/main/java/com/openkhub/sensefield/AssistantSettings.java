@@ -6,6 +6,8 @@ import java.net.URI;
 
 /** Explicit opt-in configuration, separate from local radar preferences. */
 final class AssistantSettings {
+    // A separate opt-in also disables old test preferences on the first upgrade.
+    static final String ENABLED = "assistant_enabled";
     static final String VOICE = "assistant_voice";
     static final String VISION = "assistant_vision";
     static final String PROACTIVE = "assistant_proactive";
@@ -15,11 +17,12 @@ final class AssistantSettings {
     static final String TOKEN = "assistant_device_token";
     static final String CUSTOM_SERVICE = "assistant_custom_service";
     private static final String INSTALLATION = "assistant_installation_id";
-    final boolean voice, vision, proactive, customService;
+    final boolean optedIn, voice, vision, proactive, customService;
     final String endpoint, token, installationId;
     AssistantSettings(SharedPreferences preferences) {
-        voice = preferences.getBoolean(VOICE, false) && preferences.getBoolean(AUDIO_CONSENT, false);
-        vision = preferences.getBoolean(VISION, false) && preferences.getBoolean(IMAGE_CONSENT, false);
+        optedIn = preferences.getBoolean(ENABLED, false);
+        voice = voiceEnabled(preferences);
+        vision = optedIn && preferences.getBoolean(VISION, false) && preferences.getBoolean(IMAGE_CONSENT, false);
         proactive = vision && preferences.getBoolean(PROACTIVE, false);
         customService = preferences.getBoolean(CUSTOM_SERVICE, false);
         String configuredEndpoint = customService ? preferences.getString(ENDPOINT, "")
@@ -36,6 +39,10 @@ final class AssistantSettings {
         }
     }
     static AssistantSettings from(Context context) { return new AssistantSettings(GameProfile.settings(context)); }
+    static boolean voiceEnabled(SharedPreferences preferences) {
+        return preferences.getBoolean(ENABLED, false)
+                && preferences.getBoolean(VOICE, false) && preferences.getBoolean(AUDIO_CONSENT, false);
+    }
     boolean configured() { return validEndpoint(endpoint) && (!customService || (token.length() >= 24 && token.length() <= 256)); }
     /** Voice capture and ASR are local; only screen understanding needs the gateway. */
     boolean enabled() { return voice || (vision && configured()); }

@@ -5,7 +5,7 @@ set -euo pipefail
 readonly PREVIEW_VERSION_NAME='0.4.1'
 readonly PREVIEW_VERSION_CODE='18'
 readonly DEFAULT_UPDATE_MANIFEST_URL='https://888413.xyz/apk/latest.json'
-readonly DEFAULT_UPDATE_APK_URL="https://888413.xyz/apk/sensefieldv${PREVIEW_VERSION_NAME}.apk"
+readonly DEFAULT_UPDATE_APK_URL="https://gitee.com/leda/SenseField/releases/download/${PREVIEW_VERSION_NAME}/sensefieldv${PREVIEW_VERSION_NAME}.apk"
 readonly PREVIEW_ABI='arm64-v8a'
 readonly PREVIEW_MIN_SDK='29'
 readonly PREVIEW_TARGET_SDK='35'
@@ -20,9 +20,9 @@ usage() {
 用法：bash scripts/build_android_preview.sh
 
 默认版本清单：https://888413.xyz/apk/latest.json
-APK 从清单中的同源 HTTPS 地址下载。如需更换清单地址，设置 SENSEFIELD_UPDATE_MANIFEST_URL。
+APK 默认从听野 Gitee Release 下载。如需更换清单地址，设置 SENSEFIELD_UPDATE_MANIFEST_URL。
 构建后自动生成 cdn-upload/ 中的 APK 和 latest.json；无需手写清单。
-更换 APK 地址时设置 SENSEFIELD_UPDATE_APK_URL，两个地址须同源。
+更换 APK 地址时设置 SENSEFIELD_UPDATE_APK_URL；允许同源 HTTPS，或固定清单搭配听野 Gitee Release。
 
 默认只构建并核验 Debug candidate，输出文件名包含 debug-candidate。
 如需构建签名的 release candidate，请在环境变量中同时提供：
@@ -217,13 +217,20 @@ if [[ ! -x "$python_bin" ]]; then
   python_bin="$(command -v python3)" || fail "生成 CDN 清单需要 Python 3。"
 fi
 "$python_bin" - <<'PY'
-import os
+import os, re
 from urllib.parse import urlsplit
 def origin(name):
     value = urlsplit(os.environ[name])
     return value.scheme, value.hostname, value.port or 443
-if origin('SENSEFIELD_UPDATE_MANIFEST_URL') != origin('SENSEFIELD_UPDATE_APK_URL'):
-    raise SystemExit('CDN APK 与版本清单必须同源。')
+index = urlsplit(os.environ['SENSEFIELD_UPDATE_MANIFEST_URL'])
+apk = urlsplit(os.environ['SENSEFIELD_UPDATE_APK_URL'])
+project_release = (apk.scheme == 'https' and apk.hostname == 'gitee.com'
+    and apk.port in (None, 443) and not apk.username and not apk.password
+    and not apk.query and not apk.fragment
+    and re.fullmatch(r'/leda/SenseField/releases/download/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*\.apk', apk.path))
+owned_index = (os.environ['SENSEFIELD_UPDATE_MANIFEST_URL'] == 'https://888413.xyz/apk/latest.json')
+if origin('SENSEFIELD_UPDATE_MANIFEST_URL') != origin('SENSEFIELD_UPDATE_APK_URL') and not (owned_index and project_release):
+    raise SystemExit('APK 必须同源，或由固定版本清单指向听野 Gitee Release。')
 PY
 cdn_dir="$preview_dir/cdn-upload"
 mkdir -p "$cdn_dir"

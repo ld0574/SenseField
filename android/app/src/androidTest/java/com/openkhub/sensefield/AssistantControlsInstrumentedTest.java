@@ -37,7 +37,8 @@ public class AssistantControlsInstrumentedTest {
 
     private static SharedPreferences preferences(Context context) {
         SharedPreferences preferences = context.getSharedPreferences("assistant-control-test", Context.MODE_PRIVATE);
-        preferences.edit().clear().putBoolean(AssistantSettings.VOICE, true)
+        preferences.edit().clear().putBoolean(AssistantSettings.ENABLED, true)
+            .putBoolean(AssistantSettings.VOICE, true)
             .putBoolean(AssistantSettings.AUDIO_CONSENT, true).putBoolean(AssistantSettings.VISION, true)
             .putBoolean(AssistantSettings.IMAGE_CONSENT, true).putBoolean(AssistantSettings.CUSTOM_SERVICE, true).putString(AssistantSettings.ENDPOINT, "https://example.invalid")
             .putString(AssistantSettings.TOKEN, "test-token-placeholder-not-for-production").commit();
@@ -615,6 +616,31 @@ public class AssistantControlsInstrumentedTest {
         } finally { controller.close(); preferences.edit().clear().commit(); }
     }
 
+    @Test public void masterOffCancelsReplyAndRequiresANewSessionToResume() {
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+            Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+            SharedPreferences preferences = preferences(context); Host host = new Host();
+            AssistantController controller = new AssistantController(context, "master-off-test",
+                    new AssistantSettings(preferences), host);
+            try {
+                controller.question("附近情况", false);
+                AssistantReply old = host.last;
+                assertNotNull(old); assertTrue(controller.allows(old));
+                int spoken = host.spoken, cancelled = host.cancelled;
+                preferences.edit().putBoolean(AssistantSettings.ENABLED, false).commit();
+                controller.settingsChanged(new AssistantSettings(preferences));
+                assertFalse(controller.allows(old));
+                assertTrue(host.cancelled > cancelled);
+                controller.question("附近情况", false);
+                assertEquals(spoken, host.spoken);
+                preferences.edit().putBoolean(AssistantSettings.ENABLED, true).commit();
+                controller.settingsChanged(new AssistantSettings(preferences));
+                controller.question("附近情况", false);
+                assertEquals("Re-enabling needs a fresh foreground session", spoken, host.spoken);
+            } finally { controller.close(); preferences.edit().clear().commit(); }
+        });
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+    }
     @Test public void revocationInvalidatesOldReplyAndCannotBeReenabledInSameSession() {
         InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
             Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();

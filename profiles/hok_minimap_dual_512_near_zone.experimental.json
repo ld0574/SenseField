@@ -75,8 +75,8 @@
     "schema": "mapassist.minimap_relation",
     "schema_version": 1,
     "enabled": true,
-    "enter_radius": 0.2,
-    "exit_radius": 0.25,
+    "enter_radius": 0.16,
+    "exit_radius": 0.2,
     "sector_hysteresis_deg": 7.5,
     "adjacent_ratio": 0.2,
     "tie_ratio": 0.1,
@@ -88,7 +88,13 @@
     "calibration": {
       "status": "provisional",
       "method": "median minimap distance, in map short-edge units, of about 20 frames where an enemy hero first enters the main-screen edge; exit_radius = 1.25 x enter_radius",
-      "tool": "python -m mapassist.calibrate_near_zone"
+      "tool": "python -m mapassist.calibrate_near_zone",
+      "user_adjustment": {
+        "date": "2026-10-06",
+        "reason": "Player reported excessive warning range; provisional 20% radius reduction, without a threshold sweep or independent calibration.",
+        "previous_enter_radius": 0.2,
+        "previous_exit_radius": 0.25
+      }
     }
   },
   "state_recognition": {

@@ -569,9 +569,10 @@ public final class AppUpdateClient implements AutoCloseable {
 
     static void validateSameOriginApkUrl(HttpUrl apkUrl, HttpUrl metadataUrl) {
         if (apkUrl == null || metadataUrl == null || !apkUrl.isHttps()
-                || !sameOrigin(apkUrl, metadataUrl) || !hasNoUserInfoOrFragment(apkUrl)
+                || !ReleaseDownloadPolicy.apkFromManifest(metadataUrl.uri(), apkUrl.uri())
+                || !hasNoUserInfoOrFragment(apkUrl)
                 || apkUrl.encodedQuery() != null) {
-            throw new IllegalArgumentException("APK 地址必须来自更新清单所在的 HTTPS 网站。");
+            throw new IllegalArgumentException("APK 地址必须来自更新网站或听野的 Gitee Release。");
         }
     }
 
@@ -800,7 +801,7 @@ public final class AppUpdateClient implements AutoCloseable {
         }
 
         static RedirectPolicy apk(AppUpdateRelease release) {
-            return new RedirectPolicy(false, release.metadataUrl());
+            return new RedirectPolicy(false, release.apkHttpUrl());
         }
 
         boolean allows(HttpUrl from, HttpUrl to) {
@@ -810,7 +811,7 @@ public final class AppUpdateClient implements AutoCloseable {
             if (metadata) {
                 return sameOrigin(metadataOrigin, to) && to.encodedQuery() == null;
             }
-            return sameOrigin(metadataOrigin, to) && to.encodedQuery() == null;
+            return ReleaseDownloadPolicy.artifactRedirect(metadataOrigin.uri(), to.uri());
         }
     }
 

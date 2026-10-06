@@ -4,7 +4,7 @@ import okhttp3.HttpUrl;
 
 /** Immutable, validated metadata for one application update. */
 public final class AppUpdateRelease {
-    // The offline voice model makes the current APK about 214 MB.
+    // Bounded for private mirrors too; current Gitee APK keeps model weights outside.
     public static final long MAX_APK_BYTES = 256L * 1024L * 1024L;
 
     private final String packageName;

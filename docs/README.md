@@ -11,8 +11,9 @@
 | 了解玩家问题与产品边界 | [赛题背景](design/赛题背景.md) |
 | 安装公开体验版 | [0.3.8 安装与使用说明](releases/0.3.8/RELEASE_NOTES.md) |
 | 查看最新版本变化 | [0.3.8 公开体验版](releases/0.3.8/RELEASE_NOTES.md) |
-| 查看当前源码候选 | [0.4.1 自动更新候选说明](releases/0.4.1/RELEASE_NOTES.md) · [CDN 同版本修订记录](../validation/APP_UPDATE_CDN_0.4.1_2026-10-04.md)（未发布，CDN 清单上传待完成） |
+| 查看当前源码候选 | [0.4.1 候选说明](releases/0.4.1/RELEASE_NOTES.md) · [Gitee 迁移记录](../validation/GITEE_DISTRIBUTION_2026-10-06.md)（模型公开字节核对通过；迁移 APK 与清单另行验收） |
 | 部署助手服务 | [直接启动与部署步骤](../deploy/assistant/README.md)（部署脚本统一在 `deploy/assistant/`） |
+| 上传 APK、模型与后续发包 | [Gitee 下载分发与后续发布](../deploy/assistant/CDN发布.md)（同版本覆盖、新版本、固定清单和下载核对） |
 | 参与开发或标注 | [团队协作与本地运行](development/团队协作与本地运行.md) |
 | 查看版本历史与发布要求 | [发布索引](releases/README.md) |
 
@@ -42,7 +43,7 @@
 | [外部数据引入与预训练](development/外部数据引入与预训练.md) | 来源审计、导入要求与训练顺序 |
 | [Android 真实助手传输测试](development/assistant-android-transport-test.md) | 合成输入、临时证书、真实 GLM/CPU ASR 与正式客户端联调 |
 | [Linux 测试网关部署](development/assistant-gateway-test-deployment.md) | 隔离测试部署、CPU 依赖、HTTPS/WSS 与未覆盖门禁 |
-| [Android 自动更新](development/app-update.md) | 0.4.1/code18：CDN APK GET/hash 仍为旧包，`latest.json` 当前 404；本地同版本 UI 安装已验证，手动上传与缓存刷新待完成。见[CDN 修订记录](../validation/APP_UPDATE_CDN_0.4.1_2026-10-04.md) |
+| [Android 自动更新](development/app-update.md) | 0.4.1/code18：固定网站清单与 Gitee APK 下载、同版本 SHA 修订及校验规则；历史同源 CDN 结果单独保留。实际发包见[Gitee发布步骤](../deploy/assistant/CDN发布.md) |
 
 ## 发布记录 · `releases/`
 

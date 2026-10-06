@@ -95,6 +95,16 @@ public class AppUpdateClientTest {
     }
 
     @Test
+    public void ownedIndexAcceptsProjectGiteeApkWhileOtherOriginsStayRejected() throws Exception {
+        JSONObject json = manifest().put("apk_url",
+                "https://gitee.com/leda/SenseField/releases/download/0.4.1/sensefieldv0.4.1.apk");
+        assertNotNull(AppUpdateClient.parseSelfHostedManifest(json, 18, PACKAGE_NAME,
+                HttpUrl.get("https://888413.xyz/apk/latest.json")));
+        assertThrows(java.io.IOException.class, () -> AppUpdateClient.parseSelfHostedManifest(json,
+                18, PACKAGE_NAME, SELF_HOSTED_METADATA));
+    }
+
+    @Test
     public void manifestRejectsMalformedVersionAndUnsafeMetadata() throws Exception {
         JSONObject malformedVersion = manifest();
         malformedVersion.put("version_name", "0.04.1");

@@ -160,7 +160,7 @@ final class CueSettings implements CueDispatcher.Policy {
             return preferences.getInt("cue_vision_speech_gap_ms", 2000);
         }
         if (category == CueRequest.Category.PERIPHERAL_THREAT) return 2000;
-        // Only guards same-frame repeats; occupancy episodes do the real dedupe.
+        // Only guards same-frame repeats; native appearance batches own dedupe.
         if (category == CueRequest.Category.NEAR_ZONE)
             return NearZoneRouting.NEAR_SPEECH_DEDUPE_MS;
         return category == CueRequest.Category.SYSTEM ? 1000 : 500;

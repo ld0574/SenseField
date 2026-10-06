@@ -109,17 +109,34 @@ cd /data/wwwroot/sf
 
 可选的 [systemd 部署](../../docs/development/assistant-native-deployment.md)与 [Docker 部署](../../docs/development/assistant-online-deployment.md)仍有说明；直接启动无需运行这些安装器。2核4GB可用于少量用户试运行，容量需实测。当前启动链路已在本机验证，目标 Linux、Nginx 和生产端到端仍由部署者验收。
 
-## 6. CDN语音资源与安装包
+## 6. Gitee语音资源与安装包
 
-手机连续语音仍使用同一个SenseVoiceSmall int8离线模型。APK只保留运行库、许可证和固定校验元数据；首次开启连续语音从以下地址下载资源，显示进度，网络中断后可续传。已缓存资源直接校验复用。
+队友后续发包按 [Gitee 下载分发与后续发布](CDN发布.md) 操作：包括同版本覆盖、新版本发布、固定清单更新、公开下载核对及模型分片复用。
 
-- 模型URL：`https://888413.xyz/apk/models/sensevoice-int8-v1.zip`
-- 资源大小：160,304,482 bytes（约153 MiB）；手机需预留约400 MiB。
-- ZIP SHA-256：`d863ab6f0b202ee31e74f2a3eadabaf24a41ea7acfe9fc6f85a1efaed2e37a8c`
-- CDN需提供HTTPS，原样返回ZIP，支持`Range`/`206`和准确`Content-Range`；不支持Range时手机会重新下载完整文件。禁止跨域重定向。
-- 先手动上传并核对模型，再上传APK，最后覆盖`latest.json`并刷新APK与清单缓存。此模型URL和摘要固定，不覆盖为不同内容；换模型要同时更新APK元数据。
+手机连续语音仍使用同一个SenseVoiceSmall int8离线模型，助手默认关闭。APK只保留运行库、许可证和固定校验元数据；首次开启连续语音才下载资源，旧模型缓存和兼容的旧ZIP断点均可复用。
 
-模型打包工具为`python3 deploy/assistant/package-asr-model.py`（用`--help`查看参数）。准备构建权重仍使用`scripts/prepare_android_asr_assets.py`；该权重不会打进本轮APK。
+Gitee单附件限制100MB，原ZIP为160,304,482 bytes，现拆成两份，固定放在0.4.1 Release中：
+
+| 附件 | 大小 | 下载地址 |
+| --- | --- | --- |
+| sensevoice-int8-v1.zip.part01 | 90,000,000 bytes | [第一包](https://gitee.com/leda/SenseField/releases/download/0.4.1/sensevoice-int8-v1.zip.part01) |
+| sensevoice-int8-v1.zip.part02 | 70,304,482 bytes | [第二包](https://gitee.com/leda/SenseField/releases/download/0.4.1/sensevoice-int8-v1.zip.part02) |
+
+手机按顺序写入同一个临时ZIP，逐包检查大小和SHA-256，再核对完整ZIP及解压后model/tokens的摘要；分包不能单独解压。原ZIP SHA-256仍为`d863ab6f0b202ee31e74f2a3eadabaf24a41ea7acfe9fc6f85a1efaed2e37a8c`，模型内容、版本与推理参数未变，需预留约400 MiB。原大ZIP仅本地留档，不上传。
+
+下载只允许HTTPS；Gitee初始地址限定听野仓库，适配该仓库`attach_files`及实测`foruda.gitee.com/attach_file/`签名地址，不放开任意跨域。实际已上传APK的Range探针返回200完整内容，不能承诺服务器支持断点；支持206时按当前包偏移续传，不支持时只重下未完成的一包，已经校验完成的包保留。服务端不能改变包字节、命名、校验值。
+
+模型只上传一次，后续APK一直复用上述模型地址，不把模型复制到每个Release。按用户提供的普通仓库总附件1GB限制，仅模型与当前约49MB APK就约209MB；加上仓库其他附件后可用空间以Gitee后台为准。历史APK可由负责人按需要清理，程序不自动删除附件，也不宣称Gitee提供无限容量/流量或CDN服务保证。
+
+手工发布顺序：先上传两个分包到0.4.1，再把最终APK覆盖为`sensefieldv0.4.1.apk`，最后更新`https://888413.xyz/apk/latest.json`。几百字节的固定清单用来发现后续版本，大文件走Gitee；不要把清单地址固定到某一版本的Release。旧APK只允许同源下载，这次迁移版先手动覆盖安装一次，之后支持Gitee自动更新。同版本修订仍以SHA区分，无需新增0.4.2；Android系统安装确认保留。
+
+模型打包工具：
+
+```bash
+python3 deploy/assistant/package-asr-model.py --archive output/releases/0.4.1/model-cdn-2026-10-06/sensevoice-int8-v1.zip
+```
+
+分包与生成的`model.json`在`output/releases/0.4.1/model-gitee-2026-10-06/`，`--help`可查看其他参数。最终可上传的三个大文件统一放在`output/releases/0.4.1/gitee-upload/`；版本清单仍在`output/releases/0.4.1/cdn-upload/latest.json`。准备构建权重仍使用`scripts/prepare_android_asr_assets.py`，权重不会打进APK。构建/分包工具均不自动上传。
 
 ## 7. 免连接码服务额度
 

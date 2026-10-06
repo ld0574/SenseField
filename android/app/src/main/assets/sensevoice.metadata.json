@@ -19,8 +19,22 @@
   "runtime_archive_sha256": "2ff63469a71cb6009aa2e3ed5f4a670f8abdcbe4bb9ffd23776afc792a6b4f44",
   "onnxruntime_version": "1.28.2 (Android release shared library version string)",
   "download": {
-    "url": "https://888413.xyz/apk/models/sensevoice-int8-v1.zip",
+    "format": "concat-zip-v1",
     "archive_bytes": 160304482,
-    "archive_sha256": "d863ab6f0b202ee31e74f2a3eadabaf24a41ea7acfe9fc6f85a1efaed2e37a8c"
+    "archive_sha256": "d863ab6f0b202ee31e74f2a3eadabaf24a41ea7acfe9fc6f85a1efaed2e37a8c",
+    "parts": [
+      {
+        "name": "sensevoice-int8-v1.zip.part01",
+        "url": "https://gitee.com/leda/SenseField/releases/download/0.4.1/sensevoice-int8-v1.zip.part01",
+        "bytes": 90000000,
+        "sha256": "8f10f3eb21a42da17453241658e8bd3cdb4998c18b91e5b8bfd71df2f93048f5"
+      },
+      {
+        "name": "sensevoice-int8-v1.zip.part02",
+        "url": "https://gitee.com/leda/SenseField/releases/download/0.4.1/sensevoice-int8-v1.zip.part02",
+        "bytes": 70304482,
+        "sha256": "f60da186700ee0465a5e2ebabe9e8c80a19d798ff63ae40fc2e2f5bed8077220"
+      }
+    ]
   }
 }

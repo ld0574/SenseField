@@ -137,4 +137,81 @@ public class AsrModelStoreTest {
         assertFalse(AsrModelStore.validRange("bytes 5-9/10", 4, 10));
         assertTrue(AsrModelStore.validRange("bytes 5-9/10", 5, 10));
     }
+    AsrModelStore.Spec splitSpec(byte[] zip, int cut) throws Exception {
+        return new AsrModelStore.Spec(new AsrModelStore.Part[]{
+                new AsrModelStore.Part("https://cdn.example/asr.zip.part01", cut, hash(Arrays.copyOf(zip, cut))),
+                new AsrModelStore.Part("https://cdn.example/asr.zip.part02", zip.length-cut,
+                        hash(Arrays.copyOfRange(zip, cut, zip.length)))},
+                zip.length, hash(zip), model.length, hash(model), tokens.length, hash(tokens));
+    }
+    @Test public void splitDownloadResumesCurrentPartAndIgnoresRangeWithoutLosingFirstPart() throws Exception {
+        for (boolean ignoresRange : new boolean[]{false, true}) {
+            byte[] zip = zip("model.int8.onnx", model); int cut = 100;
+            File dir = folder.newFolder(); List<String> calls = new ArrayList<>();
+            AsrModelStore store = new AsrModelStore(dir, splitSpec(zip, cut), (url, offset) -> {
+                calls.add(url + ":" + offset);
+                if (url.endsWith("part01")) return download(200, null, new ByteArrayInputStream(zip, 0, cut));
+                if (offset == 0) return download(200, null, new ByteArrayInputStream(zip, cut, 33));
+                assertEquals(33, offset);
+                return ignoresRange ? download(200, null, new ByteArrayInputStream(zip, cut, zip.length-cut))
+                        : download(206, "bytes 33-" + (zip.length-cut-1) + "/" + (zip.length-cut),
+                                new ByteArrayInputStream(zip, cut+33, zip.length-cut-33));
+            });
+            assertThrows(IOException.class, () -> store.ensure(p -> {}, () -> false));
+            assertEquals(cut+33, new File(dir, "download.zip.part").length());
+            assertArrayEquals(model, Files.readAllBytes(store.ensure(p -> {}, () -> false)[0].toPath()));
+            assertEquals(Arrays.asList("https://cdn.example/asr.zip.part01:0",
+                    "https://cdn.example/asr.zip.part02:0", "https://cdn.example/asr.zip.part02:33"), calls);
+        }
+    }
+    @Test public void corruptSecondPartPreservesFirstAndRetriesOnlySecond() throws Exception {
+        byte[] zip = zip("model.int8.onnx", model); int cut = 100;
+        byte[] corrupt = Arrays.copyOfRange(zip, cut, zip.length); corrupt[10] ^= 1;
+        File dir = folder.newFolder(); int[] attempt = {0}; List<String> calls = new ArrayList<>();
+        AsrModelStore store = new AsrModelStore(dir, splitSpec(zip, cut), (url, offset) -> {
+            calls.add(url); assertEquals(0, offset);
+            if (url.endsWith("part01")) return download(200, null, new ByteArrayInputStream(zip, 0, cut));
+            return download(200, null, new ByteArrayInputStream(attempt[0]++ == 0
+                    ? corrupt : Arrays.copyOfRange(zip, cut, zip.length)));
+        });
+        assertThrows(IOException.class, () -> store.ensure(p -> {}, () -> false));
+        assertArrayEquals(Arrays.copyOf(zip, cut), Files.readAllBytes(new File(dir, "download.zip.part").toPath()));
+        assertArrayEquals(model, Files.readAllBytes(store.ensure(p -> {}, () -> false)[0].toPath()));
+        assertEquals(3, calls.size());
+    }
+    @Test public void oldSingleFilePrefixAndVerifiedModelCacheRemainReusable() throws Exception {
+        byte[] zip = zip("model.int8.onnx", model); int cut = 100;
+        File dir = folder.newFolder();
+        Files.write(new File(dir, "download.zip.part").toPath(), Arrays.copyOf(zip, cut+33));
+        AsrModelStore store = new AsrModelStore(dir, splitSpec(zip, cut), (url, offset) -> {
+            assertTrue(url.endsWith("part02")); assertEquals(33, offset);
+            return download(206, "bytes 33-" + (zip.length-cut-1) + "/" + (zip.length-cut),
+                    new ByteArrayInputStream(zip, cut+33, zip.length-cut-33));
+        });
+        File[] files = store.ensure(p -> {}, () -> false);
+        assertArrayEquals(model, Files.readAllBytes(files[0].toPath()));
+        new AsrModelStore(dir, splitSpec(zip, cut), (u, o) -> { throw new AssertionError("cache redownload"); })
+                .ensure(p -> {}, () -> false);
+    }
+    @Test public void splitMetadataRejectsWrongSumDuplicatePartsAndUnknownFormat() throws Exception {
+        byte[] zip = zip("model.int8.onnx", model);
+        AsrModelStore.Spec spec = splitSpec(zip, 100);
+        assertThrows(IllegalArgumentException.class, () -> new AsrModelStore.Spec(spec.parts,
+                zip.length+1, hash(zip), model.length, hash(model), tokens.length, hash(tokens)));
+        assertThrows(IllegalArgumentException.class, () -> new AsrModelStore.Spec(
+                new AsrModelStore.Part[]{spec.parts[0], spec.parts[0]}, 200, hash(zip),
+                model.length, hash(model), tokens.length, hash(tokens)));
+        org.json.JSONObject data = new org.json.JSONObject()
+                .put("files", new org.json.JSONObject()
+                        .put("model.int8.onnx", new org.json.JSONObject().put("size", model.length).put("sha256", hash(model)))
+                        .put("tokens.txt", new org.json.JSONObject().put("size", tokens.length).put("sha256", hash(tokens))))
+                .put("download", new org.json.JSONObject().put("format", "concat-zip-v1")
+                        .put("archive_bytes", zip.length).put("archive_sha256", hash(zip))
+                        .put("parts", new org.json.JSONArray()
+                                .put(new org.json.JSONObject().put("url", spec.parts[0].url).put("bytes", 100).put("sha256", spec.parts[0].hash))
+                                .put(new org.json.JSONObject().put("url", spec.parts[1].url).put("bytes", zip.length-100).put("sha256", spec.parts[1].hash))));
+        assertEquals(2, AsrModelStore.Spec.fromJson(data).parts.length);
+        data.getJSONObject("download").put("format", "other");
+        assertThrows(IllegalArgumentException.class, () -> AsrModelStore.Spec.fromJson(data));
+    }
 }

@@ -530,4 +530,34 @@ public final class CueDispatcherTest {
         clock.now = 10;
         assertTrue(dispatcher.submit(near("second", 2, 10000, 0f)).audioQueued());
     }
+
+    @Test public void lowerPriorityReturnWithinDedupeWindowStillSpeaksAfterCurrentCue() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+        CueRequest first = new CueRequest("session", "first", CueEventKeys.nearZone(0, 1),
+                "NEAR_ZONE", CueRequest.Category.NEAR_ZONE, 97, 0, 1200,
+                NearZoneRouting.nearChannels(false), NearZoneRouting.TONE_NEAR, 0, 0,
+                "右方有敌人", 1f);
+        assertTrue(dispatcher.submit(first).audioQueued());
+        CueDispatcher.PlaybackCallback firstPlayback = renderer.callback;
+
+        clock.now = 200;
+        CueRequest returned = new CueRequest("session", "returned", CueEventKeys.nearZone(0, 2),
+                "NEAR_ZONE", CueRequest.Category.NEAR_ZONE, 85, 200, 1400,
+                NearZoneRouting.nearChannels(false), NearZoneRouting.TONE_NEAR, 0, 0,
+                "左上有敌人", -.7f);
+        CueDispatcher.DispatchResult result = dispatcher.submit(returned);
+        assertTrue((result.acceptedChannels & CueRequest.CHANNEL_SPEECH) != 0);
+        assertEquals(2, renderer.tones);
+        assertTrue(dispatcher.pendingCueIdsForTest().contains("returned"));
+        assertFalse(renderer.stopped);
+
+        clock.now = 800;
+        firstPlayback.onFinished(800, true);
+        assertEquals(List.of("first", "returned"), renderer.started);
+        assertTrue(events.events.contains("returned:SPEECH:STARTED"));
+        assertFalse(events.events.contains("returned:DROPPED:deduplicated"));
+    }
 }

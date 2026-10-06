@@ -8,6 +8,8 @@ package com.openkhub.sensefield;
  * {@code native/include/mapassist.h}.</p>
  */
 final class NearZoneRouting {
+    /** Included in diagnostics because same-version CDN builds can differ. */
+    static final String EVENT_POLICY = "confirmed_absence_v2";
     static final int KIND_NEAR_ZONE = 7;
     static final int KIND_RADAR_STATUS = 8;
 

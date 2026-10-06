@@ -1,6 +1,7 @@
 #include "mapassist.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -68,6 +69,34 @@ bool usable_entity(const ma_tracked_entity &entity, int kind, int max_freshness_
            usable_box(entity.bbox);
 }
 
+struct EnemyRelation {
+    bool active = false;
+    int track_id = 0;
+    int state = MA_RELATION_CLEAR;
+    uint8_t near_history = 0;
+    int pending_sector = MA_SECTOR_NONE;
+    bool absence_active = false;
+    int64_t absent_since_ms = 0;
+    int absent_frames = 0;
+    bool has_observation = false;
+    int64_t last_seen_ms = 0;
+    bool updated = false;
+    bool has_position = false;
+    float map_x = 0.0f;
+    float map_y = 0.0f;
+    float map_w = 0.0f;
+    float map_h = 0.0f;
+};
+
+const ma_tracked_entity *enemy_record(const ma_tracked_entity *entities,
+                                      int entity_count, int track_id) {
+    for (int index = 0; index < entity_count; ++index) {
+        if (entities[index].entity_kind == MA_MINIMAP_ENEMY &&
+            entities[index].track_id == track_id) return &entities[index];
+    }
+    return nullptr;
+}
+
 }  // namespace
 
 struct ma_relation {
@@ -78,9 +107,9 @@ struct ma_relation {
     int64_t gap_started_ms = 0;
     bool paused_announced = false;
     int64_t last_pause_tone_ms = std::numeric_limits<int64_t>::min() / 2;
-    uint8_t near_history = 0;
-    int pending_sector = MA_SECTOR_NONE;
-    int64_t clear_since_ms = 0;
+    // The producer currently exports at most eight enemies. Honour the full
+    // input bound as well, with no allocations or unbounded identity memory.
+    std::array<EnemyRelation, kMaxRelationEntities> enemies{};
     int episode_id = 0;
     int next_episode_id = 1;
     bool has_last_step = false;
@@ -98,17 +127,66 @@ void clear_runtime_state(ma_relation &relation) {
     relation.gap_started_ms = 0;
     relation.paused_announced = false;
     relation.last_pause_tone_ms = std::numeric_limits<int64_t>::min() / 2;
-    relation.near_history = 0;
-    relation.pending_sector = MA_SECTOR_NONE;
-    relation.clear_since_ms = 0;
+    relation.enemies = {};
     relation.episode_id = 0;
 }
 
 void enter_clear(ma_relation &relation) {
     relation.state = MA_RELATION_CLEAR;
-    relation.near_history = 0;
-    relation.pending_sector = MA_SECTOR_NONE;
+    relation.enemies = {};
     relation.episode_id = 0;
+}
+
+// Detector dropouts and SEARCHING can both rebuild spatial ids. Before
+// disappearance is confirmed, preserve the held state for a nearby replacement
+// id. Matching is one-to-one and limited to one marker's dimensions in pixel
+// space; an unrelated new target must keep its own confirmation opportunity.
+// This is continuity under uncertainty, never a claim of hero identity.
+void restore_continuous_ids(ma_relation &relation,
+                           const ma_tracked_entity *entities, int entity_count,
+                           const ma_rect &map_body, int width, int height) {
+    const float map_w_px = map_body.w * width;
+    const float map_h_px = map_body.h * height;
+    for (int pair = 0; pair < entity_count; ++pair) {
+        EnemyRelation *previous = nullptr;
+        const ma_tracked_entity *current = nullptr;
+        float best_distance = std::numeric_limits<float>::infinity();
+        for (EnemyRelation &track : relation.enemies) {
+            if (!track.active || !track.has_position) continue;
+            const ma_tracked_entity *record = enemy_record(entities, entity_count, track.track_id);
+            if (record && usable_entity(*record, MA_MINIMAP_ENEMY,
+                                       relation.config.max_freshness_ms)) continue;
+            for (int index = 0; index < entity_count; ++index) {
+                const ma_tracked_entity &entity = entities[index];
+                if (!usable_entity(entity, MA_MINIMAP_ENEMY,
+                                   relation.config.max_freshness_ms)) continue;
+                bool already_known = false;
+                for (const EnemyRelation &known : relation.enemies) {
+                    if (known.active && known.track_id == entity.track_id) {
+                        already_known = true;
+                        break;
+                    }
+                }
+                if (already_known) continue;
+                const float x = (entity.bbox.x + entity.bbox.w * .5f - map_body.x) / map_body.w;
+                const float y = (entity.bbox.y + entity.bbox.h * .5f - map_body.y) / map_body.h;
+                const float dx = (x - track.map_x) * map_w_px;
+                const float dy = (y - track.map_y) * map_h_px;
+                const float distance = dx * dx + dy * dy;
+                const float marker_px = std::max({track.map_w * map_w_px,
+                        track.map_h * map_h_px, entity.bbox.w * width,
+                        entity.bbox.h * height});
+                const float limit = .75f * marker_px;
+                if (distance <= limit * limit && distance < best_distance) {
+                    best_distance = distance;
+                    previous = &track;
+                    current = &entity;
+                }
+            }
+        }
+        if (!previous) break;
+        previous->track_id = current->track_id;
+    }
 }
 
 }  // namespace
@@ -185,6 +263,11 @@ extern "C" int ma_relation_update(ma_relation *relation,
     }
 
     if (!reliable) {
+        // Unobservable time cannot complete a game-disappearance timer.
+        for (EnemyRelation &track : relation->enemies) {
+            track.absence_active = false;
+            track.absent_frames = 0;
+        }
         if (!relation->gap_active) {
             relation->gap_active = true;
             relation->gap_started_ms = now_ms;
@@ -193,8 +276,7 @@ extern "C" int ma_relation_update(ma_relation *relation,
         if (relation->state != MA_RELATION_UNKNOWN &&
             now_ms - relation->gap_started_ms >= config.short_gap_ms) {
             relation->state = MA_RELATION_UNKNOWN;
-            relation->near_history = 0;
-            relation->pending_sector = MA_SECTOR_NONE;
+            relation->enemies = {};
             relation->episode_id = 0;
         }
         // A pause tone is only meaningful after the radar has worked once. A
@@ -223,14 +305,60 @@ extern "C" int ma_relation_update(ma_relation *relation,
         }
     }
 
-    // Nearest and second-nearest usable enemies in map short-edge units.
+    // Distances are in map short-edge units, independent of frame aspect.
     const float scale_x = static_cast<float>(width) / map_short_px;
     const float scale_y = static_cast<float>(height) / map_short_px;
+
+    // LOST means a few detector misses, not proven visual disappearance. Hold
+    // announced targets through short dropouts; only continuous reliable
+    // absence for rearm_ms (and at least three snapshots) releases that state.
+    // No cue cooldown applies after this confirmation. Stale/invalid VISIBLE
+    // records and technical gaps interrupt, rather than advance, the evidence.
+    for (EnemyRelation &track : relation->enemies) {
+        if (!track.active) continue;
+        track.updated = false;
+        const ma_tracked_entity *record = enemy_record(entities, entity_count, track.track_id);
+        if (!record || record->state == MA_TRACK_STATE_LOST) {
+            if (track.state != MA_RELATION_OCCUPIED && track.state != MA_RELATION_REARM) {
+                track = EnemyRelation{};
+                continue;
+            }
+            if (!track.absence_active) {
+                track.absence_active = true;
+                track.absent_since_ms = now_ms;
+                track.absent_frames = 0;
+            }
+            track.absent_frames = std::min(3, track.absent_frames + 1);
+            if (track.absent_frames >= 3 &&
+                now_ms - track.absent_since_ms >= config.rearm_ms)
+                track = EnemyRelation{};
+        } else if (!usable_entity(*record, MA_MINIMAP_ENEMY, config.max_freshness_ms)) {
+            track.absence_active = false;
+            track.absent_frames = 0;
+            track.near_history = static_cast<uint8_t>((track.near_history << 1) & 7);
+            if (track.state == MA_RELATION_PENDING && track.near_history == 0) {
+                track.state = MA_RELATION_CLEAR;
+                track.pending_sector = MA_SECTOR_NONE;
+            }
+        }
+    }
+
+    // Expire confirmed disappearances before trying continuity, so a genuine
+    // return at the old position still gets a new event after fresh sightings.
+    restore_continuous_ids(*relation, entities, entity_count, map_body, width, height);
+
+    struct Candidate {
+        EnemyRelation *track;
+        float distance;
+        float angle;
+    };
+    std::array<Candidate, kMaxRelationEntities> candidates{};
+    int candidate_count = 0;
+    bool rearm_suppressed = false;
+    bool short_gap_suppressed = false;
     bool any_enemy = false;
     float nearest = std::numeric_limits<float>::infinity();
     float nearest_angle = 0.0f;
-    float second = std::numeric_limits<float>::infinity();
-    float second_angle = 0.0f;
     for (int index = 0; index < entity_count; ++index) {
         const ma_tracked_entity &entity = entities[index];
         // LOST ghosts keep a last box for the overlay but are not evidence.
@@ -243,80 +371,134 @@ extern "C" int ma_relation_update(ma_relation *relation,
         const float angle = degrees(std::atan2(-dy, dx));
         any_enemy = true;
         if (distance < nearest) {
-            second = nearest;
-            second_angle = nearest_angle;
             nearest = distance;
             nearest_angle = angle;
-        } else if (distance < second) {
-            second = distance;
-            second_angle = angle;
         }
-    }
-    const bool near = any_enemy && nearest <= config.enter_radius;
-    const bool inside_exit = any_enemy && nearest <= config.exit_radius;
 
-    if (relation->state == MA_RELATION_CLEAR && near) {
-        relation->state = MA_RELATION_PENDING;
-        relation->near_history = 0;
-        relation->pending_sector = MA_SECTOR_NONE;
-    }
-    if (relation->state == MA_RELATION_PENDING) {
-        relation->near_history = static_cast<uint8_t>(
-                ((relation->near_history << 1) | (near ? 1 : 0)) & 7);
-        if (near) {
-            relation->pending_sector = hysteretic_sector(
-                    nearest_angle, relation->pending_sector, config.sector_hysteresis_deg);
-        }
-        // At most one event per update: a confirmation that coincides with a
-        // resume tone waits one frame instead of overlapping it.
-        if (near && out->event == MA_RELATION_EVENT_NONE &&
-            hits(relation->near_history) >= config.confirm_hits) {
-            relation->state = MA_RELATION_OCCUPIED;
-            relation->episode_id = relation->next_episode_id++;
-            int sector = relation->pending_sector;
-            const bool adjacent = nearest < config.adjacent_ratio * config.enter_radius;
-            const bool tied = std::isfinite(second) && second > 0.0f &&
-                    (second - nearest) <= config.tie_ratio * second &&
-                    raw_sector(second_angle) != raw_sector(nearest_angle);
-            if (adjacent || tied) sector = MA_SECTOR_NONE;
-            out->event = MA_RELATION_EVENT_NEAR_ENTER;
-            out->sector = sector;
-            out->pan = sector_pan(sector);
-        } else if (relation->near_history == 0) {
-            enter_clear(*relation);
-        }
-    } else if (relation->state == MA_RELATION_OCCUPIED) {
-        if (!inside_exit) {
-            relation->state = MA_RELATION_REARM;
-            relation->clear_since_ms = now_ms;
-        } else if (resumed_from_gap && out->event == MA_RELATION_EVENT_NONE) {
-            // Without the gap hold this frame would have started a new episode.
-            out->event = MA_RELATION_EVENT_SUPPRESSED;
-            out->suppression = MA_RELATION_SUPPRESSION_SHORT_GAP;
-        }
-    } else if (relation->state == MA_RELATION_REARM) {
-        // Clear time counts only under reliable observation.
-        if (resumed_from_gap) relation->clear_since_ms = now_ms;
-        if (near) {
-            relation->state = MA_RELATION_OCCUPIED;
-            if (out->event == MA_RELATION_EVENT_NONE) {
-                out->event = MA_RELATION_EVENT_SUPPRESSED;
-                out->suppression = MA_RELATION_SUPPRESSION_REARM_PENDING;
+        EnemyRelation *track = nullptr;
+        EnemyRelation *free_slot = nullptr;
+        for (EnemyRelation &slot : relation->enemies) {
+            if (slot.active && slot.track_id == entity.track_id) {
+                track = &slot;
+                break;
             }
-        } else if (inside_exit) {
-            relation->clear_since_ms = now_ms;
-        } else if (now_ms - relation->clear_since_ms >= config.rearm_ms) {
-            enter_clear(*relation);
+            if (!slot.active && !free_slot) free_slot = &slot;
+        }
+        if (!track && free_slot) {
+            track = free_slot;
+            *track = EnemyRelation{};
+            track->active = true;
+            track->track_id = entity.track_id;
+        }
+        if (!track || track->updated) continue;
+        track->updated = true;
+        track->absence_active = false;
+        track->absent_frames = 0;
+        track->has_position = true;
+        track->map_x = (entity.bbox.x + entity.bbox.w * .5f - map_body.x) / map_body.w;
+        track->map_y = (entity.bbox.y + entity.bbox.h * .5f - map_body.y) / map_body.h;
+        track->map_w = entity.bbox.w / map_body.w;
+        track->map_h = entity.bbox.h / map_body.h;
+        // VISIBLE may include up to two missed detector frames. Its retained
+        // box must not count as a second sighting of a returning enemy.
+        const bool observed = !track->has_observation ||
+                              entity.last_seen_ms > track->last_seen_ms;
+        if (observed) {
+            track->has_observation = true;
+            track->last_seen_ms = entity.last_seen_ms;
+        }
+        const bool near = distance <= config.enter_radius;
+        const bool inside_exit = distance <= config.exit_radius;
+        if (track->state == MA_RELATION_CLEAR && near) {
+            track->state = MA_RELATION_PENDING;
+            track->near_history = 0;
+            track->pending_sector = MA_SECTOR_NONE;
+        }
+        if (track->state == MA_RELATION_PENDING) {
+            track->near_history = static_cast<uint8_t>(
+                    ((track->near_history << 1) | (near && observed ? 1 : 0)) & 7);
+            if (near && observed) {
+                track->pending_sector = hysteretic_sector(
+                        angle, track->pending_sector, config.sector_hysteresis_deg);
+                if (hits(track->near_history) >= config.confirm_hits)
+                    candidates[candidate_count++] = {track, distance, angle};
+            }
+            if (track->near_history == 0) {
+                track->state = MA_RELATION_CLEAR;
+                track->pending_sector = MA_SECTOR_NONE;
+            }
+        } else if (track->state == MA_RELATION_OCCUPIED) {
+            if (!inside_exit) {
+                track->state = MA_RELATION_REARM;
+            } else if (resumed_from_gap) {
+                short_gap_suppressed = true;
+            }
+        } else if (track->state == MA_RELATION_REARM) {
+            // Merely leaving the radius never restores cue eligibility. Keep
+            // the announcement until disappearance is actually confirmed.
+            if (inside_exit) {
+                track->state = MA_RELATION_OCCUPIED;
+                if (near) rearm_suppressed = true;
+            }
         }
     }
 
+    // Announce all confirmed new/returning targets as one batch per frame.
+    // An already announced closer target cannot steal the batch's direction
+    // or distance. A resume event defers the batch until a fresh next frame.
+    if (candidate_count > 0 && out->event == MA_RELATION_EVENT_NONE) {
+        const Candidate *first = nullptr;
+        const Candidate *second = nullptr;
+        for (int index = 0; index < candidate_count; ++index) {
+            const Candidate &candidate = candidates[index];
+            candidate.track->state = MA_RELATION_OCCUPIED;
+            candidate.track->near_history = 0;
+            if (!first || candidate.distance < first->distance) {
+                second = first;
+                first = &candidate;
+            } else if (!second || candidate.distance < second->distance) {
+                second = &candidate;
+            }
+        }
+        int sector = first->track->pending_sector;
+        const bool adjacent = first->distance < config.adjacent_ratio * config.enter_radius;
+        const bool tied = second && second->distance > 0.0f &&
+                (second->distance - first->distance) <= config.tie_ratio * second->distance &&
+                raw_sector(second->angle) != raw_sector(first->angle);
+        if (adjacent || tied) sector = MA_SECTOR_NONE;
+        relation->episode_id = relation->next_episode_id++;
+        out->event = MA_RELATION_EVENT_NEAR_ENTER;
+        out->sector = sector;
+        out->pan = sector_pan(sector);
+        out->nearest_distance = first->distance;
+    } else if (out->event == MA_RELATION_EVENT_NONE &&
+               (rearm_suppressed || short_gap_suppressed)) {
+        out->event = MA_RELATION_EVENT_SUPPRESSED;
+        out->suppression = rearm_suppressed ? MA_RELATION_SUPPRESSION_REARM_PENDING
+                                           : MA_RELATION_SUPPRESSION_SHORT_GAP;
+    }
+
+    bool occupied = false;
+    bool pending = false;
+    bool rearming = false;
+    for (const EnemyRelation &track : relation->enemies) {
+        if (!track.active) continue;
+        occupied = occupied || track.state == MA_RELATION_OCCUPIED;
+        pending = pending || track.state == MA_RELATION_PENDING;
+        rearming = rearming || track.state == MA_RELATION_REARM;
+    }
+    relation->state = occupied ? MA_RELATION_OCCUPIED : pending ? MA_RELATION_PENDING
+                    : rearming ? MA_RELATION_REARM : MA_RELATION_CLEAR;
+    if (relation->state == MA_RELATION_CLEAR) relation->episode_id = 0;
     out->state = relation->state;
     out->reliable = 1;
     out->episode_id = relation->episode_id;
-    out->nearest_distance = any_enemy ? nearest : -1.0f;
-    if (out->event != MA_RELATION_EVENT_NEAR_ENTER && any_enemy) {
-        out->sector = raw_sector(nearest_angle);
-        out->pan = sector_pan(out->sector);
+    if (out->event != MA_RELATION_EVENT_NEAR_ENTER) {
+        out->nearest_distance = any_enemy ? nearest : -1.0f;
+        if (any_enemy) {
+            out->sector = raw_sector(nearest_angle);
+            out->pan = sector_pan(out->sector);
+        }
     }
     return 1;
 }

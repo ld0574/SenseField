@@ -303,16 +303,24 @@ void ma_engine_clear_minimap_tracks(ma_engine *engine);
  * edge in pixels; bearings are minimap-relative (screen up is up) and centred
  * on the player marker, not on hero facing or attack range.
  *
- * One occupancy episode produces at most one MA_RELATION_EVENT_NEAR_ENTER.
- * There is no global cooldown: re-entry is gated only by the REARM window.
- * Every call returns at most one event.
+ * Each spatial track is announced once while continuously visible nearby.
+ * Absence/LOST is detector uncertainty: rearm requires continuous reliable
+ * absence for rearm_ms and at least three snapshots. Nearby replacement ids
+ * before that confirmation inherit the announced state through bounded,
+ * one-to-one spatial continuity. Returning inside the enter radius needs confirm_hits new
+ * detector sightings again, even while other enemies remain nearby. A cached
+ * VISIBLE box with unchanged last_seen_ms is not another sighting. These ids
+ * are spatial associations, not verified hero identities.
+ * Continuously visible targets leaving/re-entering the radius remain announced;
+ * they do not rearm on a radius timer. There is no global cue cooldown. Confirmed
+ * simultaneous appearances coalesce into at most one event per call.
  */
 enum ma_relation_state {
     MA_RELATION_UNKNOWN = 0,   /* self or map unreliable beyond the grace gap */
-    MA_RELATION_CLEAR = 1,     /* reliable, no enemy inside the enter radius */
-    MA_RELATION_PENDING = 2,   /* enemy inside the enter radius, confirming */
-    MA_RELATION_OCCUPIED = 3,  /* confirmed occupancy; already announced */
-    MA_RELATION_REARM = 4      /* left the exit radius, waiting to be stable */
+    MA_RELATION_CLEAR = 1,     /* reliable, no pending or announced near track */
+    MA_RELATION_PENDING = 2,   /* unannounced near track confirming */
+    MA_RELATION_OCCUPIED = 3,  /* at least one nearby track already announced */
+    MA_RELATION_REARM = 4      /* announced tracks outside exit radius; still held */
 };
 
 enum ma_relation_event {
@@ -326,7 +334,7 @@ enum ma_relation_event {
 
 enum ma_relation_suppression {
     MA_RELATION_SUPPRESSION_NONE = 0,
-    /* Re-entered before the REARM window completed. */
+    /* A continuously visible, already announced track re-entered the radius. */
     MA_RELATION_SUPPRESSION_REARM_PENDING = 1,
     /* Recovered from a short self-marker gap while the zone stayed occupied. */
     MA_RELATION_SUPPRESSION_SHORT_GAP = 2
@@ -351,8 +359,8 @@ typedef struct ma_relation_config {
     float sector_hysteresis_deg; /* kept-sector margin at each boundary */
     float adjacent_ratio;        /* d < ratio * R_enter reports no bearing */
     float tie_ratio;             /* two targets this close report no bearing */
-    int confirm_hits;            /* hits in the last three frames */
-    int rearm_ms;                /* stable clear time before CLEAR */
+    int confirm_hits;            /* new detector sightings in last three frames */
+    int rearm_ms;                /* continuous reliable absence required to rearm */
     int short_gap_ms;            /* self-loss tolerance; also UNKNOWN delay */
     int pause_min_gap_ms;        /* minimum spacing between pause tones */
     int max_freshness_ms;        /* entity freshness limit */
@@ -363,8 +371,8 @@ typedef struct ma_relation_output {
     int event;              /* ma_relation_event, at most one per update */
     int sector;             /* reported sector for NEAR_ENTER, else current */
     float pan;              /* cos(sector centre); 0 without a bearing */
-    float nearest_distance; /* nearest eligible enemy, -1 when none/unknown */
-    int episode_id;         /* monotonic occupancy episode, 0 before the first */
+    float nearest_distance; /* new batch at NEAR_ENTER, else visible nearest; -1 if none */
+    int episode_id;         /* monotonic appearance batch; 0 when clear/reset */
     int suppression;        /* ma_relation_suppression for SUPPRESSED */
     int reliable;           /* 1 when self and map were usable this frame */
 } ma_relation_output;
