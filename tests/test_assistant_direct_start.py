@@ -20,6 +20,8 @@ spec.loader.exec_module(start)
 
 @pytest.fixture
 def clean_environment(monkeypatch):
+    # start.main writes settings directly; discard every added key at teardown.
+    monkeypatch.setattr(os, "environ", os.environ.copy())
     for key in list(os.environ):
         if key.startswith("ASSISTANT_GATEWAY_") or key == "ZHIPU_API_KEY":
             monkeypatch.delenv(key)
@@ -110,7 +112,7 @@ def isolated_launcher(tmp_path, clean_environment):
 
     def command(*argv):
         return subprocess.run(["bash", str(deploy / "start.sh"), *argv], cwd=tmp_path,
-                              capture_output=True, text=True, timeout=20)
+                              env=os.environ.copy(), capture_output=True, text=True, timeout=20)
 
     yield deploy, command
     command("stop")
