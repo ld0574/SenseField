@@ -12,6 +12,7 @@
 | 安装公开体验版 | [0.3.8 安装与使用说明](releases/0.3.8/RELEASE_NOTES.md) |
 | 查看最新版本变化 | [0.3.8 公开体验版](releases/0.3.8/RELEASE_NOTES.md) |
 | 查看当前源码候选 | [0.4.1 自动更新候选说明](releases/0.4.1/RELEASE_NOTES.md) · [CDN 同版本修订记录](../validation/APP_UPDATE_CDN_0.4.1_2026-10-04.md)（未发布，CDN 清单上传待完成） |
+| 部署助手服务 | [直接启动与部署步骤](../deploy/assistant/README.md)（部署脚本统一在 `deploy/assistant/`） |
 | 参与开发或标注 | [团队协作与本地运行](development/团队协作与本地运行.md) |
 | 查看版本历史与发布要求 | [发布索引](releases/README.md) |
 
@@ -62,6 +63,7 @@
 ## 目录维护约定
 
 - `docs/` 只保存文档，包括 Markdown 与已有 PDF。APK、ZIP、校验文件和交付元数据留在 `output/releases/<版本>/`；发布文档可记录文件名、大小、SHA-256 和公开下载地址。
+- 部署脚本、反代和服务模板及部署操作入口统一放在 `deploy/assistant/`；部署主文档为该目录的 `README.md`。
 - 验证、诊断和逐场实验记录继续放在 `validation/`，训练命令放在 `training/README.md`。
 - 新增文档时更新本索引；新增交付时在 `releases/<版本>/` 保存说明，并更新发布索引。
 - 项目自写文档按文件加入 `.gitignore` 与公开仓库检查脚本的允许清单，原始参考资料保留本地。

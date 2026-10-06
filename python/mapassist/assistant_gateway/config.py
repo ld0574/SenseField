@@ -11,6 +11,11 @@ from urllib.parse import urlsplit
 
 @dataclass(frozen=True)
 class GatewaySettings:
+    public_access: bool = False
+    public_quota_db: Path | None = None
+    public_global_daily: int = 1000
+    public_installation_daily: int = 300
+    public_installation_minute: int = 12
     device_tokens: tuple[str, ...] = field(default_factory=tuple, repr=False)
     zhipu_api_key: str = field(default="", repr=False)
     zhipu_model: str = "glm-4.6v-flash"
@@ -32,6 +37,11 @@ class GatewaySettings:
     test_text_log_seconds: int = 3600
 
     def __post_init__(self) -> None:
+        for value in (self.public_global_daily, self.public_installation_daily, self.public_installation_minute):
+            if type(value) is not int or not 1 <= value <= 1000000:
+                raise ValueError("Public access quotas must be integers between 1 and 1000000")
+        if self.public_access and (self.asr_backend != "disabled" or self.public_quota_db is None):
+            raise ValueError("Public access requires vision-only mode and a persistent quota database")
         if (isinstance(self.test_text_log_seconds, bool)
                 or not isinstance(self.test_text_log_seconds, int)
                 or not 1 <= self.test_text_log_seconds <= 3600):
@@ -82,7 +92,16 @@ class GatewaySettings:
             vision_max_tokens = int(os.environ.get("ASSISTANT_GATEWAY_VISION_MAX_TOKENS", "256"))
         except ValueError as exc:
             raise ValueError("ASSISTANT_GATEWAY_VISION_MAX_TOKENS must be an integer") from exc
+        public_raw = os.environ.get("ASSISTANT_GATEWAY_PUBLIC_ACCESS", "0")
+        if public_raw not in {"0", "1"}:
+            raise ValueError("ASSISTANT_GATEWAY_PUBLIC_ACCESS must be 0 or 1")
+        quota_path = os.environ.get("ASSISTANT_GATEWAY_PUBLIC_QUOTA_DB", "").strip()
         return cls(
+            public_access=public_raw == "1",
+            public_quota_db=Path(quota_path).expanduser() if quota_path else None,
+            public_global_daily=int(os.environ.get("ASSISTANT_GATEWAY_PUBLIC_GLOBAL_DAILY", "1000")),
+            public_installation_daily=int(os.environ.get("ASSISTANT_GATEWAY_PUBLIC_INSTALLATION_DAILY", "300")),
+            public_installation_minute=int(os.environ.get("ASSISTANT_GATEWAY_PUBLIC_INSTALLATION_MINUTE", "12")),
             device_tokens=tokens,
             zhipu_api_key=os.environ.get("ZHIPU_API_KEY", "").strip(),
             zhipu_model=os.environ.get("ASSISTANT_GATEWAY_GLM_MODEL", "glm-4.6v-flash").strip(),
@@ -105,7 +124,7 @@ class GatewaySettings:
     def validate_production(self) -> None:
         if self.mode != "production":
             raise ValueError("Production startup requires production mode")
-        if not self.device_tokens:
+        if not self.device_tokens and not self.public_access:
             raise ValueError("Set ASSISTANT_GATEWAY_DEVICE_TOKEN or ASSISTANT_GATEWAY_DEVICE_TOKENS")
         if self.local_tls_proxy and (self.require_tls or self.asr_backend != "disabled"):
             raise ValueError("Local TLS proxy mode requires an HTTP vision-only loopback backend")
@@ -118,7 +137,7 @@ def safe_configuration_status(settings: GatewaySettings, *, asr_ready: bool, vis
     ready = authenticated_asr_ready and vision_ready
     if settings.mode == "development_mock":
         status = "development_mock"
-    elif settings.asr_backend == "disabled" and settings.device_tokens and vision_ready:
+    elif settings.asr_backend == "disabled" and (settings.device_tokens or settings.public_access) and vision_ready:
         status = "vision_only"
     elif authenticated_asr_ready and not vision_ready:
         status = "asr_only"
@@ -130,6 +149,7 @@ def safe_configuration_status(settings: GatewaySettings, *, asr_ready: bool, vis
         "asr_backend": settings.asr_backend,
         "vision_ready": vision_ready,
         "authentication_configured": bool(settings.device_tokens),
+        "public_vision_access": settings.public_access,
         "mode": settings.mode,
         "vision_provider": settings.vision_provider,
         "vision_max_tokens": settings.vision_max_tokens if settings.vision_provider == "compatible" else 256,

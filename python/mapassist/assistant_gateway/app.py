@@ -18,6 +18,7 @@ from .asr import FunAsrStreamingRecognizer, MockStreamingRecognizer
 from .sensevoice import SenseVoiceRecognizer
 from .audio import AudioProtocolError, AudioWebSocketSession, GenerationHighWater, validate_start
 from .config import GatewaySettings, safe_configuration_status
+from .public_access import PublicVisionQuota, installation_key
 from .local_proxy import LocalProxyPeerMiddleware
 from .errors import GatewayError
 from .glm import GlmVisionClient
@@ -277,6 +278,11 @@ def create_app(
                 timeout_seconds=settings.request_timeout_seconds,
             )
 
+    public_quota = PublicVisionQuota(settings.public_quota_db,
+        global_daily=settings.public_global_daily,
+        installation_daily=settings.public_installation_daily,
+        installation_minute=settings.public_installation_minute) if settings.public_access else None
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.asr_ready = False
@@ -289,6 +295,8 @@ def create_app(
         try:
             if settings.mode == "production":
                 settings.validate_production()
+            if public_quota is not None:
+                await asyncio.to_thread(public_quota.initialize)
             if settings.asr_backend != "disabled":
                 initialize = getattr(recognizer, "initialize", None)
                 if initialize is None:
@@ -359,8 +367,11 @@ def create_app(
         started = time.monotonic()
         if settings.require_tls and not _secure_scheme(request.scope):
             raise GatewayError("https_required", "Use HTTPS for this service.", http_status=426)
+        public_identity = None
         if not _authorization_matches(request.headers.get("authorization"), settings.device_tokens):
-            raise GatewayError("unauthorized", "A valid bearer device token is required.", http_status=401)
+            if public_quota is None:
+                raise GatewayError("unauthorized", "A valid bearer device token is required.", http_status=401)
+            public_identity = installation_key(request.headers.get("x-sensefield-installation"))
         if not request.app.state.vision_ready or vision_client is None:
             raise GatewayError(
                 "vision_unconfigured",
@@ -376,6 +387,14 @@ def create_app(
         except InvalidRequest as exc:
             raise GatewayError("invalid_request", str(exc), http_status=422) from exc
         del payload
+        if public_identity is not None:
+            try:
+                await asyncio.to_thread(public_quota.charge, public_identity)
+            except GatewayError:
+                raise
+            except Exception:
+                _AUDIT_LOGGER.error("assistant_gateway_audit event=public_quota_unavailable")
+                raise GatewayError("public_quota_unavailable", "Public service unavailable.", http_status=503) from None
 
         _log_visual_event(
             "payload_validated", visual_request,

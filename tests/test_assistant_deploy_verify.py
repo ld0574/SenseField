@@ -318,3 +318,15 @@ def test_cli_writes_only_structured_json_to_stdout(monkeypatch: pytest.MonkeyPat
     captured = capsys.readouterr()
     assert json.loads(captured.out) == {"ok": True, "checks": 4}
     assert captured.err == ""
+
+
+def test_public_health_uses_installation_header_without_reading_private_config(tmp_path):
+    health = FakeResponse(b'{"status":"vision_only","asr_ready":false,"public_vision_access":true}')
+    opener = FakeOpener([health, _http_error(401), _http_error(422), _http_error(413)])
+    code, report = verify.execute(_args("--config", str(tmp_path / "does-not-exist")),
+        opener=opener, context_factory=lambda **kwargs: object(), stderr=io.StringIO())
+    assert code == 0
+    assert report["config"] == "public_vision_no_code"
+    assert opener.requests[1][0].get_header("X-sensefield-installation") is None
+    assert opener.requests[2][0].get_header("X-sensefield-installation") is not None
+    assert all(request.get_header("Authorization") is None for request, _ in opener.requests)

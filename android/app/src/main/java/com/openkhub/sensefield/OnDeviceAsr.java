@@ -4,10 +4,6 @@ import android.content.Context;
 import android.os.Process;
 import android.os.SystemClock;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -21,12 +17,8 @@ final class OnDeviceAsr implements AutoCloseable {
         void result(long generation, String turn, String text, long inferenceMs);
         void unavailable(String reason);
         void dropped(String reason);
+        default void resourceProgress(int percent) { }
     }
-    private static final String MODEL = "model.int8.onnx";
-    private static final String TOKENS = "tokens.txt";
-    private static final long MODEL_BYTES = 239233841L, TOKENS_BYTES = 315894L;
-    private static final String MODEL_HASH = "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51";
-    private static final String TOKENS_HASH = "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc";
     private final Context context;
     private final Listener listener;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
@@ -47,10 +39,10 @@ final class OnDeviceAsr implements AutoCloseable {
             Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
             try {
                 System.loadLibrary("ondevice_asr_jni");
-                File directory = new File(context.getNoBackupFilesDir(), "sensevoice-int8");
-                if (!directory.isDirectory() && !directory.mkdirs()) throw new IllegalStateException("model_directory");
-                File model = verifiedAsset(directory, MODEL, MODEL_BYTES, MODEL_HASH);
-                File tokens = verifiedAsset(directory, TOKENS, TOKENS_BYTES, TOKENS_HASH);
+                File[] files = AsrModelStore.get(context).ensure(percent -> {
+                    if (!closed) listener.resourceProgress(percent);
+                }, () -> closed);
+                File model = files[0], tokens = files[1];
                 if (closed) return;
                 handle = nativeCreate(model.getAbsolutePath(), tokens.getAbsolutePath(), 1);
                 if (handle == 0) throw new IllegalStateException("model_load");
@@ -58,7 +50,7 @@ final class OnDeviceAsr implements AutoCloseable {
                 ready = true; listener.ready();
             } catch (Exception | LinkageError | OutOfMemoryError error) {
                 ready = false; release();
-                if (!closed) listener.unavailable("本机离线语音模型不可用，预警继续；可点击读取画面");
+                if (!closed) listener.unavailable("语音资源未准备好，请联网在助手设置中重试；本地预警正常");
             }
         });
     }
@@ -113,36 +105,6 @@ final class OnDeviceAsr implements AutoCloseable {
         worker.execute(this::release); worker.shutdown();
     }
     private static void wipe(short[] samples) { if (samples != null) Arrays.fill(samples, (short) 0); }
-    private File verifiedAsset(File directory, String name, long bytes, String hash) throws Exception {
-        File installed = new File(directory, name);
-        if (verified(installed, bytes, hash)) return installed;
-        File temporary = new File(directory, name + ".part");
-        if (temporary.exists() && !temporary.delete()) throw new IllegalStateException("stale_model_copy");
-        try (InputStream source = context.getAssets().open("sensevoice/" + name);
-                FileOutputStream target = new FileOutputStream(temporary)) {
-            byte[] block = new byte[65536]; int count; long copied = 0;
-            while ((count = source.read(block)) != -1) {
-                if (closed || copied + count > bytes) throw new IllegalStateException("model_copy_cancelled");
-                target.write(block, 0, count); copied += count;
-            }
-            target.getFD().sync();
-        } catch (Exception error) { temporary.delete(); throw error; }
-        if (!verified(temporary, bytes, hash)) { temporary.delete(); throw new IllegalStateException("model_checksum"); }
-        if (installed.exists() && !installed.delete()) throw new IllegalStateException("model_replace");
-        if (!temporary.renameTo(installed)) throw new IllegalStateException("model_install");
-        return installed;
-    }
-    private static boolean verified(File file, long size, String expected) throws Exception {
-        if (!file.isFile() || file.length() != size) return false;
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        try (FileInputStream stream = new FileInputStream(file)) {
-            byte[] block = new byte[65536]; int count;
-            while ((count = stream.read(block)) != -1) digest.update(block, 0, count);
-        }
-        StringBuilder actual = new StringBuilder(64);
-        for (byte value : digest.digest()) actual.append(String.format(java.util.Locale.ROOT, "%02x", value & 255));
-        return expected.equals(actual.toString());
-    }
     private static native long nativeCreate(String modelPath, String tokensPath, int threads);
     private static native String nativeDecode(long handle, short[] pcm);
     private static native void nativeDestroy(long handle);

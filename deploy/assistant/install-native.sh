@@ -70,7 +70,7 @@ for location in (Path(sys.executable).resolve(), Path(sys.base_prefix).resolve()
         raise SystemExit("请选择安装在 /usr 或 /opt 等服务可读取的位置的系统 Python；用户主目录下的 Python 会被服务隔离阻止。")
 PY
 [[ -f "$source_dir/pyproject.toml" && -d "$source_dir/python/mapassist" \
-    && -f "$source_dir/scripts/assistant_gateway_container_entrypoint.py" ]] \
+    && -f "$deploy_dir/serve.py" ]] \
     || fail '部署包源码不完整。'
 app_dir="$(realpath -m -- "$app_dir")"
 for restricted_root in /home /root /tmp /run /var/tmp /etc; do
@@ -83,10 +83,8 @@ if [[ "$app_dir" != "$source_dir" ]]; then
 fi
 systemctl is-active --quiet "$service_name" && fail '服务正在运行；请先停止服务，再重新运行安装脚本。'
 
-# A checked-out or unpacked source tree can be adopted in place. Its generated
-# targets must be absent or match the package, and an unmarked venv is kept out
-# of the installer's way. This avoids treating arbitrary /data directories as
-# disposable installation targets.
+# A checked-out or unpacked source tree can be adopted in place. An unmarked
+# venv is kept out of the installer's way; unrelated files remain untouched.
 same_source_dir=false
 [[ "$app_dir" == "$source_dir" ]] && same_source_dir=true
 app_marker="$app_dir/.sensefield-native-install-v1"
@@ -101,19 +99,18 @@ if [[ -e "$app_dir" ]]; then
             || fail '源码目录不完整，不能原地采用。'
         [[ ! -e "$app_dir/.venv" && ! -L "$app_dir/.venv" ]] \
             || fail "源码目录中已有未标记的 .venv：$app_dir/.venv；安装器不会覆盖它，请先备份并移到服务目录之外。"
-        for target_source in \
-            "$app_dir/serve.py:$source_dir/scripts/assistant_gateway_container_entrypoint.py" \
-            "$app_dir/verify.py:$deploy_dir/verify.py"; do
-            target="${target_source%%:*}"
-            expected="${target_source#*:}"
-            [[ ! -e "$target" ]] || cmp -s "$target" "$expected" \
-                || fail "原地采用时发现冲突文件：$target；请先核对并自行备份。"
-        done
     fi
 fi
-for managed_target in "$app_dir/python" "$app_dir/pyproject.toml" "$app_dir/serve.py" \
-        "$app_dir/verify.py" "$app_dir/.venv"; do
+deployment_files=(README.md start.sh start.py serve.py verify.py configure.py native-state.py \
+    install-native.sh sensefield-assistant.service nginx.native.example.conf \
+    nginx.native.tls.example.conf nginx.example.conf prepare.sh compose.yaml Dockerfile)
+for managed_target in "$app_dir/python" "$app_dir/pyproject.toml" "$app_dir/deploy" \
+        "$app_dir/deploy/assistant" "$app_dir/.venv"; do
     [[ ! -L "$managed_target" ]] || fail "拒绝通过符号链接写入应用目录：$managed_target"
+done
+for task_file in "${deployment_files[@]}"; do
+    [[ ! -L "$app_dir/deploy/assistant/$task_file" ]] \
+        || fail "拒绝通过符号链接写入部署文件：$app_dir/deploy/assistant/$task_file"
 done
 for task_dir in "$config_dir"; do
     [[ ! -L "$task_dir" ]] || fail "拒绝使用符号链接目录：$task_dir"
@@ -176,8 +173,12 @@ if [[ "$same_source_dir" != true ]]; then
     chown -R root:root "$app_dir/python"
     chmod -R u=rwX,go=rX "$app_dir/python"
 fi
-install -m 0644 "$source_dir/scripts/assistant_gateway_container_entrypoint.py" "$app_dir/serve.py"
-install -m 0644 "$deploy_dir/verify.py" "$app_dir/verify.py"
+if [[ "$same_source_dir" != true ]]; then
+    install -d -m 0755 -o root -g root "$app_dir/deploy/assistant"
+    for task_file in "${deployment_files[@]}"; do
+        install -m 0644 "$deploy_dir/$task_file" "$app_dir/deploy/assistant/$task_file"
+    done
+fi
 if [[ ! -f "$app_dir/.venv/bin/python" ]]; then
     "$python_bin" -m venv "$app_dir/.venv"
 fi
@@ -185,7 +186,7 @@ fi
 # Keep a source checkout's unrelated files and ownership intact. The copied
 # source package and venv have already been made readable at their own paths.
 chmod -R u=rwX,go=rX "$app_dir/.venv"
-chmod 0644 "$app_dir/serve.py" "$app_dir/verify.py"
+chmod 0644 "$app_dir/deploy/assistant/serve.py" "$app_dir/deploy/assistant/verify.py"
 chmod 0600 "$app_marker"
 
 if [[ ! -f "$config_dir/gateway.json" ]]; then
@@ -211,11 +212,12 @@ if [[ -f "$config_dir/体验连接码.txt" ]]; then
     chmod 0600 "$config_dir/体验连接码.txt"
 fi
 [[ -x "$app_dir/.venv/bin/python" ]] || fail "虚拟环境解释器不存在或不可执行：$app_dir/.venv/bin/python"
-[[ -r "$app_dir/verify.py" ]] || fail "服务用户验收脚本不可读：$app_dir/verify.py"
+[[ -r "$app_dir/deploy/assistant/verify.py" ]] \
+    || fail "服务用户验收脚本不可读：$app_dir/deploy/assistant/verify.py"
 runuser -u "$service_user" -- "$app_dir/.venv/bin/python" --version >/dev/null \
     || fail '服务用户无法启动应用目录中的 Python；请检查 app-dir 和虚拟环境权限。'
 runuser -u "$service_user" -- "$app_dir/.venv/bin/python" \
-    "$app_dir/verify.py" --help >/dev/null \
+    "$app_dir/deploy/assistant/verify.py" --help >/dev/null \
     || fail '服务用户无法读取或启动 verify.py；请检查应用目录权限。'
 if [[ "$transport" == local-proxy ]]; then
     proxy_env='Environment=ASSISTANT_GATEWAY_LOCAL_TLS_PROXY=1'

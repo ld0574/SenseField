@@ -17,5 +17,10 @@
     }
   },
   "runtime_archive_sha256": "2ff63469a71cb6009aa2e3ed5f4a670f8abdcbe4bb9ffd23776afc792a6b4f44",
-  "onnxruntime_version": "1.28.2 (Android release shared library version string)"
+  "onnxruntime_version": "1.28.2 (Android release shared library version string)",
+  "download": {
+    "url": "https://888413.xyz/apk/models/sensevoice-int8-v1.zip",
+    "archive_bytes": 160304482,
+    "archive_sha256": "d863ab6f0b202ee31e74f2a3eadabaf24a41ea7acfe9fc6f85a1efaed2e37a8c"
+  }
 }

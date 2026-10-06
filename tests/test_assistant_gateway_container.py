@@ -8,12 +8,12 @@ from pathlib import Path
 import pytest
 
 
-_path = Path(__file__).resolve().parents[1] / "scripts/assistant_gateway_container_entrypoint.py"
+_path = Path(__file__).resolve().parents[1] / "deploy/assistant/serve.py"
 _spec = importlib.util.spec_from_file_location("gateway_container_entrypoint", _path)
 _module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_module)
 
-_configure_path = _path.parents[1] / "deploy/assistant/configure.py"
+_configure_path = _path.with_name("configure.py")
 _configure_spec = importlib.util.spec_from_file_location("configure_gateway", _configure_path)
 _configure = importlib.util.module_from_spec(_configure_spec)
 _configure_spec.loader.exec_module(_configure)

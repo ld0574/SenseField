@@ -13,7 +13,7 @@ from mapassist.assistant_gateway.config import GatewaySettings
 
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("assistant_direct_start", ROOT / "start.py")
+spec = importlib.util.spec_from_file_location("assistant_direct_start", ROOT / "deploy/assistant/start.py")
 start = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(start)
 
@@ -55,7 +55,7 @@ def test_direct_start_uses_original_credentials_and_only_process_local_transport
         settings.validate_production()
         captured.update(settings=settings, argv=list(sys.argv), env=dict(os.environ))
     monkeypatch.setattr(cli, "main", serve)
-    start.main(["--config", str(path), "--port", "18765"])
+    start.main(["--foreground", "--config", str(path), "--port", "18765"])
     assert captured["settings"].vision_api_key == original["ASSISTANT_GATEWAY_VISION_API_KEY"]
     assert captured["settings"].device_tokens == (original["ASSISTANT_GATEWAY_DEVICE_TOKENS"],)
     assert captured["settings"].asr_backend == "disabled"
@@ -88,8 +88,114 @@ def test_invalid_private_configuration_fails_without_starting_or_echoing_its_con
         path.chmod(0o400)
     monkeypatch.setattr(cli, "main", lambda: pytest.fail("Must not start with invalid configuration"))
     with pytest.raises(SystemExit) as error:
-        start.main(["--config", str(path)])
+        start.main(["--foreground", "--config", str(path)])
     assert error.value.code == 2
     output = capsys.readouterr()
     assert original["ASSISTANT_GATEWAY_VISION_API_KEY"] not in output.err
     assert original["ASSISTANT_GATEWAY_DEVICE_TOKENS"] not in output.err
+
+
+@pytest.fixture
+def isolated_launcher(tmp_path, clean_environment):
+    import shutil
+    import subprocess
+
+    app = tmp_path / "server with spaces"
+    deploy = app / "deploy/assistant"
+    deploy.mkdir(parents=True)
+    for filename in ("start.sh", "start.py", "serve.py"):
+        shutil.copy2(ROOT / "deploy/assistant" / filename, deploy / filename)
+    (app / ".venv").symlink_to(ROOT / ".venv", target_is_directory=True)
+    (app / "python").symlink_to(ROOT / "python", target_is_directory=True)
+
+    def command(*argv):
+        return subprocess.run(["bash", str(deploy / "start.sh"), *argv], cwd=tmp_path,
+                              capture_output=True, text=True, timeout=20)
+
+    yield deploy, command
+    command("stop")
+
+
+def free_port():
+    import socket
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def test_default_start_detaches_and_manages_a_single_real_server(tmp_path, isolated_launcher):
+    import stat
+    import urllib.request
+
+    deploy, command = isolated_launcher
+    path, _ = old_configuration(tmp_path)
+    before = path.read_bytes()
+    port = free_port()
+    argv = ("--config", str(path), "--port", str(port))
+    result = command(*argv)
+    assert result.returncode == 0, result.stderr
+    pid_file = deploy / "runtime/assistant.pid"
+    pid = json.loads(pid_file.read_text())["pid"]
+    assert os.getsid(pid) == pid  # Separate session, with no controlling terminal.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(f"http://127.0.0.1:{port}/health", timeout=2) as response:
+        assert json.load(response)["status"] == "vision_only"
+    assert command("status").returncode == 0
+    assert str(pid) in command("status").stdout
+    assert command(*argv).returncode == 0
+    assert json.loads(pid_file.read_text())["pid"] == pid
+    assert command("logs").returncode == 0
+    assert command("restart", *argv).returncode == 0
+    new_pid = json.loads(pid_file.read_text())["pid"]
+    assert new_pid != pid
+    assert path.read_bytes() == before
+    assert stat.S_IMODE(pid_file.stat().st_mode) == 0o600
+    assert stat.S_IMODE((deploy / "runtime/assistant.log").stat().st_mode) == 0o600
+    assert not any((deploy.parents[1] / name).exists() for name in ("assistant.pid", "assistant.log"))
+    assert command("stop").returncode == 0
+    assert not pid_file.exists()
+    assert "未运行" in command("status").stdout
+    assert command("stop").returncode == 0
+
+
+def test_background_start_reports_invalid_config_without_leaving_a_process(tmp_path, isolated_launcher):
+    deploy, command = isolated_launcher
+    path, original = old_configuration(tmp_path)
+    path.chmod(0o644)
+    result = command("--config", str(path), "--port", str(free_port()))
+    assert result.returncode == 1
+    assert "启动失败" in result.stderr
+    assert not (deploy / "runtime/assistant.pid").exists()
+    assert "未运行" in command("status").stdout
+    log = command("logs")
+    combined = result.stdout + result.stderr + log.stdout + log.stderr
+    assert original["ASSISTANT_GATEWAY_VISION_API_KEY"] not in combined
+    assert original["ASSISTANT_GATEWAY_DEVICE_TOKENS"] not in combined
+
+
+def test_background_start_rejects_another_listener(tmp_path, isolated_launcher):
+    import socket
+
+    deploy, command = isolated_launcher
+    path, _ = old_configuration(tmp_path)
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        result = command("--config", str(path), "--port", str(listener.getsockname()[1]))
+    assert result.returncode == 1
+    assert "已被其他进程占用" in result.stderr
+    assert not (deploy / "runtime/assistant.pid").exists()
+
+
+def test_stale_pid_record_never_signals_an_unrelated_process(isolated_launcher):
+    deploy, command = isolated_launcher
+    runtime = deploy / "runtime"
+    runtime.mkdir()
+    (runtime / "assistant.pid").write_text(json.dumps({
+        "pid": os.getpid(), "signature": start.process_signature(os.getpid()),
+    }))
+    result = command("stop")
+    assert result.returncode == 0
+    assert "未运行" in result.stdout
+    assert not (runtime / "assistant.pid").exists()
+    os.kill(os.getpid(), 0)

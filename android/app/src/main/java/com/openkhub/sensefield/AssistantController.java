@@ -106,21 +106,29 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
             });
             overlay.show();
             if (voiceEnabled) {
+                final OnDeviceAsr[] ownedAsr = new OnDeviceAsr[1];
                 asr = new OnDeviceAsr(context, new OnDeviceAsr.Listener() {
                     @Override public void ready() {
-                        main.post(() -> localAsrReady());
+                        main.post(() -> { if (asr == ownedAsr[0]) localAsrReady(); });
                     }
                     @Override public void result(long generation, String turn, String text, long inferenceMs) {
                         onLocalAsrResult(generation, turn, text, inferenceMs);
                     }
                     @Override public void unavailable(String reason) {
-                        main.post(() -> localAsrUnavailable());
+                        main.post(() -> { if (asr == ownedAsr[0]) localAsrUnavailable(reason); });
+                    }
+                    @Override public void resourceProgress(int percent) {
+                        main.post(() -> {
+                            if (!closed && voiceEnabled && asr != null && asr == ownedAsr[0] && !asr.ready())
+                                setStatus(percent < 100 ? "语音资源下载中：" + percent + "%" : "正在校验并加载语音资源");
+                        });
                     }
                     @Override public void dropped(String reason) {
                         host.audit("AssistantVoice event=DROPPED reason=" + safeAsrReason(reason)
                                 + " monotonicMs=" + SystemClock.elapsedRealtime());
                     }
                 });
+                ownedAsr[0] = asr;
                 asr.start();
                 voice = new AssistantVoiceInput(context, new AssistantVoiceInput.Listener() {
                     @Override public void started() { voiceStarted(); }
@@ -258,14 +266,14 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
             }
         } });
     }
-    private void localAsrUnavailable() {
+    private void localAsrUnavailable(String reason) {
         if (closed || !voiceEnabled) return;
         invalidate("local_asr_unavailable");
         AssistantVoiceInput input = voice; voice = null;
         if (input != null) input.close();
         OnDeviceAsr localAsr = asr; asr = null;
         if (localAsr != null) localAsr.close();
-        setStatus("本地离线中文识别不可用，语音输入已暂停；本地预警继续");
+        setStatus(reason);
     }
     /** Model readiness cannot clear the microphone, user-pause or thermal gates. */
     void localAsrReady() {
@@ -689,7 +697,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         VisualTask task = takeTask(id); if (task == null || closed) return;
         if (!task.proactive) proactiveQuietUntilMs = Math.max(proactiveQuietUntilMs,
                 SystemClock.elapsedRealtime() + MANUAL_QUIET_MS);
-        if ("rate_limited".equals(code) || "1302".equals(code) || "1305".equals(code) || "provider_busy".equals(code)) {
+        if ("public_quota_exceeded".equals(code) || "rate_limited".equals(code) || "1302".equals(code) || "1305".equals(code) || "provider_busy".equals(code)) {
             long now = SystemClock.elapsedRealtime();
             if (policy.retryAfterMs(now) <= 0) policy.throttled(now,
                     "provider_busy".equals(code) || "1305".equals(code) ? AssistantPolicy.OVERLOAD_RETRY_MS : 60_000);
@@ -697,6 +705,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         if (session.owns(task.generation, task.turn) && !task.proactive && !"cancelled".equals(code)) {
             String explanation = "timeout".equals(code) ? "画面读取超时，请重试。"
                     : "provider_busy".equals(code) || "1305".equals(code) ? "画面模型繁忙，请稍后重试；本地预警正常。"
+                    : "public_quota_exceeded".equals(code) ? "体验额度已用完或请求过快，请稍后再试；本地预警继续。"
                     : "rate_limited".equals(code) ? "画面服务繁忙，请稍后重试。"
                     : "画面理解暂时不可用，请稍后再试。";
             reportManualFeedback(task, safeCode(code), explanation);

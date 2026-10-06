@@ -344,8 +344,10 @@ def execute(
 
         stage = "config"
         _progress(stderr, stage, "读取设备令牌配置")
-        token = _load_device_token(args.config)
-        results["config"] = "device_token_loaded"
+        public = health.get("public_vision_access") is True
+        token = "" if public else _load_device_token(args.config)
+        results["config"] = "public_vision_no_code" if public else "device_token_loaded"
+        installation = str(uuid.uuid4())
 
         visual_url = base + "/v1/visual"
 
@@ -360,7 +362,10 @@ def execute(
             if declared_content_length is not None:
                 headers["Content-Length"] = str(declared_content_length)
             if authenticated:
-                headers["Authorization"] = "Bearer " + token
+                if public:
+                    headers["X-SenseField-Installation"] = installation
+                else:
+                    headers["Authorization"] = "Bearer " + token
             allowed = frozenset({expected_error}) if expected_error is not None else frozenset()
             return _request_json(
                 opener,

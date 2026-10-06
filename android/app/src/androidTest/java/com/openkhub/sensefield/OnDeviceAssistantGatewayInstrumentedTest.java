@@ -107,7 +107,7 @@ public final class OnDeviceAssistantGatewayInstrumentedTest {
                 .putBoolean(AssistantSettings.PROACTIVE, false)
                 .putBoolean(AssistantSettings.AUDIO_CONSENT, true)
                 .putBoolean(AssistantSettings.IMAGE_CONSENT, vision)
-                .putString(AssistantSettings.ENDPOINT, endpoint)
+                .putBoolean(AssistantSettings.CUSTOM_SERVICE, true).putString(AssistantSettings.ENDPOINT, endpoint)
                 .putString(AssistantSettings.TOKEN, token)
                 .commit();
         AssistantSettings settings = new AssistantSettings(preferences);

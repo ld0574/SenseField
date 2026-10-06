@@ -155,4 +155,3 @@ android/app/src/main/assets/sensevoice/tokens.txt
 deploy/assistant/runtime/
 !docs/development/assistant-online-deployment.md
 !docs/development/assistant-native-deployment.md
-!docs/development/assistant-direct-start.md

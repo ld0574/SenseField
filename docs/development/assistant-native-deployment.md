@@ -1,6 +1,8 @@
+> 0.4.1免连接码修订：推荐按[统一部署说明](../../deploy/assistant/README.md)直接后台启动。systemd方式需要私有配置中的`ASSISTANT_GATEWAY_PUBLIC_ACCESS=1`（新配置工具加`--public-access`）；新服务单元提供持久化额度目录`/var/lib/sensefield-assistant`。不要把连接码或API密钥放入APK。以下旧的私有令牌部署步骤仍可用于开发服务。
+
 # 听野助手：可选的Linux系统服务部署
 
-已有配置时，推荐先用[直接启动](assistant-direct-start.md)：在解压目录运行 `bash start.sh`。本页安装器仅用于需要systemd管理的场景，直接启动不依赖本页迁移流程。
+已有配置时，推荐先用[直接启动](../../deploy/assistant/README.md)：在解压目录运行 `bash deploy/assistant/start.sh`。本页安装器仅用于需要systemd管理的场景，直接启动不依赖本页迁移流程。
 
 本文面向由负责人自行管理的 Linux 服务器。网关以 Python 和 systemd 运行，不需要 Docker。服务端 ASR 关闭，语音识别由手机本地完成。安装脚本会安装服务文件、准备私有配置并执行 `systemctl daemon-reload`；首次安装还会用 pip 安装 Python 依赖，因此需要访问所配置的 Python 包仓库。它不会启动服务或修改 Nginx，也不会对公网或生产服务执行连接验收。
 
@@ -17,7 +19,7 @@ sudo apt install -y python3 python3-venv python3-pip openssl unzip nginx
 
 RHEL 系发行版请安装对应的 Python、venv/pip、OpenSSL 和 Nginx 包；不要在这些系统上使用 `apt` 命令。若系统已有 Nginx，可跳过安装它。如需指定其他已安装的 Python，可设置 `SENSEFIELD_PYTHON=/usr/bin/python3.12`。解释器及其标准库需位于 `/usr`、`/opt` 等服务可读取的位置；用户主目录下的 pyenv/Python 会被服务隔离阻止。
 
-将部署包解压或仓库检出到服务器，然后从源码目录运行安装器。交付 ZIP 的顶层直接包含 `pyproject.toml`、`python/`、`deploy/` 和 `scripts/`；解压时应进入这一层，而不要停留在外包的一层版本目录中：
+将部署包解压或仓库检出到服务器，然后从源码目录运行安装器。交付 ZIP 的顶层直接包含 `pyproject.toml`、`python/` 和 `deploy/`；解压时应进入这一层，而不要停留在外包的一层版本目录中：
 
 ```sh
 sudo bash deploy/assistant/install-native.sh
@@ -30,9 +32,9 @@ sudo bash deploy/assistant/install-native.sh \
   --app-dir /data/wwwroot/sf --transport local-proxy
 ```
 
-`--app-dir` 必须是专用服务目录，不能是 Nginx、Apache 或其他 Web 服务器实际公开的文档根目录；不要让公网静态文件服务能读取源码、虚拟环境或私有配置。若整个部署包已经解压在该目录，安装器仅在关键生成文件不存在或内容与部署包相同、且没有未标记 `.venv` 时原地采用它。发现冲突文件或现存 `.venv` 时会停止，不会删除或替换它们。检查并安全移走已有内容后再运行。
+`--app-dir` 必须是专用服务目录，不能是 Nginx、Apache 或其他 Web 服务器实际公开的文档根目录；不要让公网静态文件服务能读取源码、虚拟环境或私有配置。若整个部署包已经解压在该目录，安装器仅在没有未标记 `.venv` 时原地采用它。未标记的 `.venv` 会使安装器停止；已有标记的环境可复用。
 
-自定义目录安装完成后，解释器路径为 `/data/wwwroot/sf/.venv/bin/python`；应使用这个绝对路径，不要依赖系统里名为 `python` 的命令。`systemd` 的 `WorkingDirectory` 和 `ExecStart` 会使用所选 `--app-dir`。配置仍放在 `/etc/sensefield-assistant/`，不放进应用目录。
+自定义目录安装完成后，解释器路径为 `/data/wwwroot/sf/.venv/bin/python`；应使用这个绝对路径，不要依赖系统里名为 `python` 的命令。`systemd` 的 `WorkingDirectory` 和 `ExecStart` 会使用所选 `--app-dir`。启动、验收、配置初始化、服务与反代模板统一放在 `deploy/assistant/`，安装器不再向应用根目录复制 `serve.py` 或 `verify.py`。配置仍放在 `/etc/sensefield-assistant/`。
 
 安装器创建专用非 root 用户 `sensefield-gateway`，不会启动服务或更改反向代理。它首次创建配置时会提示输入 HTTPS 兼容上游地址、模型标识和上游 API Key；默认模型为 `qwen/qwen3.8-27b`。凭据不会回显。安装结束前会以服务用户验证所选虚拟环境中的 Python 可启动且 `verify.py` 可读取。私有文件位置如下：
 
@@ -87,7 +89,7 @@ sudo journalctl -u sensefield-assistant -n 80 --no-pager
 
 ```sh
 sudo -u sensefield-gateway /opt/sensefield-assistant/.venv/bin/python \
-  /opt/sensefield-assistant/verify.py \
+  /opt/sensefield-assistant/deploy/assistant/verify.py \
   --config /etc/sensefield-assistant/gateway.json
 ```
 
@@ -95,7 +97,7 @@ sudo -u sensefield-gateway /opt/sensefield-assistant/.venv/bin/python \
 
 ```sh
 sudo -u sensefield-gateway /data/wwwroot/sf/.venv/bin/python \
-  /data/wwwroot/sf/verify.py \
+  /data/wwwroot/sf/deploy/assistant/verify.py \
   --config /etc/sensefield-assistant/gateway.json
 ```
 
@@ -103,14 +105,14 @@ sudo -u sensefield-gateway /data/wwwroot/sf/.venv/bin/python \
 
 ```sh
 sudo -u sensefield-gateway /data/wwwroot/sf/.venv/bin/python \
-  /data/wwwroot/sf/verify.py --health-only --base-url http://127.0.0.1:18765
+  /data/wwwroot/sf/deploy/assistant/verify.py --health-only --base-url http://127.0.0.1:18765
 ```
 
 `backend-tls` 使用经校验的 loopback HTTPS：
 
 ```sh
 sudo -u sensefield-gateway /data/wwwroot/sf/.venv/bin/python \
-  /data/wwwroot/sf/verify.py --health-only \
+  /data/wwwroot/sf/deploy/assistant/verify.py --health-only \
   --base-url https://localhost:18765 \
   --ca /etc/sensefield-assistant/tls/backend.crt
 ```

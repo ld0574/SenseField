@@ -17,6 +17,11 @@ import static org.junit.Assert.*;
 public class OnDeviceAsrInstrumentedTest {
     @Test public void pinnedLocalRuntimeRecognizesGameQuestionsWithoutAudioTransport() throws Exception {
         Context target = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        java.io.File cache = new java.io.File(target.getNoBackupFilesDir(), "sensevoice-int8");
+        AsrModelStore.Spec pinned = AsrModelStore.Spec.read(target);
+        assertTrue("Seed pinned model cache before offline smoke", AsrModelStore.verified(
+                new java.io.File(cache, "model.int8.onnx"), pinned.modelBytes, pinned.modelHash));
+        assertTrue(AsrModelStore.verified(new java.io.File(cache, "tokens.txt"), pinned.tokensBytes, pinned.tokensHash));
         Context fixtures = InstrumentationRegistry.getInstrumentation().getContext();
         CountDownLatch initialized = new CountDownLatch(1);
         AtomicReference<String> error = new AtomicReference<>();

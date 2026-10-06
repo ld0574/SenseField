@@ -33,7 +33,14 @@ def recognized_service(unit: Path, template: Path) -> bool:
                  if "Environment=ASSISTANT_GATEWAY_LOCAL_TLS_PROXY=1" in lines else "")
     expected = template.read_text(encoding="utf-8").replace(
         "@APP_DIR@", directory).replace("@LOCAL_PROXY_ENV@", proxy_env)
-    return lines == normalized_unit(expected)
+    # Recognize the previous package layout without relaxing the unit's
+    # user, environment, executable or isolation settings.
+    legacy = expected.replace(f"{directory}/deploy/assistant/serve.py",
+                              f"{directory}/serve.py")
+    state = ("StateDirectory=sensefield-assistant\nStateDirectoryMode=0700\n"
+             "Environment=ASSISTANT_GATEWAY_PUBLIC_QUOTA_DB=/var/lib/sensefield-assistant/public-quota.sqlite3\n")
+    return any(lines == normalized_unit(candidate) for candidate in
+               (expected, legacy, expected.replace(state, ""), legacy.replace(state, "")))
 
 
 def migrate_configuration(path: Path, transport: str) -> bool:

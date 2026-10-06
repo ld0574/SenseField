@@ -29,4 +29,20 @@
 
 按负责人“直接启动”的选择，增加顶层 `start.sh` 和 `start.py`。主入口在当前目录准备venv与依赖后前台运行，仅监听127.0.0.1:18765；不检查安装标记、不注册systemd、不迁移旧服务。复用原私有配置，在进程环境内覆盖为同机反代和ASR关闭，原JSON字节保持不变，设备认证保留。systemd成为可选运维方式。
 
-7项启动配置测试通过；Mac上真实执行 `bash start.sh`，使用无效的旧TLS路径及旧ASR配置的合成私有JSON，启动为production/vision_only、health200、未认证401、ASR关闭，原文件字节未变。没有真实模型请求，也未在生产或目标Linux执行。本次验证仅覆盖现有依赖下的直接启动，未实测Linux首次venv/pip初始化或服务器容量。见[直接启动说明](../docs/development/assistant-direct-start.md)。
+7项启动配置测试通过；Mac上真实执行 `bash start.sh`，使用无效的旧TLS路径及旧ASR配置的合成私有JSON，启动为production/vision_only、health200、未认证401、ASR关闭，原文件字节未变。没有真实模型请求，也未在生产或目标Linux执行。本次验证仅覆盖现有依赖下的直接启动，未实测Linux首次venv/pip初始化或服务器容量。见[直接启动说明](../deploy/assistant/README.md)。
+
+## 同日统一部署目录
+
+按负责人要求，启动入口改为 `bash deploy/assistant/start.sh`。`start.sh`、`start.py`、配置加载入口 `serve.py` 与已有 `verify.py` 统一放在 `deploy/assistant/`，移除顶层启动脚本和 `scripts/` 中的部署入口。操作文档合并到同目录的 README，首页及文档索引提供入口。直接启动仍自动定位应用根目录、复用 `.venv` 和原私有配置。
+
+原生安装器不再向应用根目录生成 `serve.py` / `verify.py`；systemd、Docker 和 Compose 的入口同步使用部署子目录。旧根目录入口的严格模板匹配仍保留，避免再次阻断原服务迁移；不自动删除用户服务器上的旧文件。新完整部署包与补丁均保持相同目录布局，旧包已在本地留档。
+
+71项启动、私有配置、旧单元迁移、验收工具与回环传输测试通过。最终部署ZIP解压到带空格的临时目录，从另一个工作目录实际启动，复用本机测试venv；取得production/vision_only、health200、未认证401，新路径验收命令成功，原配置字节未变。Shell语法、启动帮助、diff检查与公开仓库扫描通过。证据为 `output/releases/0.4.1/direct-start-2026-10-06/layout-smoke.json` 和 `layout-process.log`。未执行目标Linux安装、生产部署或模型请求。
+
+## 同日默认后台启动与代理配置核对
+
+按负责人反馈，`bash deploy/assistant/start.sh` 改为默认启动独立后台会话，标准输入断开，输出写入 `deploy/assistant/runtime/assistant.log`，关闭启动终端不影响服务。启动器等待本机健康状态后再确认成功；文件锁避免同时启动，PID记录含进程启动时间与命令，用于识别已有进程和拒绝误停复用PID。支持 `status`、`logs`、`stop`、`restart`；`--foreground` 保留给排错及面板守护。后台方式不提供自动开机恢复，文档已明确。
+
+75项相关测试通过，包含新增真实后台进程、独立会话、重复启动、重启、停止、配置失败、端口冲突及陈旧PID拒绝场景。使用合成私有配置与本机测试venv，不调用上游模型，未执行目标Linux或生产部署。
+
+负责人提供的 `sf.conf` 中，两处后端 `proxy_pass` 使用HTTPS，与当前回环HTTP后端不匹配。修正版仅将两处协议改为HTTP，公网证书路径与其他规则保持原样；限流区定义仍须位于Nginx的http上下文。未在目标OpenResty执行配置检查或重载。

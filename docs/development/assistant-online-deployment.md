@@ -2,7 +2,7 @@
 
 本文是自部署操作说明，不是上线报告。生产主机尚未连接或部署，DNS、证书、反向代理和模型请求均未在生产环境验证；请由部署负责人在自己的主机上完成以下步骤。
 
-**没有 Docker 时，改用[原生 Linux/systemd 部署说明](assistant-native-deployment.md)。** 当前是轻量视觉网关，不在服务器运行 ASR 或 VLM；2 核 4GB 可作为少量体验者的试运行起点，并不代表并发或延迟已通过实测。下文保留 Docker 路线，原生路线无需安装 Docker。
+**推荐先按[直接启动部署说明](../../deploy/assistant/README.md)运行；无需 Docker。** 如需系统服务管理，可用[可选 systemd 部署说明](assistant-native-deployment.md)。 当前是轻量视觉网关，不在服务器运行 ASR 或 VLM；2 核 4GB 可作为少量体验者的试运行起点，并不代表并发或延迟已通过实测。下文保留 Docker 路线，原生路线无需安装 Docker。
 
 目标是使用 Docker Compose、Python 3.12 和轻量 `assistant-vision-gateway` 依赖运行 Qwen 视觉网关。服务使用 `vision_only` 模式，服务端 ASR 关闭，监听只发布在主机 `127.0.0.1:18765`。用户手机以 `https://sf.888413.xyz` 连接已有 HTTPS 反向代理；反代再通过经过严格证书校验的 HTTPS 连接本机网关。
 
@@ -64,7 +64,7 @@ docker compose -f deploy/assistant/compose.yaml ps
 2. 在网关容器内执行正式域名安全检查：
 
    ```sh
-   docker compose -f deploy/assistant/compose.yaml exec gateway python /app/verify.py
+   docker compose -f deploy/assistant/compose.yaml exec gateway python /app/deploy/assistant/verify.py
    ```
 
    工具默认检查 `https://sf.888413.xyz` 的证书、健康状态、未认证请求 HTTP 401、无效请求体 HTTP 422，以及超过网关上限（约 2.17 MB）的请求 HTTP 413；默认不请求视觉模型，不产生视觉推理费用。反代示例的请求体上限为 3 MB，高于网关上限。
@@ -72,7 +72,7 @@ docker compose -f deploy/assistant/compose.yaml ps
 3. 需要验证真实视觉链路时，可追加一次合成读图：
 
    ```sh
-   docker compose -f deploy/assistant/compose.yaml exec gateway python /app/verify.py --visual
+   docker compose -f deploy/assistant/compose.yaml exec gateway python /app/deploy/assistant/verify.py --visual
    ```
 
    此命令使用测试 JPEG 调用已配置的视觉上游一次；预期 HTTP 200 且回答读出 `SYNTHETIC GATEWAY TEST`。只发送合成内容，不上传真实游戏画面或个人数据。该请求可能产生费用并遵循上游数据处理条款。它不会因失败自动切换模型或重试到备用提供商。命令会打印验收摘要与往返耗时，不打印凭据。
@@ -80,7 +80,7 @@ docker compose -f deploy/assistant/compose.yaml ps
 也可单独核对容器内网关的本地 TLS health：
 
 ```sh
-docker compose -f deploy/assistant/compose.yaml exec gateway python /app/verify.py \
+docker compose -f deploy/assistant/compose.yaml exec gateway python /app/deploy/assistant/verify.py \
   --health-only --base-url https://localhost:18765 --ca /run/tls/backend.crt
 ```
 

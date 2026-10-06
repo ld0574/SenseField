@@ -13,20 +13,30 @@ final class AssistantSettings {
     static final String IMAGE_CONSENT = "assistant_image_consent";
     static final String ENDPOINT = "assistant_endpoint";
     static final String TOKEN = "assistant_device_token";
-    final boolean voice, vision, proactive;
-    final String endpoint, token;
+    static final String CUSTOM_SERVICE = "assistant_custom_service";
+    private static final String INSTALLATION = "assistant_installation_id";
+    final boolean voice, vision, proactive, customService;
+    final String endpoint, token, installationId;
     AssistantSettings(SharedPreferences preferences) {
         voice = preferences.getBoolean(VOICE, false) && preferences.getBoolean(AUDIO_CONSENT, false);
         vision = preferences.getBoolean(VISION, false) && preferences.getBoolean(IMAGE_CONSENT, false);
         proactive = vision && preferences.getBoolean(PROACTIVE, false);
-        String configuredEndpoint = preferences.contains(ENDPOINT)
-                ? preferences.getString(ENDPOINT, "") : BuildConfig.ASSISTANT_DEFAULT_ENDPOINT;
-        endpoint = (configuredEndpoint == null ? "" : configuredEndpoint)
-                .trim().replaceAll("/+$", "");
-        token = preferences.getString(TOKEN, "").trim();
+        customService = preferences.getBoolean(CUSTOM_SERVICE, false);
+        String configuredEndpoint = customService ? preferences.getString(ENDPOINT, "")
+                : BuildConfig.ASSISTANT_DEFAULT_ENDPOINT;
+        endpoint = (configuredEndpoint == null ? "" : configuredEndpoint).trim().replaceAll("/+$", "");
+        token = customService ? preferences.getString(TOKEN, "").trim() : "";
+        synchronized (AssistantSettings.class) {
+            String id = preferences.getString(INSTALLATION, "");
+            if (id == null || !id.matches("[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}")) {
+                id = java.util.UUID.randomUUID().toString();
+                preferences.edit().putString(INSTALLATION, id).apply();
+            }
+            installationId = id;
+        }
     }
     static AssistantSettings from(Context context) { return new AssistantSettings(GameProfile.settings(context)); }
-    boolean configured() { return validEndpoint(endpoint) && token.length() >= 24 && token.length() <= 256; }
+    boolean configured() { return validEndpoint(endpoint) && (!customService || (token.length() >= 24 && token.length() <= 256)); }
     /** Voice capture and ASR are local; only screen understanding needs the gateway. */
     boolean enabled() { return voice || (vision && configured()); }
     static boolean validEndpoint(String value) {

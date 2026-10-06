@@ -44,12 +44,10 @@ final class SettingHelpContent {
             case "event_player": return "玩家死亡／复活";
             case "event_system": return "系统状态";
             case "assistant_connection": return "画面服务连接";
-            case "assistant_service_address": return "画面服务地址（HTTPS）";
-            case "assistant_experience_code": return "体验连接码";
-            case "assistant_online_service": return "使用听野线上服务";
-            case "assistant_save_connection": return "保存服务连接";
+            case "assistant_online_service": return "听野线上服务";
             case "assistant_group": return "语音与画面交互";
             case "assistant_voice": return "连续语音（可以插话）";
+            case "assistant_resources": return "准备语音资源／重试";
             case "assistant_vision": return "画面理解";
             case "assistant_proactive": return "低频主动描述（需要画面理解）";
             case "assistant_overlay": return "授权左侧小圆点";
@@ -89,7 +87,7 @@ final class SettingHelpContent {
             case "tuning_group": return "调整音量、间隔和中央免提示区。";
             case "channel_group": return "选择视觉、提示音、语音和触觉。";
             case "events_group": return "开启或关闭各类提醒事件。";
-            case "assistant_connection": return "连接画面服务；本地语音无需配置。";
+            case "assistant_connection": return "默认使用听野线上服务，无需连接码。";
             case "assistant_group": return "选择语音、画面问答和主动描述。";
             case "presentation_group": return "调整仍在验证中的实验呈现方式。";
             case "capture_screen": return "每次启动辅助前，按系统提示授权屏幕。";
@@ -122,14 +120,9 @@ final class SettingHelpContent {
                 return keys("event_near", "event_near_haptic", "event_far_appear",
                         "event_new_target", "event_edge", "event_danger", "event_player",
                         "event_system");
-            case "assistant_connection":
-                return BuildConfig.ASSISTANT_DEFAULT_ENDPOINT.isEmpty()
-                        ? keys("assistant_service_address", "assistant_experience_code",
-                                "assistant_save_connection")
-                        : keys("assistant_service_address", "assistant_experience_code",
-                                "assistant_online_service", "assistant_save_connection");
+            case "assistant_connection": return keys("assistant_online_service");
             case "assistant_group":
-                return keys("assistant_voice", "assistant_vision", "assistant_proactive",
+                return keys("assistant_voice", "assistant_resources", "assistant_vision", "assistant_proactive",
                         "assistant_overlay");
             case "presentation_group":
                 return keys("presentation_spatial", "presentation_haptic", "presentation_two_word");
@@ -226,19 +219,14 @@ final class SettingHelpContent {
             case "event_system":
                 return "控制辅助运行状态类提示，例如截屏授权结束或恢复失败时的状态语音。遇到重新授权提示时，请返回授权页面重新开始。";
             case "assistant_connection":
-                return "“画面服务地址（HTTPS）”和“体验连接码”只用于画面理解连接；本地离线语音不需要这两项。填好后点击“保存服务连接”，更改连接后需要重新开始辅助。预置线上地址的安装包会显示“使用听野线上服务”按钮；点击只会填入地址，仍需体验连接码，也不会开启画面理解。请只填写可信服务提供方给出的 HTTPS 地址和连接码。";
-            case "assistant_service_address":
-                return "画面理解会使用此 HTTPS 地址连接画面服务。本地离线语音不需要服务地址；请只填写可信服务提供方给出的地址。";
-            case "assistant_experience_code":
-                return "体验连接码用于连接画面服务。请只使用服务提供方交给你的连接码，不要把它公开分享。";
             case "assistant_online_service":
-                return "预置线上地址的安装包会显示“使用听野线上服务”。点击后只会填入服务地址；仍需要负责人提供的体验连接码，也不会开启画面理解。";
-            case "assistant_save_connection":
-                return "点击“保存服务连接”会保存当前服务地址和体验连接码。更改连接后请重新开始辅助；保存连接不会开启画面理解。";
+                return "画面理解默认连接听野线上服务，无需填写服务地址或连接码。开启画面理解后，问题文字和授权画面才会上传。服务设有请求频率和每日体验额度；超过额度时稍后再试，本地预警继续。";
             case "assistant_group":
-                return "“语音与画面交互”包括“连续语音（可以插话）”“画面理解”“低频主动描述（需要画面理解）”和“授权左侧小圆点”。实时预警和中文语音识别在手机本地运行，支持 Android 10 及以上；连续语音首次使用需要等待离线模型加载并允许麦克风。请戴耳机并确认游戏声音也在耳机中；游戏开麦或录音路线不明时助手会暂停输入。只有开启画面理解后，问题文字或授权画面才会发送到配置的画面服务；近期画面只缓存在内存。授权画面可能包含游戏聊天或系统通知，请先确认共享范围。低频主动描述需要同时开启画面理解。";
+                return "“语音与画面交互”包括“连续语音（可以插话）”“画面理解”“低频主动描述（需要画面理解）”和“授权左侧小圆点”。实时预警和中文语音识别在手机本地运行，支持 Android 10 及以上；连续语音首次使用会下载约153 MiB语音资源，完成后离线识别并允许麦克风。请戴耳机并确认游戏声音也在耳机中；游戏开麦或录音路线不明时助手会暂停输入。只有开启画面理解后，问题文字或授权画面才会发送到配置的画面服务；近期画面只缓存在内存。授权画面可能包含游戏聊天或系统通知，请先确认共享范围。低频主动描述需要同时开启画面理解。";
             case "assistant_voice":
-                return "开启后，听野会使用手机侧语音识别处理连续语音，首次启动需要等待本地模型加载，并需要麦克风权限。音频在识别过程中临时处理；若同时使用画面理解，问题文字可能随请求发送到配置的画面服务。游戏开麦或录音路线不明确时，输入会暂停。";
+                return "开启后，听野会使用手机侧语音识别处理连续语音，首次开启会从听野 CDN 下载约153 MiB语音资源（请预留约400 MiB空间），之后离线识别；可通过“准备语音资源／重试”重新下载，并需要麦克风权限。音频在识别过程中临时处理；若同时使用画面理解，问题文字可能随请求发送到配置的画面服务。游戏开麦或录音路线不明确时，输入会暂停。";
+            case "assistant_resources":
+                return "首次准备会从听野 CDN 下载约153 MiB资源，请预留约400 MiB空间。下载进度会显示在此处，中断后可重试并续传。资源经过校验才会使用；准备完成后重新开始辅助，之后无需重复下载。关闭连续语音会停止下载，已下载部分保留。";
             case "assistant_vision":
                 return "提问时，当前共享画面和最多两张最近画面的缩图会发送到配置的画面服务及其视觉模型；开启低频主动描述后，也会发送当前画面用于观察。画面可能带有聊天或通知，请先确认共享范围。近期画面只缓存在内存，服务方按其条款处理收到的数据。";
             case "assistant_proactive":

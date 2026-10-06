@@ -40,7 +40,7 @@ public class AssistantTransportInstrumentedTest {
         JSONObject values = new JSONObject(new String(Files.readAllBytes(config.toPath()),
                 java.nio.charset.StandardCharsets.UTF_8));
         preferences = context.getSharedPreferences("assistant_transport_test", Context.MODE_PRIVATE);
-        preferences.edit().clear().putString(AssistantSettings.ENDPOINT, values.getString("endpoint"))
+        preferences.edit().clear().putBoolean(AssistantSettings.CUSTOM_SERVICE, true).putString(AssistantSettings.ENDPOINT, values.getString("endpoint"))
                 .putString(AssistantSettings.TOKEN, values.getString("token"))
                 .putBoolean(AssistantSettings.VOICE, true).putBoolean(AssistantSettings.VISION, true)
                 .putBoolean(AssistantSettings.AUDIO_CONSENT, true)

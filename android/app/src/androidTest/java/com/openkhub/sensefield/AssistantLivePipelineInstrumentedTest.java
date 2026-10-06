@@ -120,7 +120,7 @@ public final class AssistantLivePipelineInstrumentedTest {
                     .putBoolean(AssistantSettings.VISION, true)
                     .putBoolean(AssistantSettings.IMAGE_CONSENT, true)
                     .putBoolean(AssistantSettings.PROACTIVE, false)
-                    .putString(AssistantSettings.ENDPOINT, endpoint)
+                    .putBoolean(AssistantSettings.CUSTOM_SERVICE, true).putString(AssistantSettings.ENDPOINT, endpoint)
                     .putString(AssistantSettings.TOKEN, token)
                     .putBoolean("live_test_speech_channel", true)
                     .commit();

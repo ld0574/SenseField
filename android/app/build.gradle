@@ -47,7 +47,7 @@ def assistantEndpointInput = findProperty('sensefieldAssistantEndpoint')
 if (assistantEndpointInput == null) {
     assistantEndpointInput = System.getenv('SENSEFIELD_ASSISTANT_ENDPOINT')
 }
-def assistantDefaultEndpoint = (assistantEndpointInput ?: '').toString().trim()
+def assistantDefaultEndpoint = (assistantEndpointInput ?: 'https://sf.888413.xyz').toString().trim()
         .replaceAll('/+$', '')
 if (!assistantDefaultEndpoint.isEmpty()) {
     try {
@@ -94,6 +94,11 @@ android {
 
     buildFeatures {
         buildConfig true
+    }
+
+    androidResources {
+        // Keep licenses and metadata in the APK; pinned speech weights come from CDN.
+        ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:model.int8.onnx:tokens.txt'
     }
 
     signingConfigs {

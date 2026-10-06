@@ -39,7 +39,7 @@ public class AssistantControlsInstrumentedTest {
         SharedPreferences preferences = context.getSharedPreferences("assistant-control-test", Context.MODE_PRIVATE);
         preferences.edit().clear().putBoolean(AssistantSettings.VOICE, true)
             .putBoolean(AssistantSettings.AUDIO_CONSENT, true).putBoolean(AssistantSettings.VISION, true)
-            .putBoolean(AssistantSettings.IMAGE_CONSENT, true).putString(AssistantSettings.ENDPOINT, "https://example.invalid")
+            .putBoolean(AssistantSettings.IMAGE_CONSENT, true).putBoolean(AssistantSettings.CUSTOM_SERVICE, true).putString(AssistantSettings.ENDPOINT, "https://example.invalid")
             .putString(AssistantSettings.TOKEN, "test-token-placeholder-not-for-production").commit();
         return preferences;
     }
@@ -510,7 +510,7 @@ public class AssistantControlsInstrumentedTest {
         SharedPreferences preferences = preferences(context);
         try {
             preferences.edit().putBoolean(AssistantSettings.VISION, false)
-                    .putString(AssistantSettings.ENDPOINT, "")
+                    .putBoolean(AssistantSettings.CUSTOM_SERVICE, true).putString(AssistantSettings.ENDPOINT, "")
                     .putString(AssistantSettings.TOKEN, "").commit();
             AssistantSettings localVoice = new AssistantSettings(preferences);
             assertTrue(localVoice.voice);

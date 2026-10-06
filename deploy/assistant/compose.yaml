@@ -21,7 +21,7 @@ services:
       - ./runtime/gateway.json:/run/secrets/assistant-gateway.json:ro
       - ./runtime/tls:/run/tls:ro
     healthcheck:
-      test: [CMD, python, /app/verify.py, --health-only, --base-url, "https://localhost:18765", --ca, /run/tls/backend.crt]
+      test: [CMD, python, /app/deploy/assistant/verify.py, --health-only, --base-url, "https://localhost:18765", --ca, /run/tls/backend.crt]
       interval: 30s
       timeout: 5s
       retries: 3

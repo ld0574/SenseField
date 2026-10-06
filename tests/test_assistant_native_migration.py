@@ -40,6 +40,14 @@ def test_current_custom_directory_proxy_service_is_recognized(tmp_path):
     assert state.recognized_service(unit, TEMPLATE)
 
 
+def test_previous_root_entrypoint_proxy_service_is_recognized(tmp_path):
+    unit = tmp_path / "service"
+    unit.write_text(TEMPLATE.read_text().replace("@APP_DIR@", "/data/wwwroot/sf")
+                    .replace("@LOCAL_PROXY_ENV@", "Environment=ASSISTANT_GATEWAY_LOCAL_TLS_PROXY=1")
+                    .replace("/data/wwwroot/sf/deploy/assistant/serve.py", "/data/wwwroot/sf/serve.py"))
+    assert state.recognized_service(unit, TEMPLATE)
+
+
 @pytest.mark.parametrize("old,new", [
     ("User=sensefield-gateway", "User=root"),
     ("/opt/sensefield-assistant/serve.py", "/opt/unrelated/serve.py"),
@@ -126,3 +134,11 @@ def test_configuration_symlink_cannot_replace_its_target(tmp_path):
     with pytest.raises(ValueError):
         state.migrate_configuration(link, "local-proxy")
     assert original.read_bytes() == before
+
+
+def test_unit_before_persisted_public_quota_directory_is_recognized(tmp_path):
+    unit = tmp_path / "service"
+    text = TEMPLATE.read_text().replace("@APP_DIR@", "/data/wwwroot/sf").replace("@LOCAL_PROXY_ENV@", "Environment=ASSISTANT_GATEWAY_LOCAL_TLS_PROXY=1")
+    text = "\n".join(line for line in text.splitlines() if not line.startswith(("StateDirectory=", "StateDirectoryMode=", "Environment=ASSISTANT_GATEWAY_PUBLIC_QUOTA_DB=")))
+    unit.write_text(text)
+    assert state.recognized_service(unit, TEMPLATE)

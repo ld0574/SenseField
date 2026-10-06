@@ -55,7 +55,7 @@
 ## 使用边界
 
 - 仅通过 Android `MediaProjection` 获取用户明确授权的屏幕画面；不读取游戏进程或内存。
-- 本地语音识别无需服务地址；画面问答需要单独选择上传范围并配置可信HTTPS网关与体验连接码。0.4.1可选助手依据可见截图与一般游戏知识回答，可能不确定或错误；不读取隐藏敌情，也不等同于本地OCR或准确战术判断。
+- 连续语音首次开启从CDN下载约153 MiB固定语音资源，校验后在手机离线识别，旧缓存继续复用；画面问答默认使用听野线上服务，无需填写地址或连接码，仍需单独授权上传范围。0.4.1可选助手依据可见截图与一般游戏知识回答，可能不确定或错误；不读取隐藏敌情，也不等同于本地OCR或准确战术判断。
 - 当前轻量网关部署关闭服务器ASR，仅转发视觉请求；模型API密钥保留在服务端，不进入APK或仓库，模型之间不自动切换。生产服务由部署者自行配置与验证。
 - 不注入游戏、不模拟触控、不替玩家作战术判断。
 - 私有录像、抽帧、标注数据和实验产物不纳入公开仓库。
@@ -133,6 +133,7 @@ cd android
 | 目录 | 内容 |
 | --- | --- |
 | `android/` | Android 屏幕采集、事件处理与提示 |
+| `deploy/assistant/` | 助手部署脚本、反代模板与[部署说明](deploy/assistant/README.md) |
 | `native/` | C++ 视觉识别和事件逻辑 |
 | `python/mapassist/` | 数据处理、回放、标注与评测工具 |
 | `training/` | 模型训练与评估工具 |
@@ -149,6 +150,7 @@ cd android
 | 产品和系统方案 | [技术方案](docs/design/技术方案.md)、[视野记忆设计](docs/design/视野记忆.md) |
 | 实施路线与当前Goal | [黑客松方案收敛与实施路线](docs/plans/黑客松方案收敛与实施路线.md)、[历史评审核对](validation/SCORE_RECOVERY_GOAL_2026-10-03.md)、[0.4.0助手验收](validation/GOAL_0.4.0_2026-10-03.md)、[0.4.1自动更新验证](validation/APP_UPDATE_0.4.1_2026-10-04.md) |
 | 端侧事件处理 | [事件感知与可靠性方案](docs/design/端侧事件感知与可靠性增强技术方案.md) |
+| 助手服务部署 | [直接启动与部署步骤](deploy/assistant/README.md) |
 | 开发与本地运行 | [团队协作与本地运行](docs/development/团队协作与本地运行.md)、[Android 自动更新](docs/development/app-update.md)、[贡献指南](CONTRIBUTING.md) |
 | 当前验证结论 | [验证状态](validation/STATUS.md) |
 | 第三方依赖和许可 | [第三方声明](THIRD_PARTY_NOTICES.md) |
