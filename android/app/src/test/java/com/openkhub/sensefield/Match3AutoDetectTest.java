@@ -32,14 +32,15 @@ public class Match3AutoDetectTest {
 
     @Test
     public void detectsLetterboxedBoard() {
-        /* 棋盘只占中间部分：行 30-70（41 行）、列 48-111（64 列）→ 方形约束取 41×41 */
+        /* 宽短暗带（行 30-70、列 48-111）：v3b 列宽定边长（64），上缘锚带顶、向下延展成方形
+         * ——对应冰块关卡「动物带窄、冰区在下方」的真实语义 */
         boolean[][] m = mask(100, 160, 30, 70, 48, 111);
         int[] box = Match3Sampler.detectBoundsFromMask(m);
         assertNotNull(box);
-        assertEquals(30, box[0]);   // 48*100/160=30
+        assertEquals(30, box[0]);
         assertEquals(30, box[1]);
-        assertEquals(55, box[2]);   // (48+41)*100/160=55.6
-        assertEquals(71, box[3]);
+        assertEquals(70, box[2]);   // (48+64)*100/160=70
+        assertEquals(94, box[3]);   // 30+64=94 行
     }
 
     @Test
@@ -53,7 +54,7 @@ public class Match3AutoDetectTest {
         int[] box = Match3Sampler.detectBoundsFromMask(m);
         assertNotNull(box);
         assertEquals(40, box[1]);
-        assertEquals(91, box[3]);
+        assertEquals(100, box[3]);  // v3b：全宽暗带按列宽延展到屏幕底
     }
 
     @Test

@@ -66,6 +66,7 @@ public class Match3LiveService extends Service {
     private long lastAnnounceAt;
     private boolean popupAnnounced;
     private boolean abstainAnnounced;   // ABSTAIN 防线提示每轮服务只播一次
+    private String activeStartToken;    // 当前会话的授权指纹（去重重复投递的 START）
     private int liveRows = 8;
     private int liveCols = 8;
     private volatile boolean running;
@@ -98,6 +99,16 @@ public class Match3LiveService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
+        /* 同一次授权的重复投递直接忽略。MediaProjection 令牌一次性：
+         * 二次 getMediaProjection 在 Android 15+ 抛 SecurityException「Don't re-use
+         * the resultData」——进程崩溃→粘性重启拿到 null intent→stopSelf→
+         * 诊断只录到一帧就「优雅结束」（真机 frame_count=1 的元凶，模拟器已复现）。 */
+        String startToken = resultCode + ":" + data.hashCode();
+        if (display != null && startToken.equals(activeStartToken)) {
+            Log.i(TAG, "重复 START（同一授权指纹）忽略");
+            return START_NOT_STICKY;
+        }
+        activeStartToken = startToken;
         startForeground(NOTIFICATION_ID, buildNotification(),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
         teardownMedia();   // 重复 START 时先拆旧投影，否则 ContentRecordingSession 冲突
@@ -131,9 +142,17 @@ public class Match3LiveService extends Service {
             }
         }, handler());
         reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
-        display = projection.createVirtualDisplay("sensefield-m3live",
-                width, height, dpi, DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                reader.getSurface(), null, handler());
+        try {
+            display = projection.createVirtualDisplay("sensefield-m3live",
+                    width, height, dpi, DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                    reader.getSurface(), null, handler());
+        } catch (Exception e) {
+            Log.w(TAG, "创建虚拟屏幕失败: " + e.getMessage());
+            announce("录屏授权已失效，请回到听野重新点开始实时识别。");
+            teardownMedia();
+            stopSelf();
+            return START_NOT_STICKY;
+        }
         reader.setOnImageAvailableListener(this::onImageAvailable, handler());
         Log.i(TAG, "实时识别已启动 " + width + "x" + height);
         handler.removeCallbacks(tick);
@@ -635,6 +654,7 @@ public class Match3LiveService extends Service {
     }
 
     private void teardownMedia() {
+        activeStartToken = null;   // 投影已拆：新授权须可重新启动
         if (reader != null) { try { reader.close(); } catch (Exception ignored) { } reader = null; }
         if (display != null) { try { display.release(); } catch (Exception ignored) { } display = null; }
         if (projection != null) { try { projection.stop(); } catch (Exception ignored) { } projection = null; }

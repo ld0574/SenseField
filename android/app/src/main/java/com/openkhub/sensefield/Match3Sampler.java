@@ -354,9 +354,11 @@ final class Match3Sampler {
             if (colCount[c] >= minColCount) { if (left < 0) left = c; right = c; }
         }
         if (left < 0 || right - left < cols / 10) return null;
-        /* 方形约束 + 密度锚定：棋盘是正方形，在行带×列带范围内滑动 side×side 窗口，
-         * 取暗底密度最高的位置作为棋盘左上角（降采样网格两个轴 step 相同，方格即正方形） */
-        int side = Math.min(bandRows, right - left + 1);
+        /* 方形约束 v3b：边长=列宽。左右边框暗线贯通棋盘全高（含冰块区），而行密度在
+         * 冰块关卡会断成孤岛（亮色冰格＋浅色缝，暗底只在格缝露）——用「列宽定边长、
+         * 带顶锚上缘、向下延展成方形」，冰块全新局面才不会把棋盘缩成 1/4（诊断实锤） */
+        int side = right - left + 1;
+        side = Math.min(side, rows - bestTop);                   // 不越过屏幕底
         if (side * 10 < Math.min(rows, cols) * 3) return null;   // 边长不足短边 30%
         long[][] integral = new long[rows + 1][cols + 1];
         for (int r = 0; r < rows; r++) {
@@ -368,10 +370,12 @@ final class Match3Sampler {
         }
         long bestSum = -1;
         int anchorTop = bestTop, anchorLeft = left;
-        int maxRowStart = Math.min(bestBottom - side + 1, bestTop + 40);
+        int maxRowStart = Math.min(bestBottom, bestTop + 40);
         int maxColStart = Math.min(right - side + 1, left + 40);
         for (int rt = bestTop; rt <= maxRowStart; rt++) {
+            if (rt + side > rows) continue;
             for (int cl = left; cl <= maxColStart; cl++) {
+                if (cl + side > cols) continue;
                 long s = integral[rt + side][cl + side] - integral[rt][cl + side]
                         - integral[rt + side][cl] + integral[rt][cl];
                 if (s > bestSum) { bestSum = s; anchorTop = rt; anchorLeft = cl; }
