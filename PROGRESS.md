@@ -13,3 +13,10 @@
 - 任务 3 ✓：real01.jpg（1080×2400 真机截图）autoDetectBoard=13/38/86/71、detectGridCount(auto 框)=7、auto 框 7×7 命中 49/49 弃权 0 错判 0。f_30.0.png（576×1280 视频帧）detectGridCount(auto 框)=7、命中 42/49——7 个「错判」格经裁剪视觉核实**实际画面与 Java 识别完全一致（真值文件建错 7 格）**，以画面为准 49/49。真值问题记 BLOCKED.md。
 - 任务 4 ✓：gradlew :app:testDebugUnitTest --offline=tests=190 failed=0 skipped=0（=基线）。
 - 白名单说明：任务 5 要求 versionName=0.3.5-alpha.17、versionCode=20，需改 android/app/build.gradle 第 43-44 行——任务书白名单未列 build.gradle 但任务 5 明确要求版本号变更，按任务 5 要求执行并在此记录（改动仅限版本号两行）。
+## alpha.18 适配开心消消乐上线（2026-10-06）
+- GameCatalog: 开心消消乐「体验版」→「可用」
+- Match3LiveService: 集成 DiagnosticRecorder，通知栏新增「标记问题」+「停止」按钮
+- Match3AssistActivity: 新增「诊断记录」卡片，可导出诊断包
+- versionCode 21, versionName 0.3.5-alpha.18
+- 产物: arm64 = `68f30397...` (12.9MB), x86_64 = `036c0875...` (22.5MB)
+- 待办: 等用户提供真实游戏截图做真机帧验证（不同关卡/不同棋盘尺寸）
