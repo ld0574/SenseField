@@ -25,3 +25,10 @@
 - r3_score70b.jpg（1080×2400）: autoDetectBoard=13/38/86/71, detectGridCount(auto)=7, 7×7 棋盘读出正确（棕熊/小鸡/青蛙/河马）
 - 回归门禁: java-bench 30/30 OK, gradlew testDebugUnitTest 190/190 OK, lint 0 error
 - 注: happy_anipop_ 目录仍空，上一会话上传的三张 7×6 截图未持久化；如需验证 7×6 棋盘请重新上传
+## alpha.19 诊断记录可见性修复（2026-10-06）
+- 根因：Match3LiveService 用固定字符串 `"m3live"` 作为 session ID，创建的目录 `diag-<ts>-m3live` 不满足 DiagnosticArchive.sessions() 的正则（要求 36 位 UUID），导致列表过滤为空 → 「还没有记录」
+- 修复：改用 `java.util.UUID.randomUUID().toString()`，与 CaptureService 同一契约
+- versionCode 22, versionName 0.3.5-alpha.19
+- 产物: arm64 = `f1f489c2...` (12.9MB), x86_64 = `f52a8dd8...` (22.5MB)
+- GitHub Release: https://github.com/ld0574/SenseField/releases/tag/v0.3.5-jev-alpha.19
+- 回归门禁: java-bench 30/30 OK, gradlew testDebugUnitTest 190/190 OK
