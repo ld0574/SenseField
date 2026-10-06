@@ -20,16 +20,27 @@ public final class Bitmap {
 
     public int getPixel(int x, int y) { return img.getRGB(x, y) | 0xFF000000; }
 
-    /** 与 Android 同名方法一致：从 (sx,sy) 起取 w×h 像素写入 colors（行优先，stride 间隔）。 */
-    public void getPixels(int[] colors, int stride, int offset, int sx, int sy, int w, int h) {
-        int o = offset;
+    /** 与 Android 同名方法一致：第二参 offset（colors 首写索引）、第三参 stride（跨行增量）。
+     *  colors[offset + row*stride + col] = 像素(sx+col, sy+row)，行优先。
+     *  参数非法时与真机 checkPixelsAccess 同款抛数组越界（offset<0 / stride<0 / 末像素越界）。 */
+    public void getPixels(int[] colors, int offset, int stride, int sx, int sy, int w, int h) {
+        if (offset < 0) {
+            throw new ArrayIndexOutOfBoundsException("offset is negative");
+        }
+        if (stride < 0) {
+            throw new ArrayIndexOutOfBoundsException("stride is negative");
+        }
+        int lastPixelIdx = offset + (h - 1) * stride + w - 1;
+        if (lastPixelIdx >= colors.length) {
+            throw new ArrayIndexOutOfBoundsException(
+                    "last pixel out of bounds: " + lastPixelIdx + " length: " + colors.length);
+        }
         for (int y = sy; y < sy + h; y++) {
-            int idx = o;
+            int idx = offset + (y - sy) * stride;
             for (int x = sx; x < sx + w; x++) {
                 colors[idx++] = img.getRGB(Math.min(x, img.getWidth() - 1),
                         Math.min(y, img.getHeight() - 1)) | 0xFF000000;
             }
-            o += stride;
         }
     }
 
