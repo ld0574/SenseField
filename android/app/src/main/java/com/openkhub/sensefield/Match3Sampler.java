@@ -22,7 +22,7 @@ final class Match3Sampler {
 
     /** 该格读不出棋子（真空位或认不出）——自我修复检测按这个口径数。 */
     static boolean isUnreadable(char c) {
-        return c == UNKNOWN || c == EMPTY_CELL;
+        return c == UNKNOWN || c == EMPTY_CELL || c == 'I';   // 冰块：障碍格，不参与交换/走法
     }
 
     /** 特殊棋子模板：一张 32×32 裁剪图＋名字。 */
@@ -139,6 +139,10 @@ final class Match3Sampler {
         if (rgb == NO_PIXELS) return UNKNOWN;
         float[] hsv = new float[3];
         Color.colorToHSV(rgb, hsv);
+        /* 冰块关卡（第 5 关类）：大片亮白/浅蓝白障碍格 S≈0.18-0.4、V≈0.9+，
+         * 部分格饱和度越过 0.18 阈值后被读成河马，编出十几个假走法（诊断包 audit 实锤）。
+         * 动物棋子饱和度实测最低 0.6+，0.45 分界留足余量。 */
+        if (hsv[2] >= 0.85f && hsv[1] < 0.45f) return 'I';
         if (hsv[1] < 0.18f || hsv[2] < 0.15f) {
             return matchTemplate(bitmap, cx, cy, half, templates);
         }
