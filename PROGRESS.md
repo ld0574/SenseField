@@ -19,4 +19,9 @@
 - Match3AssistActivity: 新增「诊断记录」卡片，可导出诊断包
 - versionCode 21, versionName 0.3.5-alpha.18
 - 产物: arm64 = `68f30397...` (12.9MB), x86_64 = `036c0875...` (22.5MB)
-- 待办: 等用户提供真实游戏截图做真机帧验证（不同关卡/不同棋盘尺寸）
+### alpha.18 真机帧验证（2026-10-06）
+- r1_score160.jpg（1080×2400）: autoDetectBoard=13/38/86/71, detectGridCount(auto)=7, 7×7 棋盘读出正确（小鸡/青蛙/棕熊/河马）
+- r2_score70.jpg（1080×2400）: autoDetectBoard=13/38/86/71, detectGridCount(auto)=7, 7×7 棋盘读出正确（棕熊/小鸡/青蛙/河马）
+- r3_score70b.jpg（1080×2400）: autoDetectBoard=13/38/86/71, detectGridCount(auto)=7, 7×7 棋盘读出正确（棕熊/小鸡/青蛙/河马）
+- 回归门禁: java-bench 30/30 OK, gradlew testDebugUnitTest 190/190 OK, lint 0 error
+- 注: happy_anipop_ 目录仍空，上一会话上传的三张 7×6 截图未持久化；如需验证 7×6 棋盘请重新上传
