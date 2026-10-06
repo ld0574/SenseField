@@ -118,6 +118,7 @@ final class Match3Coach {
             case 'G': return "青蛙";
             case 'B': return "河马";
             case 'P': return "紫猫";
+            case 'I': return "冰块";
             default: break;
         }
         String learned = Match3Sampler.nameForCode(c);
