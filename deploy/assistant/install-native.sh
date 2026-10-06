@@ -133,41 +133,19 @@ if [[ "$transport" == backend-tls ]]; then
 fi
 [[ ! -L "$unit_file" ]] || fail '已有服务单元是符号链接，请先核对。'
 if [[ -e "$unit_file" && ! -f "$app_marker" ]]; then
-    fail '已有同名服务不是本安装器创建的，请先核对。'
+    "$python_bin" "$deploy_dir/native-state.py" check-service \
+        --unit "$unit_file" --template "$deploy_dir/sensefield-assistant.service" \
+        || fail '已有同名服务与听野服务模板不匹配；未覆盖。请核对其 WorkingDirectory 和 ExecStart。'
 fi
 
-# Existing credentials and player codes are immutable to this installer. Check
-# only transport metadata here; never print config values or secret material.
+# Preserve provider credentials and player codes while migrating only native
+# transport fields. A private byte-for-byte backup is made before any change.
 if [[ -e "$config_dir/gateway.json" ]]; then
     [[ -f "$config_dir/gateway.json" ]] || fail '已有 gateway.json 不是普通文件；请先核对。'
     [[ -f "$config_dir/体验连接码.txt" ]] \
         || fail '配置已存在但体验连接码文件缺失；请从现有私有配置恢复原连接码，勿删除配置重新生成。'
-    if ! "$python_bin" - "$config_dir/gateway.json" "$transport" <<'PY'
-import json
-import sys
-
-path, transport = sys.argv[1:]
-try:
-    with open(path, encoding="utf-8") as source:
-        config = json.load(source)
-except Exception:
-    raise SystemExit("现有 gateway.json 无法读取；安装器未修改它。") from None
-if not isinstance(config, dict):
-    raise SystemExit("现有 gateway.json 格式不正确；安装器未修改它。")
-tls_keys = ("ASSISTANT_GATEWAY_TLS_CERT", "ASSISTANT_GATEWAY_TLS_KEY")
-if config.get("ASSISTANT_GATEWAY_HOST") != "127.0.0.1" or config.get("ASSISTANT_GATEWAY_PORT") != "18765":
-    raise SystemExit("现有配置的监听地址与原生服务不匹配；请先安全迁移配置。")
-if transport == "local-proxy":
-    if any(key in config for key in tls_keys) or config.get("ASSISTANT_GATEWAY_LOCAL_TLS_PROXY") != "1":
-        raise SystemExit("现有配置与 --transport local-proxy 不匹配。配置和凭据已保留；请按部署说明安全迁移传输字段后重试。")
-elif (config.get(tls_keys[0]) != "/etc/sensefield-assistant/tls/backend.crt"
-      or config.get(tls_keys[1]) != "/etc/sensefield-assistant/tls/backend.key"
-      or config.get("ASSISTANT_GATEWAY_LOCAL_TLS_PROXY") is not None):
-    raise SystemExit("现有配置与 --transport backend-tls 不匹配。配置和凭据已保留；请按部署说明安全迁移传输字段后重试。")
-PY
-    then
-        exit 1
-    fi
+    "$python_bin" "$deploy_dir/native-state.py" migrate-config \
+        --config "$config_dir/gateway.json" --transport "$transport"
 fi
 
 if getent passwd "$service_user" >/dev/null; then
@@ -243,6 +221,9 @@ if [[ "$transport" == local-proxy ]]; then
     proxy_env='Environment=ASSISTANT_GATEWAY_LOCAL_TLS_PROXY=1'
 else
     proxy_env=''
+fi
+if [[ -f "$unit_file" ]]; then
+    install -m 0600 "$unit_file" "$config_dir/service-before-migration-$(date +%s)-$$.service"
 fi
 sed -e "s|@APP_DIR@|$app_dir|g" -e "s|@LOCAL_PROXY_ENV@|$proxy_env|g" \
     "$deploy_dir/sensefield-assistant.service" > "$unit_file"

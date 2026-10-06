@@ -38,7 +38,7 @@ sudo bash deploy/assistant/install-native.sh \
 - `/etc/sensefield-assistant/体验连接码.txt`：体验连接码，权限 `0600`，所有者为 `root`。请逐人私下提供，不要放入代码仓库、APK、CDN 或公开文档。
 - 只有 `backend-tls` 模式会创建 `/etc/sensefield-assistant/tls/backend.crt` 和 `backend.key`；私钥权限 `0400`，所有者为 `sensefield-gateway`。`local-proxy` 模式不需要后端证书。
 
-systemd 通过 `ASSISTANT_GATEWAY_ENV_FILE` 指向 JSON 配置；凭据不会写进 systemd 环境文件或日志。两种原生模式均监听 `127.0.0.1:18765`，ASR 为 `disabled`，单进程上游并发为 1。已有安装须带本安装器标记且服务已停止才允许更新；现有配置和连接码不会自动覆盖或轮换。若配置文件已存在但连接码文件缺失，安装器会停止并要求从私有备份恢复原连接码。
+systemd 通过 `ASSISTANT_GATEWAY_ENV_FILE` 指向 JSON 配置；凭据不会写进 systemd 环境文件或日志。两种原生模式均监听 `127.0.0.1:18765`，ASR 为 `disabled`，单进程上游并发为 1。服务须已停止才允许更新。迁移应用目录时，安装器根据旧服务自身的路径识别历史听野服务，不再要求新目录预先有安装标记；与听野模板不匹配的其他服务仍不会被覆盖。现有上游凭据和连接码不会被轮换。若配置文件已存在但连接码文件缺失，安装器会停止并要求从私有备份恢复原连接码。
 
 ## 配置 HTTPS 反向代理
 
@@ -55,21 +55,21 @@ sudo systemctl reload nginx
 
 公网 SSL 与后端传输是两个独立连接：公网客户端始终访问 `https://sf.888413.xyz`；本机代理模式仅让 Nginx 到 `127.0.0.1:18765` 的连接使用 HTTP。不要把应用源码目录设为网站文档根目录，也不要增加可浏览目录或通配代理规则。
 
-## 已有配置的传输模式迁移
+## 已有服务与传输模式迁移
 
-安装器不会重写已存在的 `gateway.json`，也不会打印配置内容。若选择模式与配置中的传输字段不一致，它会报错并保留文件。迁移前停止服务，并在仅 root 可访问的位置制作权限为 `0600` 的配置备份，例如：
+先停止服务，再运行带目标目录和传输模式的安装命令即可，不需要删除旧服务或手工创建安装标记：
 
 ```sh
-sudo install -m 0600 /etc/sensefield-assistant/gateway.json \
-  /root/sensefield-assistant-gateway.json.backup
+sudo systemctl stop sensefield-assistant
+sudo bash deploy/assistant/install-native.sh \
+  --app-dir /data/wwwroot/sf --transport local-proxy
 ```
 
-然后用 `sudoedit /etc/sensefield-assistant/gateway.json` 只调整传输字段，保留上游凭据、设备令牌和其他配置值：
+安装器按旧服务实际的 `WorkingDirectory` 与完整服务模板识别历史听野安装，允许由 `/opt/sensefield-assistant` 迁移到新目录。旧应用和虚拟环境不会删除。覆盖服务单元前会在 `/etc/sensefield-assistant/service-before-migration-*.service` 保存私有备份。
 
-- 迁移到 `local-proxy`：移除 `ASSISTANT_GATEWAY_TLS_CERT` 和 `ASSISTANT_GATEWAY_TLS_KEY`，设置 `ASSISTANT_GATEWAY_LOCAL_TLS_PROXY` 为字符串 `"1"`。该模式不需要 `tls/` 目录或后端证书。
-- 迁移到 `backend-tls`：移除 `ASSISTANT_GATEWAY_LOCAL_TLS_PROXY`，设置 `ASSISTANT_GATEWAY_TLS_CERT` 和 `ASSISTANT_GATEWAY_TLS_KEY` 为 `/etc/sensefield-assistant/tls/backend.crt` 和 `/etc/sensefield-assistant/tls/backend.key`。确认成对的证书文件可用；若都不存在，安装器会创建它们。
+选择传输模式时，安装器会先将原 `gateway.json` 字节完整备份为 `/etc/sensefield-assistant/gateway.json.before-migration-*`（root所有、权限0600），再原子更新传输字段：监听127.0.0.1:18765、ASR关闭，以及所选模式的TLS字段。上游接口、模型、API密钥、设备令牌和其他配置值保持原样。新配置保留原所有者，权限为0400；配置已经匹配时不会重写或重复备份。
 
-保存配置后，使用同一个 `--transport` 参数重跑安装器。不要删除整个配置后重新初始化，否则会轮换设备令牌并丢失原凭据。安装器也不会自动转换旧 TLS 配置，以免在保留或轮换密钥时产生歧义。
+`local-proxy` 会移除后端TLS证书/私钥路径并设置本地反代模式，不删除已有证书文件。`backend-tls` 则恢复后端证书路径，仍要求Nginx严格验证。不要删除整个配置后重新初始化，以免丢失原连接码。
 
 ## 启动与验收
 
