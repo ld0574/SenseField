@@ -1,0 +1,13 @@
+out/
+out-tests/
+bench-files/
+guard-files/
+probe-files/
+*.class
+# 这三个是被测源文件的运行期副本，由 run.sh / run-tests.sh 从仓库同步，不入库（防漂移）
+src/com/openkhub/sensefield/Match3Sampler.java
+src/com/openkhub/sensefield/Match3Board.java
+src/com/openkhub/sensefield/Match3Coach.java
+test/com/openkhub/sensefield/Match3BoardTest.java
+test/com/openkhub/sensefield/Match3AutoDetectTest.java
+test/com/openkhub/sensefield/Match3PieceNameTest.java

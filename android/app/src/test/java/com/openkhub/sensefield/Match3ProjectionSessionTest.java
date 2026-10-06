@@ -39,4 +39,26 @@ public final class Match3ProjectionSessionTest {
 
         assertEquals(0, sessions.stopIfCurrent(generation, projection));
     }
+    @Test public void controlCommandsKeepProjectionAndAdvanceStopId() {
+        Match3ProjectionSession sessions = new Match3ProjectionSession();
+        Object projection = new Object();
+        long generation = sessions.beginStart(30);
+        assertTrue(sessions.attach(generation, projection));
+        sessions.noteCommand(31); // Notification marker.
+        sessions.noteCommand(32); // Explore toggle.
+        sessions.noteCommand(31); // Delayed command cannot move the stop ID backwards.
+        assertTrue(sessions.isCurrent(generation, projection));
+        assertEquals(32, sessions.stopIfCurrent(generation, projection));
+    }
+
+    @Test public void oldFrameCannotPersistOrAnnounceAfterReplacement() {
+        Match3ProjectionSession sessions = new Match3ProjectionSession();
+        Object old = new Object();
+        long generation = sessions.beginStart(40);
+        assertTrue(sessions.attach(generation, old));
+        sessions.beginStart(41);
+        final boolean[] changed = {false};
+        assertFalse(sessions.runIfCurrent(generation, old, () -> { changed[0] = true; return true; }));
+        assertFalse(changed[0]);
+    }
 }

@@ -47,6 +47,10 @@ final class Match3ProjectionSession {
         return latestStartId;
     }
 
+    synchronized void noteCommand(int startId) {
+        latestStartId = Math.max(latestStartId, startId);
+    }
+
     synchronized void invalidate(int startId) {
         generation++;
         latestStartId = startId;

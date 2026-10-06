@@ -59,6 +59,7 @@ final class DiagnosticRecorder {
     volatile boolean finished;
     volatile String failure = "";
     private final Context context;
+    private final boolean allowPortrait;
     private DiagnosticArchive archive;
     private final AtomicInteger pending = new AtomicInteger();
     private final AtomicInteger dropped = new AtomicInteger();
@@ -127,12 +128,18 @@ final class DiagnosticRecorder {
     }
 
     static DiagnosticRecorder start(Context context, String sessionId, long startedAtMs) {
-        DiagnosticRecorder recorder = new DiagnosticRecorder(context, sessionId, startedAtMs);
+        return start(context, sessionId, startedAtMs, false);
+    }
+
+    static DiagnosticRecorder start(Context context, String sessionId, long startedAtMs,
+                                    boolean allowPortrait) {
+        DiagnosticRecorder recorder = new DiagnosticRecorder(context, sessionId, startedAtMs, allowPortrait);
         current = recorder;
         return recorder;
     }
 
-    private DiagnosticRecorder(Context supplied, String sessionId, long startedAtMs) {
+    private DiagnosticRecorder(Context supplied, String sessionId, long startedAtMs, boolean allowPortrait) {
+        this.allowPortrait = allowPortrait;
         context = supplied.getApplicationContext();
         this.sessionId = sessionId;
         this.startedAtMs = startedAtMs;
@@ -150,7 +157,7 @@ final class DiagnosticRecorder {
                 "product", Build.PRODUCT, "android_release", Build.VERSION.RELEASE,
                 "sdk", Build.VERSION.SDK_INT, "screen_width_px", display.widthPixels,
                 "screen_height_px", display.heightPixels, "density_dpi", display.densityDpi,
-                "images_enabled", imagesEnabled, "image_period_ms", IMAGE_PERIOD_MS,
+                "images_enabled", imagesEnabled, "portrait_images_allowed", allowPortrait, "image_period_ms", IMAGE_PERIOD_MS,
                 "context_sample_period_ms", DiagnosticImageWindow.SAMPLE_PERIOD_MS,
                 "context_pre_ms", DiagnosticImageWindow.PRE_WINDOW_MS,
                 "context_post_ms", DiagnosticImageWindow.POST_WINDOW_MS,
@@ -278,7 +285,7 @@ final class DiagnosticRecorder {
     private void captureImages(NativeFrameResult f, ByteBuffer pixels, int width, int height,
                                int rowStride, long sequence, long observedAtMs, long completedAtMs) {
         synchronized (imageStateLock) {
-            if (!imagesEnabled || imageLimit || width <= height
+            if (!imagesEnabled || imageLimit || (!allowPortrait && width <= height)
                     || completedAtMs - startedAtMs > 1200000) {
                 clearImageContextLocked();
                 return;
