@@ -103,12 +103,14 @@ public class Match3LiveService extends Service {
          * 二次 getMediaProjection 在 Android 15+ 抛 SecurityException「Don't re-use
          * the resultData」——进程崩溃→粘性重启拿到 null intent→stopSelf→
          * 诊断只录到一帧就「优雅结束」（真机 frame_count=1 的元凶，模拟器已复现）。 */
-        String startToken = resultCode + ":" + data.hashCode();
-        if (display != null && startToken.equals(activeStartToken)) {
-            Log.i(TAG, "重复 START（同一授权指纹）忽略");
+        Log.i(TAG, "onStartCommand 投递: action=" + intent.getAction()
+                + " 投影存活=" + (projection != null) + " 屏幕存活=" + (display != null));
+        if (projection != null && display != null) {
+            /* 已有存活投影：忽略任何新 START（授权令牌一次性，二次取用必被系统拒绝）。
+             * 重开的唯一出口是通知里的「停止」再重新授权。 */
+            Log.i(TAG, "已有存活会话，忽略新 START");
             return START_NOT_STICKY;
         }
-        activeStartToken = startToken;
         startForeground(NOTIFICATION_ID, buildNotification(),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
         teardownMedia();   // 重复 START 时先拆旧投影，否则 ContentRecordingSession 冲突
@@ -129,6 +131,12 @@ public class Match3LiveService extends Service {
             projection = manager.getMediaProjection(resultCode, data);
         } catch (Exception e) {
             Log.w(TAG, "获取投影失败: " + e.getMessage());
+            try {
+                announce("录屏授权已失效，请回到听野重新点开始实时识别。");
+            } catch (Exception e2) {
+                Log.w(TAG, "失效提示播报失败: " + e2.getMessage());
+            }
+            if (diagnostics != null && !diagnostics.finished) diagnostics.finish("projection_token_invalid");
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -138,6 +146,12 @@ public class Match3LiveService extends Service {
         }
         projection.registerCallback(new MediaProjection.Callback() {
             @Override public void onStop() {
+                Log.i(TAG, "系统侧终止了屏幕录制");
+                try {
+                    announce("屏幕录制已结束，需要继续请重新开始实时识别。");
+                } catch (Exception e) {
+                    Log.w(TAG, "结束提示播报失败: " + e.getMessage());
+                }
                 stopSelf();
             }
         }, handler());
@@ -148,7 +162,7 @@ public class Match3LiveService extends Service {
                     reader.getSurface(), null, handler());
         } catch (Exception e) {
             Log.w(TAG, "创建虚拟屏幕失败: " + e.getMessage());
-            announce("录屏授权已失效，请回到听野重新点开始实时识别。");
+            if (diagnostics != null && !diagnostics.finished) diagnostics.finish("virtual_display_failed");
             teardownMedia();
             stopSelf();
             return START_NOT_STICKY;
@@ -584,6 +598,7 @@ public class Match3LiveService extends Service {
     }
 
     private void announce(String speech) {
+        try {
         if (dispatcher == null) {
             player = new CuePlayer(this);
             dispatcher = new CueDispatcher(player, permissivePolicy(), listener(),
@@ -595,6 +610,9 @@ public class Match3LiveService extends Service {
                 "消消乐实时播报", CueRequest.Category.SYSTEM, 70, t, t + 10000,
                 CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH | CueRequest.CHANNEL_HAPTIC,
                 0, 0, 0, speech));
+        } catch (Exception e) {
+            Log.w(TAG, "播报通道异常（不致命）: " + e.getMessage());
+        }
     }
 
     private CueDispatcher.Policy permissivePolicy() {
