@@ -1,6 +1,8 @@
 package com.openkhub.sensefield;
 
 import android.app.Notification;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
@@ -64,6 +66,9 @@ public class Match3LiveService extends Service {
     private int liveRows = 8;
     private int liveCols = 8;
     private volatile boolean running;
+    private DiagnosticRecorder diagnostics;
+    private NotificationManager notificationManager;
+    private long sessionStartMs;
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -74,6 +79,12 @@ public class Match3LiveService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_EXPLORE_ON.equals(intent.getAction())) { exploreMode = true; Log.i(TAG, "触屏点读模式开启（背景播报已抑制）"); return START_STICKY; }
         if (intent != null && ACTION_EXPLORE_OFF.equals(intent.getAction())) { exploreMode = false; Log.i(TAG, "触屏点读模式关闭"); return START_STICKY; }
+        if (intent != null && ACTION_MARK_ISSUE.equals(intent.getAction())) {
+            if (diagnostics == null || diagnostics.finished) return START_NOT_STICKY;
+            diagnostics.markIssue();
+            refreshNotification();
+            return START_NOT_STICKY;
+        }
         if (intent == null || ACTION_STOP.equals(intent.getAction())) {
             stopSelf();
             return START_NOT_STICKY;
@@ -87,6 +98,9 @@ public class Match3LiveService extends Service {
         startForeground(NOTIFICATION_ID, buildNotification(),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
         teardownMedia();   // 重复 START 时先拆旧投影，否则 ContentRecordingSession 冲突
+        sessionStartMs = SystemClock.elapsedRealtime();
+        diagnostics = DiagnosticRecorder.start(this, "m3live", sessionStartMs);
+        notificationManager = getSystemService(NotificationManager.class);
         android.content.res.Resources res = getResources();
         android.util.DisplayMetrics dm = res.getDisplayMetrics();
         width = dm.widthPixels;
@@ -417,6 +431,11 @@ public class Match3LiveService extends Service {
             sb.append("暂无可消除交换。");
         }
         Log.i(TAG, sb.toString());
+        if (diagnostics != null) {
+            diagnostics.audit("BoardRecognized rows=" + matrix.length + " cols=" + matrix[0].length
+                    + " unknown=" + unknown + "/" + total + " swaps=" + swaps.size());
+            saveDiagnosticFrame(frame, "board_recognized");
+        }
         announce(sb.toString());
     }
 
@@ -484,6 +503,7 @@ public class Match3LiveService extends Service {
 
     static final String ACTION_EXPLORE_ON = "com.openkhub.sensefield.m3live.EXPLORE_ON";
     static final String ACTION_EXPLORE_OFF = "com.openkhub.sensefield.m3live.EXPLORE_OFF";
+    static final String ACTION_MARK_ISSUE = "com.openkhub.sensefield.m3live.MARK_ISSUE";
 
     /* 连续触屏点读模式：开启后完全抑制背景局面播报（消灭胡乱虚报），
      * 只按玩家每一次触摸播报对应格子（模板优先识别），触摸坐标来自读屏服务的观察模式。 */
@@ -551,15 +571,41 @@ public class Match3LiveService extends Service {
         };
     }
 
+    private void saveDiagnosticFrame(Bitmap frame, String reason) {
+        if (diagnostics == null || diagnostics.finished) return;
+        try {
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            frame.compress(Bitmap.CompressFormat.JPEG, 70, bos);
+            byte[] bytes = bos.toByteArray();
+            java.nio.ByteBuffer buf = java.nio.ByteBuffer.wrap(bytes);
+            DiagnosticSnapshot snap = DiagnosticSnapshot.parse(null);
+            diagnostics.frame(NativeFrameResult.empty(), snap, buf,
+                    frame.getWidth(), frame.getHeight(), frame.getWidth() * 4,
+                    SystemClock.elapsedRealtime(), SystemClock.elapsedRealtime(), 120000);
+        } catch (Exception e) {
+            Log.w(TAG, "保存诊断帧失败: " + e.getMessage());
+        }
+    }
+
     private Notification buildNotification() {
         android.app.NotificationChannel channel = new android.app.NotificationChannel("m3live",
                 "消消乐实时识别", android.app.NotificationManager.IMPORTANCE_LOW);
         android.app.NotificationManager nm = getSystemService(android.app.NotificationManager.class);
         if (nm != null) nm.createNotificationChannel(channel);
+        PendingIntent markIssue = PendingIntent.getService(this, 4,
+                new Intent(this, Match3LiveService.class).setAction(ACTION_MARK_ISSUE),
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent stop = PendingIntent.getService(this, 5,
+                new Intent(this, Match3LiveService.class).setAction(ACTION_STOP),
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        String diagText = diagnostics == null || diagnostics.finished
+                ? "" : " · 诊断会话 active";
         return new android.app.Notification.Builder(this, "m3live")
-                .setContentTitle("听野 · 消消乐实时识别中")
+                .setContentTitle("听野 · 消消乐实时识别中" + diagText)
                 .setContentText("正在识别棋盘并语音播报")
                 .setSmallIcon(android.R.drawable.ic_menu_camera)
+                .addAction(android.R.drawable.ic_menu_edit, "标记问题", markIssue)
+                .addAction(android.R.drawable.ic_menu_close_clear_cancel, "停止", stop)
                 .build();
     }
 
@@ -588,6 +634,15 @@ public class Match3LiveService extends Service {
         if (dispatcher != null) dispatcher.close();
         if (player != null) player.close();
         if (thread != null) thread.quitSafely();
+        if (diagnostics != null) {
+            diagnostics.finish("m3live_session_finished");
+            Log.i(TAG, "诊断会话已保存至 " + DiagnosticRecorder.activeDirectory());
+        }
         super.onDestroy();
+    }
+
+    private void refreshNotification() {
+        if (notificationManager == null) return;
+        notificationManager.notify(NOTIFICATION_ID, buildNotification());
     }
 }

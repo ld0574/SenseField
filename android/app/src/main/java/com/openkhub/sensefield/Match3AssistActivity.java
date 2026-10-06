@@ -226,6 +226,14 @@ public class Match3AssistActivity extends Activity {
         readerCard.addView(a11ySet);
         page.addView(readerCard);
 
+        /* ---------- 诊断记录（实时识别时自动保存帧，支持导出分享） ---------- */
+        LinearLayout diagCard = UiKit.card(this);
+        diagCard.addView(sectionLabel("诊断记录"));
+        Button diagBtn = UiKit.button(this, "查看诊断记录与导出（需先停止识别）", false);
+        diagBtn.setOnClickListener(v -> startActivity(new Intent(this, DiagnosticsActivity.class)));
+        diagCard.addView(diagBtn);
+        page.addView(diagCard);
+
         output = new TextView(this);
         output.setTypeface(Typeface.MONOSPACE);
         output.setTextSize(12);
