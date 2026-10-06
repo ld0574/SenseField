@@ -25,6 +25,9 @@ final class Match3Coach {
         KNOWLEDGE.put("冰块障碍", "带冰壳的棋子需要在其旁边消除一次来打碎冰壳。");
         KNOWLEDGE.put("毒水障碍", "深色毒水格会污染相邻棋子，优先在毒水旁消除。");
         KNOWLEDGE.put("藤蔓障碍", "被藤蔓锁住的棋子不能移动，先消除藤蔓上的棋子解开。");
+        KNOWLEDGE.put("冰块关卡规则", "白色冰块格不能点击移动。冰块在棋盘下方时，先消除它上方的棋子，新棋子会落下来；新棋子挨着冰块消除时，冰块才会被打碎。");
+        KNOWLEDGE.put("双箭头提示", "画面中的双箭头是游戏自带的推荐走法提示，指出的两个棋子交换可以消除。");
+        KNOWLEDGE.put("目标栏数字", "顶部的目标图标加数字，表示本关需要通过三连消除收集的棋子种类和数量，三个同色相连消除即可收集。");
     }
 
     static String[] knowledgeNames() {
@@ -119,6 +122,8 @@ final class Match3Coach {
             case 'G': return "青蛙";
             case 'B': return "河马";
             case 'P': return "紫猫";
+            case 'I': return "冰块";
+            case 'H': return "空位";
             default: break;
         }
         String learned = Match3Sampler.nameForCode(c);

@@ -21,6 +21,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import java.io.File;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -31,6 +33,24 @@ import org.junit.runner.RunWith;
 @RunWith(AndroidJUnit4.class)
 public class Match3MergeInstrumentedTest {
     private static Context context() { return ApplicationProvider.getApplicationContext(); }
+
+    @Test public void iceAndGapAreNamedAndNeverSuggestedAsSwappablePieces() {
+        Bitmap frame = Bitmap.createBitmap(40, 40, Bitmap.Config.ARGB_8888);
+        try {
+            frame.eraseColor(Color.rgb(220, 236, 246));
+            assertEquals('I', Match3Sampler.classifyPoint(frame, 20, 20));
+            frame.eraseColor(Color.rgb(40, 56, 88));
+            assertEquals(Match3Sampler.GAP_CELL, Match3Sampler.classifyPoint(frame, 20, 20));
+            assertEquals("冰块", Match3Coach.pieceName('I'));
+            assertEquals("空位", Match3Coach.pieceName(Match3Sampler.GAP_CELL));
+            assertTrue(Match3Board.findRuns(new char[][]{{'I', 'I', 'I'}, {'H', 'H', 'H'}}).isEmpty());
+            char[][] board = {{'R', 'R', 'I'}, {'G', 'H', 'R'}, {'Y', 'O', 'B'}};
+            for (Match3Board.Swap swap : Match3Board.findSwaps(board)) {
+                assertTrue(Match3Board.isPiece(board[swap.fromRow][swap.fromCol]));
+                assertTrue(Match3Board.isPiece(board[swap.toRow][swap.toCol]));
+            }
+        } finally { frame.recycle(); }
+    }
 
     private static Bitmap board() {
         Bitmap frame = Bitmap.createBitmap(576, 1280, Bitmap.Config.ARGB_8888);
@@ -108,6 +128,11 @@ public class Match3MergeInstrumentedTest {
         prefs.edit().putBoolean(DiagnosticRecorder.PREF_IMAGES, true).commit();
         try {
             DiagnosticRecorder match3 = recordPortrait(true);
+            org.json.JSONObject metadata = new org.json.JSONObject(new String(Files.readAllBytes(
+                    new File(match3.directory, "metadata.json").toPath()), StandardCharsets.UTF_8));
+            assertEquals("0.4.3", metadata.getString("app_version"));
+            assertEquals("0.4.3", metadata.getString("version_name"));
+            assertEquals(20, metadata.getInt("version_code"));
             File[] images = new File(match3.directory, "images").listFiles((dir, name) -> name.startsWith("screen-"));
             assertNotNull(images);
             assertTrue(images.length > 0);

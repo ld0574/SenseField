@@ -51,7 +51,7 @@ public final class Match3LiveCuePolicyTest {
         assertEquals(CueRequest.CHANNEL_SPEECH, policy.enabledChannels());
         assertEquals(CueRequest.CHANNEL_SPEECH,
                 policy.enabledChannels(CueRequest.Category.SYSTEM));
-        assertEquals(1200, policy.dedupeWindowMs(CueRequest.Category.SYSTEM));
+        assertEquals(1500, policy.dedupeWindowMs(CueRequest.Category.SYSTEM));
 
         stored.systemEnabled = false;
         assertFalse(policy.categoryEnabled(CueRequest.Category.SYSTEM));

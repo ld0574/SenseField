@@ -68,6 +68,7 @@ public class Match3LiveService extends Service {
         char[][][] rawWindow = new char[STABLE_FRAMES][][];
         int rawIdx, rawFill;
         char[][] lastAnnouncedMatrix;
+        final Match3BoardConfirmation confirmation = new Match3BoardConfirmation();
         List<Match3Board.Swap> lastSwaps;
         long lastChangeAt, lastAnnounceAt, lastTouchHandledAt;
         int hintCount, liveRows = 8, liveCols = 8;
@@ -87,6 +88,9 @@ public class Match3LiveService extends Service {
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent == null ? ACTION_STOP : intent.getAction();
+        Log.i(TAG, "onStartCommand action=" + action + " start_id=" + startId
+                + " flags=" + flags + " projection_alive=" + (projection != null)
+                + " display_alive=" + (display != null));
         if (ACTION_MARK_ISSUE.equals(action) || ACTION_EXPLORE_ON.equals(action)
                 || ACTION_EXPLORE_OFF.equals(action)) {
             projectionSession.noteCommand(startId);
@@ -121,6 +125,13 @@ public class Match3LiveService extends Service {
             if (active == null) stopSelfResult(startId);
             return START_NOT_STICKY;
         }
+        // Check before teardown: Android projection resultData may only be used once.
+        if (projection != null && display != null
+                && projectionSession.ignoreDuplicateStart(startId)) {
+            Session current = active;
+            if (current != null) current.diagnostics.audit("Match3DuplicateStart ignored start_id=" + startId);
+            return START_NOT_STICKY;
+        }
         long generation = projectionSession.beginStart(startId);
         teardownMedia();
         Intent data = intent.getParcelableExtra(EXTRA_DATA);
@@ -132,10 +143,14 @@ public class Match3LiveService extends Service {
             stopSelfResult(startId);
             return START_NOT_STICKY;
         }
-        startForeground(NOTIFICATION_ID, buildNotification(),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
         android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        DiagnosticRecorder diagnostics = DiagnosticRecorder.start(this,
+                UUID.randomUUID().toString(), SystemClock.elapsedRealtime(), true);
+        String failureReason = "foreground_start_failed";
         try {
+            startForeground(NOTIFICATION_ID, buildNotification(),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
+            failureReason = "projection_token_invalid";
             MediaProjectionManager manager =
                     (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
             MediaProjection currentProjection = manager.getMediaProjection(
@@ -147,9 +162,17 @@ public class Match3LiveService extends Service {
             currentProjection.registerCallback(new MediaProjection.Callback() {
                 @Override public void onStop() {
                     int stopId = projectionSession.stopIfCurrent(generation, currentProjection);
-                    if (stopId > 0) stopSelfResult(stopId);
+                    if (stopId > 0) {
+                        diagnostics.audit("Match3ProjectionStopped start_id=" + stopId);
+                        diagnostics.finish("projection_stopped");
+                        android.widget.Toast.makeText(Match3LiveService.this,
+                                "屏幕录制已结束，需要继续请重新开始实时识别。",
+                                android.widget.Toast.LENGTH_LONG).show();
+                        stopSelfResult(stopId);
+                    }
                 }
             }, handler());
+            failureReason = "virtual_display_failed";
             ImageReader currentReader = ImageReader.newInstance(dm.widthPixels, dm.heightPixels,
                     PixelFormat.RGBA_8888, 2);
             reader = currentReader;
@@ -158,8 +181,7 @@ public class Match3LiveService extends Service {
                     DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                     currentReader.getSurface(), null, handler());
             if (display == null) throw new IllegalStateException("Virtual display unavailable");
-            DiagnosticRecorder diagnostics = DiagnosticRecorder.start(this,
-                    UUID.randomUUID().toString(), SystemClock.elapsedRealtime(), true);
+            failureReason = "session_setup_failed";
             Session s = new Session(generation, currentProjection, currentReader, diagnostics);
             active = s;
             running = true;
@@ -168,11 +190,16 @@ public class Match3LiveService extends Service {
             scheduleTick(s);
             Log.i(TAG, "实时识别已启动 " + dm.widthPixels + "x" + dm.heightPixels);
         } catch (RuntimeException error) {
-            Log.w(TAG, "创建消消乐录屏失败: " + error.getClass().getSimpleName());
+            Log.w(TAG, "创建消消乐录屏失败: " + failureReason + " " + error.getClass().getSimpleName());
+            diagnostics.audit("Match3StartFailure reason=" + failureReason
+                    + " error=" + error.getClass().getSimpleName());
+            diagnostics.finish(failureReason);
             projectionSession.invalidate(startId);
             teardownMedia();
             stopForeground(STOP_FOREGROUND_REMOVE);
-            android.widget.Toast.makeText(this, "无法启动实时识别，请重新授权后重试。",
+            android.widget.Toast.makeText(this, "projection_token_invalid".equals(failureReason)
+                            ? "录屏授权已失效，请回到听野重新开始实时识别。"
+                            : "无法启动实时识别，请重新授权后重试。",
                     android.widget.Toast.LENGTH_LONG).show();
             stopSelfResult(startId);
         }
@@ -274,6 +301,7 @@ public class Match3LiveService extends Service {
         s.rawWindow = new char[STABLE_FRAMES][][];
         s.rawIdx = s.rawFill = 0;
         s.boardValid = false;
+        s.confirmation.reset();
     }
 
     private boolean saveCalibration(Session s, int[] bounds, int rows, int cols) {
@@ -397,6 +425,7 @@ public class Match3LiveService extends Service {
             int fixedCells = fixed.length * fixed[0].length;
             if (countUnknown(fixed) * 100 > fixedCells * 40) {
                 Log.i(TAG, "自我修复后仍未识别，本轮静默且不采纳新标定");
+                s.confirmation.reset();
                 if (!s.abstainAnnounced
                         && !GameProfile.settings(this).getBoolean("match3_calibrated", false)) {
                     announce(s, "棋盘位置变了但认不出来。请框选标定棋盘区域。");
@@ -414,6 +443,8 @@ public class Match3LiveService extends Service {
             resetWindow(s);
             return; // 新标定重新积累稳定窗，不拿单帧直接播报。
         }
+        // Opening animations and transitions must settle across two majority windows.
+        if (!s.confirmation.accept(matrix)) return;
         s.boardValid = true;
         if (matrixEquals(s.lastAnnouncedMatrix, matrix)) {
             return;
@@ -527,16 +558,24 @@ public class Match3LiveService extends Service {
     private int cols(Session s) { return s.sampler == null ? 8 : s.sampler.colCount(); }
 
     private void announce(Session s, String speech) {
-        projectionSession.runIfCurrent(s.generation, s.projection, () -> {
+        try {
+            projectionSession.runIfCurrent(s.generation, s.projection, () -> {
             if (!isCurrent(s)) return false;
             if (dispatcher == null) {
                 player = new CuePlayer(this);
                 dispatcher = new CueDispatcher(player, new Match3LiveCuePolicy(new CueSettings(this)),
                         new CueDispatcher.Listener() {
                             @Override public void onDispatch(CueRequest request,
-                                    CueDispatcher.DispatchResult result) { }
+                                    CueDispatcher.DispatchResult result) {
+                                auditCue(request, "Match3Dispatch cue_id=" + request.cueId
+                                        + " outcome=" + result.outcome + " reason=" + result.reason
+                                        + " channels=" + result.acceptedChannels);
+                            }
                             @Override public void onPlayback(CueRequest request, String channel,
-                                    long atMs, String result) { }
+                                    long atMs, String result) {
+                                auditCue(request, "Match3Playback cue_id=" + request.cueId
+                                        + " channel=" + channel + " at_ms=" + atMs + " result=" + result);
+                            }
                         }, SystemClock::elapsedRealtime);
             }
             long t = SystemClock.elapsedRealtime();
@@ -546,7 +585,20 @@ public class Match3LiveService extends Service {
                     "消消乐实时播报", CueRequest.Category.SYSTEM, 70, t, t + 10000,
                     Match3LiveCuePolicy.REQUESTED_CHANNELS, 0, 0, 0, speech));
             return true;
-        });
+            });
+        } catch (RuntimeException error) {
+            Log.w(TAG, "播报通道异常（不致命）: " + error.getClass().getSimpleName());
+            if (isCurrent(s)) s.diagnostics.audit("Match3SpeechFailure error=" + error.getClass().getSimpleName());
+        }
+    }
+
+    private void auditCue(CueRequest request, String message) {
+        Session current = active;
+        // Playback listeners run under the dispatcher lock; avoid acquiring the
+        // projection lock here, since announce() holds them in the opposite order.
+        if (current != null && current.reader == reader && !current.diagnostics.finished
+                && current.diagnostics.sessionId.equals(request.sessionId))
+            current.diagnostics.audit(message);
     }
 
     private Notification buildNotification() {

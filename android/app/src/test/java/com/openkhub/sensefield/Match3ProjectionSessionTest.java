@@ -7,6 +7,31 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 public final class Match3ProjectionSessionTest {
+    @Test public void duplicateStartPreservesProjectionAndUsesNewestStopId() {
+        Match3ProjectionSession sessions = new Match3ProjectionSession();
+        Object projection = new Object();
+        long generation = sessions.beginStart(1);
+        assertTrue(sessions.attach(generation, projection));
+        assertTrue(sessions.ignoreDuplicateStart(2));
+        assertTrue(sessions.isCurrent(generation, projection));
+        assertEquals(2, sessions.stopIfCurrent(generation, projection));
+    }
+
+    @Test public void stoppedProjectionAllowsFreshAuthorization() {
+        Match3ProjectionSession sessions = new Match3ProjectionSession();
+        assertFalse(sessions.ignoreDuplicateStart(1));
+        Object old = new Object();
+        long oldGeneration = sessions.beginStart(1);
+        assertTrue(sessions.attach(oldGeneration, old));
+        assertEquals(1, sessions.stopIfCurrent(oldGeneration, old));
+        assertFalse(sessions.ignoreDuplicateStart(2));
+        Object replacement = new Object();
+        long generation = sessions.beginStart(2);
+        assertTrue(sessions.attach(generation, replacement));
+        assertEquals(0, sessions.stopIfCurrent(oldGeneration, old));
+        assertTrue(sessions.isCurrent(generation, replacement));
+    }
+
     @Test public void delayedStopFromReplacedProjectionCannotStopNewStart() {
         Match3ProjectionSession sessions = new Match3ProjectionSession();
         Object oldProjection = new Object();

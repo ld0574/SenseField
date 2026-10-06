@@ -8,6 +8,13 @@ final class Match3ProjectionSession {
     private int latestStartId;
     private Object projection;
 
+    /** A live projection keeps its one-use authorization; only the stop ID advances. */
+    synchronized boolean ignoreDuplicateStart(int startId) {
+        if (projection == null) return false;
+        noteCommand(startId);
+        return true;
+    }
+
     synchronized long beginStart(int startId) {
         generation++;
         latestStartId = startId;

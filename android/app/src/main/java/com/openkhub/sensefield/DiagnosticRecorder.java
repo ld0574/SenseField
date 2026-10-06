@@ -150,9 +150,17 @@ final class DiagnosticRecorder {
         imagesEnabled = imagesEnabledPreference(context);
         directory = new File(root(context), "diag-" + System.currentTimeMillis() + "-" + sessionId);
         DisplayMetrics display = context.getResources().getDisplayMetrics();
+        String versionName;
+        try {
+            versionName = context.getPackageManager()
+                    .getPackageInfo(context.getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            versionName = "unknown";
+        }
         JSONObject metadata = object("schema", "sensefield.diagnostics", "schema_version", 1,
                 "session_id", sessionId, "started_elapsed_ms", startedAtMs,
                 "started_wall_ms", System.currentTimeMillis(), "model", Build.MODEL,
+                "app_version", versionName,
                 "manufacturer", Build.MANUFACTURER, "brand", Build.BRAND,
                 "product", Build.PRODUCT, "android_release", Build.VERSION.RELEASE,
                 "sdk", Build.VERSION.SDK_INT, "screen_width_px", display.widthPixels,

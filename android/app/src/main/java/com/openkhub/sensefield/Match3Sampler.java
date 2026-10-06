@@ -21,8 +21,11 @@ final class Match3Sampler {
     static final char EMPTY_CELL = ' ';
 
     /** 该格读不出棋子（真空位或认不出）——自我修复检测按这个口径数。 */
+    static final char GAP_CELL = 'H';   // 空位：露出棋盘底的格（下落中/布局洞），非棋子
+
     static boolean isUnreadable(char c) {
-        return c == UNKNOWN || c == EMPTY_CELL;
+        return c == UNKNOWN || c == EMPTY_CELL || c == 'I' || c == GAP_CELL;
+        // 冰块/空位：非棋子格，不参与交换与走法
     }
 
     /** 特殊棋子模板：一张 32×32 裁剪图＋名字。 */
@@ -139,6 +142,13 @@ final class Match3Sampler {
         if (rgb == NO_PIXELS) return UNKNOWN;
         float[] hsv = new float[3];
         Color.colorToHSV(rgb, hsv);
+        /* 冰块关卡（第 5 关类）：大片亮白/浅蓝白障碍格 S≈0.18-0.4、V≈0.9+，
+         * 部分格饱和度越过 0.18 阈值后被读成河马，编出十几个假走法（诊断包 audit 实锤）。
+         * 动物棋子饱和度实测最低 0.6+，0.45 分界留足余量。 */
+        if (hsv[2] >= 0.85f && hsv[1] < 0.45f) return 'I';
+        /* 空位：露出棋盘底（暗、冷色）——与 autoDetectBoard 的棋盘掩码同一色域。
+         * 落子洞/布局洞不是棋子，读了必是假色（此前被读成河马导致第三行乱报）。 */
+        if (hsv[2] < 0.5f && hsv[0] >= 170f && hsv[0] <= 300f) return GAP_CELL;
         if (hsv[1] < 0.18f || hsv[2] < 0.15f) {
             return matchTemplate(bitmap, cx, cy, half, templates);
         }
@@ -354,9 +364,11 @@ final class Match3Sampler {
             if (colCount[c] >= minColCount) { if (left < 0) left = c; right = c; }
         }
         if (left < 0 || right - left < cols / 10) return null;
-        /* 方形约束 + 密度锚定：棋盘是正方形，在行带×列带范围内滑动 side×side 窗口，
-         * 取暗底密度最高的位置作为棋盘左上角（降采样网格两个轴 step 相同，方格即正方形） */
-        int side = Math.min(bandRows, right - left + 1);
+        /* 方形约束 v3b：边长=列宽。左右边框暗线贯通棋盘全高（含冰块区），而行密度在
+         * 冰块关卡会断成孤岛（亮色冰格＋浅色缝，暗底只在格缝露）——用「列宽定边长、
+         * 带顶锚上缘、向下延展成方形」，冰块全新局面才不会把棋盘缩成 1/4（诊断实锤） */
+        int side = right - left + 1;
+        side = Math.min(side, rows - bestTop);                   // 不越过屏幕底
         if (side * 10 < Math.min(rows, cols) * 3) return null;   // 边长不足短边 30%
         long[][] integral = new long[rows + 1][cols + 1];
         for (int r = 0; r < rows; r++) {
@@ -368,10 +380,12 @@ final class Match3Sampler {
         }
         long bestSum = -1;
         int anchorTop = bestTop, anchorLeft = left;
-        int maxRowStart = Math.min(bestBottom - side + 1, bestTop + 40);
+        int maxRowStart = Math.min(bestBottom, bestTop + 40);
         int maxColStart = Math.min(right - side + 1, left + 40);
         for (int rt = bestTop; rt <= maxRowStart; rt++) {
+            if (rt + side > rows) continue;
             for (int cl = left; cl <= maxColStart; cl++) {
+                if (cl + side > cols) continue;
                 long s = integral[rt + side][cl + side] - integral[rt][cl + side]
                         - integral[rt + side][cl] + integral[rt][cl];
                 if (s > bestSum) { bestSum = s; anchorTop = rt; anchorLeft = cl; }
