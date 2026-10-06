@@ -57,6 +57,9 @@ public class Match3LiveService extends Service {
     private int rawIdx;                      // 环形写入位置
     private int rawFill;                     // 已入窗帧数
     private char[][] lastAnnouncedMatrix;    // 上次已播报的局面（签名去重用）
+    private char[][] pendingMatrix;          // 首播双重确认：上一稳定窗的候选局面
+    private int pendingStable;               // 候选局面已连续出现的稳定窗数
+    private boolean awaitingConfirm;         // 会话开始/关卡过渡后待双重确认
     private List<Match3Board.Swap> lastSwaps;
     private long lastChangeAt;
     private int hintCount;   // 同一局面的犹豫提示次数（上限 2 次，防无限重复）
@@ -99,6 +102,9 @@ public class Match3LiveService extends Service {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
         teardownMedia();   // 重复 START 时先拆旧投影，否则 ContentRecordingSession 冲突
         sessionStartMs = SystemClock.elapsedRealtime();
+        awaitingConfirm = true;   // 新会话首播走双重确认，杜绝开场动画误报
+        pendingMatrix = null;
+        pendingStable = 0;
         diagnostics = DiagnosticRecorder.start(this, java.util.UUID.randomUUID().toString(), sessionStartMs);
         notificationManager = getSystemService(NotificationManager.class);
         android.content.res.Resources res = getResources();
@@ -357,6 +363,23 @@ public class Match3LiveService extends Service {
         if (matrixEquals(lastAnnouncedMatrix, matrix)) {
             return;
         }
+        /* 首播双重确认：会话开始或关卡过渡后的第一次播报，要求连续两个稳定窗
+         * 多数票结果一致才开嗓——关卡开场动画棋子还在掉落，多数票逐窗漂移，
+         * 旧逻辑 2.5 秒就把掉落中的棋盘播出去（诊断包 diag3/diag4 实锤「还没开始就连续误报」） */
+        if (lastAnnouncedMatrix == null || awaitingConfirm) {
+            if (matrixEquals(pendingMatrix, matrix)) {
+                pendingStable++;
+            } else {
+                pendingMatrix = matrix;
+                pendingStable = 1;
+            }
+            if (pendingStable < 2) {
+                return;
+            }
+            awaitingConfirm = false;
+            pendingMatrix = null;
+            pendingStable = 0;
+        }
         /* 变化幅度门槛：只差 1 格多半是选中高亮/动画残影，不算新局面（防重复虚报） */
         int diffCells = countDiffCells(lastAnnouncedMatrix, matrix);
         if (lastAnnouncedMatrix != null && diffCells < 2) {
@@ -390,6 +413,7 @@ public class Match3LiveService extends Service {
             int fixedCells = fixed.length * fixed[0].length;
             if (countUnknown(fixed) * 100 > fixedCells * 40) {
                 Log.i(TAG, "自我修复后仍未识别，本轮静默且不采纳新标定");
+                awaitingConfirm = true;   // 过渡期（切屏/弹窗/结算）后重走双重确认
                 if (!abstainAnnounced
                         && !GameProfile.settings(this).getBoolean("match3_calibrated", false)) {
                     announce("棋盘位置变了但认不出来。请框选标定棋盘区域。");
