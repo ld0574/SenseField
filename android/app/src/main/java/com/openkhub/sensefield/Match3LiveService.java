@@ -99,7 +99,7 @@ public class Match3LiveService extends Service {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
         teardownMedia();   // 重复 START 时先拆旧投影，否则 ContentRecordingSession 冲突
         sessionStartMs = SystemClock.elapsedRealtime();
-        diagnostics = DiagnosticRecorder.start(this, "m3live", sessionStartMs);
+        diagnostics = DiagnosticRecorder.start(this, java.util.UUID.randomUUID().toString(), sessionStartMs);
         notificationManager = getSystemService(NotificationManager.class);
         android.content.res.Resources res = getResources();
         android.util.DisplayMetrics dm = res.getDisplayMetrics();
