@@ -21,8 +21,11 @@ final class Match3Sampler {
     static final char EMPTY_CELL = ' ';
 
     /** 该格读不出棋子（真空位或认不出）——自我修复检测按这个口径数。 */
+    static final char GAP_CELL = 'H';   // 空位：露出棋盘底的格（下落中/布局洞），非棋子
+
     static boolean isUnreadable(char c) {
-        return c == UNKNOWN || c == EMPTY_CELL || c == 'I';   // 冰块：障碍格，不参与交换/走法
+        return c == UNKNOWN || c == EMPTY_CELL || c == 'I' || c == GAP_CELL;
+        // 冰块/空位：非棋子格，不参与交换与走法
     }
 
     /** 特殊棋子模板：一张 32×32 裁剪图＋名字。 */
@@ -143,6 +146,9 @@ final class Match3Sampler {
          * 部分格饱和度越过 0.18 阈值后被读成河马，编出十几个假走法（诊断包 audit 实锤）。
          * 动物棋子饱和度实测最低 0.6+，0.45 分界留足余量。 */
         if (hsv[2] >= 0.85f && hsv[1] < 0.45f) return 'I';
+        /* 空位：露出棋盘底（暗、冷色）——与 autoDetectBoard 的棋盘掩码同一色域。
+         * 落子洞/布局洞不是棋子，读了必是假色（此前被读成河马导致第三行乱报）。 */
+        if (hsv[2] < 0.5f && hsv[0] >= 170f && hsv[0] <= 300f) return GAP_CELL;
         if (hsv[1] < 0.18f || hsv[2] < 0.15f) {
             return matchTemplate(bitmap, cx, cy, half, templates);
         }

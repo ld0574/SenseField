@@ -584,7 +584,8 @@ public class Match3LiveService extends Service {
             @Override public int enabledChannels() {
                 return CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH | CueRequest.CHANNEL_HAPTIC;
             }
-            @Override public long dedupeWindowMs(CueRequest.Category category) { return 0; }
+            @Override public long dedupeWindowMs(CueRequest.Category category) { return 1500; }
+        // 同请求 1.5s 去重：局面更新连发时排队播完，不再互相打断（播报中断修复）
         };
     }
 
