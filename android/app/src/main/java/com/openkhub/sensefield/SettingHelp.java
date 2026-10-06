@@ -34,7 +34,9 @@ final class SettingHelp {
         Button help = new Button(activity);
         help.setText("");
         help.setAllCaps(false);
-        help.setFocusableInTouchMode(true);
+        // Touch must click immediately; keyboard and accessibility can still focus it.
+        help.setFocusable(true);
+        help.setFocusableInTouchMode(false);
         help.setGravity(android.view.Gravity.CENTER);
         help.setPadding(0, 0, 0, 0);
         help.setMinWidth(UiKit.dp(activity, 56));
@@ -44,9 +46,9 @@ final class SettingHelp {
         GradientDrawable touchMask = new GradientDrawable();
         touchMask.setShape(GradientDrawable.OVAL);
         touchMask.setColor(Color.WHITE);
-        Drawable icon = new InsetDrawable(new QuestionDrawable(activity), UiKit.dp(activity, 18));
-        help.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22000000), icon,
-                touchMask));
+        Drawable icon = new InsetDrawable(new QuestionDrawable(activity), UiKit.dp(activity, 16));
+        help.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22000000),
+                focusableIcon(activity, icon), touchMask));
         help.setContentDescription("了解更多：" + SettingHelpContent.title(key));
         help.setTag(SettingHelpPanel.GROUP_BUTTON_TAG_PREFIX + key);
         help.setOnClickListener(view -> show(activity, key, view));
@@ -57,9 +59,9 @@ final class SettingHelp {
         UiKit.add(group, titleRow, 4);
 
         android.widget.TextView summary = UiKit.text(activity,
-                SettingHelpContent.summary(key), 18, UiKit.MUTED, false);
+                SettingHelpContent.summary(key), 16, UiKit.MUTED, false);
         summary.setTag(SettingHelpPanel.GROUP_SUMMARY_TAG_PREFIX + key);
-        UiKit.add(group, summary, 0);
+        UiKit.add(group, summary, 4);
         UiKit.add(parent, group, bottomDp);
         return help;
     }
@@ -77,6 +79,20 @@ final class SettingHelp {
         SettingHelpPanel.show(activity, key, trigger);
     }
 
+    /** Icon-only control: a dark ring appears around the icon when it has keyboard focus. */
+    static Drawable focusableIcon(android.content.Context activity, Drawable icon) {
+        GradientDrawable ring = new GradientDrawable();
+        ring.setShape(GradientDrawable.OVAL);
+        ring.setColor(Color.TRANSPARENT);
+        ring.setStroke(UiKit.dp(activity, 3), UiKit.INK);
+        android.graphics.drawable.StateListDrawable states =
+                new android.graphics.drawable.StateListDrawable();
+        states.addState(new int[] {android.R.attr.state_focused},
+                new android.graphics.drawable.LayerDrawable(new Drawable[] {icon, ring}));
+        states.addState(new int[] {}, icon);
+        return states;
+    }
+
     private static final class QuestionDrawable extends Drawable {
         private final Paint circle = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint glyph = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -85,12 +101,12 @@ final class SettingHelp {
         private final float baselineShift;
 
         QuestionDrawable(Activity activity) {
-            stroke = UiKit.dp(activity, 1.7f);
-            textSize = UiKit.dp(activity, 14);
-            circle.setColor(UiKit.MUTED);
+            stroke = UiKit.dp(activity, 2);
+            textSize = UiKit.dp(activity, 15);
+            circle.setColor(UiKit.INK);
             circle.setStyle(Paint.Style.STROKE);
             circle.setStrokeWidth(stroke);
-            glyph.setColor(UiKit.MUTED);
+            glyph.setColor(UiKit.INK);
             glyph.setTextAlign(Paint.Align.CENTER);
             glyph.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
             glyph.setTextSize(textSize);
@@ -130,9 +146,9 @@ final class SettingHelp {
      */
     static Button add(Activity activity, LinearLayout parent, String key, float bottomDp) {
         Button button = UiKit.button(activity, SettingHelpContent.title(key) + "：说明", false);
-        button.setTextSize(22);
-        button.setMinHeight(UiKit.dp(activity, 72));
-        button.setMinimumHeight(UiKit.dp(activity, 72));
+        button.setTextSize(UiKit.TEXT_BODY);
+        button.setMinHeight(UiKit.dp(activity, 56));
+        button.setMinimumHeight(UiKit.dp(activity, 56));
         button.setContentDescription(SettingHelpContent.title(key) + "的说明");
         button.setOnClickListener(view -> activity.startActivity(new Intent(activity,
                 SettingHelpActivity.class).putExtra(EXTRA_KEY, key)));

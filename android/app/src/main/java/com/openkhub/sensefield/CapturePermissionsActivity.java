@@ -11,6 +11,7 @@ import android.media.projection.MediaProjectionManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.View;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
@@ -28,7 +29,7 @@ import java.io.IOException;
 import java.util.UUID;
 
 /** All device grants are checked here; projection consent is never reused. */
-public final class CapturePermissionsActivity extends Activity {
+public final class CapturePermissionsActivity extends UiActivity {
     static final String EXTRA_START = "start_capture_after_permissions";
     private static final int REQUEST_PROJECTION = 1101;
     private static final int REQUEST_NOTIFICATIONS = 1102;
@@ -37,6 +38,9 @@ public final class CapturePermissionsActivity extends Activity {
     private TextView notificationStatus;
     private TextView overlayStatus;
     private TextView batteryStatus;
+    private TextView notificationChip;
+    private TextView overlayChip;
+    private TextView batteryChip;
     private Button capture;
     private boolean startRequested;
     private boolean attemptedForStart;
@@ -63,19 +67,22 @@ public final class CapturePermissionsActivity extends Activity {
         scroll.setBackgroundColor(UiKit.PAGE);
         LinearLayout content = UiKit.page(this);
         scroll.addView(content);
-        UiKit.addBrandHeader(content, "授权与运行设置");
-        UiKit.add(content, UiKit.text(this, "授权与运行设置", 28, UiKit.INK, true), 8);
+        UiKit.pageHeader(this, content, "授权与运行设置", "王者荣耀辅助");
         UiKit.add(content, UiKit.body(this, "先完成必要授权，再开始辅助。"), 18);
 
         LinearLayout screen = card(content, "capture_screen");
-        screenStatus = UiKit.body(this, "每次开始新会话时，由系统确认共享整个屏幕。");
-        UiKit.add(screen, screenStatus, 10);
-        capture = button(screen, "授权截屏并开始");
+        screenStatus = UiKit.hint(this, "每次开始新会话时，由系统确认共享整个屏幕。");
+        screenStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        UiKit.add(screen, screenStatus, 12);
+        capture = UiKit.button(this, "授权截屏并开始", true);
+        UiKit.add(screen, capture, 0);
         capture.setOnClickListener(view -> requestCapture());
 
         LinearLayout notifications = card(content, "capture_notifications");
-        notificationStatus = UiKit.body(this, "");
-        UiKit.add(notifications, notificationStatus, 10);
+        notificationChip = UiKit.statusChip(this);
+        UiKit.addChip(notifications, notificationChip, 8);
+        notificationStatus = UiKit.hint(this, "");
+        UiKit.add(notifications, notificationStatus, 12);
         button(notifications, "授权运行通知").setOnClickListener(view -> {
             if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(
                     Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -88,11 +95,13 @@ public final class CapturePermissionsActivity extends Activity {
         });
 
         LinearLayout overlay = card(content, "capture_overlay");
-        overlayStatus = UiKit.body(this, "");
-        UiKit.add(overlay, overlayStatus, 6);
+        overlayChip = UiKit.statusChip(this);
+        UiKit.addChip(overlay, overlayChip, 8);
+        overlayStatus = UiKit.hint(this, "");
+        UiKit.add(overlay, overlayStatus, 8);
         CheckBox visual = new CheckBox(this);
         visual.setText("允许使用视觉提示");
-        visual.setTextSize(22);
+        visual.setTextSize(18);
         visual.setTextColor(UiKit.INK);
         UiKit.styleCheckable(visual, this);
         visual.setChecked(GameProfile.settings(this).getBoolean("cue_channel_visual", true));
@@ -101,31 +110,40 @@ public final class CapturePermissionsActivity extends Activity {
             CueSettings.markCustom(GameProfile.settings(this));
             refreshPermissions();
         });
-        UiKit.add(overlay, visual, 6);
+        UiKit.add(overlay, visual, 8);
         button(overlay, "授权置顶显示").setOnClickListener(view -> startActivity(new Intent(
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 Uri.parse("package:" + getPackageName()))));
 
         LinearLayout battery = card(content, "capture_battery");
-        batteryStatus = UiKit.body(this, "");
-        UiKit.add(battery, batteryStatus, 10);
-        button(battery, "设置后台省电策略").setOnClickListener(view -> startActivity(new Intent(
+        batteryChip = UiKit.statusChip(this);
+        UiKit.addChip(battery, batteryChip, 8);
+        batteryStatus = UiKit.hint(this, "");
+        UiKit.add(battery, batteryStatus, 12);
+        LinearLayout batteryActions = UiKit.vertical(this);
+        UiKit.spaceChildren(batteryActions, UiKit.GAP_CONTROL);
+        button(batteryActions, "设置后台省电策略").setOnClickListener(view -> startActivity(new Intent(
                 Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 Uri.parse("package:" + getPackageName()))));
-        button(battery, "系统省电优化设置").setOnClickListener(view -> startActivity(
+        button(batteryActions, "系统省电优化设置").setOnClickListener(view -> startActivity(
                 new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)));
+        UiKit.add(battery, batteryActions, 0);
 
-        button(content, "声音与提示配置").setOnClickListener(view ->
+        // Page-level navigation is separated from the last card and from each other.
+        UiKit.gap(content, 8);
+        LinearLayout pageActions = UiKit.vertical(this);
+        UiKit.spaceChildren(pageActions, UiKit.GAP_CONTROL);
+        button(pageActions, "声音与提示配置").setOnClickListener(view ->
                 startActivity(new Intent(this, GameTuningActivity.class)));
-        button(content, "返回").setOnClickListener(view -> finish());
+        UiKit.add(content, pageActions, 0);
         setContentView(scroll);
         refreshPermissions();
     }
 
     private LinearLayout card(LinearLayout parent, String helpKey) {
         LinearLayout card = UiKit.card(this);
-        SettingHelp.addGroup(this, card, helpKey, 8);
-        UiKit.add(parent, card, 14);
+        SettingHelp.addGroup(this, card, helpKey, 12);
+        UiKit.add(parent, card, UiKit.GAP_SECTION);
         return card;
     }
 
@@ -133,12 +151,13 @@ public final class CapturePermissionsActivity extends Activity {
         if (!SettingHelp.close(this)) super.onBackPressed();
     }
 
+    /** Adds a full-width action; the caller's container owns the space around it. */
     private Button button(LinearLayout parent, String title) {
         Button button = UiKit.button(this, title, false);
-        button.setTextSize(22);
-        button.setMinHeight(UiKit.dp(this, 72));
-        button.setMinimumHeight(UiKit.dp(this, 72));
-        UiKit.add(parent, button, 8);
+        button.setTextSize(18);
+        button.setMinHeight(UiKit.dp(this, 56));
+        button.setMinimumHeight(UiKit.dp(this, 56));
+        UiKit.add(parent, button, 0);
         return button;
     }
 
@@ -167,19 +186,31 @@ public final class CapturePermissionsActivity extends Activity {
         boolean active = GameProfile.settings(this).getBoolean("capture_active", false)
                 && CaptureService.isRunning();
         boolean ready = requiredSettingsReady(this);
-        screenStatus.setText(pendingStartId != null ? "正在准备辅助，随后打开王者荣耀"
+        UiKit.setTextIfChanged(screenStatus, pendingStartId != null ? "正在准备辅助，随后打开王者荣耀"
                 : active ? "本次会话已授权。停止后再次开始需要重新确认。"
                 : ready ? "每次开始新会话时，由系统确认共享整个屏幕。"
                 : "请先完成下方的必要授权，再确认本次屏幕共享。");
         capture.setEnabled(ready && !active && pendingStartId == null);
-        notificationStatus.setText(notificationGranted(this) ? "已允许" : "需要授权，用于查看辅助运行状态");
-        overlayStatus.setText(Settings.canDrawOverlays(this) ? "已允许"
+        UiKit.setTextIfChanged(notificationStatus, notificationGranted(this) ? "已允许" : "需要授权，用于查看辅助运行状态");
+        UiKit.setTextIfChanged(overlayStatus, Settings.canDrawOverlays(this) ? "已允许"
                 : overlayRequired(this) ? "视觉提示已开启，需要置顶显示授权"
                 : "可选。只使用语音与触觉时无需此授权。");
         PowerManager power = getSystemService(PowerManager.class);
-        batteryStatus.setText(power != null && power.isIgnoringBatteryOptimizations(getPackageName())
+        UiKit.setTextIfChanged(batteryStatus, power != null && power.isIgnoringBatteryOptimizations(getPackageName())
                 ? "已豁免系统省电优化；仍需检查手机厂商的后台限制。"
                 : "建议允许后台运行，避免辅助在游戏中被省电系统结束。");
+        // Each card leads with a short state badge; the sentence under it gives the detail.
+        UiKit.setStatus(notificationChip, notificationGranted(this) ? UiKit.Status.DONE
+                : UiKit.Status.NEEDED, notificationGranted(this) ? "已允许" : "需要授权");
+        boolean overlayGranted = Settings.canDrawOverlays(this);
+        UiKit.setStatus(overlayChip, overlayGranted ? UiKit.Status.DONE
+                        : overlayRequired(this) ? UiKit.Status.NEEDED : UiKit.Status.INFO,
+                overlayGranted ? "已允许" : overlayRequired(this) ? "需要授权" : "可选");
+        boolean exempt = power != null && power.isIgnoringBatteryOptimizations(getPackageName());
+        UiKit.setStatus(batteryChip, exempt ? UiKit.Status.DONE : UiKit.Status.INFO,
+                exempt ? "已豁免省电优化" : "建议设置");
+        notificationStatus.setVisibility(notificationGranted(this) ? View.GONE : View.VISIBLE);
+        overlayStatus.setVisibility(overlayGranted ? View.GONE : View.VISIBLE);
     }
 
     private void requestCapture() {

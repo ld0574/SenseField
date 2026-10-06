@@ -21,11 +21,12 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Silent learning directory with separate narration and individual reminder previews. */
-public final class ReminderGuideActivity extends Activity {
+/** First-start narration, plus a silent learning directory for later manual review. */
+public final class ReminderGuideActivity extends UiActivity {
     static final String EXTRA_START = "start_after_reminder_guide";
     static final String EXTRA_ITEM = "reminder_guide_item";
     static final String EXTRA_FULL = "reminder_guide_full";
+    static final String EXTRA_AUTO_READ = "reminder_guide_auto_read";
     private static final int REQUEST_START = 1201;
     private static final CueDispatcher.Policy GUIDE_POLICY = new CueDispatcher.Policy() {
         @Override public boolean categoryEnabled(CueRequest.Category category) { return true; }
@@ -50,21 +51,28 @@ public final class ReminderGuideActivity extends Activity {
             }, new ReminderGuidePlayback.Listener() {
                 @Override public void onStep(ReminderGuide.Step step) {
                     status.setText(step.sample ? "正在试听：" + step.title : "正在说明：" + step.title);
+                    if (progress != null) progress.setText("进度 " + (playback.currentIndex() + 1)
+                            + " / " + playback.stepCount());
                 }
                 @Override public void onEnded(boolean success) {
+                    if (success && fullMode && steps == fullSteps && selectedSectionTitle == null)
+                        markFullGuideCompleted();
                     stopExplanation();
+                    clearBookmark();
                     status.setText(success ? hapticUnavailable
                             ? "手机未能请求振动，请检查设备及系统振动设置。"
                             : selectedSectionTitle != null
                                     ? "这一段已播放完。可以重听本段，或选择其他段落。"
                                     : "已播放完。可以再次播放，也可以返回列表。"
                             : "未能播放完。请检查音量或中文语音引擎，再重试。");
+                    if (!success) offerManualReading();
                 }
             });
     private List<ReminderGuide.Step> steps;
     private List<ReminderGuide.Step> fullSteps;
     private final List<Button> sectionButtons = new ArrayList<>();
     private TextView status;
+    private TextView progress;
     private Button repeat;
     private Button stop;
     private Button proceed;
@@ -81,15 +89,28 @@ public final class ReminderGuideActivity extends Activity {
     private boolean fullMode;
     private boolean preparing;
     private boolean pausedBeforeStart;
+    private boolean manualReadAvailable;
     private String selectedSectionTitle;
+    private String selectedSectionId;
+    private int resumeIndex = -1;
+    private String resumeSectionId;
+    private String resumeSignature;
+    private int startIndex;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         UiKit.configureWindow(this);
         setVolumeControlStream(AudioManager.STREAM_MUSIC);
         startAfterGuide = getIntent().getBooleanExtra(EXTRA_START, false);
-        autoPending = state == null && getIntent().hasExtra(EXTRA_ITEM);
+        autoPending = state == null && (getIntent().hasExtra(EXTRA_ITEM)
+                || getIntent().getBooleanExtra(EXTRA_AUTO_READ, false));
         authorizationInFlight = state != null && state.getBoolean("authorization_in_flight", false);
+        if (state != null) {
+            resumeIndex = state.getInt("guide_resume_index", -1);
+            resumeSectionId = state.getString("guide_resume_section");
+            resumeSignature = state.getString("guide_resume_signature");
+            manualReadAvailable = state.getBoolean("guide_manual_read", false);
+        }
     }
 
     private void render() {
@@ -103,38 +124,45 @@ public final class ReminderGuideActivity extends Activity {
         fullMode = full;
         String itemId = getIntent().getStringExtra(EXTRA_ITEM);
         boolean detail = full || itemId != null;
-        if (detail) UiKit.addBrandHeader(content, "王者荣耀");
-        else UiKit.add(content, UiKit.text(this, "王者荣耀", 18, UiKit.MUTED, false), 8);
-        TextView title = UiKit.text(this, full ? "完整提醒说明" : "提醒试听",
-                detail ? 32 : 28, UiKit.INK, true);
-        title.setAccessibilityHeading(true);
-        if (detail) UiKit.add(content, title, 12);
-        else {
-            LinearLayout header = UiKit.horizontal(this);
-            UiKit.addWeighted(header, title, 1f);
-            Button explanation = compactButton("完整说明");
-            explanation.setTextSize(18);
-            explanation.setContentDescription("完整提醒说明，打开独立说明页");
-            explanation.setOnClickListener(view -> startActivity(new Intent(this,
-                    ReminderGuideActivity.class).putExtra(EXTRA_FULL, true)));
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            params.setMarginStart(UiKit.dp(this, 8));
-            header.addView(explanation, params);
-            UiKit.add(content, header, 8);
-        }
-        status = full ? UiKit.text(this, "可按段收听，支持暂停与继续。", 18, UiKit.MUTED, false)
+        TextView title = UiKit.pageHeader(this, content,
+                full ? "完整提醒说明" : "提醒试听", "王者荣耀辅助");
+        if (!detail) UiKit.add(content, UiKit.navigationRow(this, "完整说明", "按段收听，支持暂停与继续",
+                () -> startActivity(new Intent(this, ReminderGuideActivity.class).putExtra(EXTRA_FULL, true))), 16);
+        status = full ? UiKit.text(this, "尚未播放", 18, UiKit.MUTED, false)
                 : detail ? body("可单独播放和重听。这里都是示例。")
                 : UiKit.body(this, "点选试听，可反复播放。");
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         LinearLayout fullControls = null;
+        progress = null;
         if (full) {
-            fullControls = UiKit.vertical(this);
+            fullControls = playbackBar();
             fullControls.setTag("reminder_guide_playback_controls");
-            fullControls.setPadding(UiKit.dp(this, 18), UiKit.dp(this, 12),
-                    UiKit.dp(this, 18), UiKit.dp(this, 12));
-            fullControls.setBackgroundColor(UiKit.SURFACE);
-            UiKit.add(fullControls, status, 8);
+            fullControls.setPadding(UiKit.dp(this, 18), UiKit.dp(this, 14),
+                    UiKit.dp(this, 18), UiKit.dp(this, 14));
+            // A top rule and shadow keep the fixed bar visually separate from the scrolling text.
+            android.graphics.drawable.GradientDrawable rule =
+                    new android.graphics.drawable.GradientDrawable();
+            rule.setColor(UiKit.OUTLINE);
+            android.graphics.drawable.LayerDrawable bar = new android.graphics.drawable.LayerDrawable(
+                    new android.graphics.drawable.Drawable[] {rule,
+                            new android.graphics.drawable.ColorDrawable(UiKit.SURFACE)});
+            bar.setLayerInset(1, 0, UiKit.dp(this, 1), 0, 0);
+            fullControls.setBackground(bar);
+            fullControls.setElevation(UiKit.dp(this, 8));
+            LinearLayout summary = UiKit.vertical(this);
+            progress = UiKit.hint(this, "选择一段收听，或播放全文");
+            UiKit.add(summary, progress, 6);
+            ScrollView statusScroll = new ScrollView(this) {
+                @Override protected void onMeasure(int widthSpec, int heightSpec) {
+                    // A long engine/error message remains readable by scrolling while
+                    // the guide text and playback actions keep their own usable space.
+                    int cap = UiKit.dp(getContext(), getResources().getConfiguration().screenHeightDp < 500 ? 84 : 132);
+                    super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(cap, MeasureSpec.AT_MOST));
+                }
+            };
+            statusScroll.addView(status);
+            UiKit.add(summary, statusScroll, 0);
+            UiKit.add(fullControls, summary, 12);
         } else UiKit.add(content, status, 18);
         repeat = null;
         stop = null;
@@ -142,9 +170,10 @@ public final class ReminderGuideActivity extends Activity {
         steps = null;
         fullSteps = null;
         selectedSectionTitle = null;
+        selectedSectionId = null;
         sectionButtons.clear();
         if (startAfterGuide) {
-            proceed = button(content, "继续开始（可跳过试听）", true);
+            proceed = button(content, "继续开始", true);
             proceed.setOnClickListener(view -> continueStart());
         }
         try {
@@ -161,26 +190,21 @@ public final class ReminderGuideActivity extends Activity {
                 fullPlaybackControls(fullControls);
                 for (ReminderGuideSections.Section section : ReminderGuideSections.build(fullSteps)) {
                     LinearLayout card = UiKit.card(this);
-                    LinearLayout header = UiKit.horizontal(this);
                     TextView heading = UiKit.heading(this, section.title);
-                    header.addView(heading, new LinearLayout.LayoutParams(0,
-                            LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
                     Button playSection = compactButton("听本段");
                     playSection.setTag(section.id);
                     playSection.setContentDescription("朗读这一段：" + section.title);
                     playSection.setOnClickListener(view -> {
                         steps = section.steps;
                         selectedSectionTitle = section.title;
+                        selectedSectionId = section.id;
+                        clearBookmark();
                         startExplanation();
                     });
-                    LinearLayout.LayoutParams playParams = new LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-                    playParams.setMarginStart(UiKit.dp(this, 8));
-                    header.addView(playSection, playParams);
                     sectionButtons.add(playSection);
-                    UiKit.add(card, header, 8);
-                    UiKit.add(card, UiKit.readingBody(this, section.text, 24), 0);
-                    UiKit.add(content, card, 14);
+                    UiKit.add(card, UiKit.headingActionRow(this, heading, playSection), 12);
+                    UiKit.add(card, UiKit.readingSections(this, section.text), 0);
+                    UiKit.add(content, card, UiKit.GAP_SECTION);
                 }
             } else {
                 ReminderGuideCatalog.Item item = ReminderGuideCatalog.find(items, itemId);
@@ -189,7 +213,7 @@ public final class ReminderGuideActivity extends Activity {
                     status.setText("这项提醒当前未开启，请返回列表或检查提示偏好。");
                 } else {
                     title.setText(item.title);
-                    UiKit.add(content, UiKit.readingBody(this, item.explanation, 24), 18);
+                    UiKit.add(content, UiKit.readingSections(this, item.explanation), 18);
                     steps = item.samples;
                     playbackControls(content, "播放示例／再次播放");
                     if (steps.get(0).channel == CueRequest.CHANNEL_HAPTIC)
@@ -205,16 +229,14 @@ public final class ReminderGuideActivity extends Activity {
         if (detail) {
             button(content, "声音与提示配置").setOnClickListener(view ->
                     startActivity(new Intent(this, GameTuningActivity.class)));
-            button(content, "返回试听列表").setOnClickListener(view -> finish());
+            UiKit.add(content, UiKit.navigationRow(this, "返回试听列表", "", this::finish), 0);
         } else {
-            ReminderSampleGrid footer = new ReminderSampleGrid(this, 2);
+            UiKit.gap(content, 8);
+            ReminderSampleGrid footer = UiKit.actionRow(this);
             Button settings = compactButton("提示设置");
             settings.setContentDescription("声音与提示配置");
             settings.setOnClickListener(view -> startActivity(new Intent(this, GameTuningActivity.class)));
             footer.addView(settings);
-            Button back = compactButton("返回");
-            back.setOnClickListener(view -> finish());
-            footer.addView(back);
             UiKit.add(content, footer, 0);
         }
         if (full) {
@@ -229,6 +251,7 @@ public final class ReminderGuideActivity extends Activity {
             setContentView(page);
         } else setContentView(scroll);
         refreshAvailability();
+        restoreBookmark();
     }
 
     private Button button(LinearLayout parent, String text) { return button(parent, text, false); }
@@ -239,9 +262,9 @@ public final class ReminderGuideActivity extends Activity {
 
     private Button compactButton(String label, boolean primary) {
         Button button = UiKit.button(this, label, primary);
-        button.setTextSize(20);
-        button.setMinHeight(UiKit.dp(this, 56));
-        button.setMinimumHeight(UiKit.dp(this, 56));
+        button.setTextSize(primary ? 20 : 18);
+        button.setMinHeight(UiKit.dp(this, primary ? 64 : 56));
+        button.setMinimumHeight(UiKit.dp(this, primary ? 64 : 56));
         button.setMinWidth(UiKit.dp(this, 56));
         button.setMinimumWidth(UiKit.dp(this, 56));
         button.setPadding(UiKit.dp(this, 8), UiKit.dp(this, 6), UiKit.dp(this, 8), UiKit.dp(this, 6));
@@ -255,8 +278,7 @@ public final class ReminderGuideActivity extends Activity {
             if (ReminderGuideCatalog.section(item) != section) continue;
             Button entry = compactButton(ReminderGuideCatalog.compactLabel(item));
             entry.setTag(item.id);
-            entry.setBackground(UiKit.ripple(this, UiKit.PRIMARY_SOFT,
-                    android.graphics.Color.TRANSPARENT, 12, 0x18000000));
+            UiKit.styleControl(entry, UiKit.ButtonStyle.TONAL, 12);
             entry.setContentDescription(section.title + "，" + item.title + "，打开说明与单项试听");
             entry.setOnClickListener(view -> startActivity(new Intent(this, ReminderGuideActivity.class)
                     .putExtra(EXTRA_ITEM, item.id)));
@@ -266,9 +288,9 @@ public final class ReminderGuideActivity extends Activity {
         LinearLayout group = UiKit.vertical(this);
         TextView heading = UiKit.text(this, section.title, 20, UiKit.INK, true);
         heading.setAccessibilityHeading(true);
-        UiKit.add(group, heading, 8);
+        UiKit.add(group, heading, 10);
         UiKit.add(group, grid, 0);
-        UiKit.add(content, group, 20);
+        UiKit.add(content, group, 24);
     }
 
     private void playbackControls(LinearLayout content, String label) {
@@ -278,6 +300,7 @@ public final class ReminderGuideActivity extends Activity {
         stop.setEnabled(false);
         stop.setOnClickListener(view -> {
             stopExplanation();
+            clearBookmark();
             status.setText("已停止。可以再次播放当前示例。");
         });
     }
@@ -289,9 +312,11 @@ public final class ReminderGuideActivity extends Activity {
         repeat.setOnClickListener(view -> {
             if (pausedBeforeStart || playback.isPaused()) resumeExplanation();
             else if (preparing || playback.isRunning()) pauseExplanation();
+            else if (resumeIndex >= 0) startExplanation(true);
             else {
                 steps = fullSteps;
                 selectedSectionTitle = null;
+                selectedSectionId = null;
                 startExplanation();
             }
         });
@@ -300,10 +325,39 @@ public final class ReminderGuideActivity extends Activity {
         stop.setEnabled(false);
         stop.setOnClickListener(view -> {
             stopExplanation();
+            clearBookmark();
             status.setText("已停止。可选择任意一段重听，或播放全文。");
         });
         controls.addView(stop);
-        UiKit.add(content, controls, 14);
+        UiKit.add(content, controls, 0);
+    }
+
+    private LinearLayout playbackBar() {
+        LinearLayout bar = new LinearLayout(this) {
+            @Override protected void onMeasure(int widthSpec, int heightSpec) {
+                boolean side = MeasureSpec.getSize(widthSpec) >= UiKit.dp(getContext(), 600)
+                        && getResources().getConfiguration().screenHeightDp < 500;
+                int orientation = side ? HORIZONTAL : VERTICAL;
+                if (getChildCount() == 2) {
+                    LinearLayout.LayoutParams summary = (LinearLayout.LayoutParams) getChildAt(0).getLayoutParams();
+                    if (getOrientation() != orientation || summary.weight != (side ? 1 : 0)) {
+                        setOrientation(orientation);
+                        for (int i = 0; i < 2; i++) {
+                            LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) getChildAt(i).getLayoutParams();
+                            params.width = side ? 0 : LayoutParams.MATCH_PARENT;
+                            params.weight = side ? 1 : 0;
+                            params.setMargins(0, 0, 0, !side && i == 0 ? UiKit.dp(getContext(), 12) : 0);
+                            params.setMarginEnd(side && i == 0 ? UiKit.dp(getContext(), 20) : 0);
+                            getChildAt(i).setLayoutParams(params);
+                        }
+                    }
+                }
+                super.onMeasure(widthSpec, heightSpec);
+            }
+        };
+        bar.setOrientation(LinearLayout.VERTICAL);
+        bar.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        return bar;
     }
 
     private ReminderGuide.Outputs currentOutputs() throws IOException, JSONException {
@@ -334,14 +388,11 @@ public final class ReminderGuideActivity extends Activity {
 
     private boolean liveRunning() { return CaptureService.isRunning() || Match3LiveService.isRunning(); }
 
-    private TextView body(String text) { return UiKit.text(this, text, 24, UiKit.INK, false); }
+    private TextView body(String text) { return UiKit.body(this, text); }
 
     private Button button(LinearLayout parent, String text, boolean primary) {
         Button button = UiKit.button(this, text, primary);
-        button.setTextSize(24);
-        button.setMinHeight(UiKit.dp(this, 84));
-        button.setMinimumHeight(UiKit.dp(this, 84));
-        UiKit.add(parent, button, 14);
+        UiKit.add(parent, button, 16);
         return button;
     }
 
@@ -349,22 +400,59 @@ public final class ReminderGuideActivity extends Activity {
         boolean running = liveRunning();
         if (repeat != null) repeat.setEnabled(!running && steps != null);
         for (Button section : sectionButtons) section.setEnabled(!running);
-        if (proceed != null) proceed.setEnabled(!running && !authorizationInFlight);
+        refreshProceed();
         if (running) status.setText("辅助正在运行。请先在辅助首页停止，再听说明，避免错过游戏提醒。");
     }
 
+    private boolean fullGuideCompleted() {
+        return GameProfile.settings(this).getBoolean(ReminderGuide.PREF_FULL_GUIDE_COMPLETED, false);
+    }
+
+    private void markFullGuideCompleted() {
+        GameProfile.settings(this).edit()
+                .putBoolean(ReminderGuide.PREF_FULL_GUIDE_COMPLETED, true).apply();
+        refreshProceed();
+    }
+
+    private void refreshProceed() {
+        if (proceed == null) return;
+        boolean completed = fullGuideCompleted();
+        proceed.setText(completed ? "继续开始" : manualReadAvailable
+                ? "已阅读说明，继续开始" : "请先听完完整说明");
+        proceed.setEnabled(!liveRunning() && !authorizationInFlight
+                && (completed || manualReadAvailable));
+    }
+
+    private void offerManualReading() {
+        if (!startAfterGuide || !fullMode || fullGuideCompleted()) return;
+        manualReadAvailable = true;
+        status.append(" 可阅读本页后点击“已阅读说明，继续开始”，或调好声音后重听。");
+        refreshProceed();
+    }
+
     private void startExplanation() {
+        startExplanation(false);
+    }
+
+    private void startExplanation(boolean restoring) {
+        int position = restoring ? Math.max(0, resumeIndex) : 0;
+        clearBookmark();
         stopExplanation();
+        startIndex = position;
         if (steps == null || liveRunning()) { refreshAvailability(); return; }
+        manualReadAvailable = false;
+        refreshProceed();
         boolean audioNeeded = steps.stream().anyMatch(step -> step.channel != CueRequest.CHANNEL_HAPTIC);
         AudioManager audio = getSystemService(AudioManager.class);
         if (audioNeeded && (audio == null || audio.getStreamVolume(AudioManager.STREAM_MUSIC) == 0
                 || audio.isStreamMute(AudioManager.STREAM_MUSIC))) {
             status.setText("媒体音量为 0 或已静音。请按音量＋调高，再重听说明。");
+            offerManualReading();
             return;
         }
         if (audioNeeded && GameProfile.settings(this).getInt("volume", 45) == 0) {
             status.setText("应用提示音量为 0。请到声音与语音设置中调高，再重听说明。");
+            offerManualReading();
             return;
         }
         player = new CuePlayer(this);
@@ -394,7 +482,7 @@ public final class ReminderGuideActivity extends Activity {
             preparing = true;
             status.setText("正在准备中文语音……");
             waitForVoice(generation, SystemClock.elapsedRealtime() + 3000);
-        } else playback.start(ReminderGuideSections.sentenceSteps(steps));
+        } else playback.startAt(ReminderGuideSections.sentenceSteps(steps), startIndex);
     }
 
     private void waitForVoice(int run, long until) {
@@ -405,11 +493,12 @@ public final class ReminderGuideActivity extends Activity {
             } else {
                 stopExplanation();
                 status.setText("中文语音未准备好。请到声音与语音设置中选择可用的引擎，再重听说明。");
+                offerManualReading();
             }
             return;
         }
         preparing = false;
-        playback.start(ReminderGuideSections.sentenceSteps(steps));
+        playback.startAt(ReminderGuideSections.sentenceSteps(steps), startIndex);
     }
 
     private void pauseExplanation() {
@@ -435,7 +524,8 @@ public final class ReminderGuideActivity extends Activity {
     private void resumeExplanation() {
         if (liveRunning()) { stopExplanation(); refreshAvailability(); return; }
         if (pausedBeforeStart) {
-            startExplanation();
+            resumeIndex = startIndex;
+            startExplanation(true);
             return;
         }
         if (!playback.isPaused() || player == null || dispatcher == null) return;
@@ -494,6 +584,10 @@ public final class ReminderGuideActivity extends Activity {
 
     private void continueStart() {
         if (liveRunning() || authorizationInFlight) return;
+        if (!fullGuideCompleted()) {
+            if (!manualReadAvailable) return;
+            markFullGuideCompleted();
+        }
         stopExplanation();
         authorizationInFlight = true;
         proceed.setEnabled(false);
@@ -508,18 +602,76 @@ public final class ReminderGuideActivity extends Activity {
         autoPending = false;
         AccessibilityManager accessibility = getSystemService(AccessibilityManager.class);
         if (accessibility != null && accessibility.isTouchExplorationEnabled()) {
-            status.setText("正在使用屏幕阅读器，请点击“播放示例／再次播放”试听当前这一项。");
+            status.setText(fullMode
+                    ? "正在使用屏幕阅读器。可以阅读完整说明，或点击“播放全文”收听。"
+                    : "正在使用屏幕阅读器，请点击“播放示例／再次播放”试听当前这一项。");
+            offerManualReading();
         } else startExplanation();
     }
 
     @Override protected void onPause() {
+        bookmarkPlayback();
         stopExplanation();
         super.onPause();
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
+        bookmarkPlayback();
         state.putBoolean("authorization_in_flight", authorizationInFlight);
+        state.putInt("guide_resume_index", resumeIndex);
+        state.putString("guide_resume_section", resumeSectionId);
+        state.putString("guide_resume_signature", resumeSignature);
+        state.putBoolean("guide_manual_read", manualReadAvailable);
         super.onSaveInstanceState(state);
+    }
+
+    private void bookmarkPlayback() {
+        if (!fullMode || steps == null || (!preparing && !pausedBeforeStart && !playback.isRunning())) return;
+        resumeIndex = preparing || pausedBeforeStart ? startIndex : playback.currentIndex();
+        resumeSectionId = selectedSectionId;
+        resumeSignature = stepSignature(steps);
+    }
+
+    private void restoreBookmark() {
+        if (!fullMode || fullSteps == null || resumeIndex < 0) return;
+        List<ReminderGuide.Step> candidate = fullSteps;
+        if (resumeSectionId != null) {
+            candidate = null;
+            for (ReminderGuideSections.Section section : ReminderGuideSections.build(fullSteps)) {
+                if (resumeSectionId.equals(section.id)) {
+                    candidate = section.steps;
+                    selectedSectionTitle = section.title;
+                    selectedSectionId = section.id;
+                    break;
+                }
+            }
+        }
+        if (candidate == null || !stepSignature(candidate).equals(resumeSignature)
+                || resumeIndex >= ReminderGuideSections.sentenceSteps(candidate).size()) {
+            clearBookmark();
+            return;
+        }
+        steps = candidate;
+        repeat.setText("继续播放");
+        repeat.setContentDescription("继续当前说明，从未听完的句子开始");
+        status.setText("已暂停。点击继续，从未听完的句子开始。");
+        if (progress != null) progress.setText("进度 " + (resumeIndex + 1) + " / "
+                + ReminderGuideSections.sentenceSteps(candidate).size());
+        stop.setEnabled(true);
+    }
+
+    private void clearBookmark() {
+        resumeIndex = -1;
+        resumeSectionId = null;
+        resumeSignature = null;
+    }
+
+    private static String stepSignature(List<ReminderGuide.Step> values) {
+        StringBuilder result = new StringBuilder();
+        for (ReminderGuide.Step step : values) result.append(step.title).append('|').append(step.text)
+                .append('|').append(step.channel).append('|').append(step.tone).append('|').append(step.pan)
+                .append('|').append(step.distance).append('|').append(step.urgency).append('\n');
+        return result.toString();
     }
 
     @Override @SuppressWarnings("deprecation")

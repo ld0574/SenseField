@@ -50,8 +50,17 @@ public class AppUpdateClientTest {
                 "0".repeat(64)));
         assertThrows(java.io.IOException.class,
                 () -> AppUpdateClient.isSameVersionNoOp(sameBuild, "0.4.0", 18, APK_HASH));
-        assertThrows(java.io.IOException.class, () -> AppUpdateClient.parseSelfHostedManifest(
+        assertNull(AppUpdateClient.parseSelfHostedManifest(
                 manifest().put("version_code", 17), 18, PACKAGE_NAME, SELF_HOSTED_METADATA));
+    }
+
+    @Test public void newerInstalledAppIgnoresOlderGiteeIndexButStillValidatesIt() throws Exception {
+        HttpUrl index = HttpUrl.get("https://888413.xyz/apk/latest.json");
+        JSONObject previous = manifest().put("apk_url",
+                "https://gitee.com/leda/SenseField/releases/download/0.4.1/sensefieldv0.4.1.apk");
+        assertNull(AppUpdateClient.parseSelfHostedManifest(previous, 19, PACKAGE_NAME, index));
+        assertThrows(java.io.IOException.class, () -> AppUpdateClient.parseSelfHostedManifest(
+                previous.put("apk_sha256", "invalid"), 19, PACKAGE_NAME, index));
     }
 
     @Test

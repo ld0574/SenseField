@@ -6,7 +6,9 @@ import java.util.List;
 
 /** Meaning and examples of the outputs actually enabled for this session. */
 final class ReminderGuide {
-    static final String PREF_READ_BEFORE_START = "read_reminder_guide_before_start";
+    static final String PREF_FULL_GUIDE_COMPLETED = "full_reminder_guide_completed";
+    // Separate from the old, default-on directory preference to avoid repeat-on-upgrade.
+    static final String PREF_REPEAT_BEFORE_START = "repeat_full_reminder_guide_before_start";
     static final String NARRATION_KIND = "REMINDER_GUIDE";
     static final String SAMPLE_KIND = "REMINDER_GUIDE_SAMPLE";
     static final long NARRATION_TIMEOUT_MS = 30_000;
@@ -81,7 +83,7 @@ final class ReminderGuide {
 
     static List<Step> build(Outputs outputs) {
         List<Step> steps = new ArrayList<>();
-        say(steps, "开始前听一听", "先说明提醒的含义。接下来都是试听，你可以随时跳过。");
+        say(steps, "开始前听一听", "先说明提醒的含义。接下来都是示例。首次开始请听完完整说明，以后可以直接开始，也能在设置里重听。");
         if (has(outputs.near, CueRequest.CHANNEL_TONE)) {
             say(steps, "两声短音：附近有敌人",
                     "连续两声短音，表示小地图里有敌人进入你的附近。先听一次。");

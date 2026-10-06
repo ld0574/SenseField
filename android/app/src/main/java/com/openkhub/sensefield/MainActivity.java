@@ -10,7 +10,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 /** Run screen; all grants and configuration live in the settings menu. */
-public final class MainActivity extends Activity {
+public final class MainActivity extends UiActivity {
     private static final int REQUEST_START = 1001;
     private TextView status;
     private Button start;
@@ -36,16 +36,18 @@ public final class MainActivity extends Activity {
         scroll.addView(content);
 
         UiKit.addBrandHeader(content, "王者荣耀");
-        UiKit.add(content, UiKit.text(this, "王者荣耀辅助", 32, UiKit.INK, true), 4);
-        UiKit.add(content, UiKit.body(this, "关键情况会通过语音与触觉提醒。"), 18);
-        LinearLayout statusCard = UiKit.card(this);
-        UiKit.add(statusCard, UiKit.heading(this, "运行状态"), 8);
-        status = UiKit.text(this, "尚未开始", 24, UiKit.MUTED, true);
+        UiKit.add(content, UiKit.pageTitle(this, "王者荣耀辅助"), 8);
+        UiKit.add(content, UiKit.body(this, "关键情况会通过语音与触觉提醒。"), 24);
+        LinearLayout statusCard = UiKit.accentCard(this);
+        UiKit.addSignatureLabel(statusCard, "运行状态");
+        status = UiKit.text(this, "尚未开始", 24, UiKit.INK, true);
+        status.setAccessibilityLiveRegion(android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE);
         UiKit.add(statusCard, status, 0);
-        UiKit.add(content, statusCard, 18);
+        UiKit.add(content, statusCard, 24);
 
-        LinearLayout actions = UiKit.horizontal(this);
-        start = largeButton("开始", true);
+        // Start and stop sit far enough apart that a slip cannot hit the other one.
+        ReminderSampleGrid actions = new ReminderSampleGrid(this, 2, false, 20).fillRow();
+        start = largeButton("开始辅助", true);
         start.setOnClickListener(view -> requestStart());
         stop = largeButton("停止", false);
         stop.setOnClickListener(view -> {
@@ -54,59 +56,47 @@ public final class MainActivity extends Activity {
             intent.setAction(CaptureService.ACTION_STOP);
             startService(intent);
             starting = false;
-            status.setText("正在停止");
+            UiKit.setTextIfChanged(status, "正在停止");
             status.postDelayed(this::refreshStatus, 300);
         });
-        LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        left.rightMargin = UiKit.dp(this, 6);
-        actions.addView(start, left);
-        LinearLayout.LayoutParams right = new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        right.leftMargin = UiKit.dp(this, 6);
-        actions.addView(stop, right);
-        UiKit.add(content, actions, 14);
-        UiKit.add(content, UiKit.body(this,
-                "提醒含义可以在下方设置中重听，授权与声音配置也在设置中。"), 0);
+        actions.addView(start);
+        actions.addView(stop);
+        UiKit.add(content, actions, 16);
+        UiKit.add(content, UiKit.hint(this, "提醒含义、授权和声音都在“设置”里。"), 0);
         android.view.View spacer = new android.view.View(this);
         content.addView(spacer, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, UiKit.dp(this, 28), 1f));
-        Button settings = largeButton("设置", false);
-        settings.setOnClickListener(view ->
-                startActivity(new Intent(this, AppSettingsActivity.class)));
-        UiKit.add(content, settings, 14);
-        Button judgmentTest = largeButton("判定自测", false);
-        judgmentTest.setOnClickListener(view ->
-                startActivity(new Intent(this, JudgmentSelfTestActivity.class)));
-        UiKit.add(content, judgmentTest, 14);
-        Button gameSelection = largeButton("返回游戏选择", false);
-        gameSelection.setOnClickListener(view -> {
+                LinearLayout.LayoutParams.MATCH_PARENT, UiKit.dp(this, 32), 1f));
+        UiKit.add(content, UiKit.navigationRow(this, "设置", "声音、提醒与运行授权", () ->
+                startActivity(new Intent(this, AppSettingsActivity.class))), 12);
+        UiKit.add(content, UiKit.navigationRow(this, "返回游戏选择", "切换游戏辅助", () -> {
             Intent selection = new Intent(this, GameSelectionActivity.class);
             selection.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             startActivity(selection);
             finish();
-        });
-        UiKit.add(content, gameSelection, 0);
+        }), 0);
         setContentView(scroll);
         refreshStatus();
     }
 
     private Button largeButton(String label, boolean primary) {
         Button button = UiKit.button(this, label, primary);
-        button.setTextSize(26);
-        button.setMinHeight(UiKit.dp(this, 84));
-        button.setMinimumHeight(UiKit.dp(this, 84));
+        button.setMinHeight(UiKit.dp(this, 64));
+        button.setMinimumHeight(UiKit.dp(this, 64));
         return button;
     }
 
     private void requestStart() {
-        if (GameProfile.settings(this).getBoolean(ReminderGuide.PREF_READ_BEFORE_START, true)) {
+        android.content.SharedPreferences preferences = GameProfile.settings(this);
+        if (!preferences.getBoolean(ReminderGuide.PREF_FULL_GUIDE_COMPLETED, false)
+                || preferences.getBoolean(ReminderGuide.PREF_REPEAT_BEFORE_START, false)) {
             startActivityForResult(new Intent(this, ReminderGuideActivity.class)
-                    .putExtra(ReminderGuideActivity.EXTRA_START, true), REQUEST_START);
+                    .putExtra(ReminderGuideActivity.EXTRA_START, true)
+                    .putExtra(ReminderGuideActivity.EXTRA_FULL, true)
+                    .putExtra(ReminderGuideActivity.EXTRA_AUTO_READ, true), REQUEST_START);
             return;
         }
         boolean ready = CapturePermissionsActivity.requiredSettingsReady(this);
-        status.setText(ready ? "等待本次截屏授权" : "请先完成必要授权");
+        UiKit.setTextIfChanged(status, ready ? "等待本次截屏授权" : "请先完成必要授权");
         Intent authorization = new Intent(this, CapturePermissionsActivity.class);
         authorization.putExtra(CapturePermissionsActivity.EXTRA_START, true);
         startActivityForResult(authorization, REQUEST_START);
@@ -124,14 +114,14 @@ public final class MainActivity extends Activity {
                     .putString("last_capture_status", "辅助已结束，请重新开始").apply();
         }
         if (active) {
-            status.setText(preferences.getBoolean("capture_paused", false) ? "已暂停"
+            UiKit.setTextIfChanged(status, preferences.getBoolean("capture_paused", false) ? "已暂停"
                     : preferences.getBoolean("capture_waiting_for_image", false)
                             ? "等待可用画面" : "正在运行");
         } else if (starting) {
-            status.setText("正在启动");
+            UiKit.setTextIfChanged(status, "正在启动");
         } else {
             String last = preferences.getString("last_capture_status", "");
-            status.setText(last.isEmpty() ? "尚未开始" : last);
+            UiKit.setTextIfChanged(status, last.isEmpty() ? "尚未开始" : last);
         }
         start.setEnabled(!active && !starting);
         stop.setEnabled(active || starting);

@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-readonly PREVIEW_VERSION_NAME='0.4.1'
-readonly PREVIEW_VERSION_CODE='18'
+readonly PREVIEW_VERSION_NAME='0.4.3'
+readonly PREVIEW_VERSION_CODE='20'
 readonly DEFAULT_UPDATE_MANIFEST_URL='https://888413.xyz/apk/latest.json'
 readonly DEFAULT_UPDATE_APK_URL="https://gitee.com/leda/SenseField/releases/download/${PREVIEW_VERSION_NAME}/sensefieldv${PREVIEW_VERSION_NAME}.apk"
 readonly PREVIEW_ABI='arm64-v8a'
@@ -21,10 +21,10 @@ usage() {
 
 默认版本清单：https://888413.xyz/apk/latest.json
 APK 默认从听野 Gitee Release 下载。如需更换清单地址，设置 SENSEFIELD_UPDATE_MANIFEST_URL。
-构建后自动生成 cdn-upload/ 中的 APK 和 latest.json；无需手写清单。
+构建后生成 output/releases/<版本>/gitee-upload/ 中的唯一 APK 和 cdn-upload/latest.json。
 更换 APK 地址时设置 SENSEFIELD_UPDATE_APK_URL；允许同源 HTTPS，或固定清单搭配听野 Gitee Release。
 
-默认只构建并核验 Debug candidate，输出文件名包含 debug-candidate。
+默认构建并核验 Debug candidate，终端会显示候选类型。
 如需构建签名的 release candidate，请在环境变量中同时提供：
 
   SENSEFIELD_KEYSTORE_PATH
@@ -164,11 +164,11 @@ else
   source_apk="$android_dir/app/build/outputs/apk/debug/app-debug.apk"
 fi
 
-preview_dir="$android_dir/app/build/outputs/preview"
-candidate_apk="$preview_dir/sensefield-${PREVIEW_VERSION_NAME}-${PREVIEW_ABI}-${candidate_label}.apk"
+preview_dir="$repo_root/output/releases/${PREVIEW_VERSION_NAME}"
+candidate_apk="$preview_dir/gitee-upload/sensefieldv${PREVIEW_VERSION_NAME}.apk"
 # Remove any prior handoff before starting a new build. A failed build must not
 # leave an older candidate at the path that the release checklist uploads.
-rm -rf "$preview_dir"
+rm -f "$candidate_apk" "$preview_dir/cdn-upload/latest.json"
 
 printf '==> 构建 SenseField %s（versionCode %s，%s，%s）\n' \
   "$PREVIEW_VERSION_NAME" "$PREVIEW_VERSION_CODE" "$PREVIEW_ABI" "$variant"
@@ -186,8 +186,8 @@ fi
 
 [[ -f "$source_apk" ]] || fail "Gradle 完成但没有生成预期 APK：$source_apk"
 
-mkdir -p "$preview_dir"
-cp "$source_apk" "$candidate_apk"
+mkdir -p "$(dirname "$candidate_apk")"
+mv "$source_apk" "$candidate_apk"
 
 printf '==> 核验 APK 签名：%s\n' "$candidate_apk"
 "$apksigner_bin" verify --verbose --print-certs "$candidate_apk"
@@ -234,8 +234,8 @@ if origin('SENSEFIELD_UPDATE_MANIFEST_URL') != origin('SENSEFIELD_UPDATE_APK_URL
 PY
 cdn_dir="$preview_dir/cdn-upload"
 mkdir -p "$cdn_dir"
-cp "$candidate_apk" "$cdn_dir/sensefieldv${PREVIEW_VERSION_NAME}.apk"
 "$python_bin" "$repo_root/scripts/build_app_update_manifest.py" \
-  --apk "$cdn_dir/sensefieldv${PREVIEW_VERSION_NAME}.apk" \
+  --apk "$candidate_apk" \
   --apk-url "$SENSEFIELD_UPDATE_APK_URL" --output "$cdn_dir/latest.json"
-printf 'CDN 上传文件：%s\n' "$cdn_dir"
+printf 'Gitee APK：%s\n' "$candidate_apk"
+printf '网站版本清单：%s/latest.json\n' "$cdn_dir"

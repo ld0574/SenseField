@@ -17,7 +17,6 @@ import android.os.SystemClock;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
@@ -41,7 +40,7 @@ import java.util.Map;
  * ③示例判定（Jev 真请求）。特殊棋子：颜色判不出的格子可与标注模板比对，不再一律显示「.」。
  * 启动游戏：扫描全机 happyelements 系应用（覆盖各渠道服），不再依赖固定包名列表。
  */
-public class Match3AssistActivity extends Activity {
+public class Match3AssistActivity extends UiActivity {
     private static final String[] ANIPOP_PACKAGES = {
             "com.happyelements.AndroidAnimal",
             "com.happyelements.AndroidAnimal.qq",
@@ -73,25 +72,26 @@ public class Match3AssistActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        UiKit.configureWindow(this);
         LinearLayout page = UiKit.page(this);
         ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setFitsSystemWindows(true);
+        scroll.setBackgroundColor(UiKit.PAGE);
         scroll.addView(page, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT));
+                ViewGroup.LayoutParams.WRAP_CONTENT));
         setContentView(scroll);
 
-        TextView title = new TextView(this);
-        title.setText("开心消消乐辅助 · 体验版");
-        title.setTextSize(20);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        page.addView(title);
-        page.addView(note("识别棋盘并提示可以消除的交换位置。首次使用请校准棋盘；可先用截图试读，再开启实时辅助。识别可能有误，请核对游戏画面。"));
+        UiKit.pageHeader(this, page, "开心消消乐辅助", "体验版");
+        UiKit.add(page, note("识别棋盘并提示可以消除的交换位置。首次使用请校准棋盘；可先用截图试读，再开启实时辅助。识别可能有误，请核对游戏画面。"), 20);
 
         /* ---------- 启动 + 实时识别 ---------- */
-        LinearLayout actions = UiKit.card(this);
+        LinearLayout actions = card(page, "开始使用");
+        // One filled action per group, with the standard gap between every button.
         Button launch = UiKit.button(this, "启动开心消消乐", true);
         launch.setOnClickListener(v -> launchGame());
         actions.addView(launch);
-        Button liveStart = UiKit.button(this, "开始实时识别（录屏授权）", true);
+        Button liveStart = UiKit.button(this, "开始实时识别（录屏授权）", false);
         liveStart.setOnClickListener(v -> startLive());
         actions.addView(liveStart);
         Button liveStop = UiKit.button(this, "停止实时识别", false);
@@ -103,7 +103,7 @@ public class Match3AssistActivity extends Activity {
         Button pick = UiKit.button(this, "选择游戏截图", false);
         pick.setOnClickListener(v -> pickScreenshot());
         actions.addView(pick);
-        Button exploreBtn = UiKit.button(this, "触屏点读模式 开/关（需先开实时识别；Android 14+）", false);
+        Button exploreBtn = UiKit.button(this, "触屏点读模式 开/关", false);
         exploreBtn.setOnClickListener(v -> {
             if (!Match3LiveService.isRunning()) { toast("先点「开始实时识别」再开触屏点读"); return; }
             if (android.os.Build.VERSION.SDK_INT < 34) {
@@ -118,64 +118,57 @@ public class Match3AssistActivity extends Activity {
                     .setAction(exploreOn ? Match3LiveService.ACTION_EXPLORE_ON : Match3LiveService.ACTION_EXPLORE_OFF));
             toast(exploreOn ? "触屏点读已开启：直接在游戏里点棋子，每次点击播报该格" : "触屏点读已关闭");
         });
-        actions.addView(exploreBtn);
+        actions.addView(UiKit.withHint(exploreBtn, "需先开实时识别；游戏内点读需 Android 14 或以上"));
         Button demo = UiKit.button(this, "测试示例棋盘（需配置服务）", false);
         demo.setOnClickListener(v -> judgeSample());
         if (JevSettings.enabled(this)) actions.addView(demo);
-        page.addView(actions);
 
         /* ---------- 标定 ---------- */
-        LinearLayout calib = UiKit.card(this);
-        calib.addView(sectionLabel("棋盘标定（按屏幕百分比，实时与截图共用；一次标定自动记住）"));
-        LinearLayout grid = UiKit.horizontal(this);
-        briefLabel(grid, "行数");
-        rowsSpin = spinner(grid, "行数", new String[]{"6", "7", "8", "9"}, 2);
-        briefLabel(grid, "列数");
-        colsSpin = spinner(grid, "列数", new String[]{"6", "7", "8", "9"}, 2);
-        calib.addView(grid);
-        LinearLayout pct = UiKit.horizontal(this);
-        leftIn = pctInput(pct, "左上X%", 4);
-        topIn = pctInput(pct, "左上Y%", 18);
-        calib.addView(pct);
-        LinearLayout pct2 = UiKit.horizontal(this);
-        rightIn = pctInput(pct2, "右下X%", 96);
-        bottomIn = pctInput(pct2, "右下Y%", 82);
-        calib.addView(pct2);
+        LinearLayout calib = card(page, "棋盘标定");
+        calib.addView(note("按屏幕百分比设置；实时与截图共用，一次标定自动记住。"));
+        rowsSpin = spinner(new String[]{"6", "7", "8", "9"}, 2);
+        colsSpin = spinner(new String[]{"6", "7", "8", "9"}, 2);
+        calib.addView(UiKit.fieldRow(this, UiKit.field(this, "行数", rowsSpin),
+                UiKit.field(this, "列数", colsSpin)));
+        leftIn = pctInput("左上X%", 4);
+        topIn = pctInput("左上Y%", 18);
+        calib.addView(UiKit.fieldRow(this, UiKit.field(this, "左上 X（%）", leftIn),
+                UiKit.field(this, "左上 Y（%）", topIn)));
+        rightIn = pctInput("右下X%", 96);
+        bottomIn = pctInput("右下Y%", 82);
+        calib.addView(UiKit.fieldRow(this, UiKit.field(this, "右下 X（%）", rightIn),
+                UiKit.field(this, "右下 Y（%）", bottomIn)));
         loadCalibration();
         loadGating();
         Button autoFit = UiKit.button(this, "自动适配棋盘（对当前截图自动找棋盘范围）", false);
         autoFit.setOnClickListener(v -> autoFitBoard());
         calib.addView(autoFit);
-        Button sample = UiKit.button(this, "采样截图并播报可消除位置", false);
+        Button sample = UiKit.button(this, "采样截图并播报可消除位置", true);
         sample.setOnClickListener(v -> sampleAndAnnounce());
         calib.addView(sample);
-        page.addView(calib);
 
         /* ---------- 特殊棋子模板库 ---------- */
-        LinearLayout special = UiKit.card(this);
-        special.addView(sectionLabel("棋子学习库（从截图保存棋子示例，帮助识别基础动物和特殊棋子）"));
-        LinearLayout mark = UiKit.horizontal(this);
-        briefLabel(mark, "行");
-        markRowSpin = spinner(mark, "行", new String[]{"1", "2", "3", "4", "5", "6", "7", "8", "9"}, 0);
-        briefLabel(mark, "列");
-        markColSpin = spinner(mark, "列", new String[]{"1", "2", "3", "4", "5", "6", "7", "8", "9"}, 0);
-        special.addView(mark);
-        LinearLayout nameRow = UiKit.horizontal(this);
-        briefLabel(nameRow, "棋子");
-        markNameSpin = spinner(nameRow, "棋子", new String[]{
+        LinearLayout special = card(page, "棋子学习库");
+        special.addView(note("从截图保存棋子示例，帮助识别基础动物和特殊棋子。"));
+        markRowSpin = spinner(new String[]{"1", "2", "3", "4", "5", "6", "7", "8", "9"}, 0);
+        markColSpin = spinner(new String[]{"1", "2", "3", "4", "5", "6", "7", "8", "9"}, 0);
+        special.addView(UiKit.fieldRow(this, UiKit.field(this, "行", markRowSpin),
+                UiKit.field(this, "列", markColSpin)));
+        markNameSpin = spinner(new String[]{
                 "红狐狸", "小鸡", "青蛙", "河马", "棕熊", "紫猫", "自定义…"}, 0);
-        special.addView(nameRow);
+        special.addView(UiKit.field(this, "棋子", markNameSpin));
         markNameIn = new EditText(this);
         markNameIn.setHint("选「自定义…」时填名称，如：炸弹");
         markNameIn.setSingleLine(true);
-        special.addView(markNameIn);
+        UiKit.styleInput(markNameIn);
+        special.addView(UiKit.field(this, "自定义名称", markNameIn));
         Button markSave = UiKit.button(this, "从当前截图裁剪该格，保存为模板", false);
         markSave.setOnClickListener(v -> saveSpecialTemplate());
         special.addView(markSave);
-        page.addView(special);
 
         preview = new ImageView(this);
         preview.setAdjustViewBounds(true);
+        preview.setContentDescription("棋盘截图预览：点击格子播报该格");
         preview.setOnTouchListener((v, event) -> {
             if (event.getAction() != android.view.MotionEvent.ACTION_UP) return false;
             if (screenshot == null) return false;
@@ -186,11 +179,11 @@ public class Match3AssistActivity extends Activity {
             handlePreviewTap(px, py);
             return true;
         });
-        page.addView(preview);
+        UiKit.add(page, preview, UiKit.GAP_SECTION);
 
         /* ---------- 说明书与点读 ---------- */
-        LinearLayout coach = UiKit.card(this);
-        coach.addView(sectionLabel("本关说明书与点读（开心消消乐通用规则内置）"));
+        LinearLayout coach = card(page, "本关说明书与点读");
+        coach.addView(note("已内置开心消消乐通用规则。"));
         Button kb = UiKit.button(this, "朗读说明书（每按一次读一条）", false);
         kb.setOnClickListener(v -> {
             String[] names = Match3Coach.knowledgeNames();
@@ -210,11 +203,9 @@ public class Match3AssistActivity extends Activity {
         Button props = UiKit.button(this, "播报屏幕下方道具栏", false);
         props.setOnClickListener(v -> announcePropBar());
         coach.addView(props);
-        page.addView(coach);
 
         /* ---------- 读屏判定（无障碍树→Jev，领导方案 P0） ---------- */
-        LinearLayout readerCard = UiKit.card(this);
-        readerCard.addView(sectionLabel("读屏判定（无障碍树→Jev 判断式）：先在系统设置开启「听野读屏状态服务」"));
+        LinearLayout readerCard = cardContent("读屏判定（无障碍树→Jev 判断式）：先在系统设置开启「听野读屏状态服务」");
         Button a11yGo = UiKit.button(this, "读屏→Jev 屏幕判定（类型＋弹窗门控）", true);
         a11yGo.setOnClickListener(v -> judgeScreen());
         readerCard.addView(a11yGo);
@@ -231,22 +222,31 @@ public class Match3AssistActivity extends Activity {
         a11ySet.setOnClickListener(v -> startActivity(
                 new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)));
         readerCard.addView(a11ySet);
-        if (JevSettings.enabled(this)) page.addView(readerCard);
+        if (JevSettings.enabled(this)) UiKit.add(page, (View) readerCard.getParent(), UiKit.GAP_SECTION);
 
         /* ---------- 诊断记录（实时识别时自动保存帧，支持导出分享） ---------- */
-        LinearLayout diagCard = UiKit.card(this);
-        diagCard.addView(sectionLabel("诊断记录"));
+        LinearLayout diagCard = card(page, "诊断记录");
         Button diagBtn = UiKit.button(this, "查看诊断记录与导出（需先停止识别）", false);
         diagBtn.setOnClickListener(v -> startActivity(new Intent(this, DiagnosticsActivity.class)));
         diagCard.addView(diagBtn);
-        page.addView(diagCard);
 
+        LinearLayout judgmentCard = card(page, "实验判定（可选）");
+        judgmentCard.addView(note("示例自测与服务配置，默认关闭；本地棋盘识别无需启用此服务。"));
+        Button judgmentTest = UiKit.button(this, "实验判定设置与自测", false);
+        judgmentTest.setOnClickListener(v ->
+                startActivity(new Intent(this, JudgmentSelfTestActivity.class)));
+        judgmentCard.addView(judgmentTest);
+
+        LinearLayout outCard = card(page, "识别结果");
         output = new TextView(this);
         output.setTypeface(Typeface.MONOSPACE);
-        output.setTextSize(12);
+        output.setTextSize(18);
+        output.setTextColor(UiKit.INK);
+        output.setLineSpacing(UiKit.dp(this, 2), 1f);
         output.setTextIsSelectable(true);
+        output.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         output.setText("等待操作…");
-        page.addView(output);
+        outCard.addView(output);
     }
 
     /* ---------- 启动游戏：扫描全机 happyelements 系（覆盖各渠道服），不再依赖固定列表 ---------- */
@@ -880,50 +880,41 @@ public class Match3AssistActivity extends Activity {
         Toast.makeText(this, text, Toast.LENGTH_SHORT).show();
     }
 
-    private Spinner spinner(LinearLayout parent, String label, String[] values, int defaultIndex) {
+    private Spinner spinner(String[] values, int defaultIndex) {
         Spinner spinner = new Spinner(this);
-        spinner.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, values));
+        UiKit.styleSpinner(spinner, values);
         spinner.setSelection(defaultIndex);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        parent.addView(spinner, lp);
         return spinner;
     }
 
-    private EditText pctInput(LinearLayout parent, String hint, int value) {
+    private EditText pctInput(String hint, int value) {
         EditText input = new EditText(this);
         input.setHint(hint);
         input.setText(String.valueOf(value));
         input.setSingleLine(true);
         input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        parent.addView(input, lp);
+        UiKit.styleInput(input);
         return input;
     }
 
-    private void briefLabel(LinearLayout parent, String text) {
-        TextView t = new TextView(this);
-        t.setText(text);
-        t.setTextSize(13);
-        t.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        t.setPadding(0, 0, UiKit.dp(this, 6), 0);
-        parent.addView(t, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    /** Adds a titled card to the page; every child is separated by the standard gap. */
+    private LinearLayout card(LinearLayout page, String title) {
+        LinearLayout content = cardContent(title);
+        UiKit.add(page, (View) content.getParent(), UiKit.GAP_SECTION);
+        return content;
     }
 
-    private TextView sectionLabel(String text) {
-        TextView t = new TextView(this);
-        t.setText(text);
-        t.setTextSize(13);
-        t.setPadding(0, UiKit.dp(this, 10), 0, UiKit.dp(this, 4));
-        return t;
+    /** A titled card that is not yet attached; returns the stack to add controls to. */
+    private LinearLayout cardContent(String title) {
+        LinearLayout card = UiKit.card(this);
+        UiKit.add(card, UiKit.heading(this, title), 12);
+        LinearLayout content = UiKit.vertical(this);
+        UiKit.spaceChildren(content, UiKit.GAP_CONTROL);
+        UiKit.add(card, content, 0);
+        return content;
     }
 
     private TextView note(String text) {
-        TextView t = new TextView(this);
-        t.setText(text);
-        t.setTextSize(12);
-        return t;
+        return UiKit.body(this, text);
     }
 }

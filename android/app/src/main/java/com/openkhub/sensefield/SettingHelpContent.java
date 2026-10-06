@@ -15,7 +15,7 @@ final class SettingHelpContent {
             case "speech_rate": return "语速";
             case "test_cue": return "测试提醒与振动";
             case "haptic_settings_link": return "震感与节奏";
-            case "before_start_read": return "每次开始前打开提醒说明与试听";
+            case "before_start_read": return "每次开始前重听完整说明";
             case "reminder_guide": return "提醒说明与试听";
             case "recognition_group": return "识别功能";
             case "recognition_experiment": return "启用小地图识别（实验）";
@@ -154,7 +154,7 @@ final class SettingHelpContent {
     static String text(String key) {
         switch (key) {
             case "voice_group":
-                return "选择语音引擎、调整语速后，可以测试附近敌人提醒当前开启的声音和振动。提醒说明与试听目录会按当前开启的声音、语音和震动设置提供示例；可选择每次开始前自动打开，也能随时手动查看。测试或试听时请先停止游戏辅助或实时对局。";
+                return "选择语音引擎、调整语速后，可以测试附近敌人提醒当前开启的声音和振动。首次开始辅助会朗读完整说明，听完后默认直接开始；设置里可随时重听完整说明或单项示例，也可开启每次重听。测试或试听时请先停止游戏辅助或实时对局。";
             case "speech_engine":
                 return "选择“跟随手机系统”会使用系统当前的文字转语音引擎，也可以指定手机已安装的引擎。不同引擎的音色和可用语言由手机提供。更换引擎后请试听一次。";
             case "speech_rate":
@@ -164,7 +164,7 @@ final class SettingHelpContent {
             case "haptic_settings_link":
                 return "打开“震感与节奏”后，可以调整所有触觉提醒使用的节奏和震感档位，并试听当前设置。";
             case "before_start_read":
-                return "开启后，每次开始新的辅助会话前会打开“提醒说明与试听”目录。进入完整说明后，可以单独听某一段，也可以播放全文、暂停后继续；点击目录中的某一项会打开解释并播放该项示例。开启系统屏幕阅读器时，请使用页面内的播放按钮，以免朗读与示例抢声。关闭此选项后仍可手动打开目录，不影响其他提醒。";
+                return "首次开始辅助会朗读完整说明，听完后记住完成状态，之后默认直接开始。此开关默认关闭；开启后每次开始都重听，也可跳过。完整说明支持分段播放和暂停后继续；试听目录可单独听某项示例。中文语音不可用或使用系统屏幕阅读器时，可阅读完整说明并确认后继续。";
             case "reminder_guide":
                 return "目录列出当前开启的声音、语音和振动示例，并显示各项名称；方位语音只保留一个方向示例。每项可以单独反复播放与停止；完整说明有独立入口，可按段收听、播放全文和暂停后继续。示例使用当前设置，辅助运行时请先停止对局辅助再试听。";
             case "recognition_group":

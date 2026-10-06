@@ -68,26 +68,23 @@ final class AppUpdateController implements AutoCloseable {
     void attach(Activity activity, LinearLayout page) {
         this.activity = activity;
         LinearLayout card = UiKit.card(activity);
-        UiKit.add(card, UiKit.heading(activity, "软件更新"), 8);
-        status = UiKit.body(activity, message);
+        checkButton = UiKit.button(activity, "检查更新", false);
+        UiKit.add(card, UiKit.headingActionRow(activity, UiKit.heading(activity, "软件更新"), checkButton), 12);
+        status = UiKit.hint(activity, message);
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         UiKit.add(card, status, 12);
         progress = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
         progress.setMax(100);
         UiKit.add(card, progress, 12);
-        LinearLayout actions = UiKit.horizontal(activity);
-        checkButton = UiKit.button(activity, "检查更新", false);
         actionButton = UiKit.button(activity, "下载并安装", true);
-        UiKit.addWeighted(actions, checkButton, 1);
-        UiKit.addWeighted(actions, actionButton, 1);
-        UiKit.add(card, actions, 12);
+        UiKit.add(card, actionButton, 12);
         checkButton.setOnClickListener(v -> {
             if (downloading) cancelDownload(); else check(true);
         });
         actionButton.setOnClickListener(v -> beginDownloadOrInstall());
         CheckBox auto = new CheckBox(activity);
         auto.setText("启动时检查更新");
-        auto.setTextSize(20);
+        auto.setTextSize(UiKit.TEXT_BODY);
         UiKit.styleCheckable(auto, activity);
         auto.setChecked(preferences.getBoolean(AUTO_CHECK, true));
         auto.setEnabled(client.isConfigured());
@@ -98,8 +95,10 @@ final class AppUpdateController implements AutoCloseable {
                 check(false);
             }
         });
-        UiKit.add(card, auto, 0);
-        UiKit.add(page, card, 18);
+        LinearLayout details = UiKit.details(activity, "更新设置");
+        ((LinearLayout) details.getChildAt(1)).addView(auto);
+        UiKit.add(card, details, 0);
+        UiKit.add(page, card, UiKit.GAP_SECTION);
         render();
     }
 
@@ -182,11 +181,7 @@ final class AppUpdateController implements AutoCloseable {
                 .setNegativeButton("稍后", (dialog, which) -> { }).create();
         prompt.setOnDismissListener(dialog -> prompt = null);
         prompt.show();
-        for (int button : new int[] {AlertDialog.BUTTON_POSITIVE, AlertDialog.BUTTON_NEGATIVE}) {
-            Button view = prompt.getButton(button);
-            view.setTextSize(20);
-            view.setMinHeight(UiKit.dp(activity, 64));
-        }
+        UiKit.styleDialog(prompt, UiKit.ButtonStyle.FILLED);
     }
 
     private void beginDownloadOrInstall() {
@@ -284,8 +279,8 @@ final class AppUpdateController implements AutoCloseable {
     private void setMessage(String value) { message = value; render(); }
     private void render() {
         if (status == null) return;
-        status.setText(message);
-        checkButton.setText(downloading ? "取消下载" : "检查更新");
+        UiKit.setTextIfChanged(status, message);
+        UiKit.setTextIfChanged(checkButton, downloading ? "取消下载" : "检查更新");
         checkButton.setEnabled(client.isConfigured() && !checking);
         actionButton.setVisibility(offered == null ? View.GONE : View.VISIBLE);
         actionButton.setText(downloaded == null ? "下载并安装" : "继续安装");

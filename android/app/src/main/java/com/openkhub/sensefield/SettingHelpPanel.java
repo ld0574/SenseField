@@ -57,6 +57,46 @@ final class SettingHelpPanel {
         return controller != null && controller.close();
     }
 
+    static void saveState(Activity activity, android.os.Bundle state) {
+        Controller c = findController(activity);
+        if (c != null && c.open) {
+            state.putString("ui_help_key", c.activeKey);
+            state.putInt("ui_help_scroll", c.explanationScroll.getScrollY());
+        }
+    }
+
+    static void restoreState(Activity activity, android.os.Bundle state) {
+        String key = state.getString("ui_help_key");
+        if (key == null) return;
+        View trigger = findTagged(activity.findViewById(android.R.id.content), GROUP_BUTTON_TAG_PREFIX + key);
+        if (trigger == null) return;
+        show(activity, key, trigger);
+        Controller c = findController(activity);
+        if (c != null) c.explanationScroll.post(() ->
+                c.explanationScroll.scrollTo(0, state.getInt("ui_help_scroll")));
+    }
+
+    static void finishMotion(Activity activity) {
+        Controller c = findController(activity);
+        if (c == null) return;
+        c.motionGeneration++;
+        UiMotion.reset(c.panel);
+        if (!c.open) c.finishClose();
+    }
+
+    private static View findTagged(View view, String tag) {
+        if (view == null) return null;
+        if (tag.equals(view.getTag())) return view;
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View found = findTagged(group.getChildAt(i), tag);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
     private static Controller findController(Activity activity) {
         View content = activity.findViewById(android.R.id.content);
         if (!(content instanceof ViewGroup)) return null;
@@ -169,6 +209,7 @@ final class SettingHelpPanel {
         private int reservedPx;
         private int measuredWidth;
         private int measuredHeight;
+        private int motionGeneration;
 
         Controller(Activity activity, ViewGroup contentRoot, PanelHost host,
                 List<View> originalViews, Map<View, ViewGroup.LayoutParams> originalParams,
@@ -208,7 +249,7 @@ final class SettingHelpPanel {
             Drawable closeIcon = new InsetDrawable(new CloseDrawable(activity),
                     UiKit.dp(activity, 18));
             closeButton.setBackground(new RippleDrawable(ColorStateList.valueOf(0x18000000),
-                    closeIcon, closeMask));
+                    SettingHelp.focusableIcon(activity, closeIcon), closeMask));
             closeButton.setMinWidth(UiKit.dp(activity, 56));
             closeButton.setMinimumWidth(UiKit.dp(activity, 56));
             closeButton.setMinHeight(UiKit.dp(activity, 56));
@@ -249,6 +290,9 @@ final class SettingHelpPanel {
         }
 
         void show(String key, View newTrigger) {
+            boolean wasOpen = open;
+            motionGeneration++;
+            UiMotion.reset(panel);
             String normalizedKey = key == null ? "" : key;
             boolean changed = !normalizedKey.equals(activeKey);
             if (newTrigger != null) trigger = newTrigger;
@@ -260,6 +304,7 @@ final class SettingHelpPanel {
             panel.setVisibility(View.VISIBLE);
             panel.bringToFront();
             applyGeometry();
+            if (!wasOpen) UiMotion.reveal(panel, sideMode);
             panel.setAccessibilityPaneTitle(SettingHelpContent.title(normalizedKey));
             panel.sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);
             host.requestLayout();
@@ -273,9 +318,7 @@ final class SettingHelpPanel {
             heading.setAccessibilityHeading(true);
             explanationContent.removeAllViews();
 
-            TextView mainText = explanationText(SettingHelpContent.text(key));
-            mainText.setTextColor(UiKit.MUTED);
-            UiKit.add(explanationContent, mainText, 24);
+            UiKit.add(explanationContent, UiKit.readingSections(activity, SettingHelpContent.text(key)), 24);
 
             List<String> itemKeys = SettingHelpContent.itemKeys(key);
             if (itemKeys != null) {
@@ -286,7 +329,7 @@ final class SettingHelpPanel {
                     itemHeading.setTextSize(18);
                     UiKit.add(explanationContent, itemHeading, 6);
                     UiKit.add(explanationContent,
-                            explanationText(SettingHelpContent.text(itemKey)), 24);
+                            UiKit.readingSections(activity, SettingHelpContent.text(itemKey)), 24);
                 }
             }
 
@@ -303,11 +346,20 @@ final class SettingHelpPanel {
         boolean close() {
             if (!open) return false;
             open = false;
+            int run = ++motionGeneration;
+            UiMotion.dismiss(panel, sideMode, () -> {
+                if (run != motionGeneration || open) return;
+                finishClose();
+                restoreTriggerFocus();
+            });
+            return true;
+        }
+
+        private void finishClose() {
+            UiMotion.reset(panel);
             panel.setVisibility(View.GONE);
             restoreOriginalBounds();
             host.requestLayout();
-            restoreTriggerFocus();
-            return true;
         }
 
         private void restoreOriginalBounds() {
@@ -454,8 +506,8 @@ final class SettingHelpPanel {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
         CloseDrawable(Context context) {
-            paint.setColor(UiKit.MUTED);
-            paint.setStrokeWidth(UiKit.dp(context, 2));
+            paint.setColor(UiKit.INK);
+            paint.setStrokeWidth(UiKit.dp(context, 2.5f));
             paint.setStrokeCap(Paint.Cap.ROUND);
         }
 

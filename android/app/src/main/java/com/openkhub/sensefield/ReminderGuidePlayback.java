@@ -28,9 +28,16 @@ final class ReminderGuidePlayback {
     }
 
     void start(List<ReminderGuide.Step> steps) {
+        startAt(steps, 0);
+    }
+
+    /** Restores an unfinished sentence after recreation; old completions remain invalid. */
+    void startAt(List<ReminderGuide.Step> steps, int unfinishedIndex) {
+        if (steps == null || unfinishedIndex < 0 || unfinishedIndex > steps.size())
+            throw new IllegalArgumentException("Invalid guide position");
         stop();
         this.steps = steps;
-        index = 0;
+        index = unfinishedIndex;
         running = true;
         paused = false;
         next(generation);
@@ -64,6 +71,8 @@ final class ReminderGuidePlayback {
 
     /** The index of the current unfinished step, or the list size when playback ended. */
     int currentIndex() { return index; }
+
+    int stepCount() { return steps == null ? 0 : steps.size(); }
 
     private void next(int run) {
         if (!running || paused || run != generation) return;

@@ -532,7 +532,8 @@ public final class AppUpdateClient implements AutoCloseable {
             notes = notes.substring(0, (int) MAX_NOTES_CHARS);
         }
         if (code < localVersionCode) {
-            throw new UpdateFailure("更新版本号低于当前已安装版本。");
+            // A successfully validated older index means this app is already newer.
+            return null;
         }
         return new AppUpdateRelease(packageName, versionName, code, apkUrl, bytes,
                 hash.toLowerCase(Locale.US), notes, metadataUrl);

@@ -32,7 +32,7 @@ import java.io.IOException;
 import java.util.List;
 
 /** Advanced profile and cue tuning for the selected game adapter. */
-public final class GameTuningActivity extends Activity {
+public final class GameTuningActivity extends UiActivity {
     private static final int REQUEST_OVERLAY = 1004;
 
     private CheckBox minimapOverlay;
@@ -58,36 +58,36 @@ public final class GameTuningActivity extends Activity {
         LinearLayout content = UiKit.page(this);
         scroll.addView(content);
 
-        UiKit.addBrandHeader(content, "王者荣耀");
-        UiKit.add(content, UiKit.text(this, "配置与调参", 28, UiKit.INK, true), 20);
+        UiKit.pageHeader(this, content, "配置与调参", "王者荣耀辅助");
 
         LinearLayout voices = UiKit.card(this);
-        SettingHelp.addGroup(this, voices, "voice_group", 8);
-        testStatus = UiKit.body(this,
-                "按当前附近敌人提醒设置测试声音和振动；结果受设备与系统状态影响。");
-        UiKit.add(voices, testStatus, 10);
+        SettingHelp.addGroup(this, voices, "voice_group", 12);
         Button engines = button("选择语音引擎", false);
         engines.setOnClickListener(view -> chooseVoiceEngine());
-        UiKit.add(voices, engines, 12);
+        UiKit.add(voices, engines, 16);
         addSpeechRateControl(voices);
         test = button("测试提醒与振动", false);
         test.setOnClickListener(view -> testCue());
-        UiKit.add(voices, test, 0);
+        UiKit.add(voices, test, 6);
+        // The result appears right under its button instead of as a paragraph above the group.
+        testStatus = UiKit.hint(this, "按当前附近敌人提醒设置测试；结果受设备与系统影响。");
+        testStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        UiKit.add(voices, testStatus, 16);
         Button hapticSettings = button("震感与节奏", false);
         hapticSettings.setOnClickListener(view ->
                 startActivity(new Intent(this, HapticSettingsActivity.class)));
         UiKit.add(voices, hapticSettings, 8);
-        CheckBox introduction = checkBox("每次开始前打开提醒说明与试听");
+        CheckBox introduction = checkBox("每次开始前重听完整说明");
         introduction.setChecked(GameProfile.settings(this)
-                .getBoolean(ReminderGuide.PREF_READ_BEFORE_START, true));
+                .getBoolean(ReminderGuide.PREF_REPEAT_BEFORE_START, false));
         introduction.setOnCheckedChangeListener((view, checked) -> GameProfile.settings(this)
-                .edit().putBoolean(ReminderGuide.PREF_READ_BEFORE_START, checked).apply());
-        UiKit.add(voices, introduction, 10);
+                .edit().putBoolean(ReminderGuide.PREF_REPEAT_BEFORE_START, checked).apply());
+        UiKit.add(voices, introduction, 8);
         Button guide = button("提醒说明与试听", false);
         guide.setOnClickListener(view ->
                 startActivity(new Intent(this, ReminderGuideActivity.class)));
         UiKit.add(voices, guide, 0);
-        UiKit.add(content, voices, 14);
+        UiKit.add(content, voices, UiKit.GAP_SECTION);
 
         LinearLayout recognition = UiKit.card(this);
         SettingHelp.addGroup(this, recognition, "recognition_group", 8);
@@ -117,7 +117,7 @@ public final class GameTuningActivity extends Activity {
         });
         UiKit.add(recognition, minimapOverlay, 4);
 
-        UiKit.add(content, recognition, 14);
+        UiKit.add(content, recognition, UiKit.GAP_SECTION);
 
         LinearLayout cueCard = UiKit.card(this);
         SettingHelp.addGroup(this, cueCard, "preset_group", 8);
@@ -125,24 +125,26 @@ public final class GameTuningActivity extends Activity {
         addPreset("精简", CueSettings.PRESET_COMPACT);
         addPreset("标准", CueSettings.PRESET_STANDARD);
         addPreset("详细", CueSettings.PRESET_DETAILED);
-        UiKit.add(cueCard, presets, 10);
+        UiKit.add(cueCard, presets, 12);
         selectCurrentPreset();
         Button alertSettings = button("提示通道与事件", false);
         alertSettings.setOnClickListener(view ->
                 startActivity(new Intent(this, AlertSettingsActivity.class)));
         UiKit.add(cueCard, alertSettings, 0);
-        UiKit.add(content, cueCard, 14);
+        UiKit.add(content, cueCard, UiKit.GAP_SECTION);
 
         LinearLayout tuning = UiKit.card(this);
         SettingHelp.addGroup(this, tuning, "tuning_group", 8);
         addVolumeControl(tuning);
         addIntervalControl(tuning);
         addCenterControl(tuning);
-        UiKit.add(content, tuning, 18);
-
-        Button back = button("返回", false);
-        back.setOnClickListener(view -> finish());
-        UiKit.add(content, back, 0);
+        UiKit.add(content, tuning, UiKit.GAP_SECTION);
+        LinearLayout presentation = UiKit.card(this);
+        SettingHelp.addGroup(this, presentation, "presentation_group", 8);
+        presentationSwitch(presentation, "左右双耳线索（需双耳耳机）", "presentation_spatial");
+        presentationSwitch(presentation, "距离强度与节奏震动", "presentation_distance_haptic");
+        presentationSwitch(presentation, "两字方位提示", "near_two_word");
+        UiKit.add(content, presentation, 0);
 
         setContentView(scroll);
     }
@@ -237,7 +239,7 @@ public final class GameTuningActivity extends Activity {
                 android.R.layout.simple_list_item_single_choice, labels) {
             @Override public View getView(int position, View convertView, ViewGroup parent) {
                 TextView item = (TextView) super.getView(position, convertView, parent);
-                item.setTextSize(22);
+                item.setTextSize(18);
                 item.setMinimumHeight(UiKit.dp(GameTuningActivity.this, 72));
                 return item;
             }
@@ -250,7 +252,7 @@ public final class GameTuningActivity extends Activity {
                     testStatus.setText(getString(R.string.tuning_voice_engine_selected, labels[which]));
                     dialog.dismiss();
                 }).setNegativeButton("取消", null).show();
-        picker.getButton(AlertDialog.BUTTON_NEGATIVE).setTextSize(22);
+        UiKit.styleDialog(picker, UiKit.ButtonStyle.OUTLINED);
     }
 
     private void prepareTestCue(int generation, int channels, boolean audioSkipped,
@@ -344,7 +346,7 @@ public final class GameTuningActivity extends Activity {
             label.setText(getString(R.string.tuning_speech_rate_value, percent / 100f));
         }));
         UiKit.add(parent, label, 0);
-        UiKit.add(parent, rate, 12);
+        UiKit.add(parent, rate, 16);
     }
 
     @Override @SuppressWarnings("deprecation") public void onBackPressed() {
@@ -354,24 +356,28 @@ public final class GameTuningActivity extends Activity {
     private CheckBox checkBox(String label) {
         CheckBox checkBox = new CheckBox(this);
         checkBox.setText(label);
-        checkBox.setTextSize(22);
+        checkBox.setTextSize(18);
         checkBox.setTextColor(UiKit.INK);
         UiKit.styleCheckable(checkBox, this);
         return checkBox;
     }
 
     private Button button(String label, boolean primary) {
-        Button button = UiKit.button(this, label, primary);
-        button.setTextSize(22);
-        button.setMinHeight(UiKit.dp(this, 72));
-        button.setMinimumHeight(UiKit.dp(this, 72));
-        return button;
+        return UiKit.button(this, label, primary);
+    }
+
+    private void presentationSwitch(LinearLayout parent, String label, String key) {
+        CheckBox box = checkBox(label);
+        box.setChecked(GameProfile.settings(this).getBoolean(key, false));
+        box.setOnCheckedChangeListener((button, checked) ->
+                GameProfile.settings(this).edit().putBoolean(key, checked).apply());
+        UiKit.add(parent, box, 6);
     }
 
     private void addPreset(String label, String value) {
         RadioButton button = new RadioButton(this);
         button.setText(label);
-        button.setTextSize(22);
+        button.setTextSize(18);
         button.setTextColor(UiKit.INK);
         UiKit.styleCheckable(button, this);
         button.setTag(value);
@@ -442,7 +448,7 @@ public final class GameTuningActivity extends Activity {
     }
 
     private TextView settingLabel(String label) {
-        return UiKit.text(this, label, 22, UiKit.INK, true);
+        return UiKit.text(this, label, 18, UiKit.INK, true);
     }
 
     private int profileCenterPercent() {

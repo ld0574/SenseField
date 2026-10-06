@@ -76,8 +76,8 @@ android {
         applicationId 'com.openkhub.sensefield'
         minSdk 29
         targetSdk 35
-        versionCode 18
-        versionName '0.4.1'
+        versionCode 20
+        versionName '0.4.3'
         buildConfigField 'String', 'APP_UPDATE_METADATA_URL', groovy.json.JsonOutput.toJson(updateMetadataUrl)
         buildConfigField 'String', 'ASSISTANT_DEFAULT_ENDPOINT', groovy.json.JsonOutput.toJson(assistantDefaultEndpoint)
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
@@ -145,7 +145,7 @@ if (findProperty('sensefieldTestVersionCode') || findProperty('sensefieldTestVer
     }
     def fixtureCode = findProperty('sensefieldTestVersionCode').toString().toInteger()
     def fixtureName = findProperty('sensefieldTestVersionName').toString()
-    if (fixtureCode <= 18 || !(fixtureName ==~ /[0-9]+\.[0-9]+\.[0-9]+/)) {
+    if (fixtureCode <= android.defaultConfig.versionCode || !(fixtureName ==~ /[0-9]+\.[0-9]+\.[0-9]+/)) {
         throw new GradleException('The isolated upgrade fixture must use a future version.')
     }
     android.defaultConfig.versionCode = fixtureCode

@@ -143,6 +143,22 @@ public class Match3MergeInstrumentedTest {
         return false;
     }
 
+    @Test public void honorScreenKeepsItsOriginalControlsWithoutMatch3DeveloperTest() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(
+                new Intent(context(), MainActivity.class))) {
+            scenario.onActivity(activity -> {
+                View root = activity.findViewById(android.R.id.content);
+                assertTrue(hasText(root, "王者荣耀辅助"));
+                assertTrue(hasText(root, "开始辅助"));
+                assertTrue(hasText(root, "停止"));
+                assertTrue(hasText(root, "设置"));
+                assertTrue(hasText(root, "返回游戏选择"));
+                assertFalse(hasText(root, "判定自测"));
+                assertFalse(hasText(root, "实验判定设置与自测"));
+            });
+        }
+    }
+
     @Test public void match3ScreenOpensWithLocalActionsWithoutExperimentalCloudControls() {
         SharedPreferences prefs = GameProfile.settings(context());
         boolean enabled = JevSettings.enabled(context());
@@ -154,6 +170,7 @@ public class Match3MergeInstrumentedTest {
                 assertTrue(hasText(root, "开始实时识别（录屏授权）"));
                 assertTrue(hasText(root, "选择游戏截图"));
                 assertTrue(hasText(root, "查看诊断记录与导出（需先停止识别）"));
+                assertTrue(hasText(root, "实验判定设置与自测"));
                 assertFalse(hasText(root, "图标消歧判定"));
             });
         } finally { prefs.edit().putBoolean(JevSettings.PREF_ENABLED, enabled).commit(); }

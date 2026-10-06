@@ -173,6 +173,38 @@ public final class ReminderGuidePlaybackTest {
         assertTrue(output.played.get(1) == steps.get(steps.size() - 1));
     }
 
+    @Test public void recreationStartsAtTheUnfinishedSentenceAndCompletesOnlyTheRemainingSteps() {
+        playback.startAt(steps, 2);
+        assertEquals(2, playback.currentIndex());
+        assertEquals(steps.size(), playback.stepCount());
+        assertEquals(steps.get(2), output.played.get(0));
+        for (int i = 0; i < steps.size() - 2; i++) output.completions.get(i).finish(true);
+        assertEquals(steps.size() - 2, output.played.size());
+        assertEquals(Collections.singletonList(true), endings);
+    }
+
+    @Test public void restoredRunIgnoresCanceledCallbacksFromBeforeRecreation() {
+        playback.start(steps);
+        ReminderGuidePlayback.Completion stale = output.completions.get(0);
+        playback.startAt(steps, 3);
+        stale.finish(true);
+        assertEquals(3, playback.currentIndex());
+        assertEquals(2, output.played.size());
+        output.completions.get(1).finish(true);
+        assertEquals(4, playback.currentIndex());
+    }
+
+    @Test public void invalidBookmarkDoesNotCancelTheExistingRun() {
+        playback.start(steps);
+        for (int position : new int[] {-1, steps.size() + 1}) {
+            try { playback.startAt(steps, position); org.junit.Assert.fail("Invalid position accepted"); }
+            catch (IllegalArgumentException expected) { }
+        }
+        assertTrue(playback.isRunning());
+        assertEquals(0, playback.currentIndex());
+        assertEquals(1, output.played.size());
+    }
+
     private static final class FakeOutput implements ReminderGuidePlayback.Output {
         final List<ReminderGuide.Step> played = new ArrayList<>();
         final List<ReminderGuidePlayback.Completion> completions = new ArrayList<>();

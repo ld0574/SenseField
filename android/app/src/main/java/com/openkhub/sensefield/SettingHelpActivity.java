@@ -9,7 +9,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 /** Full group help, secondary to the panel. Opening it never changes preferences. */
-public final class SettingHelpActivity extends Activity {
+public final class SettingHelpActivity extends UiActivity {
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         UiKit.configureWindow(this);
@@ -25,27 +25,17 @@ public final class SettingHelpActivity extends Activity {
 
         LinearLayout page = UiKit.page(this);
         scroll.addView(page);
-        UiKit.addBrandHeader(page, "设置说明");
-        TextView title = UiKit.heading(this, titleText + "的说明");
-        title.setAccessibilityHeading(true);
-        UiKit.add(page, title, 16);
+        UiKit.pageHeader(this, page, titleText + "的说明", "设置说明");
 
         LinearLayout card = UiKit.card(this);
-        TextView explanation = UiKit.readingBody(this, SettingHelpContent.text(key), 22);
-        UiKit.add(card, explanation, 0);
+        UiKit.add(card, UiKit.readingSections(this, SettingHelpContent.text(key)), 0);
         for (String itemKey : SettingHelpContent.itemKeys(key)) {
             UiKit.gap(card, 18);
             UiKit.add(card, UiKit.heading(this, SettingHelpContent.title(itemKey)), 6);
-            UiKit.add(card, UiKit.readingBody(this, SettingHelpContent.text(itemKey), 20), 0);
+            UiKit.add(card, UiKit.readingSections(this, SettingHelpContent.text(itemKey)), 0);
         }
         UiKit.add(page, card, 20);
 
-        Button back = UiKit.button(this, "返回", false);
-        back.setTextSize(22);
-        back.setMinHeight(UiKit.dp(this, 72));
-        back.setMinimumHeight(UiKit.dp(this, 72));
-        back.setOnClickListener(view -> finish());
-        UiKit.add(page, back, 0);
         setContentView(scroll);
     }
 }

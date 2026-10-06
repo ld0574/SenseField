@@ -17,7 +17,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 /** Large-text controls for reminder rhythm and haptic strength. */
-public final class HapticSettingsActivity extends Activity {
+public final class HapticSettingsActivity extends UiActivity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private SharedPreferences preferences;
     private TextView capabilityStatus;
@@ -42,8 +42,7 @@ public final class HapticSettingsActivity extends Activity {
         LinearLayout content = UiKit.page(this);
         scroll.addView(content);
 
-        UiKit.addBrandHeader(content, "王者荣耀");
-        UiKit.add(content, UiKit.text(this, "触觉提醒", 30, UiKit.INK, true), 12);
+        UiKit.pageHeader(this, content, "触觉提醒", "王者荣耀辅助");
         UiKit.add(content, UiKit.body(this,
                 "调整节奏和震感后，可以试听并比较效果。这些设置会用于所有触觉提醒。"), 16);
 
@@ -56,7 +55,7 @@ public final class HapticSettingsActivity extends Activity {
                 "按原有的单震或双震数量与顺序缩短脉冲和间隔。",
                 HapticPolicy.PREF_MODE, HapticPolicy.MODE_SHORT);
         UiKit.add(rhythmCard, rhythm, 0);
-        UiKit.add(content, rhythmCard, 14);
+        UiKit.add(content, rhythmCard, UiKit.GAP_SECTION);
         selectSaved(rhythm, HapticPolicy.PREF_MODE, HapticPolicy.MODE_ORIGINAL);
 
         LinearLayout strengthCard = UiKit.card(this);
@@ -71,23 +70,21 @@ public final class HapticSettingsActivity extends Activity {
         UiKit.add(strengthCard, strength, 8);
         capabilityStatus = UiKit.body(this, "正在读取设备振动能力……");
         UiKit.add(strengthCard, capabilityStatus, 0);
-        UiKit.add(content, strengthCard, 14);
+        UiKit.add(content, strengthCard, UiKit.GAP_SECTION);
         selectSaved(strength, HapticPolicy.PREF_STRENGTH, HapticPolicy.STRENGTH_SYSTEM);
         refreshCapabilityText();
 
         LinearLayout testCard = UiKit.card(this);
-        SettingHelp.addGroup(this, testCard, "haptic_preview", 8);
+        SettingHelp.addGroup(this, testCard, "haptic_preview", 12);
         testButton = UiKit.button(this, "试听当前触觉设置", true);
         testButton.setContentDescription("发送一次当前节奏与震感档位的触觉试听");
         testButton.setOnClickListener(view -> playPreview());
-        UiKit.add(testCard, testButton, 8);
+        UiKit.add(testCard, testButton, 12);
         testStatus = UiKit.body(this, "点击上方按钮，感受当前设置的震动。");
+        testStatus.setAccessibilityLiveRegion(android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE);
         UiKit.add(testCard, testStatus, 0);
-        UiKit.add(content, testCard, 16);
+        UiKit.add(content, testCard, 24);
 
-        Button done = UiKit.button(this, "完成", false);
-        done.setOnClickListener(view -> finish());
-        UiKit.add(content, done, 0);
         setContentView(scroll);
     }
 
@@ -99,9 +96,9 @@ public final class HapticSettingsActivity extends Activity {
                            String preferenceKey, String value) {
         RadioButton choice = new RadioButton(this);
         choice.setText(label);
-        choice.setTextSize(22);
+        choice.setTextSize(18);
         choice.setTextColor(UiKit.INK);
-        choice.setMinHeight(UiKit.dp(this, 72));
+        choice.setMinHeight(UiKit.dp(this, 56));
         choice.setContentDescription(label + "。" + explanation);
         UiKit.styleCheckable(choice, this);
         choice.setTag(value);

@@ -6,27 +6,54 @@ import android.view.ViewGroup;
 import android.widget.TextView;
 import java.util.Arrays;
 
-/** Wraps short sample buttons using their actual font size and the available page width. */
+/**
+ * Wraps short buttons using their actual font size and the available page width. Neighbouring
+ * buttons always keep the standard control gap, horizontally and vertically.
+ */
 final class ReminderSampleGrid extends ViewGroup {
     private final int maximumColumns;
     private final int gap;
     private final boolean wrapNames;
+    private boolean fillRow;
+    private boolean reserveIntrinsicHeight;
+    private int intrinsicHeight;
     private int columns = 1;
     private int cellWidth;
     private int rowCount;
     private int[] rowHeights = new int[0];
 
-    public ReminderSampleGrid(Context context) { this(context, 3); }
+    public ReminderSampleGrid(Context context) { this(context, 2); }
 
     ReminderSampleGrid(Context context, int maximumColumns) {
         this(context, maximumColumns, false);
     }
 
     ReminderSampleGrid(Context context, int maximumColumns, boolean wrapNames) {
+        this(context, maximumColumns, wrapNames, UiKit.GAP_CONTROL);
+    }
+
+    ReminderSampleGrid(Context context, int maximumColumns, boolean wrapNames, float gapDp) {
         super(context);
         this.maximumColumns = Math.max(1, maximumColumns);
         this.wrapNames = wrapNames;
-        gap = UiKit.dp(context, 8);
+        gap = UiKit.dp(context, gapDp);
+    }
+
+    /** Action-row mode: visible buttons share the full width; a lone button fills the row. */
+    ReminderSampleGrid fillRow() {
+        fillRow = true;
+        return this;
+    }
+
+    /** AlertDialog reserves this height before giving the remaining space to its message. */
+    ReminderSampleGrid reserveDialogHeight() {
+        reserveIntrinsicHeight = true;
+        return this;
+    }
+
+    @Override public int getMinimumHeight() {
+        return reserveIntrinsicHeight ? Math.max(super.getMinimumHeight(), intrinsicHeight)
+                : super.getMinimumHeight();
     }
 
     @Override protected void onMeasure(int widthSpec, int heightSpec) {
@@ -41,7 +68,7 @@ final class ReminderSampleGrid extends ViewGroup {
             if (child.getVisibility() == GONE) continue;
             child.measure(MeasureSpec.makeMeasureSpec(available, MeasureSpec.AT_MOST),
                     MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
-            int preferredWidth = child.getMeasuredWidth();
+            int preferredWidth = preferredWidth(child);
             if (wrapNames && child instanceof TextView) {
                 TextView label = (TextView) child;
                 // Keep full sound names, allowing two-line labels at ordinary font sizes.
@@ -55,6 +82,7 @@ final class ReminderSampleGrid extends ViewGroup {
         }
         columns = Math.max(1, Math.min(maximumColumns,
                 (available + gap) / (desiredCellWidth + gap)));
+        if (fillRow) columns = Math.max(1, Math.min(columns, count));
         cellWidth = Math.max(0, (available - (columns - 1) * gap) / columns);
         prepareRows((count + columns - 1) / columns);
         int visibleIndex = 0;
@@ -69,7 +97,35 @@ final class ReminderSampleGrid extends ViewGroup {
         int height = getPaddingTop() + getPaddingBottom()
                 + Math.max(0, rowCount - 1) * gap;
         for (int row = 0; row < rowCount; row++) height += rowHeights[row];
+        intrinsicHeight = height;
         setMeasuredDimension(resolveSize(width, widthSpec), resolveSize(height, heightSpec));
+    }
+
+    /** Intrinsic labels decide columns; MATCH_PARENT fields must not force one column. */
+    private int preferredWidth(View view) {
+        int content = 0;
+        if (view instanceof TextView) {
+            TextView label = (TextView) view;
+            for (String line : label.getText().toString().split("\\n"))
+                content = Math.max(content, (int) Math.ceil(label.getPaint().measureText(line)));
+            android.graphics.drawable.Drawable[] icons = label.getCompoundDrawablesRelative();
+            for (int i : new int[] {0, 2})
+                if (icons[i] != null) content += icons[i].getBounds().width() + label.getCompoundDrawablePadding();
+        } else if (view instanceof android.widget.Spinner) {
+            View selected = ((android.widget.Spinner) view).getSelectedView();
+            content = selected == null ? UiKit.dp(getContext(), 56) : preferredWidth(selected);
+        } else if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            boolean horizontal = group instanceof android.widget.LinearLayout
+                    && ((android.widget.LinearLayout) group).getOrientation() == android.widget.LinearLayout.HORIZONTAL;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View child = group.getChildAt(i);
+                if (child.getVisibility() == GONE) continue;
+                if (horizontal) content += preferredWidth(child);
+                else content = Math.max(content, preferredWidth(child));
+            }
+        } else content = view.getMeasuredWidth();
+        return Math.max(view.getMinimumWidth(), content + view.getPaddingLeft() + view.getPaddingRight());
     }
 
     private void prepareRows(int count) {

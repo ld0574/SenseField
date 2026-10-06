@@ -3,14 +3,17 @@ package com.openkhub.sensefield;
 import static org.junit.Assert.*;
 
 import android.app.Activity;
+import android.app.Instrumentation;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -41,6 +44,155 @@ public final class PatientLearningInstrumentedTest {
     }
 
     private static Intent intent(Class<? extends Activity> type) { return new Intent(context(), type); }
+
+    @Test public void groupHelpOpensOnTheFirstRealTouch() {
+        Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
+        try (ActivityScenario<AlertSettingsActivity> scenario = ActivityScenario.launch(intent(AlertSettingsActivity.class))) {
+            instrumentation.setInTouchMode(true);
+            final int[] point = new int[2];
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                assertFalse(hasVisiblePanel(root));
+                View help = findTag(root, "setting_help_group_button:channel_group");
+                assertNotNull(help);
+                help.clearFocus();
+                help.getLocationOnScreen(point);
+                point[0] += help.getWidth() / 2;
+                point[1] += help.getHeight() / 2;
+            });
+            long down = SystemClock.uptimeMillis();
+            MotionEvent press = MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN,
+                    point[0], point[1], 0);
+            MotionEvent release = MotionEvent.obtain(down, down + 80, MotionEvent.ACTION_UP,
+                    point[0], point[1], 0);
+            try {
+                instrumentation.sendPointerSync(press);
+                instrumentation.sendPointerSync(release);
+            } finally { press.recycle(); release.recycle(); }
+            instrumentation.waitForIdleSync();
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                assertTrue("One touch opens help without a focus-only first tap", hasVisiblePanel(root));
+                assertGroupHelpContentsInOrder(findTag(root, "setting_help_panel_view"), "channel_group");
+                SettingHelp.close(activity);
+            });
+        }
+    }
+
+    @Test public void firstStartReadsTheFullGuideAndLaterStartsGoDirectlyToAuthorization() {
+        SharedPreferences prefs = GameProfile.settings(context());
+        String completed = ReminderGuide.PREF_FULL_GUIDE_COMPLETED;
+        String repeat = ReminderGuide.PREF_REPEAT_BEFORE_START;
+        boolean hadCompleted = prefs.contains(completed), wasCompleted = prefs.getBoolean(completed, false);
+        boolean hadRepeat = prefs.contains(repeat), wasRepeat = prefs.getBoolean(repeat, false);
+        Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
+        final Intent[] next = new Intent[1];
+        Instrumentation.ActivityMonitor monitor = new Instrumentation.ActivityMonitor() {
+            @Override public Instrumentation.ActivityResult onStartActivity(Intent intent) {
+                if (intent.getComponent() != null && (intent.getComponent().getClassName()
+                        .equals(ReminderGuideActivity.class.getName()) || intent.getComponent().getClassName()
+                        .equals(CapturePermissionsActivity.class.getName()))) {
+                    next[0] = intent;
+                    return new Instrumentation.ActivityResult(Activity.RESULT_CANCELED, null);
+                }
+                return null;
+            }
+        };
+        prefs.edit().putBoolean(completed, false).remove(repeat).commit();
+        instrumentation.addMonitor(monitor);
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(intent(MainActivity.class))) {
+            scenario.onActivity(activity -> ((Button) find(activity.getWindow().getDecorView(), "开始辅助")).performClick());
+            assertNotNull(next[0]);
+            assertEquals(ReminderGuideActivity.class.getName(), next[0].getComponent().getClassName());
+            assertTrue(next[0].getBooleanExtra(ReminderGuideActivity.EXTRA_FULL, false));
+            assertTrue(next[0].getBooleanExtra(ReminderGuideActivity.EXTRA_AUTO_READ, false));
+            prefs.edit().putBoolean(completed, true).commit();
+            next[0] = null;
+            scenario.onActivity(activity -> ((Button) find(activity.getWindow().getDecorView(), "开始辅助")).performClick());
+            assertNotNull(next[0]);
+            assertEquals(CapturePermissionsActivity.class.getName(), next[0].getComponent().getClassName());
+            prefs.edit().putBoolean(repeat, true).commit();
+            next[0] = null;
+            scenario.onActivity(activity -> ((Button) find(activity.getWindow().getDecorView(), "开始辅助")).performClick());
+            assertEquals(ReminderGuideActivity.class.getName(), next[0].getComponent().getClassName());
+        } finally {
+            instrumentation.removeMonitor(monitor);
+            restoreBoolean(prefs, completed, hadCompleted, wasCompleted);
+            restoreBoolean(prefs, repeat, hadRepeat, wasRepeat);
+        }
+    }
+
+    @Test public void firstGuideHasExplicitReadingFallbackWhenApplicationAudioIsMuted() {
+        SharedPreferences prefs = GameProfile.settings(context());
+        String completed = ReminderGuide.PREF_FULL_GUIDE_COMPLETED;
+        boolean hadCompleted = prefs.contains(completed), wasCompleted = prefs.getBoolean(completed, false);
+        boolean hadVolume = prefs.contains("volume");
+        int volume = prefs.getInt("volume", 45);
+        prefs.edit().putBoolean(completed, false).putInt("volume", 0).commit();
+        try (ActivityScenario<ReminderGuideActivity> scenario = ActivityScenario.launch(
+                intent(ReminderGuideActivity.class).putExtra(ReminderGuideActivity.EXTRA_FULL, true)
+                        .putExtra(ReminderGuideActivity.EXTRA_START, true)
+                        .putExtra(ReminderGuideActivity.EXTRA_AUTO_READ, true))) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                assertNotNull(find(root, "完整提醒说明"));
+                assertNotNull(find(root, "播放全文"));
+                Button confirmation = (Button) find(root, "已阅读说明，继续开始");
+                assertNotNull("A missing sound route must not trap the first-time user", confirmation);
+                assertTrue(confirmation.isEnabled());
+                assertFalse("Merely opening the fallback does not count as reading", prefs.getBoolean(completed, false));
+                assertNull(player(activity));
+            });
+        } finally {
+            restoreBoolean(prefs, completed, hadCompleted, wasCompleted);
+            SharedPreferences.Editor edit = prefs.edit();
+            if (hadVolume) edit.putInt("volume", volume); else edit.remove("volume");
+            edit.commit();
+        }
+    }
+
+    @Test public void fullGuideCompletionIsRememberedButFailureAndSingleSectionAreNot() throws Exception {
+        SharedPreferences prefs = GameProfile.settings(context());
+        String completed = ReminderGuide.PREF_FULL_GUIDE_COMPLETED;
+        boolean hadCompleted = prefs.contains(completed), wasCompleted = prefs.getBoolean(completed, false);
+        prefs.edit().putBoolean(completed, false).commit();
+        try (ActivityScenario<ReminderGuideActivity> scenario = ActivityScenario.launch(
+                intent(ReminderGuideActivity.class).putExtra(ReminderGuideActivity.EXTRA_FULL, true)
+                        .putExtra(ReminderGuideActivity.EXTRA_START, true))) {
+            scenario.onActivity(activity -> {
+                assertFalse(((Button) find(activity.getWindow().getDecorView(), "请先听完完整说明")).isEnabled());
+                try {
+                    // Supply controlled playback completion; this test does not certify audible output.
+                    Field field = ReminderGuideActivity.class.getDeclaredField("playback");
+                    field.setAccessible(true);
+                    Object playback = field.get(activity);
+                    Field listenerField = ReminderGuidePlayback.class.getDeclaredField("listener");
+                    listenerField.setAccessible(true);
+                    ReminderGuidePlayback.Listener listener =
+                            (ReminderGuidePlayback.Listener) listenerField.get(playback);
+                    listener.onEnded(false);
+                    assertFalse(prefs.getBoolean(completed, false));
+                    Field selected = ReminderGuideActivity.class.getDeclaredField("selectedSectionTitle");
+                    selected.setAccessible(true);
+                    selected.set(activity, "方位语音");
+                    listener.onEnded(true);
+                    assertFalse("A section must not finish full onboarding", prefs.getBoolean(completed, false));
+                    selected.set(activity, null);
+                    listener.onEnded(true);
+                    assertTrue(prefs.getBoolean(completed, false));
+                    assertTrue(((Button) find(activity.getWindow().getDecorView(), "继续开始")).isEnabled());
+                } catch (ReflectiveOperationException error) { throw new AssertionError(error); }
+            });
+            scenario.recreate();
+            scenario.onActivity(activity -> assertTrue(((Button) find(activity.getWindow().getDecorView(), "继续开始")).isEnabled()));
+        } finally { restoreBoolean(prefs, completed, hadCompleted, wasCompleted); }
+    }
+
+    private static void restoreBoolean(SharedPreferences prefs, String key, boolean present, boolean value) {
+        SharedPreferences.Editor edit = prefs.edit();
+        if (present) edit.putBoolean(key, value); else edit.remove(key);
+        edit.commit();
+    }
 
     @Test public void directoryAndCompleteExplanationOpenWithoutAutomaticNarration() throws Exception {
         try (ActivityScenario<ReminderGuideActivity> scenario = ActivityScenario.launch(intent(ReminderGuideActivity.class))) {
@@ -168,15 +320,14 @@ public final class PatientLearningInstrumentedTest {
                 assertNotNull(back);
                 TextView body = find(activity.getWindow().getDecorView(), SettingHelpContent.text("event_near"));
                 assertNotNull(body);
-                Configuration reading = new Configuration(activity.getResources().getConfiguration());
-                reading.fontScale = Math.min(reading.fontScale, 1.5f);
-                TextView readingReference = new TextView(activity.createConfigurationContext(reading));
-                readingReference.setTextSize(22);
-                TextView controlReference = new TextView(activity);
-                controlReference.setTextSize(22);
-                assertEquals(readingReference.getTextSize(), body.getTextSize(), 0.1f);
-                assertEquals(controlReference.getTextSize(), heading.getTextSize(), 0.1f);
-                assertEquals(controlReference.getTextSize(), back.getTextSize(), 0.1f);
+                TextView readingReference = new TextView(activity);
+                readingReference.setTextSize(18);
+                TextView titleReference = new TextView(activity);
+                titleReference.setTextSize(24);
+                assertEquals("Reading obeys the full current system font scale", readingReference.getTextSize(), body.getTextSize(), 0.1f);
+                assertEquals(titleReference.getTextSize(), heading.getTextSize(), 0.1f);
+                assertTrue(back.getMinimumHeight() >= UiKit.dp(activity, 56));
+                assertReadingCopy(activity.getWindow().getDecorView(), SettingHelpContent.text("event_near"));
                 assertEquals(Integer.MAX_VALUE, body.getMaxLines());
             });
             screenshot("help");
@@ -273,6 +424,8 @@ public final class PatientLearningInstrumentedTest {
     }
 
     @Test public void groupHelpSwitchesInOnePanelAndBackOrCloseRestoresTheSettingsPage() {
+        // Input-focus restoration belongs to keyboard navigation; touch uses immediate clicks.
+        InstrumentationRegistry.getInstrumentation().setInTouchMode(false);
         final ScrollView[] originalPageRef = new ScrollView[1];
         final Button[] channelTriggerRef = new Button[1];
         final boolean[] originalNearChecked = new boolean[1];
@@ -364,6 +517,14 @@ public final class PatientLearningInstrumentedTest {
                 assertNotNull(near);
                 assertEquals(originalNearChecked[0], near.isChecked());
             });
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            scenario.onActivity(activity -> {
+                View root = activity.findViewById(android.R.id.content);
+                assertTrue("The restored keyboard focus can reopen help", hasVisiblePanel(root));
+                assertGroupHelpContentsInOrder(findTag(root, "setting_help_panel_view"), "events_group");
+                SettingHelp.close(activity);
+            });
             screenshot("settings-groups-restored");
         }
     }
@@ -440,7 +601,7 @@ public final class PatientLearningInstrumentedTest {
                 assertEquals(Integer.MAX_VALUE, body.getMaxLines());
                 Button back = (Button) find(root, "返回");
                 assertNotNull(back);
-                assertTrue(back.getMinimumHeight() >= UiKit.dp(activity, 72));
+                assertTrue(back.getMinimumHeight() >= UiKit.dp(activity, 56));
                 assertTrue("Long help copy remains available by scrolling",
                         scroll.canScrollVertically(1) || scroll.getChildAt(0).getHeight() > scroll.getHeight());
             });
@@ -486,7 +647,7 @@ public final class PatientLearningInstrumentedTest {
 
                 List<String> itemKeys = SettingHelpContent.itemKeys("events_group");
                 String lastItemKey = itemKeys.get(itemKeys.size() - 1);
-                TextView lastItemBody = find(explanation, SettingHelpContent.text(lastItemKey));
+                TextView lastItemBody = lastParagraph(explanation, SettingHelpContent.text(lastItemKey));
                 assertNotNull(lastItemBody);
                 explanation.scrollTo(0, explanation.getChildAt(0).getMeasuredHeight());
                 assertTrue("Scrolling reaches the end of the long group explanation",
@@ -513,10 +674,8 @@ public final class PatientLearningInstrumentedTest {
 
         ScrollView explanation = firstScrollView(panel);
         assertNotNull("Group help keeps its copy in a scrollable body", explanation);
-        List<TextView> textViews = new ArrayList<>();
-        collectTextViews(explanation, textViews);
         List<String> actual = new ArrayList<>();
-        for (TextView textView : textViews) actual.add(textView.getText().toString());
+        collectLogicalCopy(explanation, actual);
 
         List<String> expected = new ArrayList<>();
         expected.add(SettingHelpContent.text(key));
@@ -528,6 +687,37 @@ public final class PatientLearningInstrumentedTest {
                 expected, actual);
         assertNull("Group help does not add a second full-explanation navigation link",
                 find(panel, "查看完整说明"));
+    }
+
+    private static void assertReadingCopy(View root, String copy) {
+        View block = findTag(root, "ui_reading:" + copy);
+        assertNotNull("Original explanation is still available", block);
+        List<TextView> paragraphs = new ArrayList<>();
+        collectTextViews(block, paragraphs);
+        StringBuilder rendered = new StringBuilder();
+        for (TextView paragraph : paragraphs) rendered.append(paragraph.getText());
+        assertEquals("Paragraph layout never removes original words", copy.replaceAll("\\s", ""),
+                rendered.toString().replaceAll("\\s", ""));
+    }
+
+    private static TextView lastParagraph(View root, String copy) {
+        ViewGroup block = (ViewGroup) findTag(root, "ui_reading:" + copy);
+        assertNotNull(block);
+        assertReadingCopy(block, copy);
+        return (TextView) block.getChildAt(block.getChildCount() - 1);
+    }
+
+    private static void collectLogicalCopy(View view, List<String> output) {
+        Object tag = view.getTag();
+        if (tag instanceof String && ((String) tag).startsWith("ui_reading:")) {
+            String copy = ((String) tag).substring("ui_reading:".length());
+            assertReadingCopy(view, copy);
+            output.add(copy);
+        } else if (view instanceof TextView) output.add(((TextView) view).getText().toString());
+        else if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) collectLogicalCopy(group.getChildAt(i), output);
+        }
     }
 
     private static void layoutAt(Activity activity, View view, int widthDp, int heightDp) {
@@ -672,7 +862,12 @@ public final class PatientLearningInstrumentedTest {
     }
 
     private static TextView find(View view, String text) {
-        if (view instanceof TextView && text.contentEquals(((TextView) view).getText())) return (TextView) view;
+        if (view instanceof TextView && (text.contentEquals(((TextView) view).getText())
+                || text.contentEquals(view.getContentDescription() == null ? "" : view.getContentDescription()))) return (TextView) view;
+        if (("ui_reading:" + text).equals(view.getTag()) && view instanceof ViewGroup) {
+            assertReadingCopy(view, text);
+            return (TextView) ((ViewGroup) view).getChildAt(0);
+        }
         if (view instanceof ViewGroup) {
             for (int index = 0; index < ((ViewGroup) view).getChildCount(); index++) {
                 TextView found = find(((ViewGroup) view).getChildAt(index), text);

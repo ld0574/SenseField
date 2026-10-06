@@ -15,7 +15,7 @@ final class GameCatalog {
             new GameEntry("honor-of-kings", "王者荣耀", "地图感知辅助",
                     "当前可用", "识别可见局势，提供本地语音与触觉提示。", true,
                     MainActivity.class),
-            new GameEntry("happy-anipop", "开心消消乐", "休闲益智辅助 · 乐元素",
+            new GameEntry("happy-anipop", "开心消消乐", "休闲益智辅助",
                     "体验版", "本地识别棋盘，语音提示可消除的交换位置，支持截图点读。", true,
                     Match3AssistActivity.class)
     ));
