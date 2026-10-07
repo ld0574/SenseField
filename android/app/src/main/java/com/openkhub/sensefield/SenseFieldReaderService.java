@@ -63,6 +63,7 @@ public class SenseFieldReaderService extends AccessibilityService {
             Log.i(TAG, "触摸观察已启用（API 34+，只观察不消费）");
         }
         setServiceInfo(info);
+        instance = new java.lang.ref.WeakReference<>(this);
         connected = true;
         Log.i(TAG, "读屏状态服务已连接");
     }
@@ -169,13 +170,121 @@ public class SenseFieldReaderService extends AccessibilityService {
         Log.w(TAG, "读屏服务被中断");
     }
 
+    /* ---------- 行号标尺：棋盘左侧竖排 1..N，随标定自动对齐 ----------
+     * 棋盘格子位置固定（动的只是棋子），标尺一次对齐永久有效；
+     * 播报用「第几行」报数，用户按标尺即可在屏上定位。 */
+
+    private android.view.WindowManager rowWindowManager;
+    private android.view.View rowOverlay;
+
+    /** 请求显示/刷新行号标尺。无障碍服务未连接时返回 false；实际挂载在主线程执行。 */
+    public static boolean showRowNumbers(android.content.Context ctx,
+                                         int l, int t, int r, int b, int rows) {
+        SenseFieldReaderService self = instance.get();
+        if (self == null || !connected || rows <= 0) return false;
+        self.postRowNumbers(l, t, r, b, rows);
+        return true;
+    }
+
+    /** 隐藏行号标尺（停止辅助/投影结束时调用）。 */
+    public static void hideRowNumbers() {
+        SenseFieldReaderService self = instance.get();
+        if (self == null) return;
+        self.handler().post(self::removeRowOverlay);
+    }
+
+    private static volatile java.lang.ref.WeakReference<SenseFieldReaderService> instance =
+            new java.lang.ref.WeakReference<>(null);
+
     @Override
     public void onDestroy() {
+        if (uiHandler != null) uiHandler.removeCallbacksAndMessages(null);
+        removeRowOverlay();
+        if (instance.get() == this) instance.clear();
         connected = false;
         latestState = latestPackage = "";
         beforeState = null;
         latestAt = touchAt = 0;
         touchX = touchY = -1;
         super.onDestroy();
+    }
+
+    private android.os.Handler uiHandler;
+
+    private android.os.Handler handler() {
+        if (uiHandler == null) uiHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+        return uiHandler;
+    }
+
+    private void postRowNumbers(int l, int t, int r, int b, int rows) {
+        handler().post(() -> addOrUpdateRowOverlay(l, t, r, b, rows));
+    }
+
+    private void addOrUpdateRowOverlay(int lPct, int tPct, int rPct, int bPct, int rows) {
+        try {
+            if (rowOverlay != null) {
+                rowWindowManager.removeView(rowOverlay);
+                rowOverlay = null;
+            }
+            android.view.WindowManager wm =
+                    (android.view.WindowManager) getSystemService(WINDOW_SERVICE);
+            if (wm == null) return;
+            android.graphics.Point size = new android.graphics.Point();
+            wm.getDefaultDisplay().getRealSize(size);
+            int sw = size.x, sh = size.y;
+            final int boardL = sw * lPct / 100, boardT = sh * tPct / 100;
+            final int boardH = sh * (bPct - tPct) / 100;
+            final int cellH = boardH / rows;
+            final android.graphics.Paint fill = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            fill.setColor(0xFFFFFFFF);
+            fill.setStyle(android.graphics.Paint.Style.FILL);
+            fill.setTextAlign(android.graphics.Paint.Align.CENTER);
+            final android.graphics.Paint stroke = new android.graphics.Paint(fill);
+            stroke.setColor(0xFF1A2A44);
+            stroke.setStyle(android.graphics.Paint.Style.STROKE);
+            stroke.setStrokeWidth(6f);
+            android.view.View overlay = new android.view.View(this) {
+                @Override protected void onDraw(android.graphics.Canvas canvas) {
+                    super.onDraw(canvas);
+                    float textSize = Math.max(30f, cellH * 0.5f);
+                    fill.setTextSize(textSize);
+                    stroke.setTextSize(textSize);
+                    float x = Math.max(textSize * 0.8f, boardL - textSize * 1.1f);
+                    for (int i = 0; i < rows; i++) {
+                        float y = boardT + cellH * (i + 0.5f) + textSize * 0.35f;
+                        String n = String.valueOf(i + 1);
+                        canvas.drawText(n, x, y, stroke);
+                        canvas.drawText(n, x, y, fill);
+                    }
+                }
+            };
+            android.view.WindowManager.LayoutParams lp = new android.view.WindowManager.LayoutParams(
+                    android.view.WindowManager.LayoutParams.MATCH_PARENT,
+                    android.view.WindowManager.LayoutParams.MATCH_PARENT,
+                    android.view.WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                            | android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                            | android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                            | android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    android.graphics.PixelFormat.TRANSLUCENT);
+            wm.addView(overlay, lp);
+            rowOverlay = overlay;
+            rowWindowManager = wm;
+            Log.i(TAG, "行号标尺已显示 " + rows + " 行");
+        } catch (Exception e) {
+            Log.w(TAG, "行号标尺显示失败: " + e.getMessage());
+        }
+    }
+
+    private void removeRowOverlay() {
+        try {
+            if (rowOverlay != null && rowWindowManager != null) {
+                rowWindowManager.removeView(rowOverlay);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "行号标尺移除失败: " + e.getMessage());
+        } finally {
+            rowOverlay = null;
+        }
     }
 }

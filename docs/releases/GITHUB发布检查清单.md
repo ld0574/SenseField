@@ -93,6 +93,7 @@ git push -u origin main
 - [ ] 需要公开 Release 时，用对应版本的 Git tag 标记，例如 `v0.3.8`；本地候选交付不要求创建 tag。
 - [ ] APK、ZIP 和校验文件保存在 `output/releases/<版本>/`，公开交付时上传到 GitHub Release 附件；`docs/` 只保存说明和发布记录。
 - [ ] 在 `docs/releases/<版本>/RELEASE_NOTES.md` 记录变化、使用方式、验证边界、文件名、大小与 SHA-256，并更新[发布索引](README.md)。
+- [ ] 各上传目录使用一份 `SHA256SUMS.txt` 核对该目录中的产物（哈希、两个空格、文件名，清单不含自身）。上传前逐项核对，上传后再与 GitHub 附件的 `digest` 字段核对；不把构建输出提交到源码仓库。
 - [ ] 同时发布 APK 的 SHA-256、Android 最低版本、测试设备和已知限制。
 - [ ] Release 不包含私有 profile；如需演示配置，只发布不含玩家数据、经过复核的配置。
 - [ ] 保留一段可复现的合成演示；真实录像只有在取得授权后才能作为公开演示。

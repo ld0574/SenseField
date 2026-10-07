@@ -36,10 +36,16 @@ final class CloudVision {
      *  不许模型自改（自改行列会让覆盖结果整盘错位）；失败后冷却 60s 防限速连环打。 */
     private static volatile long cooldownUntil = 0;
 
-    static char[][] readBoard(Bitmap boardCrop, String apiKey, String model, int rows, int cols) {
-        if (android.os.SystemClock.elapsedRealtime() < cooldownUntil) return null;
+    /** 采集线程调用：把棋盘裁剪图编成 base64 JPEG。像素工作必须留在持帧线程——
+     *  上一帧会被 onImageAvailable 回收，跨线程用 Bitmap 编码等于拿被回收的像素，
+     *  子线程未捕获异常直接崩整个 App。网络线程只收这串字节。 */
+    static String encodeForUpload(Bitmap boardCrop) {
+        return toBase64Jpeg(scaleForUpload(boardCrop));
+    }
+
+    static char[][] readBoard(String imageB64, String apiKey, String model, int rows, int cols) {
+        if (imageB64 == null || android.os.SystemClock.elapsedRealtime() < cooldownUntil) return null;
         try {
-            String b64 = toBase64Jpeg(scaleForUpload(boardCrop));
             String prompt = "这是三消游戏棋盘截图。输出 JSON：{\"rows\":" + rows + ",\"cols\":" + cols
                     + ",\"grid\":[[...]]}，grid 必须是恰好 " + rows + " 行 " + cols
                     + " 列的二维数组，每个元素是棋子颜色名，限定：红狐狸/小鸡/青蛙/河马/棕熊/紫猫/未知。"
@@ -52,7 +58,8 @@ final class CloudVision {
             JSONArray content = new JSONArray();
             JSONObject imgUrl = new JSONObject();
             imgUrl.put("type", "image_url");
-            imgUrl.put("image_url", new JSONObject().put("url", "data:image/jpeg;base64," + b64));
+            imgUrl.put("image_url", new JSONObject().put("url",
+                    "data:image/jpeg;base64," + imageB64));
             content.put(imgUrl);
             content.put(new JSONObject().put("type", "text").put("text", prompt));
             msg.put("content", content);
@@ -62,8 +69,11 @@ final class CloudVision {
             HttpURLConnection conn = (HttpURLConnection) new URL(
                     "https://openrouter.ai/api/v1/chat/completions").openConnection();
             conn.setRequestMethod("POST");
-            conn.setConnectTimeout(20000);
-            conn.setReadTimeout(45000);
+            /* 预算 4s 连／12s 读：兜底失败的代价是「这一盘没上云端」，
+             * 而 45 秒读超时在采集线程上曾是「全程静默」的元凶（bugreport 2026-10-07）。
+             * 现在虽然挪到了独立线程，仍要给请求本身一个上界，免得在途标记被长期占住。 */
+            conn.setConnectTimeout(4000);
+            conn.setReadTimeout(12000);
             conn.setDoOutput(true);
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setRequestProperty("Authorization", "Bearer " + apiKey);
@@ -97,20 +107,19 @@ final class CloudVision {
     /** 自托管模型服务（腾讯云）：POST <base>/read_board，body {image:b64jpeg, rows, cols}，
      *  回包 {rows, cols, grid:[[颜色名...]]}（颜色名与 OpenRouter 路径同一套，走 letterOf）。
      *  自家服务器无配额无限速，配置了 match3_cloud_url 时优先走它；失败返回 null 回退。 */
-    static char[][] readBoardFromServer(Bitmap boardCrop, String baseUrl, int rows, int cols) {
-        if (baseUrl == null || baseUrl.trim().isEmpty()) return null;
+    static char[][] readBoardFromServer(String imageB64, String baseUrl, int rows, int cols) {
+        if (imageB64 == null || baseUrl == null || baseUrl.trim().isEmpty()) return null;
         try {
             String base = baseUrl.trim();
-            String b64 = toBase64Jpeg(scaleForUpload(boardCrop));
             JSONObject body = new JSONObject();
-            body.put("image", b64);
+            body.put("image", imageB64);
             body.put("rows", rows);
             body.put("cols", cols);
             HttpURLConnection conn = (HttpURLConnection) new URL(
                     base + (base.endsWith("/") ? "" : "/") + "read_board").openConnection();
             conn.setRequestMethod("POST");
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(15000);
+            conn.setConnectTimeout(4000);
+            conn.setReadTimeout(12000);
             conn.setDoOutput(true);
             conn.setRequestProperty("Content-Type", "application/json");
             try (OutputStream os = conn.getOutputStream()) {

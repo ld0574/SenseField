@@ -105,6 +105,81 @@ public class Match3MergeInstrumentedTest {
         DiagnosticRecorder.IO.submit(() -> {}).get(10, TimeUnit.SECONDS);
     }
 
+    @Test public void cueAuditRecordsAcceptedChannelsAndPlaybackForTheSameRequest() throws Exception {
+        long now = SystemClock.elapsedRealtime();
+        DiagnosticRecorder recorder = DiagnosticRecorder.start(context(), UUID.randomUUID().toString(), now, true);
+        CueRequest cue = new CueRequest(recorder.sessionId, "synthetic-cue", "m3live:announce", "test",
+                CueRequest.Category.SYSTEM, 70, now, now + 10000,
+                CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH, 0, 0, 0, "合成测试");
+        recorder.dispatch(cue, "accepted", "", CueRequest.CHANNEL_SPEECH);
+        recorder.playback(cue, "speech", now, "started");
+        recorder.finish("synthetic_cue_audit");
+        drainDiagnostics();
+        boolean dispatched = false, played = false;
+        for (String line : Files.readAllLines(new File(recorder.directory, "events.jsonl").toPath(),
+                StandardCharsets.UTF_8)) {
+            org.json.JSONObject event = new org.json.JSONObject(line);
+            org.json.JSONObject data = event.getJSONObject("data");
+            if ("CueDispatch".equals(event.getString("type"))) {
+                assertEquals("synthetic-cue", data.getString("cue_id"));
+                assertEquals(CueRequest.CHANNEL_SPEECH, data.getInt("accepted_channels"));
+                dispatched = true;
+            } else if ("CuePlayback".equals(event.getString("type"))) {
+                assertEquals("synthetic-cue", data.getString("cue_id"));
+                assertEquals("started", data.getString("result"));
+                played = true;
+            }
+        }
+        assertTrue(dispatched);
+        assertTrue(played);
+    }
+
+    /** A synthetic stopped projection exercises Android storage/notification integration; no game capture. */
+    @Test public void stoppedProjectionReleasesFrameButKeepsMarkersUntilManualTeardown() throws Exception {
+        Match3LiveService service = new Match3LiveService();
+        java.lang.reflect.Method attach = android.content.ContextWrapper.class
+                .getDeclaredMethod("attachBaseContext", Context.class);
+        attach.setAccessible(true);
+        attach.invoke(service, context());
+        service.onCreate();
+        DiagnosticRecorder recorder = DiagnosticRecorder.start(context(), UUID.randomUUID().toString(),
+                SystemClock.elapsedRealtime(), true);
+        Class<?> sessionType = Class.forName(Match3LiveService.class.getName() + "$Session");
+        java.lang.reflect.Constructor<?> constructor = sessionType.getDeclaredConstructor(long.class,
+                android.media.projection.MediaProjection.class, android.media.ImageReader.class,
+                DiagnosticRecorder.class);
+        constructor.setAccessible(true);
+        Object session = constructor.newInstance(1L, null, null, recorder);
+        java.lang.reflect.Field active = Match3LiveService.class.getDeclaredField("active");
+        active.setAccessible(true);
+        active.set(service, session);
+        Bitmap frame = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888);
+        java.lang.reflect.Field pixels = sessionType.getDeclaredField("frame");
+        pixels.setAccessible(true);
+        pixels.set(session, frame);
+        try {
+            java.lang.reflect.Method suspend = Match3LiveService.class
+                    .getDeclaredMethod("suspendStoppedProjection", sessionType);
+            suspend.setAccessible(true);
+            suspend.invoke(service, session);
+            assertTrue(frame.isRecycled());
+            assertNull(pixels.get(session));
+            assertFalse("System projection stop must not finish diagnostics prematurely", recorder.finished);
+            service.onStartCommand(new Intent(context(), Match3LiveService.class)
+                    .setAction(Match3LiveService.ACTION_MARK_ISSUE), 0, 2);
+            drainDiagnostics();
+            String events = new String(Files.readAllBytes(new File(recorder.directory, "events.jsonl").toPath()),
+                    StandardCharsets.UTF_8);
+            assertTrue("Notification marker remains available after recording stops", events.contains("user_marker"));
+            java.lang.reflect.Method teardown = Match3LiveService.class.getDeclaredMethod("teardownMedia");
+            teardown.setAccessible(true);
+            teardown.invoke(service);
+            drainDiagnostics();
+            assertTrue(recorder.finished);
+            assertTrue(new File(recorder.directory, "summary.json").isFile());
+        } finally { service.onDestroy(); }
+    }
+
     private static DiagnosticRecorder recordPortrait(boolean allowPortrait) throws Exception {
         long now = SystemClock.elapsedRealtime();
         DiagnosticRecorder recorder = DiagnosticRecorder.start(context(), UUID.randomUUID().toString(), now, allowPortrait);

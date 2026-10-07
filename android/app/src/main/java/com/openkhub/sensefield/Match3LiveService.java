@@ -73,6 +73,9 @@ public class Match3LiveService extends Service {
         long lastChangeAt, lastAnnounceAt, lastTouchHandledAt;
         int hintCount, liveRows = 8, liveCols = 8;
         boolean popupAnnounced, abstainAnnounced, boardValid;
+        int unreadableStreak;
+        boolean unreadableAnnounced, tinyBoxAnnounced, overlayHintAnnounced;
+        volatile boolean projectionStopped;
         volatile boolean exploreMode;
         Session(long generation, MediaProjection projection, ImageReader reader,
                 DiagnosticRecorder diagnostics) {
@@ -95,6 +98,12 @@ public class Match3LiveService extends Service {
                 || ACTION_EXPLORE_OFF.equals(action)) {
             projectionSession.noteCommand(startId);
             Session s = active;
+            if (s != null && s.projectionStopped) {
+                if (ACTION_MARK_ISSUE.equals(action)) s.diagnostics.markIssue();
+                else android.widget.Toast.makeText(this, "屏幕录制已结束，请重新开始实时识别。",
+                        android.widget.Toast.LENGTH_LONG).show();
+                return START_NOT_STICKY;
+            }
             if (s == null || !isCurrent(s)) {
                 stopSelfResult(startId);
                 return START_NOT_STICKY;
@@ -161,15 +170,21 @@ public class Match3LiveService extends Service {
                 throw new IllegalStateException("Projection superseded");
             currentProjection.registerCallback(new MediaProjection.Callback() {
                 @Override public void onStop() {
-                    int stopId = projectionSession.stopIfCurrent(generation, currentProjection);
-                    if (stopId > 0) {
+                    projectionSession.runIfGeneration(generation, () -> {
+                        int stopId = projectionSession.stopIfCurrent(generation, currentProjection);
+                        if (stopId <= 0) return;
                         diagnostics.audit("Match3ProjectionStopped start_id=" + stopId);
-                        diagnostics.finish("projection_stopped");
+                        Session stopped = active;
+                        if (stopped != null && stopped.generation == generation) {
+                            suspendStoppedProjection(stopped);
+                        } else {
+                            diagnostics.finish("projection_stopped_during_start");
+                            stopSelfResult(stopId);
+                        }
                         android.widget.Toast.makeText(Match3LiveService.this,
-                                "屏幕录制已结束，需要继续请重新开始实时识别。",
+                                "屏幕录制已结束，请重新开始实时识别。若经常中断，请检查游戏加速和省电设置。",
                                 android.widget.Toast.LENGTH_LONG).show();
-                        stopSelfResult(stopId);
-                    }
+                    });
                 }
             }, handler());
             failureReason = "virtual_display_failed";
@@ -184,6 +199,7 @@ public class Match3LiveService extends Service {
             failureReason = "session_setup_failed";
             Session s = new Session(generation, currentProjection, currentReader, diagnostics);
             active = s;
+            if (!isCurrent(s)) throw new IllegalStateException("Projection stopped during setup");
             running = true;
             diagnostics.audit("Match3Session game=happy-anipop capture_interval_ms=" + CAPTURE_INTERVAL_MS);
             currentReader.setOnImageAvailableListener(source -> onImageAvailable(source, s), handler());
@@ -218,6 +234,27 @@ public class Match3LiveService extends Service {
     private boolean isCurrent(Session s) {
         return s != null && active == s && s.reader == reader
                 && projectionSession.isCurrent(s.generation, s.projection);
+    }
+
+    /** Keep the diagnostic session available for marking/export, without continuing capture. */
+    private void suspendStoppedProjection(Session s) {
+        s.projectionStopped = true;
+        s.boardValid = false;
+        s.exploreMode = exploring = false;
+        s.lastSwaps = null;
+        handler().removeCallbacksAndMessages(s);
+        if (dispatcher != null) dispatcher.clearAll();
+        SenseFieldReaderService.hideRowNumbers();
+        if (reader != null) { try { reader.close(); } catch (Exception ignored) { } reader = null; }
+        if (display != null) { try { display.release(); } catch (Exception ignored) { } display = null; }
+        projection = null;
+        if (s.frame != null && !s.frame.isRecycled()) s.frame.recycle();
+        s.frame = null;
+        s.diagnostics.publishState(DiagnosticRecorder.object("game_id", "happy-anipop",
+                "state", "projection_stopped", "frames_expected", false,
+                "snapshot_at_ms", SystemClock.elapsedRealtime(), "processed_frames", s.processedFrames));
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        if (nm != null) nm.notify(NOTIFICATION_ID, buildNotification());
     }
 
     private void onImageAvailable(ImageReader source, Session s) {
@@ -302,6 +339,8 @@ public class Match3LiveService extends Service {
         s.rawIdx = s.rawFill = 0;
         s.boardValid = false;
         s.confirmation.reset();
+        s.unreadableStreak = 0;
+        s.unreadableAnnounced = false;
     }
 
     private boolean saveCalibration(Session s, int[] bounds, int rows, int cols) {
@@ -356,9 +395,10 @@ public class Match3LiveService extends Service {
                 s.liveCols = candCols;
                 s.sampler = candidate;
                 s.abstainAnnounced = false;
+                updateRowNumbers(s, auto, candRows);
                 Log.i(TAG, "棋盘自动适配: l=" + auto[0] + "% t=" + auto[1] + "% r=" + auto[2]
                         + "% b=" + auto[3] + "% 格数=" + candRows + "x" + candCols
-                        + "（试采验证通过）");
+                        + "（试采验证通过） " + describeCalibration(s, frame));
             } else if (calibrated) {
 
                 int l = prefs.getInt("match3_l", 4), t = prefs.getInt("match3_t", 18);
@@ -366,6 +406,17 @@ public class Match3LiveService extends Service {
                 int n = Match3Sampler.detectGridCount(frame, new int[]{l, t, r, b});
                 int rows = n > 0 ? n : Math.max(6, Math.min(9, prefs.getInt("match3_rows", 8)));
                 int cols = n > 0 ? n : Math.max(6, Math.min(9, prefs.getInt("match3_cols", 8)));
+                int[] cell = new int[2];
+                if (!Match3Sampler.plausibleCalibration(frame.getWidth(), frame.getHeight(),
+                        l, t, r, b, rows, cols, cell)) {
+                    if (!s.tinyBoxAnnounced) {
+                        s.tinyBoxAnnounced = true;
+                        s.diagnostics.audit("Match3CalibrationRejected cell=" + cell[0] + "x" + cell[1]
+                                + "px " + describeCalibration(s, frame));
+                        announce(s, "棋盘标定区域太小或超出画面，读不清格子。请重新框选整个棋盘。");
+                    }
+                    return;
+                }
                 if (n > 0) {
                     if (!projectionSession.runIfCurrent(s.generation, s.projection, () -> {
                         prefs.edit().putInt("match3_rows", rows).putInt("match3_cols", cols).apply();
@@ -376,8 +427,10 @@ public class Match3LiveService extends Service {
                 s.liveCols = cols;
                 s.sampler = new Match3Sampler(this, rows, cols, l, t, r, b);
                 s.abstainAnnounced = false;
+                updateRowNumbers(s, new int[]{l, t, r, b}, rows);
                 Log.i(TAG, "沿用手动标定 " + rows + "x" + cols
-                        + (n > 0 ? "（格数自检=" + n + "）" : ""));
+                        + (n > 0 ? "（格数自检=" + n + "）" : "（格数自检弃权，按存值读）")
+                        + " " + describeCalibration(s, frame));
             } else {
 
                 if (!s.abstainAnnounced && !s.exploreMode) {
@@ -424,12 +477,17 @@ public class Match3LiveService extends Service {
             char[][] fixed = (candidate != null ? candidate : s.sampler).sample(frame);
             int fixedCells = fixed.length * fixed[0].length;
             if (countUnknown(fixed) * 100 > fixedCells * 40) {
-                Log.i(TAG, "自我修复后仍未识别，本轮静默且不采纳新标定");
+                Log.i(TAG, "自我修复后仍未识别，不采纳新标定");
                 s.confirmation.reset();
-                if (!s.abstainAnnounced
-                        && !GameProfile.settings(this).getBoolean("match3_calibrated", false)) {
-                    announce(s, "棋盘位置变了但认不出来。请框选标定棋盘区域。");
-                    s.abstainAnnounced = true;
+                s.unreadableStreak++;
+                long now = SystemClock.elapsedRealtime();
+                if (shouldAnnounceUnreadable(s.unreadableStreak, s.unreadableAnnounced,
+                        now - s.lastAnnounceAt)) {
+                    s.unreadableAnnounced = true;
+                    s.lastAnnounceAt = now;
+                    s.diagnostics.audit("Match3BoardUnreadable unknown=" + unknown + "/" + total
+                            + " " + describeCalibration(s, frame));
+                    announce(s, "这一盘的格子读不清，请重新框选标定棋盘区域。");
                 }
                 return;
             }
@@ -439,10 +497,13 @@ public class Match3LiveService extends Service {
                 s.liveRows = candRows;
                 s.liveCols = candCols;
                 s.sampler = candidate;
+                updateRowNumbers(s, auto, candRows);
             }
             resetWindow(s);
             return; // 新标定重新积累稳定窗，不拿单帧直接播报。
         }
+        s.unreadableStreak = 0;
+        s.unreadableAnnounced = false;
         // Opening animations and transitions must settle across two majority windows.
         if (!s.confirmation.accept(matrix)) return;
         s.boardValid = true;
@@ -475,12 +536,38 @@ public class Match3LiveService extends Service {
             sb.append("暂无可消除交换。");
         }
         Log.i(TAG, sb.toString());
+        Log.i(TAG, "播报读数 " + matrix.length + "x" + matrix[0].length
+                + " 未知=" + unknown + "/" + total + " 变化=" + diffCells + "格 "
+                + describeCalibration(s, frame));
         if (s.diagnostics != null) {
             s.diagnostics.audit("BoardRecognized rows=" + matrix.length + " cols=" + matrix[0].length
                     + " unknown=" + unknown + "/" + total + " swaps=" + swaps.size());
 
         }
         announce(s, sb.toString());
+    }
+
+    private String describeCalibration(Session s, Bitmap frame) {
+        var prefs = GameProfile.settings(this);
+        int l = prefs.getInt("match3_l", 4), t = prefs.getInt("match3_t", 18);
+        int r = prefs.getInt("match3_r", 96), b = prefs.getInt("match3_b", 82);
+        int w = frame.getWidth() * (r - l) / 100;
+        int h = frame.getHeight() * (b - t) / 100;
+        return "标定=" + l + "/" + t + "/" + r + "/" + b + "% 裁剪=" + w + "x" + h
+                + "px 单格≈" + w / Math.max(1, cols(s)) + "x" + h / Math.max(1, rows(s))
+                + "px 格数=" + rows(s) + "x" + cols(s);
+    }
+
+    private void updateRowNumbers(Session s, int[] bounds, int rows) {
+        projectionSession.runIfCurrent(s.generation, s.projection, () -> {
+            boolean available = SenseFieldReaderService.showRowNumbers(this,
+                    bounds[0], bounds[1], bounds[2], bounds[3], rows);
+            if (!available && !s.overlayHintAnnounced) {
+                s.overlayHintAnnounced = true;
+                announce(s, "行号和触屏点读需要开启听野读屏辅助，可在系统无障碍设置中开启。");
+            }
+            return true;
+        });
     }
 
     /** 逐格多数票：三帧里 ≥2 帧相同的字母胜出；三帧各不相同 → '.'（未定）。 */
@@ -496,10 +583,18 @@ public class Match3LiveService extends Service {
         return out;
     }
 
-    private static int countUnknown(char[][] m) {
+    static int countUnknown(char[][] m) {
         int n = 0;
         for (char[] row : m) for (char c : row) if (Match3Sampler.isUnreadable(c)) n++;
         return n;
+    }
+
+    static boolean isUnreadableBoard(char[][] matrix) {
+        return countUnknown(matrix) * 100 > matrix.length * matrix[0].length * 40;
+    }
+
+    static boolean shouldAnnounceUnreadable(int streak, boolean alreadyAnnounced, long sinceLastAnnounceMs) {
+        return streak >= 2 && !alreadyAnnounced && sinceLastAnnounceMs >= MIN_ANNOUNCE_GAP_MS;
     }
 
     private static int countDiffCells(char[][] a, char[][] b) {
@@ -567,12 +662,17 @@ public class Match3LiveService extends Service {
                         new CueDispatcher.Listener() {
                             @Override public void onDispatch(CueRequest request,
                                     CueDispatcher.DispatchResult result) {
+                                DiagnosticRecorder recorder = diagnosticsForCue(request);
+                                if (recorder != null) recorder.dispatch(request, result.outcome,
+                                        result.reason, result.acceptedChannels);
                                 auditCue(request, "Match3Dispatch cue_id=" + request.cueId
                                         + " outcome=" + result.outcome + " reason=" + result.reason
                                         + " channels=" + result.acceptedChannels);
                             }
                             @Override public void onPlayback(CueRequest request, String channel,
                                     long atMs, String result) {
+                                DiagnosticRecorder recorder = diagnosticsForCue(request);
+                                if (recorder != null) recorder.playback(request, channel, atMs, result);
                                 auditCue(request, "Match3Playback cue_id=" + request.cueId
                                         + " channel=" + channel + " at_ms=" + atMs + " result=" + result);
                             }
@@ -593,12 +693,19 @@ public class Match3LiveService extends Service {
     }
 
     private void auditCue(CueRequest request, String message) {
+        DiagnosticRecorder recorder = diagnosticsForCue(request);
+        if (recorder != null) recorder.audit(message);
+    }
+
+    private DiagnosticRecorder diagnosticsForCue(CueRequest request) {
         Session current = active;
         // Playback listeners run under the dispatcher lock; avoid acquiring the
         // projection lock here, since announce() holds them in the opposite order.
-        if (current != null && current.reader == reader && !current.diagnostics.finished
+        if (current != null && (current.reader == reader || current.projectionStopped)
+                && !current.diagnostics.finished
                 && current.diagnostics.sessionId.equals(request.sessionId))
-            current.diagnostics.audit(message);
+            return current.diagnostics;
+        return null;
     }
 
     private Notification buildNotification() {
@@ -608,9 +715,11 @@ public class Match3LiveService extends Service {
         PendingIntent stop = PendingIntent.getService(this, 5,
                 new Intent(this, Match3LiveService.class).setAction(ACTION_STOP),
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Session s = active;
+        boolean stopped = s != null && s.projectionStopped;
         return new Notification.Builder(this, "m3live")
-                .setContentTitle("听野 · 消消乐实时识别中")
-                .setContentText("正在识别棋盘并语音播报")
+                .setContentTitle(stopped ? "听野 · 消消乐录屏已结束" : "听野 · 消消乐实时识别中")
+                .setContentText(stopped ? "请重新开始识别，或点击停止保存记录。" : "正在识别棋盘并语音播报")
                 .setSmallIcon(android.R.drawable.ic_menu_camera)
                 .addAction(android.R.drawable.ic_menu_edit, "标记问题", mark)
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel, "停止", stop)
@@ -621,6 +730,7 @@ public class Match3LiveService extends Service {
         running = exploring = false;
         Session old = active;
         active = null;
+        SenseFieldReaderService.hideRowNumbers();
         if (handler != null) {
             if (old != null) handler.removeCallbacksAndMessages(old);
             // Recycling is queued after any in-progress recognition using this bitmap.
