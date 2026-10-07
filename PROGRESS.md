@@ -344,3 +344,12 @@
 - 案卷内的路径串同轮滚（脚本逐条做锚点断言，读数打在运行输出里）：原先直接挂在 `output/` 根下的三串——发布说明 `release-notes-0.4.31.md`、回读凭证 `release-v0.4.31-readback-2026-10-07T08-56-07.json`（本卷 1 处＋BLOCKED §11 1 处）、门禁日志 `gate-gradle-2026-10-07T08-11-25.log`——都改写成 `output/releases/0.4.31/` 下的同名片段。裸文件名（不带 `output/` 前缀）那两处指的是构建产物本身，不改。
 - §10 结案：剩的那半按②落地，`output/releases/<版本>/` 现在是既成事实，清单不用改。
 - 本轮没做：没动 GitHub Release 上任何附件（远端资产与本地目录重排无关，比对用的是已落盘的那份回读凭证，没重取）；没同步 Gitee；没清 `SenseField-artifacts\` 老目录（§10 已完成那半里 9 个产物早已搬走）；**没往代码仓那份清单补「每目录一份 `SHA256SUMS.txt`」这句约定**——那要再开一枪 docs 提交并推到 `feature/jev-l2-judgment`，属对外动作，不在「按顺序执行」的两条里，等口径。
+
+## 2026-10-07 上午（续4）：代码仓发布清单补「归位＋`SHA256SUMS.txt`」约定一句并推
+
+- 口径来源：我给下载链接时把三件待裁项列成选项，领导多选里**只勾了「补清单约定并推」**——§12 的超限文件清理与「改写已推历史抹那 7 处本机绝对路径」**都没勾，本轮都没做**。第二问里选的「① 只 ignore wheel」我按第一问的勾选结果**没有执行**（第一问没选它），需要的话一句就动。
+- 改了什么：`<HOME>\SenseField\docs\GITHUB发布检查清单.md`「5. Release 和比赛交付」段，在「APK 放到 GitHub Release 附件」那条之后插入 1 行（现第 91 行）：产物按版本归位 `output/releases/<版本>/`（`output/` 由 `.gitignore:37` 整目录忽略）；校验文件的约定形态＝**每版本目录一份 `SHA256SUMS.txt`**（GNU 格式：哈希、两个空格、文件名，清单不含自身），上传附件前在该目录 `sha256sum -c SHA256SUMS.txt` 要 rc=0 且 OK 条数等于该目录产物数；对外下载前把清单哈希与 Release 附件 `digest`（**去 `sha256:` 前缀**）逐条比。最后那半句是本轮真踩过的坑——第一次直接比全串两枚都报 False。
+- 实测读数：纯 LF 文件，改后 **CR 仍 0**；5,899 → **6,470 字节**、换行数 94 → **95**；`git diff --stat` **1 文件 `+1 / -0`**；提交前对暂存 diff 跑 9 词身份扫描 **0 命中**；`python scripts/check_public_repo.py` **335 候选文件通过**（与该文档既存跟踪态一致，新增一行不改候选集大小）。文档现 sha256 前缀 `5a8fd1955dfe31c6`。
+- 提交与推送：单号 `449e945`，parent 是 `d3afcd1`（v0.4.31 那枪）；推前 `git ls-remote` 实测远端 `feature/jev-l2-judgment` 头仍是 `d3afcd1`，所以是 fast-forward；`git push <SSH URL> HEAD:refs/heads/feature/jev-l2-judgment` rc=0，输出 `d3afcd1..449e945`，复跑 `ls-remote` 远端头 = `449e945270a7c6c8a8ef11a0d3453ec21825e479` 与本地 `git rev-parse HEAD` 逐字符相等；工作树 `git status --short` **0 行**。提交身份沿用本仓 config 里那把既存身份，没动 `git config`。
+- **一句必要澄清**（防下一班读成矛盾）：§10 结案那段写的「清单本身一个字没改」，指的是**案卷仓那份** `docs/releases/GITHUB发布检查清单.md`（第 94 行那句规矩），本轮它确实没动；本轮改的是**代码仓那份**——§10「新半」量出过它对 `output` 出现 **0** 次、也就是这条归位规矩此前只活在案卷仓那份里，现在两份都有，代码仓那份还多给了校验文件的具体形态。两份仍不逐字相同，代码仓那份没抄「`docs/` 只保存说明和发布记录」那半句。
+- 本轮没做：没重跑 gradle 门禁（纯文档一行，`assembleDebug`／`testDebugUnitTest`／`lintDebug` 没动过代码，跳过并在提交说明里写明）、没打 tag、没发 Release、没同步 Gitee、没把这句镜像回案卷仓那份清单（要镜像是另一枪）、没动 §12 的 7 个超限文件。
