@@ -229,3 +229,15 @@ Jev 的 confidence 由 RLCD 训练校准；开源复刻实现的置信度分布�
 - 五批修复（画面归属闸门／标定持久化条件／触点邻域屏蔽／静默与退出归因／播报通道尊重设置）本轮一律未实现，也未改工作树任何文件。改代码属本地可逆动作，但构建 APK 与发版要一句放行；另外批次一会改变「什么时候允许出声」的产品口径，需要用户确认「离开游戏画面即完全静默」是可接受的，而不是要留一句提示。
 - 与 §13 的关系：§13 要验的 v0.4.31 四修，这两包正是 0.4.31 在目标真机上的实录，可当部分证据；但其中「读不出必出声」那一条在包里查不到对应事件——`:417-431` 那句播报只写 Log，没有 diagnostics 打点，所以该条按 §13 口径仍算零读数，别把「包里没有反证」当成验收通过。
 - 本节不重复 §12 的三条遗留（B 的另一半要改写已推历史、jev 两枚 APK 要不要 `git rm --cached`、C 那个畸形未跟踪文件名），那三条照旧等口径。
+
+## §15 并行会话在途 0.4.32 补丁的死闸门：会把症状二升级成永久无声僵尸会话
+
+实测对象是 `<HOME>\SenseField`（分支 `feature/jev-l2-judgment`，HEAD 449e945）的**未提交**工作树，`git status --short` 恰三枚文件：`android/app/build.gradle`（versionCode 28→29、versionName 0.4.31→0.4.32）、`Match3Coach.java`（`isPopupShowing` 阈值 avgV 0.62→0.75、whiteRatio 0.35→0.55）、`Match3LiveService.java`。本节引用的行号取自该未提交版本（`projectionTerminated` 声明 :68、`Callback.onStop` :165-173、tick 守卫 :234、`projection` 赋值 :149、`teardownMedia()` 内唯一置 null :840），与 HEAD 449e945 的行号不同。
+
+- 缺陷一（守卫不可达）：新加的 tick 守卫是 `if (projectionTerminated && projection == null)`。`projection` 这个 Java 字段只在 :149 `getMediaProjection` 时赋值，唯一置 null 的地方在 `teardownMedia()`（:840），而改写后的 `Callback.onStop` 只置 `projectionTerminated = true`、不再调用 `teardownMedia()`。系统掐掉投影不会把宿主进程的字段引用置空，所以右半边永假、守卫永不触发，`projection_system_stopped` 这个 reason 一次也录不到。
+- 缺陷二（唯一出声被删）：同一段把「屏幕录制已结束，需要继续请重新开始实时识别」整句播报删掉了。两条相加，玩家报的「没点停止就突然中断」会从「15～37 秒后静默、但会话有结束标签」变成「通知栏还在、服务还活着、既不播也不报错也不结束」——症状更坏且更不可归因。
+- 缺陷三（注释里的前提是假的）：补丁注释写「重新进入游戏后系统会重建 MediaProjection 并重启服务」。实测口径不支持：MediaProjection token 一次性（Android 15+ 二次 `getMediaProjection` 抛 `Don't re-use the resultData`），且 `onStartCommand` 各分支一律返回 `START_NOT_STICKY`，粘性重启这条通道本来就是关的（HEAD :116-127 的注释与 :122-127 的「投影存活即忽略新 START」都是为它加的补丁）。
+- 缺陷四（兜底假设不成立）：注释还说「投影失效后 `acquireLatestImage` 返回 null 或旧帧，`processFrame` 的 sampler 验证会自然拦截」。`sampler` 验证要有帧才跑得动；tick 拿到 `frame == null` 时是零留痕跳过——正是 §14 列的那八个无痕迹静默出口之一。这条兜底等于「靠一个不会响的警报器」。
+- 处置：本轮不改对方工作树。等价且可用的实现已落在 worktree `<HOME>\SenseField-fixpack-20261007`（分支 `fix/live-gates-20261007`）：`Callback.onStop` 内直接钉 `endReason` → `audit("SessionEnd …")` → `finish(该原因)` → `teardownMedia()` → 恢复出声，不依赖 `projection == null` 这种永假条件；另有每 tick `publishState`＋断流看门狗，把「投影没被掐但帧不来了」这一类也变成有声有据。两边合流时建议以 worktree 版为准；若保留对方结构，最小修法是守卫条件改成单条件 `projectionTerminated` 并恢复出声，且 `onStop` 内必须调 `teardownMedia()`。
+- 待用户裁：`Match3Coach.isPopupShowing` 阈值收紧（avgV 0.75／whiteRatio 0.55）打的确实是触点白涟漪这条路，方向不算错；但它只把「触点反馈被误判成弹窗」压住，不解决「非游戏画面被当棋盘」这条主因，别把它当批次一用。阈值抬高后真弹窗会不会漏判（漏判=弹窗期间继续播棋盘），需要真机一局验证，本轮无读数。
+- 与 §14 的关系：§14 的五批修复，批次一与批次四已在 worktree 落地并通过 Java 门禁（PROGRESS 续8 有实测数），批次二只做了一半、批次三与批次五未做。§14 那条「谁终止了这两包会话」在本两包仍不可判定——判定它所需的 instrumentation 是本轮新写的，要等下一版包。

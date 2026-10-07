@@ -449,3 +449,39 @@
 ### 自我更正（本轮抓到）
 
 - 前一段会话跨包统计表把新会话的「median gap 6.8～13.2 秒、单段停 21.6/36.3/47.3/75.2/150.9 秒」解读成「帧泵变慢 12～30 倍」。本轮按 frame_count==audit 数复算后该解读作废：那是出声间隔，不是帧间隔；老包 reason=destroyed 的 0.2～0.5 秒才是真帧间隔（那套由 `CaptureService` 逐帧写 frame 事件）。老包与新包在这一个字段上不可比。
+
+## 2026-10-07 上午（续8）：批次一＋批次四落地在隔离 worktree，Java 门禁实测绿
+
+实测时刻：2026-10-07 11:24（+0800，本轮 `date` 取）。
+
+### 先回答 §14 留的那个口径问题
+
+「离开游戏画面即完全静默」按不接受处置：闸门持住时播一句「现在不在开心消消乐的画面里，我先安静等着；回到游戏就会自动继续播报」，每个不同的前台包名只播一次；回到游戏画面时清稳定窗并重走首播双重确认。真机上若嫌这句多，可以砍话术，但「静默」不再是不出声的默认值。
+
+### 落点：没碰带在途改动的工作树
+
+`<HOME>\SenseField` 此刻带着另一会话的未提交 0.4.32 改动（`android/app/build.gradle`、`Match3Coach.java`、`Match3LiveService.java` 三枚），本轮一个字不动它。改动落在同仓库的隔离 worktree：`<HOME>\SenseField-fixpack-20261007`，分支 `fix/live-gates-20261007`，基点 449e945，复现命令 `git worktree add ../SenseField-fixpack-20261007 -b fix/live-gates-20261007 449e945`。未提交、未打 tag、未推远端、未出 APK。
+
+- 新增 `Match3ScreenGate.java`（纯逻辑，JVM 可测，沿用 `Match3Gate` 的约定）＋ `Match3ScreenGateTest.java` 4 例。放行口径与「启动游戏」的扫描完全一致：包名含 happyelements 才算游戏画面。
+- `Match3LiveService.java` 167 增 5 删，七处：
+  1. 批次一 屏幕归属闸门插在采样与自动适配之前——`processFrame` 第一件事是问「这块屏幕是谁的」，非游戏画面直接 return。这样假棋盘再没有机会被持久化成 `match3_calibrated=true`（那是误播报能跨会话复发的通道）。
+  2. 批次四 结束原因钉死：`Callback.onStop` 先写 `endReason=projection_system_stopped`，再 `audit("SessionEnd …")`、`finish(该原因)`、`teardownMedia()`，最后才出声；`ACTION_STOP` 写 `user_stopped`；null intent 写 `null_intent_restart`；`onDestroy` 用 `endReason` 兜底 `m3live_session_finished`。`finish` 只认第一次调用，所以顺序是结构性的，不是随手排。
+  3. 批次四 每 tick `publishState`：checkpoint 第一次拿到 `frame_stream_status`／`frame_arrival_age_ms` 的输入，静默期能自证「服务活着、卡在哪道闸门」，不再和「进程死了」同形。
+  4. 批次四 各静默出口各自写 `lastGateReason`（screen_hold、screen_unknown_passthrough、abstain_no_calibration、calibration_too_small、popup_showing、warming_stable_window、unreadable x/y、same_as_announced、first_double_confirm、single_cell_change、cooldown、capture_starved、frame_error），随 publishState 进 checkpoint。
+  5. 批次四 采集中断看门狗：连续 6 秒拿不到新帧就播一句并写 `CaptureStarved`。会话已在收尾（`endReason!=null`）或 `display==null` 时不报——否则会紧跟「录制已被系统结束」再补一句重复播报。
+  6. `UnreadableAnnounced`／`AbstainNoCalibration`／`CalibrationRejected` 三条 audit 补上：0.4.31 的「认不出必出声」此前只写 Log，§13 因此零读数，下一包才有正凭证可查。
+  7. `BoardRecognized` 加 `pkg=`、`ticks=`、`frames=`、`session_ms=`。
+
+### 实测凭证
+
+- `./gradlew --offline :app:testDebugUnitTest`（worktree 内）：BUILD SUCCESSFUL in 19s，23 actionable tasks，`compileDebugJavaWithJavac` 与 `compileDebugUnitTestJavaWithJavac` 均执行——主源码和测试源码都编译过。
+- 结果 XML 汇总：31 个测试类、208 例、failures+errors=0、skipped=0；新增 `Match3ScreenGateTest` 4 例全绿。
+- `python -m pytest -q` 本轮未跑成：`python` 与 `python3` 都报 `ModuleNotFoundError: No module named pytest`；换 `uv run --no-project --with pytest` 起来后是 26 collection errors。那 26 条来自我为了绕环境加的 `--no-project`（仓库依赖没装齐），不是代码缺陷，也不该读成门禁通过。本轮改动纯 Java，Java 侧门禁已过。
+- `assembleDebug`／`lintDebug` 未跑：出 APK 与发版按惯例等一句放行，且要先与对方 0.4.32 合流。
+
+### 未做与为什么（防「以为批次都做完了」）
+
+- 批次三 触点邻域屏蔽：没做。§14 已写明它只是机制推断，本两包既不能证实也不能否证。用户现在开着全局触点反馈，先跑免构建的 A/B（关掉系统「显示触点」再打一局）；A/B 有效再屏蔽，否则等于给识别链路凭空加不确定性。
+- 批次二 标定持久化收紧＋逐帧 ROI 复核：只由闸门间接挡住「非游戏画面命中」，游戏画面内的坏命中仍会持久化，未做。
+- 批次五 播报通道尊重 `cue_channel_speech`／`cue_channel_haptic`＋30 秒存活播报：未做（`permissivePolicy` 照旧硬编码三通道）。
+- 出图方向条件（`DiagnosticRecorder.java:289` 宽不大于高即 return）本轮没改，且发现改它也不够：实时链路 `saveDiagnosticFrame` 传进 `frame()` 的是 JPEG 字节，却按 raw RGBA 的 rowStride 语义被 `copyImageSample` 消费——放开方向只会产出坏图。要图像证据得先给实时链路一条独立的 JPEG 落盘 API，属独立改动，不混进本轮。
