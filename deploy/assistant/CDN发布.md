@@ -70,7 +70,19 @@ python3 scripts/build_app_update_manifest.py \
   --output output/releases/0.4.3/cdn-upload/latest.json
 ```
 
-可用 `--notes-file /path/to/更新说明.txt` 添加面向玩家的简短说明。不要手工修改清单的版本、大小或哈希。
+可用 `--notes-file /path/to/update-summary.txt` 添加更新弹窗专用摘要。不要手工修改清单的版本、大小或哈希。
+
+**弹窗摘要最多三条、总计不超过100字符（含标点和换行），每条一句短话，不加版本标题或空行。** 只写玩家最需要知道的变化；完整更新记录和使用说明留在 GitHub／Gitee Release 页面，不整篇复制到 `release_notes`。生成工具会拒绝超过三行或100字符的输入，不会自动截断。
+
+本次0.4.3使用以下摘要，可保存为 UTF-8 文本后传给 `--notes-file`：
+
+```text
+• 改善提示音与方位语音衔接。
+• 新增音效选择，切换后自动试听。
+• 首次说明可跳过，优化大字布局。
+```
+
+只调整摘要时，从同一份最终 APK 重新生成 `latest.json` 并覆盖网站清单即可，无需重新构建 APK；核对版本、下载地址、大小和 SHA-256 均未改变。
 
 ### 2. 上传 Gitee 附件并核对
 

@@ -33,7 +33,7 @@ Gradle 默认清单地址已配置为上述 `latest.json` 路径；它是独立�
      --apk /path/to/sensefield-v0.4.1-arm64-v8a.apk \
      --apk-url https://gitee.com/leda/SenseField/releases/download/0.4.1/sensefieldv0.4.1.apk \
      --output output/app-update/release/latest.json \
-     --notes-file /path/to/release-notes.txt
+     --notes-file /path/to/update-summary.txt
    ```
 
    `latest.json` 在本地由工具生成。脚本不上传文件，也不替用户操作 CDN；无需另写 manifest 生成器或缓存模板。
@@ -54,6 +54,12 @@ cd android
 ## 清单格式
 
 清单使用 schema version 1，`release_notes` 可省略。工具从 APK 读取 `package_name`、`version_name` 和 `version_code`，将用户指定的 APK URL 写入 `apk_url`，并生成整数 `apk_bytes` 和 64 位十六进制 `apk_sha256`。不要手工创建或修改 `latest.json`；上传由最终 APK 自动生成的文件，确保摘要始终对应这份 APK 的实际字节。
+
+### 更新弹窗摘要
+
+`release_notes` 直接显示在手机更新弹窗中，只放最多三条短摘要，总计不超过100字符（含标点和换行）。每条一句话，不重复版本标题、不加空行、不附测试记录或长篇使用说明。完整更新记录放在 GitHub／Gitee Release 页面。`--notes-file` 因此应使用独立的 `update-summary.txt`，不要传入完整的 `RELEASE_NOTES.md`；生成工具会拒绝超过三行或100字符的输入，要求先人工精简。
+
+当前0.4.3的三条摘要及上传流程见[CDN发布规范](../../deploy/assistant/CDN发布.md)。仅修订摘要时，继续使用同一份已签名 APK 生成清单，核对其他字段保持一致后覆盖网站 `latest.json`，无需再次构建或上传 APK。
 
 ## 隔离 HTTPS 复现
 
