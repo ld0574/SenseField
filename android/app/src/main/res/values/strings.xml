@@ -9,4 +9,9 @@
     <string name="tuning_interval_value">最短提示间隔：%1$.1f 秒</string>
     <string name="tuning_center_value">中央免提示区：%1$d%%</string>
     <string name="a11y_service_desc">读屏状态服务：抓取屏幕无障碍树供语音判读，不执行点击、不修改任何设置。</string>
+    <string name="cue_sound_current">当前：%1$s</string>
+    <string name="cue_sound_saved">已保存：%1$s · %2$s</string>
+    <string name="cue_sound_preparing">正在准备试听：%1$s · %2$s</string>
+    <string name="cue_sound_playing">正在试听：%1$s · %2$s</string>
+    <string name="cue_sound_done">试听结束：%1$s · %2$s</string>
 </resources>

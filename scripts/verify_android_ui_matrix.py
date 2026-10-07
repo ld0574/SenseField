@@ -24,6 +24,8 @@ def main():
                         help='Rerun only the affected dialog layouts over every width/font cell')
     parser.add_argument('--pages-only', action='store_true',
                         help='Capture every page with explicit, verified top/bottom scroll positions')
+    parser.add_argument('--audio-only', action='store_true',
+                        help='Check audio tuning, group help, sound choices and picker over every cell')
     args = parser.parse_args()
     adb = [args.adb, '-P', str(args.adb_port), '-s', args.serial]
     out = args.output.resolve()
@@ -54,7 +56,13 @@ def main():
         base + 'AssistantOverlayInstrumentedTest#largeTextControlsStayScrollableWithoutMovingTheDock',
         base + 'TouchTargetSpacingInstrumentedTest',
     ])
-    if args.dialogs_only:
+    if args.audio_only:
+        classes = ','.join([
+            base + 'UiQualityInstrumentedTest#audioSettingsAndSoundPickerFitTheActualWindow',
+            base + 'TouchTargetSpacingInstrumentedTest#cueSoundChoicesDoNotTouch',
+            base + 'TouchTargetSpacingInstrumentedTest#tuningTestAndHapticButtonsNoLongerTouch',
+        ])
+    elif args.dialogs_only:
         classes = ','.join([
             base + 'UiQualityInstrumentedTest#dialogReflowKeepsOriginalCallbacksAndDismissal',
             base + 'UiQualityInstrumentedTest#realUpdateOfferAndUploadConsentRemainReadableAndCancelable',

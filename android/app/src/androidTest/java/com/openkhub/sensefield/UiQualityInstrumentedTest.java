@@ -67,10 +67,42 @@ public final class UiQualityInstrumentedTest {
         capture(intent(AppSettingsActivity.class), "settings");
     }
 
+    @Test public void audioSettingsAndSoundPickerFitTheActualWindow() throws Exception {
+        capture(intent(GameTuningActivity.class), "audio-tuning");
+        try (ActivityScenario<GameTuningActivity> scenario = ActivityScenario.launch(intent(GameTuningActivity.class))) {
+            scenario.onActivity(activity -> tagged(activity.findViewById(android.R.id.content),
+                    "setting_help_group_button:voice_group").performClick());
+            idle();
+            scenario.onActivity(activity -> assertLayout(activity.findViewById(android.R.id.content), "audio-group-help"));
+            screenshot("audio-group-help");
+            scenario.onActivity(activity -> SettingHelp.close(activity));
+        }
+        capture(intent(CueSoundSettingsActivity.class), "cue-sounds");
+        try (ActivityScenario<CueSoundSettingsActivity> scenario = ActivityScenario.launch(
+                intent(CueSoundSettingsActivity.class))) {
+            final AlertDialog[] dialog = new AlertDialog[1];
+            scenario.onActivity(activity -> {
+                tagged(activity.findViewById(android.R.id.content), "cue_sound_choose:7").performClick();
+                dialog[0] = (AlertDialog) value(activity, "picker");
+                assertNotNull(dialog[0]);
+            });
+            idle();
+            scenario.onActivity(activity -> {
+                assertLayout(dialog[0].getWindow().getDecorView(), "sound-picker");
+                assertDialogActionsVisible(dialog[0].getWindow().getDecorView());
+            });
+            screenshot("sound-picker");
+            scenario.onActivity(activity -> dialog[0].getButton(AlertDialog.BUTTON_NEGATIVE).performClick());
+            idle();
+            assertFalse(dialog[0].isShowing());
+        }
+    }
+
     @Test public void everyPageHasUnclippedTextAndFitsTheActualWindow() throws Exception {
         capturePrimaryComposition();
         capture(intent(CapturePermissionsActivity.class), "permissions");
         capture(intent(GameTuningActivity.class), "tuning");
+        capture(intent(CueSoundSettingsActivity.class), "cue-sounds");
         capture(intent(AlertSettingsActivity.class), "alerts");
         capture(intent(HapticSettingsActivity.class), "haptics");
         capture(intent(ReminderGuideActivity.class), "samples");

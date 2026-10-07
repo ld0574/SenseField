@@ -79,6 +79,10 @@ public final class TouchTargetSpacingInstrumentedTest {
 
     @Test public void haptics() { check(HapticSettingsActivity.class, "haptics", activity -> { }); }
 
+    @Test public void cueSoundChoicesDoNotTouch() {
+        check(CueSoundSettingsActivity.class, "cue-sounds", activity -> { });
+    }
+
     @Test public void diagnosticsSeparatesDeleteFromExport() {
         check(DiagnosticsActivity.class, "diagnostics", activity -> {
             Button save = (Button) find(activity, "保存诊断包到文件");

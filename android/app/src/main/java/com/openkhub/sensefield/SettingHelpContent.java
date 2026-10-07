@@ -12,7 +12,9 @@ final class SettingHelpContent {
         switch (key) {
             case "voice_group": return "提醒测试与语音";
             case "speech_engine": return "选择语音引擎";
+            case "speech_offline_data": return "管理离线中文语音";
             case "speech_rate": return "语速";
+            case "cue_sound_settings": return "提醒音效";
             case "test_cue": return "测试提醒与振动";
             case "haptic_settings_link": return "震感与节奏";
             case "before_start_read": return "每次开始前重听完整说明";
@@ -106,7 +108,7 @@ final class SettingHelpContent {
     static List<String> itemKeys(String key) {
         switch (key) {
             case "voice_group":
-                return keys("speech_engine", "speech_rate", "test_cue",
+                return keys("speech_engine", "speech_offline_data", "speech_rate", "cue_sound_settings", "test_cue",
                         "haptic_settings_link", "before_start_read", "reminder_guide");
             case "recognition_group":
                 return keys("recognition_experiment", "new_avatar");
@@ -154,11 +156,15 @@ final class SettingHelpContent {
     static String text(String key) {
         switch (key) {
             case "voice_group":
-                return "选择语音引擎、调整语速后，可以测试附近敌人提醒当前开启的声音和振动。首次开始辅助会朗读完整说明，听完后默认直接开始；设置里可随时重听完整说明或单项示例，也可开启每次重听。测试或试听时请先停止游戏辅助或实时对局。";
+                return "本组会检查手机是否有已安装的离线中文语音。可以选择引擎、管理中文语音数据、调整语速，为不同提醒选择音效并试听。附近敌人方位短句准备好后，提示音与语音可一起播放；未准备好时仍即时发出提示音。首次开始辅助会朗读完整说明，听完后默认直接开始；设置里可随时重听完整说明或单项示例，也可开启每次重听。测试或试听时请先停止游戏辅助或实时对局。";
             case "speech_engine":
-                return "选择“跟随手机系统”会使用系统当前的文字转语音引擎，也可以指定手机已安装的引擎。不同引擎的音色和可用语言由手机提供。更换引擎后请试听一次。";
+                return "先检查所选引擎是否有已安装的离线中文声音；不可用时自动尝试手机上的其他引擎，并在页面显示实际结果。提醒语音不使用需要联网的声音。没有可用离线中文声音时保留提示音和振动，并提示安装语音数据。更换引擎后请试听，重新开始辅助后生效。";
+            case "speech_offline_data":
+                return "打开手机的文字转语音设置，在语音引擎设置中安装或下载中文离线语音数据，再返回听野查看检查结果。不同手机的入口名称可能不同；仅有联网中文声音还不能用于实时语音提醒。";
             case "speech_rate":
                 return "页面会显示当前语速倍数。这个滑杆只调整听野提醒语音的播放速度，不改变识别速度或提示音；数值越大，语音越快。如果方向词不容易听清，可以适当调慢。";
+            case "cue_sound_settings":
+                return "为附近敌人、新出现的敌方头像、主画面边缘敌人、危险信号分别选择原版电子音、柔和轻音、清亮铃音或短促脉冲，并试听。附近敌人保留双声，其余保留单声。只改变音效，不改变识别参数、提醒范围或输出通道。保存后重新开始辅助生效；语音同时播放时提示音会减弱，避免盖住方位词。";
             case "test_cue":
                 return "点击“测试提醒与振动”会按当前附近敌人事件、提示方案和输出通道，发送一次近区提醒示例，并使用当前震感档位与节奏。声音与振动可一起测试；媒体静音或媒体／应用提示音量为 0 时会跳过声音，仍可测试已开启的振动。辅助或实时对局运行时不能测试。请确认是否听到声音或感觉到振动。";
             case "haptic_settings_link":
@@ -198,7 +204,7 @@ final class SettingHelpContent {
             case "channel_tone":
                 return "开启后，支持提示音的事件可以播放短音。手机媒体音量、应用提示音量和具体事件设置也会影响是否听到声音。";
             case "channel_speech":
-                return "开启后，支持语音的事件可以通过手机文字转语音播报。是否成功还取决于已安装的语音引擎及其语言支持；可在“提醒测试与语音”中试听。";
+                return "开启后，支持语音的事件通过已安装的离线中文声音播报，不回退到联网声音。缺少离线中文数据时提示音和振动仍可使用；请在“提醒测试与语音”里检查、管理语音数据并试听。";
             case "channel_haptic":
                 return "开启后，支持触觉提示的事件可以请求手机震动。实际感觉受手机硬件和系统设置影响；此通道不提供可靠的左右方向信息。";
             case "events_group":

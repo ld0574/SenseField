@@ -323,7 +323,17 @@ public final class CaptureService extends Service {
             if (stopping || expectedSessionGeneration != captureGeneration) return false;
             try {
                 AssistantSettings assistantConfig = AssistantSettings.from(this);
-                if (cuePlayer == null) cuePlayer = new CuePlayer(this);
+                if (cuePlayer == null) cuePlayer = new CuePlayer(this,
+                        (new CueSettings(this).nearRequestedChannels() & CueRequest.CHANNEL_SPEECH) != 0);
+                final String audioSessionId = auditSessionId;
+                cuePlayer.setAudioAuditListener(message -> {
+                    DiagnosticRecorder recorder = diagnostics;
+                    if (recorder != null && !recorder.finished && audioSessionId.equals(auditSessionId))
+                        recorder.audit(message);
+                    if (message.startsWith("AlertTts status=") && worker != null) worker.post(() -> {
+                        if (!stopping && audioSessionId.equals(auditSessionId)) refreshNotification();
+                    });
+                });
                 cueSettings = new CueSettings(this);
                 cueDispatcher = new CueDispatcher(cuePlayer, cueSettings,
                         new CueAuditListener(), SystemClock::elapsedRealtime);
@@ -1390,6 +1400,12 @@ public final class CaptureService extends Service {
                 new Intent(this, MainActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         String help = "展开通知可标记问题、暂停或停止";
         String detail = "遇到漏报或误报，请尽快点“标记问题”，帮助保存问题附近的记录。";
+        CuePlayer audio = cuePlayer;
+        if (audio != null && audio.speechPreparationFinished() && !audio.speechReady()
+                && (new CueSettings(this).enabledChannels() & CueRequest.CHANNEL_SPEECH) != 0) {
+            help = "离线中文语音不可用；请在声音配置中安装语音数据";
+            detail = audio.speechStatusText() + "\n" + detail;
+        }
         if (!assistantStatus.isEmpty()) detail += "\n助手：" + assistantStatus;
         if (frameProcessing.mode() != FrameProcessingPolicy.Mode.NORMAL) {
             help = "温度较高，提醒可能变慢；展开可标记问题";

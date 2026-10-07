@@ -44,6 +44,9 @@ public final class GameTuningActivity extends UiActivity {
     private CueDispatcher testDispatcher;
     private final Handler testHandler = new Handler(Looper.getMainLooper());
     private int testGeneration;
+    private final Handler voiceCheckHandler = new Handler(Looper.getMainLooper());
+    private CuePlayer voiceProbe;
+    private TextView voiceStatus;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -64,8 +67,18 @@ public final class GameTuningActivity extends UiActivity {
         SettingHelp.addGroup(this, voices, "voice_group", 12);
         Button engines = button("选择语音引擎", false);
         engines.setOnClickListener(view -> chooseVoiceEngine());
-        UiKit.add(voices, engines, 16);
+        UiKit.add(voices, engines, 8);
+        voiceStatus = UiKit.hint(this, "正在检查离线中文语音……");
+        voiceStatus.setTag("offline_tts_status");
+        voiceStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        UiKit.add(voices, voiceStatus, 12);
+        Button voiceData = button("管理离线中文语音", false);
+        voiceData.setOnClickListener(view -> manageOfflineVoice());
+        UiKit.add(voices, voiceData, 16);
         addSpeechRateControl(voices);
+        Button sounds = button("提醒音效", false);
+        sounds.setOnClickListener(view -> startActivity(new Intent(this, CueSoundSettingsActivity.class)));
+        UiKit.add(voices, sounds, 12);
         test = button("测试提醒与振动", false);
         test.setOnClickListener(view -> testCue());
         UiKit.add(voices, test, 6);
@@ -188,11 +201,12 @@ public final class GameTuningActivity extends UiActivity {
         }
 
         stopTestCue();
+        stopVoiceProbe();
         final int generation = testGeneration;
         test.setEnabled(false);
         testStatus.setText((channels & CueRequest.CHANNEL_SPEECH) != 0
                 ? "正在准备测试提醒……" : "正在发送测试提醒……");
-        testPlayer = new CuePlayer(this);
+        testPlayer = new CuePlayer(this, (channels & CueRequest.CHANNEL_SPEECH) != 0);
         testDispatcher = new CueDispatcher(testPlayer, settings, new CueDispatcher.Listener() {
             @Override public void onDispatch(CueRequest request,
                     CueDispatcher.DispatchResult result) {
@@ -251,6 +265,7 @@ public final class GameTuningActivity extends UiActivity {
                             .putString(CuePlayer.PREF_TTS_ENGINE, packages[which]).apply();
                     testStatus.setText(getString(R.string.tuning_voice_engine_selected, labels[which]));
                     dialog.dismiss();
+                    checkOfflineVoice();
                 }).setNegativeButton("取消", null).show();
         UiKit.styleDialog(picker, UiKit.ButtonStyle.OUTLINED);
     }
@@ -259,18 +274,26 @@ public final class GameTuningActivity extends UiActivity {
                                 long prepareUntilMs) {
         if (generation != testGeneration || testPlayer == null) return;
         long now = SystemClock.elapsedRealtime();
+        CueRequest example = new CueRequest("near-cue-test", "near-cue-test:" + now,
+                "near-cue-test:" + now, "NEAR_CUE_TEST", CueRequest.Category.NEAR_ZONE,
+                NearZoneRouting.NEAR_PRIORITY, now, now + 1200, channels,
+                NearZoneRouting.TONE_NEAR, 0, 0, NearZoneRouting.speech(3), 0f);
         if ((channels & CueRequest.CHANNEL_SPEECH) != 0 && !testPlayer.speechReady()
-                && now < prepareUntilMs) {
+                && !testPlayer.speechPreparationFinished() && now < prepareUntilMs) {
             testHandler.postDelayed(() -> prepareTestCue(generation, channels, audioSkipped,
                     prepareUntilMs), 100);
             return;
         }
-        CueDispatcher.DispatchResult result = testDispatcher.submit(new CueRequest(
-                "near-cue-test", "near-cue-test:" + now, "near-cue-test:" + now,
-                "NEAR_CUE_TEST", CueRequest.Category.NEAR_ZONE, NearZoneRouting.NEAR_PRIORITY,
-                now, now + 1200, channels, NearZoneRouting.TONE_NEAR, 0, 0,
-                NearZoneRouting.speech(3), 0f));
+        if ((channels & CueRequest.CHANNEL_SPEECH) != 0 && testPlayer.speechReady()
+                && !testPlayer.hasPreparedSpeech(example) && now < prepareUntilMs) {
+            testHandler.postDelayed(() -> prepareTestCue(generation, channels, audioSkipped,
+                    prepareUntilMs), 100);
+            return;
+        }
+        CueDispatcher.DispatchResult result = testDispatcher.submit(example);
         testStatus.setText(testDispatchStatus(result, channels, audioSkipped));
+        if ((channels & CueRequest.CHANNEL_SPEECH) != 0 && !testPlayer.speechReady())
+            testStatus.append(" " + testPlayer.speechStatusText());
         testHandler.postDelayed(() -> {
             if (generation == testGeneration) test.setEnabled(true);
         }, 4500);
@@ -327,7 +350,43 @@ public final class GameTuningActivity extends UiActivity {
 
     @Override protected void onPause() {
         stopTestCue();
+        stopVoiceProbe();
         super.onPause();
+    }
+
+    private void manageOfflineVoice() {
+        Intent settings = new Intent("com.android.settings.TTS_SETTINGS");
+        try { startActivity(settings); }
+        catch (android.content.ActivityNotFoundException unavailable) {
+            startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+        }
+    }
+
+    private void checkOfflineVoice() {
+        stopVoiceProbe();
+        if (isLiveSessionRunning()) {
+            voiceStatus.setText("辅助运行中；结束后可检查离线中文语音。");
+            return;
+        }
+        voiceStatus.setText("正在检查离线中文语音……");
+        voiceProbe = CuePlayer.speechProbe(this);
+        pollOfflineVoice(voiceProbe, SystemClock.elapsedRealtime() + 20_000);
+    }
+
+    private void pollOfflineVoice(CuePlayer probe, long deadline) {
+        if (voiceProbe != probe) return;
+        if (probe.speechPreparationFinished() || SystemClock.elapsedRealtime() >= deadline) {
+            voiceStatus.setText(probe.speechPreparationFinished() ? probe.speechStatusText()
+                    : "离线中文语音检查超时，请重新进入本页，或管理中文语音数据。");
+            stopVoiceProbe();
+            return;
+        }
+        voiceCheckHandler.postDelayed(() -> pollOfflineVoice(probe, deadline), 150);
+    }
+
+    private void stopVoiceProbe() {
+        voiceCheckHandler.removeCallbacksAndMessages(null);
+        if (voiceProbe != null) { voiceProbe.close(); voiceProbe = null; }
     }
 
     private void addSpeechRateControl(LinearLayout parent) {
@@ -470,6 +529,7 @@ public final class GameTuningActivity extends UiActivity {
                 toast("未开启悬浮层权限，语音和触觉仍可使用");
         }
         if (presets != null) selectCurrentPreset();
+        if (voiceStatus != null) checkOfflineVoice();
     }
 
     private void toast(String text) {
