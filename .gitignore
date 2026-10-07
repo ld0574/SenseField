@@ -171,3 +171,5 @@ research/board-recognition/data/synth/
 research/board-recognition/models/yolo_dataset/
 research/board-recognition/models/yolo_runs/
 research/board-recognition/data/real/
+# 本地判卷依赖包，非数据资产
+research/board-recognition/models/*.whl
