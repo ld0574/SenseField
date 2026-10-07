@@ -173,3 +173,7 @@ research/board-recognition/models/yolo_runs/
 research/board-recognition/data/real/
 # 本地判卷依赖包，非数据资产
 research/board-recognition/models/*.whl
+
+# 本地装机验证用的 debug APK，不对外（§12 口径 A）
+delivery/SenseField-0.3.5-alpha.11-*.apk
+delivery/SenseField-0.3.5-alpha.12-*.apk
