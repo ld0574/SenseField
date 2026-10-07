@@ -373,3 +373,21 @@
 **本轮另外量到两条现场事实（不在放行范围内，一个字节都没动）**：
 1. 这份 checkout 有**并行会话的未提交改动**：5 个跟踪文件处于 M 态（`research/board-recognition/PROGRESS.md`、同目录 `BLOCKED.md`、`report.md`、`src/common.py`、`android/app/src/test/java/com/openkhub/sensefield/AssistantContractsTest.java`，numstat 实测 22/0、2/2、40/14、4/3、5/1），另有一批未跟踪文件与目录；其中 `research/board-recognition/PROGRESS.md` 还带「CRLF 将被替换成 LF」的提示。也就是说 force-push 改写会让新 tip 的 blob 与这些脏工作树不一致，它们若随后提交还会把原文带回来。
 2. 未跟踪堆里有一个**畸形文件名**：名字是一段被吞掉分隔符的 shell 命令残段（形如「某个目录名 与 与 cd 家目录正斜杠Users本机账号云盘目录名Desktop听野…」，还夹着全角竖线的字节），是既往某次重定向写歪的产物，不是数据资产。它未跟踪、也没被忽略，所以既在 `check_public_repo.py` 的扫描面上，也是对外可见的身份痕迹来源之一；删不删等口径，本轮只登记。
+
+## 2026-10-07 上午（续6）：口径 A 与口径 B 落地（B 按「只洗不伤功能的两行」，历史不碰）
+
+**时刻**：10:04:52（`date` 当轮实测）。本轮先按「要」执行了 §12 的 ①（见上一段），再按同一句授权给出的两个选项执行 A 与 B。
+
+**A（4 枚未跟踪 alpha APK 出扫描面）**：`.gitignore` 追加 4 行（一条说明＋alpha.11／alpha.12 各一条通配），实测 4268 到 4419 字节、175 到 179 行、CR 0。跑之前写的预测是「扫描面 617 到 613 文件、超限 6 到 2 条」，实测完全对上；余下 2 条正是已跟踪的 jev 双 ABI，按所选口径不动（要降得 `git rm --cached`）。只暂存 `.gitignore`，提交 `93186ab`，推 `f1c8dbc..93186ab` 为 fast-forward。
+
+**B（只洗不伤功能的两行）**：两处替换都按「锚点命中恰为 1」先验后写盘——
+- `research/board-recognition/report.md` 那条复跑命令：家目录前缀换成 `<HOME>` 占位符。这一行同时含本机账号名与云盘目录名，所以**洗一行去掉 2 处**，该文件复扫降到 0。
+- `research/board-recognition/src/gen_synth.py` 的素材源注释：同样换成 `<HOME>`，去掉 1 处。
+- 实测分支 tip 该形态从 7 处降到 **4 处**（`backend/eval/patch-activity.js` 1、`src/common.py` 2、`src/gen_synth.py` 1）。这里更正我自己给选项时的说法：当时写的是「tip 从 7 处降到 5 处」，按出现次数实测是 **4**，因为 report.md 那一行本就带两处。
+- 文件级口径要说清：gen_synth.py 洗的是注释，它第 17 行的可执行常量还在，所以「带该形态的文件数」从 4 降到 **3** 而不是归零；要归零必须动那 3 处路径常量，即 B 的另一半，本轮按所选没动。
+
+**并行会话改动的完好性证明（这条是本轮手法上最重要的一处）**：`report.md` 工作树带着别人未提交的 40 加 14 删，所以没有直接 `git add` 整个文件，而是把「HEAD 版本＋仅这一行洗白」做成合成 blob 写进索引（`git hash-object -w --stdin` 取回 `c0a8a972923604f876478dfad342e7d1e5bf141d`，再 `git update-index --cacheinfo`）。暂存面实测只有两份、各 1 加 1 删；提交后用改动前的备份逐字节对比，工作树与备份**只差那一行**（diff 计 2 行＝一删一加），并行改动回到 40/14 未被卷进提交。备份留在仓外 `_scratch_archive/_tmp_backup_report_md_before_wash`。
+
+**提交与回读**：提交 `ccda6c6`，推 `93186ab..ccda6c6`；推后远端 head 与本地同为 `ccda6c6359a72aa6c39a44eb5f7ac14f88de5043`，`git diff refs/tmp 那份远端快照 HEAD` 为**空**（整树一致），远端 tip 上该形态复扫同为 3 文件 4 处，案卷两份文件 9 个身份词命中仍为 **0**。
+
+**未做的三件（口径已明确，留在 §12）**：B 的另一半（3 处可执行常量改读环境变量或仓外配置，再改写 `97cfda7` 加其后 5 枪＝6 个提交并 force-push）；已跟踪 2 枚 jev APK 的降级；C 那个畸形未跟踪文件名（实测仍在未跟踪未忽略的 44 个条目里，未改名未删）。
