@@ -8,6 +8,14 @@ import java.util.List;
 import org.junit.Test;
 
 public final class ReminderGuideTest {
+    @Test public void firstGuideIsOfferedUntilListenedOrExplicitlySkippedAndRepeatStillWorks() {
+        assertTrue(ReminderGuide.shouldShowBeforeStart(false, false, false));
+        assertFalse(ReminderGuide.shouldShowBeforeStart(true, false, false));
+        assertFalse(ReminderGuide.shouldShowBeforeStart(false, true, false));
+        assertTrue(ReminderGuide.shouldShowBeforeStart(false, true, true));
+        assertTrue(ReminderGuide.shouldShowBeforeStart(true, false, true));
+    }
+
     @Test public void standardExplainsAndDemonstratesTheActualNearOutputs() {
         List<ReminderGuide.Step> steps = build(7, 0, 0, 0, false, true);
         String text = explanation(steps);

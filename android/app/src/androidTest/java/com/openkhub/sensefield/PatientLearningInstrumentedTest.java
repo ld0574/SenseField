@@ -82,8 +82,10 @@ public final class PatientLearningInstrumentedTest {
     @Test public void firstStartReadsTheFullGuideAndLaterStartsGoDirectlyToAuthorization() {
         SharedPreferences prefs = GameProfile.settings(context());
         String completed = ReminderGuide.PREF_FULL_GUIDE_COMPLETED;
+        String skipped = ReminderGuide.PREF_FULL_GUIDE_SKIPPED;
         String repeat = ReminderGuide.PREF_REPEAT_BEFORE_START;
         boolean hadCompleted = prefs.contains(completed), wasCompleted = prefs.getBoolean(completed, false);
+        boolean hadSkipped = prefs.contains(skipped), wasSkipped = prefs.getBoolean(skipped, false);
         boolean hadRepeat = prefs.contains(repeat), wasRepeat = prefs.getBoolean(repeat, false);
         Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
         final Intent[] next = new Intent[1];
@@ -98,7 +100,7 @@ public final class PatientLearningInstrumentedTest {
                 return null;
             }
         };
-        prefs.edit().putBoolean(completed, false).remove(repeat).commit();
+        prefs.edit().putBoolean(completed, false).remove(skipped).remove(repeat).commit();
         instrumentation.addMonitor(monitor);
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(intent(MainActivity.class))) {
             scenario.onActivity(activity -> ((Button) find(activity.getWindow().getDecorView(), "开始辅助")).performClick());
@@ -106,6 +108,13 @@ public final class PatientLearningInstrumentedTest {
             assertEquals(ReminderGuideActivity.class.getName(), next[0].getComponent().getClassName());
             assertTrue(next[0].getBooleanExtra(ReminderGuideActivity.EXTRA_FULL, false));
             assertTrue(next[0].getBooleanExtra(ReminderGuideActivity.EXTRA_AUTO_READ, false));
+            prefs.edit().putBoolean(skipped, true).commit();
+            next[0] = null;
+            scenario.onActivity(activity -> ((Button) find(activity.getWindow().getDecorView(), "开始辅助")).performClick());
+            assertNotNull(next[0]);
+            assertEquals("Skipping must also bypass the guide on the next start",
+                    CapturePermissionsActivity.class.getName(), next[0].getComponent().getClassName());
+            prefs.edit().remove(skipped).commit();
             prefs.edit().putBoolean(completed, true).commit();
             next[0] = null;
             scenario.onActivity(activity -> ((Button) find(activity.getWindow().getDecorView(), "开始辅助")).performClick());
@@ -118,6 +127,7 @@ public final class PatientLearningInstrumentedTest {
         } finally {
             instrumentation.removeMonitor(monitor);
             restoreBoolean(prefs, completed, hadCompleted, wasCompleted);
+            restoreBoolean(prefs, skipped, hadSkipped, wasSkipped);
             restoreBoolean(prefs, repeat, hadRepeat, wasRepeat);
         }
     }
@@ -137,8 +147,9 @@ public final class PatientLearningInstrumentedTest {
                 View root = activity.getWindow().getDecorView();
                 assertNotNull(find(root, "完整提醒说明"));
                 assertNotNull(find(root, "播放全文"));
-                Button confirmation = (Button) find(root, "已阅读说明，继续开始");
+                Button confirmation = (Button) findTag(root, "reminder_guide_start_footer");
                 assertNotNull("A missing sound route must not trap the first-time user", confirmation);
+                assertEquals("跳过并开始", confirmation.getText().toString());
                 assertTrue(confirmation.isEnabled());
                 assertFalse("Merely opening the fallback does not count as reading", prefs.getBoolean(completed, false));
                 assertNull(player(activity));
@@ -160,7 +171,7 @@ public final class PatientLearningInstrumentedTest {
                 intent(ReminderGuideActivity.class).putExtra(ReminderGuideActivity.EXTRA_FULL, true)
                         .putExtra(ReminderGuideActivity.EXTRA_START, true))) {
             scenario.onActivity(activity -> {
-                assertFalse(((Button) find(activity.getWindow().getDecorView(), "请先听完完整说明")).isEnabled());
+                assertTrue(((Button) findTag(activity.getWindow().getDecorView(), "reminder_guide_start_top")).isEnabled());
                 try {
                     // Supply controlled playback completion; this test does not certify audible output.
                     Field field = ReminderGuideActivity.class.getDeclaredField("playback");
@@ -180,12 +191,77 @@ public final class PatientLearningInstrumentedTest {
                     selected.set(activity, null);
                     listener.onEnded(true);
                     assertTrue(prefs.getBoolean(completed, false));
-                    assertTrue(((Button) find(activity.getWindow().getDecorView(), "继续开始")).isEnabled());
+                    assertEquals("开始辅助", ((Button) findTag(activity.getWindow().getDecorView(),
+                            "reminder_guide_start_footer")).getText().toString());
                 } catch (ReflectiveOperationException error) { throw new AssertionError(error); }
             });
             scenario.recreate();
-            scenario.onActivity(activity -> assertTrue(((Button) find(activity.getWindow().getDecorView(), "继续开始")).isEnabled()));
+            scenario.onActivity(activity -> assertTrue(((Button) findTag(activity.getWindow().getDecorView(),
+                    "reminder_guide_start_footer")).isEnabled()));
         } finally { restoreBoolean(prefs, completed, hadCompleted, wasCompleted); }
+    }
+
+    @Test public void skipStopsNarrationOpensAuthorizationOnceAndDoesNotClaimFullCompletion() {
+        SharedPreferences prefs = GameProfile.settings(context());
+        String completed = ReminderGuide.PREF_FULL_GUIDE_COMPLETED;
+        String skipped = ReminderGuide.PREF_FULL_GUIDE_SKIPPED;
+        boolean hadCompleted = prefs.contains(completed), wasCompleted = prefs.getBoolean(completed, false);
+        boolean hadSkipped = prefs.contains(skipped), wasSkipped = prefs.getBoolean(skipped, false);
+        prefs.edit().putBoolean(completed, false).remove(skipped).commit();
+        Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
+        final int[] launches = {0};
+        Instrumentation.ActivityMonitor monitor = new Instrumentation.ActivityMonitor() {
+            @Override public Instrumentation.ActivityResult onStartActivity(Intent intent) {
+                if (intent.getComponent() != null && intent.getComponent().getClassName()
+                        .equals(CapturePermissionsActivity.class.getName())) {
+                    assertTrue(intent.getBooleanExtra(CapturePermissionsActivity.EXTRA_START, false));
+                    launches[0]++;
+                    return new Instrumentation.ActivityResult(Activity.RESULT_CANCELED, null);
+                }
+                return null;
+            }
+        };
+        instrumentation.addMonitor(monitor);
+        try (ActivityScenario<ReminderGuideActivity> scenario = ActivityScenario.launch(
+                intent(ReminderGuideActivity.class).putExtra(ReminderGuideActivity.EXTRA_FULL, true)
+                        .putExtra(ReminderGuideActivity.EXTRA_START, true)
+                        .putExtra(ReminderGuideActivity.EXTRA_AUTO_READ, true))) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                Button top = (Button) findTag(root, "reminder_guide_start_top");
+                Button footer = (Button) findTag(root, "reminder_guide_start_footer");
+                assertTrue(top.isEnabled());
+                assertTrue(footer.isEnabled());
+                top.performClick();
+                footer.performClick();
+                assertEquals("Repeated taps must not start a second authorization", 1, launches[0]);
+                assertTrue(prefs.getBoolean(skipped, false));
+                assertFalse("Skipping is not evidence of listening", prefs.getBoolean(completed, false));
+                assertNull(player(activity));
+                try {
+                    Field field = ReminderGuideActivity.class.getDeclaredField("resumeIndex");
+                    field.setAccessible(true);
+                    assertEquals("A skip must not resume old narration", -1, field.getInt(activity));
+                    Field playbackField = ReminderGuideActivity.class.getDeclaredField("playback");
+                    playbackField.setAccessible(true);
+                    assertFalse(((ReminderGuidePlayback) playbackField.get(activity)).isRunning());
+                } catch (ReflectiveOperationException error) { throw new AssertionError(error); }
+            });
+            instrumentation.waitForIdleSync();
+            scenario.recreate();
+            scenario.onActivity(activity -> {
+                assertNull("Returning from canceled authorization must stay silent", player(activity));
+                Button action = (Button) findTag(activity.getWindow().getDecorView(),
+                        "reminder_guide_start_footer");
+                assertTrue(action.isEnabled());
+                assertEquals("跳过并开始", action.getText().toString());
+                assertFalse(prefs.getBoolean(completed, false));
+            });
+        } finally {
+            instrumentation.removeMonitor(monitor);
+            restoreBoolean(prefs, completed, hadCompleted, wasCompleted);
+            restoreBoolean(prefs, skipped, hadSkipped, wasSkipped);
+        }
     }
 
     private static void restoreBoolean(SharedPreferences prefs, String key, boolean present, boolean value) {

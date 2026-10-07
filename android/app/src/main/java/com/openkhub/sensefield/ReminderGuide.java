@@ -7,6 +7,8 @@ import java.util.List;
 /** Meaning and examples of the outputs actually enabled for this session. */
 final class ReminderGuide {
     static final String PREF_FULL_GUIDE_COMPLETED = "full_reminder_guide_completed";
+    // Choosing to start is distinct from successfully listening to the full guide.
+    static final String PREF_FULL_GUIDE_SKIPPED = "full_reminder_guide_skipped";
     // Separate from the old, default-on directory preference to avoid repeat-on-upgrade.
     static final String PREF_REPEAT_BEFORE_START = "repeat_full_reminder_guide_before_start";
     static final String NARRATION_KIND = "REMINDER_GUIDE";
@@ -81,9 +83,13 @@ final class ReminderGuide {
 
     private ReminderGuide() {}
 
+    static boolean shouldShowBeforeStart(boolean completed, boolean skipped, boolean repeat) {
+        return repeat || (!completed && !skipped);
+    }
+
     static List<Step> build(Outputs outputs) {
         List<Step> steps = new ArrayList<>();
-        say(steps, "开始前听一听", "先说明提醒的含义。接下来都是示例。首次开始请听完完整说明，以后可以直接开始，也能在设置里重听。");
+        say(steps, "开始前听一听", "先说明提醒的含义。接下来都是示例。可随时点击“跳过并开始”进入辅助，以后可以在设置里按段重听。");
         if (has(outputs.near, CueRequest.CHANNEL_TONE)) {
             say(steps, "两声短音：附近有敌人",
                     "连续两声短音，表示小地图里有敌人进入你的附近。先听一次。");
@@ -159,7 +165,7 @@ final class ReminderGuide {
             say(steps, "重新授权的语音",
                     "听到“截屏授权已结束”或“截屏恢复失败，请重新授权”，请返回辅助首页重新开始。");
         }
-        say(steps, "听完后再开始", "说明结束。授权并启动辅助后，会自动打开王者荣耀。需要重听或调声音，可以到设置里操作。");
+        say(steps, "开始辅助", "说明结束。点击“开始辅助”，授权并启动后，会自动打开王者荣耀。需要重听或调声音，可以到设置里操作。");
         return Collections.unmodifiableList(steps);
     }
 

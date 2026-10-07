@@ -4,13 +4,13 @@
 
 ## 交付状态与构建版本
 
-截至 2026-10-04，公开下载为 [0.3.8 体验版](https://github.com/ld0574/SenseField/releases/tag/v0.3.8)（`versionCode 16`、GitHub 普通 Release，Latest）。`0.4.0 / versionCode 17` 与 `0.4.1 / versionCode 18` 均已有本地 Debug 测试交付，但都尚未公开发布；0.4.1 自动更新专项已完成，整体验收门禁仍未通过。完整历史见[发布索引](README.md)。所有新交付遵守[版本命名规范](版本命名规范.md)，内部和外部共用 `a.b.c` 序列。
+2026-10-07本次主线交付为[听野0.4.3](https://github.com/ld0574/SenseField/releases/tag/v0.4.3-main)（`versionCode 20`，普通Release）；既有`v0.4.3`已被消消乐分支占用，所以本次使用独立标签并保留队友的Latest入口。附件、签名及测试范围见[0.4.3说明](0.4.3/RELEASE_NOTES.md)，完整历史见[发布索引](README.md)。普通Release不自动改变`verified`／`release_ready`，版本名称继续使用`a.b.c`。
 
 发布前核对 `android/app/build.gradle`、`scripts/build_android_preview.sh` 和实际 APK 的版本、升级序号与签名，准备新版本交付时同步配置与脚本。发布说明必须对应实际 APK 和该版本的验证证据。历史 [0.3.0-alpha.1 发布说明](0.3.0-alpha.1/RELEASE_NOTES.md)与[检查记录](0.3.0-alpha.1/CHECKLIST.md)保留原始信息。
 
 已交付候选只支持 Android 10（API 29）及以上的 `arm64-v8a` 设备。实验小地图模型尚未通过独立留出验收，主画面边缘候选分支默认关闭；按[当前验证状态](../../validation/STATUS.md)复核功能与证据边界。README 和 Release body 必须说明 `MediaProjection`、悬浮窗、通知权限的用途，以及识别在本地处理。
 
-构建优先使用 `bash scripts/build_android_preview.sh`。四个 `SENSEFIELD_KEYSTORE_PATH`、`SENSEFIELD_KEY_ALIAS`、`SENSEFIELD_KEYSTORE_PASSWORD`、`SENSEFIELD_KEY_PASSWORD` 环境变量全部提供时才构建签名 candidate；缺少签名参数时只构建文件名含 `debug-candidate` 的 Debug APK，并沿用 Android Gradle 的标准 debug signing。脚本不生成或上传发布 keystore，不发布 GitHub Release。
+构建优先使用 `bash scripts/build_android_preview.sh`。四个 `SENSEFIELD_KEYSTORE_PATH`、`SENSEFIELD_KEY_ALIAS`、`SENSEFIELD_KEYSTORE_PASSWORD`、`SENSEFIELD_KEY_PASSWORD` 环境变量全部提供时才构建签名candidate；缺少签名参数时沿用Android Gradle的标准debug signing，候选类型写入交付记录。当前上传路径使用`sensefieldv<版本>.apk`，不靠文件名声称签名类型。脚本不生成或上传发布keystore，不发布GitHub Release。
 
 ## 1. 权利和隐私
 

@@ -76,6 +76,7 @@ public final class ReminderGuideActivity extends UiActivity {
     private Button repeat;
     private Button stop;
     private Button proceed;
+    private Button footerProceed;
     private CuePlayer player;
     private CueDispatcher dispatcher;
     private ReminderGuidePlayback.Completion pending;
@@ -89,7 +90,6 @@ public final class ReminderGuideActivity extends UiActivity {
     private boolean fullMode;
     private boolean preparing;
     private boolean pausedBeforeStart;
-    private boolean manualReadAvailable;
     private String selectedSectionTitle;
     private String selectedSectionId;
     private int resumeIndex = -1;
@@ -109,7 +109,6 @@ public final class ReminderGuideActivity extends UiActivity {
             resumeIndex = state.getInt("guide_resume_index", -1);
             resumeSectionId = state.getString("guide_resume_section");
             resumeSignature = state.getString("guide_resume_signature");
-            manualReadAvailable = state.getBoolean("guide_manual_read", false);
         }
     }
 
@@ -167,14 +166,17 @@ public final class ReminderGuideActivity extends UiActivity {
         repeat = null;
         stop = null;
         proceed = null;
+        footerProceed = null;
         steps = null;
         fullSteps = null;
         selectedSectionTitle = null;
         selectedSectionId = null;
         sectionButtons.clear();
         if (startAfterGuide) {
-            proceed = button(content, "继续开始", true);
+            proceed = button(content, "跳过并开始", true);
+            proceed.setTag("reminder_guide_start_top");
             proceed.setOnClickListener(view -> continueStart());
+            UiKit.add(content, UiKit.hint(this, "说明可随时跳过，以后在设置里按段重听。"), 12);
         }
         try {
             ReminderGuide.Outputs outputs = currentOutputs();
@@ -307,7 +309,7 @@ public final class ReminderGuideActivity extends UiActivity {
 
     private void fullPlaybackControls(LinearLayout content) {
         ReminderSampleGrid controls = new ReminderSampleGrid(this, 2);
-        repeat = compactButton("播放全文", true);
+        repeat = compactButton("播放全文", !startAfterGuide);
         repeat.setContentDescription("播放完整提醒说明，可暂停后继续");
         repeat.setOnClickListener(view -> {
             if (pausedBeforeStart || playback.isPaused()) resumeExplanation();
@@ -321,6 +323,16 @@ public final class ReminderGuideActivity extends UiActivity {
             }
         });
         controls.addView(repeat);
+        if (startAfterGuide) {
+            // Keep starting available even after scrolling through a long guide.
+            // Pause already stops narration; replace the redundant stop action.
+            footerProceed = compactButton("跳过并开始", true);
+            footerProceed.setTag("reminder_guide_start_footer");
+            footerProceed.setOnClickListener(view -> continueStart());
+            controls.addView(footerProceed);
+            UiKit.add(content, controls, 0);
+            return;
+        }
         stop = compactButton("停止播放");
         stop.setEnabled(false);
         stop.setOnClickListener(view -> {
@@ -410,23 +422,25 @@ public final class ReminderGuideActivity extends UiActivity {
 
     private void markFullGuideCompleted() {
         GameProfile.settings(this).edit()
-                .putBoolean(ReminderGuide.PREF_FULL_GUIDE_COMPLETED, true).apply();
+                .putBoolean(ReminderGuide.PREF_FULL_GUIDE_COMPLETED, true)
+                .remove(ReminderGuide.PREF_FULL_GUIDE_SKIPPED).apply();
         refreshProceed();
     }
 
     private void refreshProceed() {
-        if (proceed == null) return;
-        boolean completed = fullGuideCompleted();
-        proceed.setText(completed ? "继续开始" : manualReadAvailable
-                ? "已阅读说明，继续开始" : "请先听完完整说明");
-        proceed.setEnabled(!liveRunning() && !authorizationInFlight
-                && (completed || manualReadAvailable));
+        String label = fullGuideCompleted() ? "开始辅助" : "跳过并开始";
+        boolean enabled = !liveRunning() && !authorizationInFlight;
+        for (Button action : new Button[] {proceed, footerProceed}) {
+            if (action == null) continue;
+            action.setText(label);
+            action.setContentDescription(label + "，进入必要授权并启动王者荣耀辅助");
+            action.setEnabled(enabled);
+        }
     }
 
     private void offerManualReading() {
         if (!startAfterGuide || !fullMode || fullGuideCompleted()) return;
-        manualReadAvailable = true;
-        status.append(" 可阅读本页后点击“已阅读说明，继续开始”，或调好声音后重听。");
+        status.append(" 可先阅读本页，或点击“跳过并开始”。以后也能在设置里重听。");
         refreshProceed();
     }
 
@@ -440,7 +454,6 @@ public final class ReminderGuideActivity extends UiActivity {
         stopExplanation();
         startIndex = position;
         if (steps == null || liveRunning()) { refreshAvailability(); return; }
-        manualReadAvailable = false;
         refreshProceed();
         boolean audioNeeded = steps.stream().anyMatch(step -> step.channel != CueRequest.CHANNEL_HAPTIC);
         AudioManager audio = getSystemService(AudioManager.class);
@@ -475,7 +488,7 @@ public final class ReminderGuideActivity extends UiActivity {
             repeat.setText("暂停");
             repeat.setContentDescription("暂停当前说明");
         }
-        stop.setEnabled(true);
+        if (stop != null) stop.setEnabled(true);
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_NONE);
         boolean voiceNeeded = steps.stream().anyMatch(step -> step.channel == CueRequest.CHANNEL_SPEECH);
         if (voiceNeeded) {
@@ -585,12 +598,14 @@ public final class ReminderGuideActivity extends UiActivity {
     private void continueStart() {
         if (liveRunning() || authorizationInFlight) return;
         if (!fullGuideCompleted()) {
-            if (!manualReadAvailable) return;
-            markFullGuideCompleted();
+            GameProfile.settings(this).edit()
+                    .putBoolean(ReminderGuide.PREF_FULL_GUIDE_SKIPPED, true).apply();
         }
+        autoPending = false;
         stopExplanation();
+        clearBookmark();
         authorizationInFlight = true;
-        proceed.setEnabled(false);
+        refreshProceed();
         startActivityForResult(new Intent(this, CapturePermissionsActivity.class)
                 .putExtra(CapturePermissionsActivity.EXTRA_START, true), REQUEST_START);
     }
@@ -621,7 +636,6 @@ public final class ReminderGuideActivity extends UiActivity {
         state.putInt("guide_resume_index", resumeIndex);
         state.putString("guide_resume_section", resumeSectionId);
         state.putString("guide_resume_signature", resumeSignature);
-        state.putBoolean("guide_manual_read", manualReadAvailable);
         super.onSaveInstanceState(state);
     }
 
@@ -657,7 +671,7 @@ public final class ReminderGuideActivity extends UiActivity {
         status.setText("已暂停。点击继续，从未听完的句子开始。");
         if (progress != null) progress.setText("进度 " + (resumeIndex + 1) + " / "
                 + ReminderGuideSections.sentenceSteps(candidate).size());
-        stop.setEnabled(true);
+        if (stop != null) stop.setEnabled(true);
     }
 
     private void clearBookmark() {
@@ -680,5 +694,6 @@ public final class ReminderGuideActivity extends UiActivity {
         if (request != REQUEST_START) return;
         authorizationInFlight = false;
         if (result == RESULT_OK) { setResult(RESULT_OK); finish(); }
+        else refreshProceed();
     }
 }

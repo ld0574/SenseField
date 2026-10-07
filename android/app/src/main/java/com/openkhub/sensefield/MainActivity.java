@@ -87,8 +87,10 @@ public final class MainActivity extends UiActivity {
 
     private void requestStart() {
         android.content.SharedPreferences preferences = GameProfile.settings(this);
-        if (!preferences.getBoolean(ReminderGuide.PREF_FULL_GUIDE_COMPLETED, false)
-                || preferences.getBoolean(ReminderGuide.PREF_REPEAT_BEFORE_START, false)) {
+        if (ReminderGuide.shouldShowBeforeStart(
+                preferences.getBoolean(ReminderGuide.PREF_FULL_GUIDE_COMPLETED, false),
+                preferences.getBoolean(ReminderGuide.PREF_FULL_GUIDE_SKIPPED, false),
+                preferences.getBoolean(ReminderGuide.PREF_REPEAT_BEFORE_START, false))) {
             startActivityForResult(new Intent(this, ReminderGuideActivity.class)
                     .putExtra(ReminderGuideActivity.EXTRA_START, true)
                     .putExtra(ReminderGuideActivity.EXTRA_FULL, true)

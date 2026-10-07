@@ -26,6 +26,8 @@ def main():
                         help='Capture every page with explicit, verified top/bottom scroll positions')
     parser.add_argument('--audio-only', action='store_true',
                         help='Check audio tuning, group help, sound choices and picker over every cell')
+    parser.add_argument('--guide-only', action='store_true',
+                        help='Check the first-start guide and its fixed start action over every cell')
     args = parser.parse_args()
     adb = [args.adb, '-P', str(args.adb_port), '-s', args.serial]
     out = args.output.resolve()
@@ -56,7 +58,9 @@ def main():
         base + 'AssistantOverlayInstrumentedTest#largeTextControlsStayScrollableWithoutMovingTheDock',
         base + 'TouchTargetSpacingInstrumentedTest',
     ])
-    if args.audio_only:
+    if args.guide_only:
+        classes = base + 'UiQualityInstrumentedTest#firstStartGuideKeepsSkipReachableAtTopAndBottom'
+    elif args.audio_only:
         classes = ','.join([
             base + 'UiQualityInstrumentedTest#audioSettingsAndSoundPickerFitTheActualWindow',
             base + 'TouchTargetSpacingInstrumentedTest#cueSoundChoicesDoNotTouch',
@@ -102,8 +106,17 @@ def main():
             print(json.dumps(record, ensure_ascii=False), flush=True)
             snapshots = out / 'screenshots'
             snapshots.mkdir(exist_ok=True)
-            run('pull', f'/sdcard/Android/data/com.openkhub.sensefield/files/ui-0.4.3/{name}',
-                str(snapshots), timeout=90)
+            remote = f'/sdcard/Android/data/com.openkhub.sensefield/files/ui-0.4.3/{name}'
+            if args.guide_only:
+                # Other runs reuse these phase names. Pull only screenshots
+                # produced by this targeted check, not older page captures.
+                cell_snapshots = snapshots / name
+                cell_snapshots.mkdir(exist_ok=True)
+                for filename in ('first-start-guide.png', 'first-start-guide-bottom.png'):
+                    run('pull', f'{remote}/{filename}',
+                        str(cell_snapshots / filename), timeout=90)
+            else:
+                run('pull', remote, str(snapshots), timeout=90)
             if not passed:
                 failures = re.findall(r'INSTRUMENTATION_STATUS: stack=([^\n]+)', log)
                 print('\n'.join(failures), flush=True)

@@ -67,6 +67,20 @@ public final class UiQualityInstrumentedTest {
         capture(intent(AppSettingsActivity.class), "settings");
     }
 
+    @Test public void firstStartGuideKeepsSkipReachableAtTopAndBottom() throws Exception {
+        String key = ReminderGuide.PREF_FULL_GUIDE_COMPLETED;
+        boolean present = prefs().contains(key), completed = prefs().getBoolean(key, false);
+        prefs().edit().putBoolean(key, false).commit();
+        try {
+            capture(intent(ReminderGuideActivity.class).putExtra(ReminderGuideActivity.EXTRA_FULL, true)
+                    .putExtra(ReminderGuideActivity.EXTRA_START, true), "first-start-guide");
+        } finally {
+            SharedPreferences.Editor edit = prefs().edit();
+            if (present) edit.putBoolean(key, completed); else edit.remove(key);
+            edit.commit();
+        }
+    }
+
     @Test public void audioSettingsAndSoundPickerFitTheActualWindow() throws Exception {
         capture(intent(GameTuningActivity.class), "audio-tuning");
         try (ActivityScenario<GameTuningActivity> scenario = ActivityScenario.launch(intent(GameTuningActivity.class))) {
@@ -459,11 +473,12 @@ public final class UiQualityInstrumentedTest {
                         assertTrue("Main action is visible on the first screen", a.bottom <= screen.bottom);
                     }
                 }
-                if ("full-guide".equals(name)) {
+                if ("full-guide".equals(name) || "first-start-guide".equals(name)) {
                     ScrollView text = first(root, ScrollView.class);
                     assertTrue("The fixed playback bar leaves room to read", text.getHeight() >= Math.min(
                             UiKit.dp(activity, 120), root.getHeight() / 3));
                 }
+                if ("first-start-guide".equals(name)) assertGuideStartReachable(root);
             });
             screenshot(name);
             scenario.onActivity(activity -> {
@@ -479,9 +494,27 @@ public final class UiQualityInstrumentedTest {
                 if (scroll != null) assertEquals("The bottom position must remain stable through the next layout",
                         Math.max(0, scroll.getChildAt(0).getHeight() - scroll.getHeight()
                                 + scroll.getPaddingTop() + scroll.getPaddingBottom()), scroll.getScrollY());
+                if ("first-start-guide".equals(name)) {
+                    View root = activity.findViewById(android.R.id.content);
+                    assertLayout(root, name + "-bottom");
+                    assertGuideStartReachable(root);
+                }
             });
             screenshot(name + "-bottom");
         }
+    }
+
+    private static void assertGuideStartReachable(View root) {
+        Button start = (Button) tagged(root, "reminder_guide_start_footer");
+        assertNotNull(start);
+        assertEquals("跳过并开始", start.getText().toString());
+        assertTrue(start.isEnabled());
+        Rect visible = new Rect();
+        assertTrue(start.getGlobalVisibleRect(visible));
+        assertEquals("Starting must remain entirely visible while reading", start.getHeight(), visible.height());
+        assertEquals(start.getWidth(), visible.width());
+        assertNotNull(tagged(root, "reminder_guide_start_top"));
+        assertNull("Pause and start are enough during onboarding", find(root, "停止播放"));
     }
 
     private static int scrollToBottom(ScrollView scroll) {
