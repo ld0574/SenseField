@@ -924,3 +924,16 @@ JVM 门禁读数沿用续12 的实测（BUILD SUCCESSFUL，215 tests、0 failure
 
 正文内容与判据读数不受影响，受影响的只是那条提交里对尺子的自述。按不追改历史的纪律，此处只更正不覆写；此后每轮把尺子数字从同轮仪器输出复制，不再从上一节的提交信息里读。
 
+
+### 续13 补记三　候选包出包凭证，以及一次把另一棵树的产物当成本补丁产物的真实失误
+
+**一、凭证（全部同轮实测）。** 源产物在 `<HOME>/SenseField-fixpack-20261007/android/app/build/outputs/apk/debug/app-debug.apk`，字节数 12,946,526，sha256 25cda3fb86ac952a794ebbdd2eefac6bcfb863f9ce3f1ae36efd47981a0cb5c2，实测 mtime 10-07 12:59:23，gradle 退出码 0。暂存副本按「发布产物一律落 output（该目录 gitignore）」的既有约定放在 `<HOME>/SenseField/output/candidates/m3fix-20261007T1259/sensefield-m3fix-candidate-arm64.apk`，字节数与 sha256 与源逐字节相同，同目录配 SHA256SUMS.txt 且 sha256sum -c 回读 OK。ABI 实测只有 arm64-v8a（build.gradle 默认 abiFilters 就是 arm64，本轮没传 sensefieldAbi），正好对上那台真机；x86_64 变体本轮未出。output-metadata.json 读出的 versionCode 28、versionName 0.4.31。
+
+**二、产物自证：判别子在暂存副本的 dex 里逐条命中。** 把 APK 内所有 classes.dex 拼成字节流做子串扫描，命中结果：LowConfidenceHold 真、Liveness silent 真、Speak gate= 真、CaptureStarved 真、isTrustworthyForAnnounce 真、screen_hold 真、BoardRecognized 真。这一条比「BUILD SUCCESSFUL」强，因为它证的是装机的字节里确有本轮闸门与保活代码，而不是只有构建日志说过要编。续12 与 §18 反复担心的「语料可能混包」问题，从此可用这三条新审计行反查包归属。
+
+**三、真实失误与拦截过程，按原样记。** 第一次暂存复制错了东西：那条命令开头把当前目录切到了主树 `<HOME>/SenseField`，随后用的是相对路径 `android/app/build/outputs/apk/debug/app-debug.apk`，于是复制的是**另一棵并行会话的树**里 11:13:42 那个旧产物，不是隔离修复树的产物。发现它是因为两次读数对不上：暂存副本 12,930,142 字节，而我先前在隔离树上实测的是 12,946,526 字节——逐字节复制不可能改大小。复查那份旧产物的 mtime 为 11:13:42，且七个判别子在同一把尺子下全部为假。若没做「复制后逐字节比对」与「判别子复扫必须在暂存副本上跑」这两步，就会把不带修复的包报成带修复的候选包，而这类错误在耳朵里是没有任何征兆的。教训两条：跨三棵同源树操作时产物路径一律带树前缀写成绝对路径；判别子复扫的对象必须是即将交出去的那份字节，而不是源文件。
+
+**四、装机前必读的一条硬约束。** 手机现在跑的是 0.4.32（versionCode 29，见补记一那条 12:37 的语料），而本候选包 versionCode 28。直接安装会被系统判为降级而拒绝，需要 `adb install -r -d` 强制覆盖，或者按待裁结论把版本号递增后重出。也就是说 §18 第一条那个「合进 0.4.32 还是单独出 0.4.33」的裁决，不只是记账问题：不裁就只能用 -d 覆盖装，而覆盖装之后一旦想回退到 0.4.32 做对照，同样得再来一次 -d。这一点与「关掉系统显示触点打一关」那把免构建 A/B 合起来读：先做免构建那把，再决定装哪个版本，可以避免把版本归属的裁决当作 A/B 的前置条件。
+
+**五、本轮未做。** lintDebug 仍未跑；x86_64 变体未出；安装、推分支、tag、Release 全部未做也未获授权；补记一第五节的维度相对基线判据仍未实现（补记二把它从必要降级为安全余量后，它的优先级低于装机回报）。
+
