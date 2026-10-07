@@ -66,6 +66,8 @@ public class Match3LiveService extends Service {
     private long lastAnnounceAt;
     private boolean popupAnnounced;
     private boolean projectionTerminated; // 系统侧终止投影（切后台/锁屏）时置位，不立即停服务
+    private boolean systemStopped;        // 系统侧终止投影后为 true；此状态下若项目牌重新创建，不自动 stopSelf()
+    private boolean wasSystemStopped;     // onStartCommand 加载的上轮系统终止标志（持久化）
     private boolean abstainAnnounced;   // ABSTAIN 防线提示每轮服务只播一次
     private String activeStartToken;    // 当前会话的授权指纹（去重重复投递的 START）
     private int liveRows = 8;
@@ -131,6 +133,9 @@ public class Match3LiveService extends Service {
         teardownMedia();   // 重复 START 时先拆旧投影，否则 ContentRecordingSession 冲突
         sessionStartMs = SystemClock.elapsedRealtime();
         projectionTerminated = false;
+        // 恢复上轮系统终止标志：若为 true 说明是系统中途杀进程，非用户主动停止
+        wasSystemStopped = GameProfile.settings(this).getBoolean("m3live_system_stopped", false);
+        systemStopped = false;  // 新会话从 clean state 开始
         awaitingConfirm = true;   // 新会话首播走双重确认，杜绝开场动画误报
         pendingMatrix = null;
         pendingStable = 0;
@@ -166,6 +171,10 @@ public class Match3LiveService extends Service {
             @Override public void onStop() {
                 Log.i(TAG, "系统侧终止了屏幕录制，保持服务运行等待用户手动停止");
                 projectionTerminated = true;
+                systemStopped = true;
+                // 持久化到 SharedPreferences：进程被杀重建后仍可知晓是系统终止而非用户操作
+                GameProfile.settings(getApplicationContext()).edit()
+                        .putBoolean("m3live_system_stopped", true).apply();
                 // 不再立即 stopSelf()：用户可能只是切回桌面查看 HUD，
                 // 重新进入游戏后系统会重建 MediaProjection 并重启服务。
                 // 此处的 tick 循环会继续尝试取帧，投影失效后 acquireLatestImage
@@ -232,11 +241,19 @@ public class Match3LiveService extends Service {
             if (!running) return;
             /* 投影被系统终止且无活动投影时，优雅停止服务（非用户主动停止） */
             if (projectionTerminated && projection == null) {
-                Log.i(TAG, "投影已终止且无活动令牌，停止服务");
-                if (diagnostics != null && !diagnostics.finished) {
-                    diagnostics.finish("projection_system_stopped");
+                if (systemStopped || wasSystemStopped) {
+                    /* 系统终止投影：不自动 stopSelf()，保持服务存活让用户手动点「停止」
+                     * 再正常结束诊断会话（reason=m3live_session_finished）。
+                     * 否则日志会在系统超时（约 2 分钟）时提前终止，无法反映真实用户行为。 */
+                    Log.i(TAG, "系统终止投影，保持服务存活等待用户手动停止");
+                    refreshNotification();
+                } else {
+                    Log.i(TAG, "投影已终止且无活动令牌，停止服务");
+                    if (diagnostics != null && !diagnostics.finished) {
+                        diagnostics.finish("projection_system_stopped");
+                    }
+                    stopSelf();
                 }
-                stopSelf();
                 return;
             }
             Bitmap frame;
@@ -822,9 +839,12 @@ public class Match3LiveService extends Service {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         String diagText = diagnostics == null || diagnostics.finished
                 ? "" : " · 诊断会话 active";
+        String subtitle = (wasSystemStopped || systemStopped)
+                ? "系统已终止投影，请点击停止后重新授权"
+                : "正在识别棋盘并语音播报";
         return new android.app.Notification.Builder(this, "m3live")
                 .setContentTitle("听野 · 消消乐实时识别中" + diagText)
-                .setContentText("正在识别棋盘并语音播报")
+                .setContentText(subtitle)
                 .setSmallIcon(android.R.drawable.ic_menu_camera)
                 .addAction(android.R.drawable.ic_menu_edit, "标记问题", markIssue)
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel, "停止", stop)
@@ -833,6 +853,8 @@ public class Match3LiveService extends Service {
 
     private void teardownMedia() {
         activeStartToken = null;   // 投影已拆：新授权须可重新启动
+        // 用户主动停止：清除系统终止标志，下次启动为新会话
+        GameProfile.settings(getApplicationContext()).edit().remove("m3live_system_stopped").apply();
         SenseFieldReaderService.hideRowNumbers();   // 标尺随会话结束隐藏
         /* 云端在途状态随会话清零：旧授权的回包不能投给下一个会话的棋盘。 */
         if (cloudExecutor != null) {
