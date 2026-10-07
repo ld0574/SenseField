@@ -88,6 +88,7 @@ git push -u origin main
 
 - [ ] 用 Git tag 标记演示版本，例如 `v0.2.0-demo`。
 - [ ] APK 放到 GitHub Release 附件，不把 `android/app/build/` 提交到源码仓库。
+- [ ] 发布产物按版本归位在仓库根目录 `output/releases/<版本>/` 下（`output/` 已被 `.gitignore` 第 37 行整目录忽略，不进版本控制）；校验文件的约定形态是**每个版本目录一份 `SHA256SUMS.txt`**（GNU 格式：哈希、两个空格、文件名，清单不含自身），上传附件前在该目录跑 `sha256sum -c SHA256SUMS.txt`，要求 rc=0 且 OK 条数等于该目录产物数；给外部用户下载前，把清单里的哈希与 GitHub Release 附件的 `digest` 字段（去 `sha256:` 前缀）逐条比一次。
 - [ ] 同时发布 APK 的 SHA-256、Android 最低版本、测试设备和已知限制。
 - [ ] Release 不包含私有 profile；如需演示配置，只发布不含玩家数据、经过复核的配置。
 - [ ] 保留一段可复现的合成演示；真实录像只有在取得授权后才能作为公开演示。
