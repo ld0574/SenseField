@@ -970,3 +970,15 @@ JVM 门禁读数沿用续12 的实测（BUILD SUCCESSFUL，215 tests、0 failure
 **五、截图这类证据在实时链路整条缺失，这条限制症状一能否正面结案。** 语料里 image 3504 条、image_request 1395 条、image_request_result 1199 条，全部出自旧链路那 10 包；10 场实时链路加 3 场静默包里这三类皆为 0，而 metadata 的 images_enabled=true、summary 的 dropped_image_requests=0、image_count=0——是"开关开着、一次都没请求"，不是"请求了被丢弃"。后果要说白：症状一至今只能靠未知率、几何、swaps 间接判伪盘，拿不到"当时屏幕上到底是什么"的正证；这一类证据缺失本身就是要修的一条，且比再加一道闸门便宜。
 
 **六、给玩家的对照实验（免构建，本轮未动候选包对应源码，也未改任何版本；与 §18 三条待裁不冲突）。** 第一条：把系统"显示触点"关掉打一关，验伪盘是否来自触点特效叠加。第二条：把系统媒体音量拉到接近满格、并把应用内 volume 从默认 45 调到 100 再打一关，验那段静默里有没有投递响度成分——依据是 CuePlayer.java:179-181 把 TTS 的 usage 设为 USAGE_GAME（随系统媒体音量），:234-237 的 volume() 取应用设置项 volume、默认 45，故实际响度约为「媒体音量×0.45」；附件 sid=20 前 70 秒媒体音量为 23／150 档，第一条播报恰落在 23 档的第 62.4 秒，玩家在第 70 秒把音量拉到 83，正落在那场 45.6 秒空档的中段；sid=21 在第 20 与 30 秒 83→93→103；尾 289706673（0.3.5-alpha.20）有 43→83→93→103 的四段爬升（草稿写 43→83→103，漏了一段，按实测更正）；0.4.32 那场恒 93 无爬升。两把实验互相独立，可同一关一起打。
+
+### 续13 补记六　把补记五那条解法落成补丁并过门禁：投递审计接回实时链路，215 个用例全绿
+
+补记五第四节只写了"该怎么改"。本轮把它落进隔离树工作区，跑了一遍门禁，读数如下。
+
+**一、改动面。** 只动一个文件一个方法：`SenseField-fixpack-20261007/android/.../Match3LiveService.java` 的 `listener()`，把两个空花括号回调换成写审计的实现——onDispatch 写 `CueDispatch cueId/kind/category/dispatchDelayMs/requestedMask/acceptedMask/outcome/dropReason`，onPlayback 写 `CuePlayback cueId/channel/result/playbackDelayMs`。审计头沿用旧采集链路原名（CaptureService.java:1181-1221 那对），这样新旧诊断包能用同一把尺子扫，读取脚本不必改；两处都先判 `diagnostics == null || diagnostics.finished` 再写，与 announce() 里那条 Speak 审计同一写法。字段可见性实测可行：`CueDispatcher.DispatchResult` 的 acceptedChannels／outcome／reason（CueDispatcher.java:44-47）与 `CueRequest` 的 cueId／kind／createdAtMs／requestedChannels（CueRequest.java:24-31）都是包内 final，同包可直接读。
+
+**二、门禁读数（同轮实测）。** `:app:testDebugUnitTest --offline` 退出码 0，编译只剩一条 deprecation 提示；测试报告 XML 汇总 **TOTAL tests=215 failures=0 errors=0**（34 个测试类，含候选包自带的 Match3PopupThresholdTest 4 条、Match3ConfidenceGateTest 3 条、Match3ScreenGateTest 4 条，全绿）。改后文件实测 bytes=69118、CR=0、LF=1215、sha256 前缀 a492c6ffaa7879c1（纯 LF，与本仓 java 源同一制式）。
+
+**三、这条补丁能证成什么、不能证成什么，先划清。** 能证成：一旦复现"突然中断"，包里会直接出现 result=PREEMPTED／EXPIRED／COOLDOWN／FAILED 之一，或 outcome 非 ACCEPTED 的 CueDispatch，成因当场分开"闸门没放行"与"投递被丢弃／被打断"；旧链路 997 条 CuePlayback 的分布（STARTED 591／COMPLETED 400／PREEMPTED 5／EXPIRED 1）就是这套字段在真实语料里的形状，不是设想。不能证成：玩家耳朵有没有听到——COMPLETED 也只到"引擎播完"，音量那条通道仍要靠补记五第六节的免构建对照，或另加一条把 media_volume 与应用内 volume 打进审计的读数（本轮没做，避免与 §18 待裁的版本决定纠缠）。
+
+**四、与候选包凭证的关系要说白。** 已交付的候选 APK 12946526 字节／sha256 前缀 25cda3fb 对应的是补记五之前的源码，本轮动了源码，那两枚字节已不再与树一致；**本轮未重新出包、未改版本号、未安装、未推送**，是否重出与出成 0.4.33 还是并到 0.4.32 之上，仍挂在 §18 第一条待裁上。这条补丁本身属"只加观测、不改播报判据"一类，重出包时它会跟着走，不需要单独裁决。
