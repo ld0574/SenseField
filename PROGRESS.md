@@ -485,3 +485,64 @@
 - 批次二 标定持久化收紧＋逐帧 ROI 复核：只由闸门间接挡住「非游戏画面命中」，游戏画面内的坏命中仍会持久化，未做。
 - 批次五 播报通道尊重 `cue_channel_speech`／`cue_channel_haptic`＋30 秒存活播报：未做（`permissivePolicy` 照旧硬编码三通道）。
 - 出图方向条件（`DiagnosticRecorder.java:289` 宽不大于高即 return）本轮没改，且发现改它也不够：实时链路 `saveDiagnosticFrame` 传进 `frame()` 的是 JPEG 字节，却按 raw RGBA 的 rowStride 语义被 `copyImageSample` 消费——放开方向只会产出坏图。要图像证据得先给实时链路一条独立的 JPEG 落盘 API，属独立改动，不混进本轮。
+
+## 2026-10-07 上午（续9）：出声归因与触点探针补齐，15 个出声点全部可归因；Java 门禁复跑 212 绿
+
+落笔时刻（本机实测）：2026-10-07 11:35。承接续8 的批次一＋四，本节把「为什么听不到」
+与「显示触点会不会把误播报推出来」这两件事变成诊断包里的数字。工作目录仍是隔离
+worktree `<HOME>\SenseField-fixpack-20261007`，本轮结束时保持未提交、未推送。
+
+### 本节做了什么
+
+1. 中央出声审计：`announce()` 里先写一条 `Speak gate=… pkg=… chars=…` 审计再提交播报。
+   此后每一句话在 events.jsonl 里都有一条对应记录，并带着「当时停在哪个闸门」的标签。
+   改前实测：审计 8 处、出声点 15 处，等于有 7 处话不知道是谁、因为什么说的。
+2. 闸门标签补全：`lastGateReason` 赋值点实测 23 个，去重后 22 个不同标签，覆盖
+   token_invalid、projection_stopped_by_system、capture_starved、screen_hold、
+   screen_unknown_passthrough、calibration_too_small、abstain_no_calibration、
+   popup_enter、popup_exit、warming_stable_window、unreadable、same_as_announced、
+   first_double_confirm、single_cell_change、cooldown、frame_error、announced、
+   reader_off_hint、idle_hint、explore_touch、explore_touch_miss、waiting_first_frame。
+   复扫判据（可复跑）：对每个 `announce(` 调用点回看前 25 行，必须出现一条
+   `lastGateReason =` 赋值。实测 15 个调用点 / 15 个已标 / 0 个未标。
+3. 触点探针 `probeTapWindow()`：读屏服务早就给出最近一次触摸的坐标与时刻
+   （latestTouchX／latestTouchY／latestTouchAt），此前实时链路一次都没用过。现在每帧在
+   屏幕闸门之后做一次「1.2 秒窗口内是否有刚发生的触摸」判断，命中就把中央带统计量
+   （avgV、近白占比）、触摸坐标、age_ms、当时行列数写成 `TapProbe …` 审计。
+   为什么用标量而不是截图：竖屏帧本来就产不出图片——`DiagnosticRecorder.captureImages`
+   在宽不大于高时直接返回，且实时链路喂给原始 RGBA 消费者的是 JPEG 字节，只放宽方向
+   守卫只会产出垃圾。所以「水波纹把弹窗探测推过线」这个假设只能靠这类数字检验。
+4. 弹窗进／出对齐：`Match3Coach.isPopupShowing` 拆成 `popupMetrics()`（出统计量）＋
+   `popupDecides()`（纯判决），阈值收在一处（POPUP_MIN_AVG_V=0.62、
+   POPUP_MIN_WHITE_RATIO=0.35，与 HEAD 一致，本轮没改判定行为）。判为弹窗进入时另写
+   `PopupEnter avgV=… white=… since_tap_ms=…`，直接给出这次判定距上一次触摸多少毫秒。
+5. 新增 `Match3PopupThresholdTest`（4 条）：null 不判、普通盘面与暗覆盖不判、亮白对话框
+   判、边界值按严格大于。记下 why：并行会话在途副本把阈值抬到 0.75／0.55（§15 已记），
+   钉死之后合流时这条线要么原样带过、要么测试变红，不会静默漂移。
+
+### 门禁实测（同一轮两次读数）
+
+- 批次二＋三编译进 worktree 后：BUILD SUCCESSFUL in 6s，208 tests / 0 failures /
+  0 errors / 0 skipped，31 个 XML，最新 XML mtime 2026-10-07T11:31:25。
+- 加 `Match3PopupThresholdTest` 后复跑：BUILD SUCCESSFUL in 5s，212 tests / 0 failures /
+  0 errors / 0 skipped；其中 Match3ScreenGateTest 4 绿、Match3PopupThresholdTest 4 绿。
+- 改动规模实测：已跟踪文件 244 insertions / 10 deletions（Match3LiveService.java 233 行、
+  Match3Coach.java 21 行）；另有 3 个未跟踪新文件（Match3ScreenGate.java 与两份测试）。
+
+### 未做与边界（别当成已验）
+
+- Python 侧门禁本轮仍无读数：本机 python 与 python3 都没有 pytest 模块。此前
+  `uv run --no-project --with pytest` 那次 26 个收集错误是我自己加了 --no-project
+  把仓库依赖排除掉造成的，不算识别侧门禁通过，也不该重跑成那样。
+- `assembleDebug`／`lintDebug` 与出 APK：没跑，等点头。
+- worktree 保持未提交：合流进 0.4.32 还是单独出一个包做对照，待裁。
+- 批次二（标定持久化收紧＋ROI 复验）与批次五（尊重 cue_channel_speech／cue_channel_haptic
+  ＋ 30 秒存活播报）没动。
+- 症状二「到底谁结束了那两次会话」在真机跑到这套打点之前仍无解：现有两个诊断包里
+  interrupted=false、end_observed=true，而八处静默退出一条原因都没留下——这正是在此之前
+  无法定性的直接成因，不是分析不够细。
+
+### 用户此刻可做的免构建对照
+
+把系统「显示触点」关掉打一局，看误播报是否下降。`TapProbe` 与 `PopupEnter` 要的真机
+对照数据就是这个开关的两态；开关本身不用等新版，随时能试。
