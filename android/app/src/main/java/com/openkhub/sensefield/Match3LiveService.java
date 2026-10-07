@@ -782,8 +782,14 @@ public class Match3LiveService extends Service {
 
     private CueDispatcher.Listener listener() {
         return new CueDispatcher.Listener() {
-            @Override public void onDispatch(CueRequest request, CueDispatcher.DispatchResult result) { }
-            @Override public void onPlayback(CueRequest request, String channel, long atMs, String result) { }
+            @Override public void onDispatch(CueRequest request, CueDispatcher.DispatchResult result) {
+                if (diagnostics == null || diagnostics.finished) return;
+                diagnostics.dispatch(request, result.outcome, result.reason);
+            }
+            @Override public void onPlayback(CueRequest request, String channel, long atMs, String result) {
+                if (diagnostics == null || diagnostics.finished) return;
+                diagnostics.playback(request, channel, atMs, result);
+            }
         };
     }
 

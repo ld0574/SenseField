@@ -235,6 +235,20 @@ final class DiagnosticRecorder {
         record("audit", object("message", message));
     }
 
+    void dispatch(CueRequest request, String outcome, String reason) {
+        if (finished || !failure.isEmpty()) return;
+        record("CueDispatch", object("event_key", request.eventKey,
+                "category", request.category == null ? "unknown" : request.category.name(),
+                "outcome", outcome, "reason", reason,
+                "accepted_channels", request.requestedChannels));
+    }
+
+    void playback(CueRequest request, String channel, long atMs, String result) {
+        if (finished || !failure.isEmpty()) return;
+        record("CuePlayback", object("event_key", request.eventKey,
+                "channel", channel, "at_ms", atMs, "result", result));
+    }
+
     void profile(GameProfile p, String source, CueSettings cues) {
         record("profile", object("source", source, "name", p.name, "version", p.version,
                 "rois_xywh", array(p.rois), "input_size", p.yoloxInputSize,
