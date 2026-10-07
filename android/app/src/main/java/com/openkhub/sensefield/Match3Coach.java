@@ -39,6 +39,7 @@ final class Match3Coach {
     /**
      * 检测画面中央是否出现大幅亮色弹窗（教程/说明页的显著特征）。
      * 取屏幕中央带（高度 30%-70%、宽度 15%-85%）的平均亮度与近白像素占比。
+     * 阈值较严格：避免全局触点反馈的白色涟漪动画、普通 UI 高亮误触发。
      */
     static boolean isPopupShowing(Bitmap frame) {
         int w = frame.getWidth(), h = frame.getHeight();
@@ -59,7 +60,7 @@ final class Match3Coach {
         if (n == 0) return false;
         float avgV = sum / (float) n;
         float whiteRatio = white / (float) n;
-        return avgV > 0.62f && whiteRatio > 0.35f;
+        return avgV > 0.75f && whiteRatio > 0.55f;
     }
 
     /* ---------- 4 象限报点 ---------- */

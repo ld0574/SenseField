@@ -65,6 +65,7 @@ public class Match3LiveService extends Service {
     private int hintCount;   // 同一局面的犹豫提示次数（上限 2 次，防无限重复）
     private long lastAnnounceAt;
     private boolean popupAnnounced;
+    private boolean projectionTerminated; // 系统侧终止投影（切后台/锁屏）时置位，不立即停服务
     private boolean abstainAnnounced;   // ABSTAIN 防线提示每轮服务只播一次
     private String activeStartToken;    // 当前会话的授权指纹（去重重复投递的 START）
     private int liveRows = 8;
@@ -129,6 +130,7 @@ public class Match3LiveService extends Service {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
         teardownMedia();   // 重复 START 时先拆旧投影，否则 ContentRecordingSession 冲突
         sessionStartMs = SystemClock.elapsedRealtime();
+        projectionTerminated = false;
         awaitingConfirm = true;   // 新会话首播走双重确认，杜绝开场动画误报
         pendingMatrix = null;
         pendingStable = 0;
@@ -162,13 +164,12 @@ public class Match3LiveService extends Service {
         }
         projection.registerCallback(new MediaProjection.Callback() {
             @Override public void onStop() {
-                Log.i(TAG, "系统侧终止了屏幕录制");
-                try {
-                    announce("屏幕录制已结束，需要继续请重新开始实时识别。");
-                } catch (Exception e) {
-                    Log.w(TAG, "结束提示播报失败: " + e.getMessage());
-                }
-                stopSelf();
+                Log.i(TAG, "系统侧终止了屏幕录制，保持服务运行等待用户手动停止");
+                projectionTerminated = true;
+                // 不再立即 stopSelf()：用户可能只是切回桌面查看 HUD，
+                // 重新进入游戏后系统会重建 MediaProjection 并重启服务。
+                // 此处的 tick 循环会继续尝试取帧，投影失效后 acquireLatestImage
+                // 会返回 null 或旧帧，processFrame 的 sampler 验证会自然拦截。
             }
         }, handler());
         reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
@@ -229,6 +230,15 @@ public class Match3LiveService extends Service {
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             if (!running) return;
+            /* 投影被系统终止且无活动投影时，优雅停止服务（非用户主动停止） */
+            if (projectionTerminated && projection == null) {
+                Log.i(TAG, "投影已终止且无活动令牌，停止服务");
+                if (diagnostics != null && !diagnostics.finished) {
+                    diagnostics.finish("projection_system_stopped");
+                }
+                stopSelf();
+                return;
+            }
             Bitmap frame;
             synchronized (frameLock) {
                 frame = latestFrame;
