@@ -546,3 +546,42 @@ worktree `<HOME>\SenseField-fixpack-20261007`，本轮结束时保持未提交�
 
 把系统「显示触点」关掉打一局，看误播报是否下降。`TapProbe` 与 `PopupEnter` 要的真机
 对照数据就是这个开关的两态；开关本身不用等新版，随时能试。
+
+## 2026-10-07 上午（续10）：把「state 全程 starting」钉到字段级，并改掉自己补丁里那串不可比的 state
+
+落笔时刻（本机实测）：2026-10-07 11:41。续9 之后回头看诊断包的字段，两处新读数，
+其中一处是我自己补丁的缺陷。
+
+### 诊断包复扫的两条实测
+
+- 两个包的 checkpoint 里 `state` 全是 `"starting"`：A 29 条、B 16 条（共 45 条），
+  而同一包里有 5 条／6 条 frame 事件（frame 只在播报通过全部闸门时才写）。也就是
+  说播报在发生，状态却一步没动过——实时链路从来没调过 `publishState`，checkpoint
+  dump 的是构造种子（`DiagnosticRecorder.java:139`）。这把 §14「静默与退出无法归因」
+  的成因落到了具体字段：不是分析不够细，是那个字段在实时链路下压根没人写过。
+- 两个包里搜前台包名的痕迹（happyelements、com.miui、com.android 系、`pkg=`、
+  任何含 package 的键）实测 0 命中。所以「误播报那一刻前台到底是谁」这个问题，
+  现有诊断包答不了——新版 `ScreenHold pkg=…` 与 `Speak … pkg=…` 是第一次留下这个
+  读数。症状一的最终确认必须等真机跑一次，今天只能给出「与之一致」的证据
+  （未知率 11.1–38.8%、格数在会话内从 6×6 变 9×9），不能给出「已证实」。
+
+### 顺手改掉自己的一处设计错误
+
+续9 落地的 `publishLiveState()` 把闸门塞进了 state：值长成 `m3live gate=… screen=…`。
+这不对——`CaptureService.java:1385-1389` 的 state 是单词枚举（starting／paused／
+waiting_for_image／waiting_for_landscape／processing／capturing…），把一个复合串放进
+同一个字段，等于让两条链路的 state 从此不可比，而 `frame_stream_status` 的判读恰恰
+要横向比这两个链路。改法：state 固定单词 `"m3live"`，细节拆进独立字段
+`gate`／`screen`／`explore`／`end_reason`／`raw_fill`／`rows`／`cols`／
+`last_announce_at_ms`。安全性核对：`DiagnosticRecorder` 只整体搬运 latestState
+（:576 checkpoint、:605 summary 的 last_state），全文没有任何地方按 state 的字面值
+分支，所以改字符串不会撞到既有逻辑。
+
+### 门禁复跑（同一轮第三次）
+
+BUILD SUCCESSFUL in 5s，212 tests / 0 failures / 0 errors / 0 skipped。改动规模随本轮
+累加到已跟踪文件 252 insertions / 10 deletions（Match3LiveService.java 241、
+Match3Coach.java 21），未跟踪新文件仍是 3 个。
+
+worktree 依旧未提交、未推送；`assembleDebug`／`lintDebug` 依旧没跑。续9 末尾那两个待裁
+问题（合流进 0.4.32 还是单独出对照包；要不要构建出 APK）仍然开着。
