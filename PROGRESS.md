@@ -391,3 +391,61 @@
 **提交与回读**：提交 `ccda6c6`，推 `93186ab..ccda6c6`；推后远端 head 与本地同为 `ccda6c6359a72aa6c39a44eb5f7ac14f88de5043`，`git diff refs/tmp 那份远端快照 HEAD` 为**空**（整树一致），远端 tip 上该形态复扫同为 3 文件 4 处，案卷两份文件 9 个身份词命中仍为 **0**。
 
 **未做的三件（口径已明确，留在 §12）**：B 的另一半（3 处可执行常量改读环境变量或仓外配置，再改写 `97cfda7` 加其后 5 枪＝6 个提交并 force-push）；已跟踪 2 枚 jev APK 的降级；C 那个畸形未跟踪文件名（实测仍在未跟踪未忽略的 44 个条目里，未改名未删）。
+
+## 2026-10-07 上午（续7）：两份真机诊断包复盘——误播报与「没点停止就中断」的根因
+
+- 本轮留痕时刻取实测读数（date）：2026-10-07 11:01（+0800）。材料是用户上午经微信送来的两个 `sensefield-diag-*.zip`（收件路径含第三方账号标识，按纪律不落案卷；两包 session_id 分别为 `285fbf45…`、`e6fc41b0…`，下称包 A／包 B）。
+- 两包同源同制式：app `0.4.31`／versionCode 28，android 16／sdk 36，屏幕 1080x2400@420dpi，schema `sensefield.diagnostics` v1，`images_enabled=true`。设备品牌机型串按 `<机代号>` 记，不落真值。
+- 读数脚本 `_tmp_diag_timeline2.py`，输出 `_tmp_diag_dump.txt`（均在工作区暂存目录，不入 git）。
+
+### 实测读数（两包全量事件）
+
+- 包 A：duration 142.8s，reason `m3live_session_finished`，frame_count 5，image_count 0，interrupted false，end_observed true。5 条 audit 的时刻与内容：62.4s 6x6 未知 12/36 交换 6｜108.0s 9x9 未知 23/81 交换 26｜114.3s 9x9 未知 23/81 交换 14｜120.7s 9x9 未知 17/81 交换 23｜127.2s 9x9 未知 11/81 交换 33。
+- 包 B：duration 77.4s，同 reason，frame_count 6，image_count 0。6 条 audit：6.5s 9x9 未知 9/81 交换 18｜15.4s 7x7 未知 12/49 交换 0｜22.2s 7x7 未知 16/49 交换 0｜28.2s 7x7 未知 9/49 交换 2｜34.4s 7x7 未知 19/49 交换 2｜40.5s 7x7 未知 19/49 交换 2。
+- checkpoint：A 29 条、B 16 条，取值全部是 state=starting／frames_expected=false／last_frame_arrived=-1／processed_frames=0；A 的 29 条互不相同只因 snapshot_age_ms 在涨。
+- 尾事件都是 `image_context_reset`，reason 形如 `finish:m3live_session_finished`，A 在 142.8s、B 在 77.4s。
+
+### 关键判读（先更正自己前一段的一处读数）
+
+- 这个包里的 frame 事件不是「采集帧」，是「出过声」。两处独立证据：代码里 `diagnostics.frame()` 的调用链唯一入口是播报分支（`Match3LiveService.java:489` audit → `:491` saveDiagnosticFrame → `:788` frame）；包内 summary 的 frame_count 与 audit 行数逐包相等（A 5=5、B 6=6）。
+- 因此「最后一次 frame 之后 15.6s（A）／36.8s（B）什么都没有」只能读成「这段时间没出声」，**不能**读成采集中断。前一段会话我把它当采集节流证据用过错过一次，这里落进案卷更正。
+
+### 根因一（还没进游戏就误播报）：实时链路没有「画面归属」闸门
+
+- `processFrame` 判「这帧是不是棋盘」只看像素（`:278-360`，autoDetectBoard＋detectGridCount＋40% 试采），整条链路无一处问这块屏属于谁。
+- 现成依据摆着没读：`SenseFieldReaderService.java:87-95` 已把事件包名存进 `latestPackage()`，实测其唯一读取点在 `Match3AssistActivity.java:706`（Jev 判定路径），`Match3LiveService` 零调用；全仓 `getRunningTasks`／`UsageStats`／`foregroundPackage` 命中 0。游戏包名清单（`Match3AssistActivity.java:46-49`）只用于「启动游戏」。
+- 分布证据：两包 11 条播报未知率 11.1%～38.8%，而本仓真机抽帧基线（`research/board-recognition/REAL_VIDEO_FINDINGS.md`：格数正确的 1140 帧未知率 0～10%、均值 0.09%）说明真棋盘不长这样——播出来的不是棋盘。
+- 结构证据：同一会话内格数自变（A 62.4s 的 6x6 → 108.0s 起 9x9；B 6.5s 的 9x9 → 15.4s 起 7x7）。一局真实盘面的行列数不会中途改，说明采样器按「屏幕上有什么周期图案」重建过标定。
+- 时序证据：包 B 首条 6.5s 已接近门序允许的最早出声（tick 800ms、稳定窗 3 帧约 2.4s、首播双确认再占一窗）。能这么早开嗓说明画面是静止的；静止＋周期图案＋未知率 11% 的形态像桌面／关卡图，不像开局棋子还在掉落的游戏盘。
+- 连带缺陷：autoDetectBoard 一命中就落盘 `match3_calibrated=true`（`:301-304`），单帧坏画面即可永久改写标定；而 40% 试采只在 auto 分支跑，`plausibleCalibration`（`:330`）只守手动分支。
+
+### 根因二（没点停止就中断）：结束原因写死成一个标签，静默又没有归因
+
+- 能走到 `onDestroy:853` 那唯一一句 `finish("m3live_session_finished")` 的入口全表：ACTION_STOP→stopSelf（`:106-109`，通知「停止」`:804-806`、Activity 按钮 `:97-102`）、Activity `stopService`（`:99`）、null intent／data null（`:107`、`:112-115`）、投影令牌失效（`:155`，自带专属 reason）、虚拟屏失败（`:181`，自带专属 reason）、系统中止录屏（`Callback.onStop` `:163-173` → stopSelf）。除中间两条，其余全塌进同一个固定串——「用户点的停止」与「系统掐的录屏」在包里不可区分。两包 interrupted=false／end_observed=true 只证明走完了 onDestroy，证不了是谁触发的。
+- 这个服务没有任何超时或看门狗：常量只有节拍与防抖（800／3 帧／6000／15000／12000ms），`sessionStartMs` 只用来起诊断会话（`:75`、`:131`、`:137`）。饿死检测（`CaptureHealthMonitor` 的 STARVATION_MS=1000）与黑帧停播只挂在 `CaptureService`，实时链路没接这套。
+- 所以「突然没声」在当前打点下有 8 个互不可辨的成因，且全是静默 return、零打点：无新帧（`:237`）、静态盘签名去重（`:437`）、首播双确认永不凑齐（`:443-450`）、弹窗闸门（`:377`）、认不出每轮只说一次（`:417-431`，该句播报也只有 Log 没有 audit）、变化不足 2 格（`:459`）、6 秒冷却（`:470`）、触屏点读模式短路（`:271`）。
+
+### 根因三（取证空洞）：竖屏永久出不了图，checkpoint 永久冻结
+
+- `DiagnosticRecorder.captureImages` 的放行条件含「宽不大于高就直接 return」（`:289`），而实时帧就是 1080x2400 竖屏（frame 事件里 frame_width=1080／frame_height=2400 实测）。这套出图是给横屏小地图写的。后果：两包 image_count=0，同时 images_limited=false、diagnostic_error 为空串——一条告警都没发。误播报播的到底是哪块屏，包里没图可证。
+- 同类空洞：`publishState` 的调用方实测只有 `CaptureService.java:1391` 一处，`Match3LiveService` 从不发布自己的状态，于是 state 停在构造种子（`DiagnosticRecorder.java:139-142`），checkpoint 全程 starting。
+
+### 触点反馈（用户本轮新开的设置）与播报通道
+
+- 两份 checkout 全仓 grep「触点」命中 0，代码里不存在这个设置项——它是系统级「显示触点」（HyperOS 设置／开发者选项），不在 app 里。
+- 机制推断（标明是推断，本两包未证实也未否证）：系统触点白点由 SurfaceFlinger 合成、会进录屏镜像；800ms 采样加 3 帧多数票（`:631-641`）下，一个存活约 1 秒的白点能在 3 帧里占满 2 帧，多数票判它胜出，白点就成了一颗假棋子并触发变化播报。因 image_count=0，包里拿不到图——修法里带一条能把这条推断量出来的打点。
+- 取向：不能靠「让用户关掉触点反馈」规避，那是盲人用户的操作反馈；且 app 侧本来就拿得到触摸坐标（`SenseFieldReaderService.java:66-84`，API 34+ 只观察不消费），有现成依据屏蔽触点邻域。
+- 另一条独立缺陷：本服务播报策略硬开三通道（`permissivePolicy` `:762-771`），用户在播报设置里关语音或触觉对 m3live 无效——误播报没法从设置里静音。
+
+### 解决方案（五批，按治什么排序；本轮只做分析，一行代码未动）
+
+- 批次一 画面归属闸门：`processFrame` 起手读 `latestPackage()`，包名含 happyelements 才允许出声；离开游戏时 latch 播一次「已离开消消乐画面，识别先停」并把 awaitingConfirm 置真；latestPackage 为空或陈旧（超过 3 秒无更新）判为「无法确认画面归属」，播一次不硬播。每条 BoardRecognized 的 audit 补 `pkg=` 字段。判据：下一包所有播报全部带 pkg，非游戏画面 0 条出声。
+- 批次二 标定不被坏帧永久改写：40% 试采与 `plausibleCalibration` 同时守 auto 与手动两条分支；auto 命中先只当内存 candidate，连续 2 个稳定窗未知率不超过 15% 且几何一致才落 prefs；每帧对 ROI 做一次弱复检（周期相关性或边框色），失败写 gate 事件并回到双确认。
+- 批次三 触点白点免疫：采样前用现成触摸坐标，把最近 1.2 秒触点半径约 1.5 格内的格子先标为不确定再进多数票；打点 `tap_suppressed cells=N`。判据：下一包能直接量出白点是否进了 crop，这条推断即升级为实测。
+- 批次四 静默与退出都可归因：实时链路补 `publishState`（每 tick 发最新帧到达时刻、rawFill、rows/cols、lastAnnounceAt）；上述 8 个静默 return 点各写一条 gate 事件；finish 拆标签 user_stop_action／user_stop_service／system_projection_stopped／capture_starved（新增看门狗：连续 2 秒以上无新帧播一次并结束）；captureImages 的竖屏拒出图改成按屏幕方向取 crop，并把本会话出图数写进 summary。
+- 批次五 安全阀与存活感：`permissivePolicy` 改成尊重 `cue_channel_speech`／`cue_channel_haptic`；仍在游戏画面且连续 30 秒无播报时播一句「识别还在跑，棋盘没变化」，让盲人用户能区分「静默」与「死了」。
+- 不用等新包、真机立刻可做的实验：关掉系统「显示触点」再跑一局做 A/B——若误播报显著下降，批次三的机制当场被现场证实。
+
+### 自我更正（本轮抓到）
+
+- 前一段会话跨包统计表把新会话的「median gap 6.8～13.2 秒、单段停 21.6/36.3/47.3/75.2/150.9 秒」解读成「帧泵变慢 12～30 倍」。本轮按 frame_count==audit 数复算后该解读作废：那是出声间隔，不是帧间隔；老包 reason=destroyed 的 0.2～0.5 秒才是真帧间隔（那套由 `CaptureService` 逐帧写 frame 事件）。老包与新包在这一个字段上不可比。
