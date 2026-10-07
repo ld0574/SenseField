@@ -75,3 +75,9 @@
 - GitHub主线发布沿用 `v0.4.3-main` 和同名附件，由本次用户指令授权覆盖；Gitee APK与固定网站清单仍由负责人手动成对替换。
 
 本次不修改王者识别、预警范围、音频实现与提醒参数，不把合成检查计作真实关卡、实声、TalkBack或受控温升验证。患者体验和Android15+真机中断恢复仍待独立验证；历史评分与 `verified/release_ready` 保持现状。
+
+### GitHub覆盖完成
+
+代码合并提交为 `9fd3dabf8fe3db10847a7bd434a5eb24b910835e`，已推送main；`v0.4.3-main`沿用同一发布地址并指向该源码。APK、使用说明TXT、校验TXT三份同名附件已覆盖，服务器记录的大小、SHA-256及带后缀的中文标签均与本地一致。发布仍为非草稿、非预发布。
+
+本次修订开始前和完成后的GitHub Latest API均指向`v0.4.3-main`，没有恢复或切换其他人的入口；初次发布时保留队友Latest的记述继续作为当时状态，不能代替本次实读结果。公开附件及Latest核对证据保存在上述目录的 `github-release.before/after.json`、`github-latest.before/after.json` 和 `github-verification.json`。Gitee同名APK及固定网站清单仍等待负责人手动上传。

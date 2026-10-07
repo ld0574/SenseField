@@ -2,7 +2,7 @@
 
 版本：0.4.3／versionCode 20。支持Android 10及以上、arm64-v8a手机。主线完整包包括王者荣耀辅助、开心消消乐体验入口和默认关闭的AI助手。
 
-发布入口：[听野0.4.3主线Release](https://github.com/ld0574/SenseField/releases/tag/v0.4.3-main)。已有`v0.4.3`由消消乐分支发布占用，故本次使用独立源码标签`v0.4.3-main`；APP版本名称与升级序号不变。该发布为普通Release，保留队友当前的GitHub Latest入口，不覆盖其标签或附件。
+发布入口：[听野0.4.3主线Release](https://github.com/ld0574/SenseField/releases/tag/v0.4.3-main)。已有`v0.4.3`由消消乐分支发布占用，故本次使用独立源码标签`v0.4.3-main`；APP版本名称与升级序号不变。该发布为普通Release。本次覆盖保留开始前的GitHub Latest入口，实际核对发布前后均为`v0.4.3-main`；队友的独立标签与附件保持原样。
 
 ## 本版更新
 

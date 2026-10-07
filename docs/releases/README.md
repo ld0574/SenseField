@@ -1,6 +1,6 @@
 # 发布与交付索引
 
-整理日期：2026-10-07。本次主线完整交付为[听野0.4.3](https://github.com/ld0574/SenseField/releases/tag/v0.4.3-main)（`versionCode 20`，普通Release），包含王者荣耀辅助、消消乐体验入口与默认关闭的助手。既有`v0.4.3`与0.4.3x发布来自消消乐独立分支，本次用`v0.4.3-main`标记实际主线源码，保留队友的Latest入口；请使用该完整交付的直接链接。当前唯一APK、使用方式和验证边界见[0.4.3说明](0.4.3/RELEASE_NOTES.md)。Gitee同名APK和固定网站清单仍由负责人按[CDN发布步骤](../../deploy/assistant/CDN发布.md)成对手动上传，模型分片继续复用。整体`verified`与`release_ready`保持现状，不将公开发布类型当作稳定性验收结果。
+整理日期：2026-10-07。本次主线完整交付为[听野0.4.3](https://github.com/ld0574/SenseField/releases/tag/v0.4.3-main)（`versionCode 20`，普通Release），包含王者荣耀辅助、消消乐体验入口与默认关闭的助手。既有`v0.4.3`与0.4.3x发布来自消消乐独立分支，本次用`v0.4.3-main`标记实际主线源码，保留各独立发布；请使用完整交付的直接链接。本次覆盖前后GitHub Latest实际均为`v0.4.3-main`。当前唯一APK、使用方式和验证边界见[0.4.3说明](0.4.3/RELEASE_NOTES.md)。Gitee同名APK和固定网站清单仍由负责人按[CDN发布步骤](../../deploy/assistant/CDN发布.md)成对手动上传，模型分片继续复用。整体`verified`与`release_ready`保持现状，不将公开发布类型当作稳定性验收结果。
 
 ## 版本记录
 
