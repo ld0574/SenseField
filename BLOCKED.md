@@ -353,3 +353,11 @@ ncnn Android 归档（github.com releases），本机到该主机只有约 14 KB
 - **凭证已换代（实测）**：隔离树源码现 Match3LiveService.java bytes=73561、CR=0、LF=1290、sha256 前缀 45c591d4cbb11d5f，相对基线提交 449e945 累计 435 增 8 删；新增测试 Match3GeometrySwitchTest.java bytes=6414、CR=0、LF=154、sha256 前缀 fbb9c63660dd38e9。门禁 `:app:testDebugUnitTest --offline` 本轮 BUILD SUCCESSFUL in 5s、GRADLE_EXIT=0、classes=34、TOTAL tests=223 failures=0 errors=0。**因此 §18 补记三与补记一登记的那对 12946526 字节／sha256 前缀 25cda3fb 已不再等于树内内容**——它对应的是本轮三次改动之前的源码，"候选包无需重出"那句结论在本轮失效。是否重出、重出成什么版本号，仍属待裁①，本条不代为决定，也**未重新出包、未改版本号、未安装**。
 - **待裁②与③状态不变**：装机、推案卷分支、打 tag 与发 Release 都还没得到放行；那句「屏幕录制已结束，需要继续请重新开始实时识别」到底有没有听到，仍未回。案卷树本轮实测未推提交 28 个，上条记的是 22 个；两个数都取自 `git rev-list --count origin/feature/sensefield-dev..HEAD` 现读，中间还含并行会话落的笔，本条不对差额做归因，接手时以现读为准。
 - **两件玩家现在就能自己做的对照，仍挂在待裁之外**（不需构建、不需放行）：其一，关掉系统「显示触点」打一关；其二，把系统媒体音量拉到接近满格、并把应用内 volume 从默认 45 调到 100 再打一关。第二把若让"突然中断"消失或明显减少，说明那一段成因里有投递响度而非闸门；本轮的响度审计正好为这一把提供了事后核对的数（同一条 cueId 上 outcome、result、media_volume、app_volume 四个读数并列）。
+
+### §18 补记三：待裁①第七项（实时链路截图入口）与一条"不装机就永远藏着"的失效模式（10-07 14:07 本地时刻，实测）
+
+补记二把待裁①列成六项，随后本轮又动了一次源码，清单要更新到七项，并把一条新的质量缺口记在这里。
+
+- **待裁①新增第七项：诊断快照入口。** 症状一缺的那类证据（当时屏幕上到底是什么）已追到成因——实时链路的截图走 `frame()` 里的 `captureImages()`，其守卫 `width <= height` 对 1080x2400 的竖屏棋盘恒成立，命中即 return，连请求都不发，所以包里 image 恒 0 而 images_enabled 为 true、dropped_image_requests 为 0（包内自证：十场会话 61 帧全竖屏；旧链路十包全横屏且有 3504 张图）。修法是不放宽旧守卫、另开 `DiagnosticRecorder.saveSnapshot` :453，沿用同一节律常量与四道安全判定，播报点 :1220 调用。这项**不改播报判据**，只恢复一类证据；细节与限度见 PROGRESS 续13 补记九。
+- **一条新的质量缺口，值得单独记账。** 首版把快照文件名写成 snapshot- 前缀，而 `DiagnosticArchive.image()` 的文件名白名单只认 screen- 与 map-，不合规是**抛 IOException 而不是返回 false**，异常沿 IO 线程进 failed() 会把整场诊断标成失败、后续事件全丢——比"没有图"严重一个量级。**当时 JVM 门禁 223 个用例全绿**，说明归档写盘这条链在实时链路侧没有测试覆盖，只靠读实现才抓到。处置：改用 screen- 前缀、把白名单正则抽成 `IMAGE_NAME_PATTERN` 常量供新链路自检、新增 `DiagnosticSnapshotNameTest` 四条把该坑编码成断言。教训可复用到下一处：凡新增"往诊断包里写东西"的入口，都要问一句这个名字与这条链是否被任何用例走一遍，绿灯不等于覆盖。
+- **凭证再次换代（实测）**：Match3LiveService.java bytes=73996、CR=0、LF=1294、sha256 前缀 5c3267dc35af31ba；DiagnosticRecorder.java bytes=38882、CR=0、LF=704、前缀 16e44a671caf0e00；DiagnosticArchive.java bytes=8082、CR=0、LF=175、前缀 c36b0abae044c7ed；新测试 bytes=2471、CR=0、LF=54、前缀 eccb1c4eeacff7c7。门禁 BUILD SUCCESSFUL in 5s、GRADLE_EXIT=0、classes=35、TOTAL tests=227 failures=0 errors=0。补记二那句"12946526 字节／前缀 25cda3fb 已不等树内内容"继续成立且差距更大。**仍未重新出包、未改版本号、未安装、未推送、未打 tag**；待裁②③状态不变。
