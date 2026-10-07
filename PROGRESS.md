@@ -353,3 +353,23 @@
 - 提交与推送：单号 `449e945`，parent 是 `d3afcd1`（v0.4.31 那枪）；推前 `git ls-remote` 实测远端 `feature/jev-l2-judgment` 头仍是 `d3afcd1`，所以是 fast-forward；`git push <SSH URL> HEAD:refs/heads/feature/jev-l2-judgment` rc=0，输出 `d3afcd1..449e945`，复跑 `ls-remote` 远端头 = `449e945270a7c6c8a8ef11a0d3453ec21825e479` 与本地 `git rev-parse HEAD` 逐字符相等；工作树 `git status --short` **0 行**。提交身份沿用本仓 config 里那把既存身份，没动 `git config`。
 - **一句必要澄清**（防下一班读成矛盾）：§10 结案那段写的「清单本身一个字没改」，指的是**案卷仓那份** `docs/releases/GITHUB发布检查清单.md`（第 94 行那句规矩），本轮它确实没动；本轮改的是**代码仓那份**——§10「新半」量出过它对 `output` 出现 **0** 次、也就是这条归位规矩此前只活在案卷仓那份里，现在两份都有，代码仓那份还多给了校验文件的具体形态。两份仍不逐字相同，代码仓那份没抄「`docs/` 只保存说明和发布记录」那半句。
 - 本轮没做：没重跑 gradle 门禁（纯文档一行，`assembleDebug`／`testDebugUnitTest`／`lintDebug` 没动过代码，跳过并在提交说明里写明）、没打 tag、没发 Release、没同步 Gitee、没把这句镜像回案卷仓那份清单（要镜像是另一枪）、没动 §12 的 7 个超限文件。
+
+## 2026-10-07 上午（续5）：§12 口径①落地（wheel 出公开扫描面）＋两处数字复验
+
+**时刻**：09:51:40（`date` 当轮实测，不是顺推）。
+
+**做了什么**：案卷这份 checkout 的 `.gitignore` 追加两行（一行说明＋`research/board-recognition/models/*.whl`），实测 4186 到 4268 字节、173 到 175 行、CR 仍为 0（该文件本是纯 LF，尺子按第 0 步实测选的）。只暂存这一个文件：`git diff --cached --numstat` 实测 `2 0 .gitignore`；暂存差异按 9 个身份关键词复扫命中 **0**；提交 `fadcc3a`，推 `76e28b6..fadcc3a` 为 **fast-forward**（推前实测远端头恰好等于本地父提交 `76e28b6`，没有用 `--force`）。推后回读：远端 ref 与本地 HEAD 同为 `fadcc3ac1f2e299042a1f952e4990a86d47e6053`，`.gitignore` 的 blob 号两边同是 `118a587bd85e6715949fe4ababf32f812fe7dc7b`。
+
+**读数（先写预测、跑完只核对，两条都对上）**：`python scripts/check_public_repo.py` 扫描面 618 到 **617** 文件、超限 error 7 到 **6**。改前我先写的预测正是「只摘掉 wheel 那一条」，实测一致。
+
+**更正记录（本轮自我抓到）**：BLOCKED §12 初稿那句「① 实测这样只能把 7 条超限里的 **5 条**摘掉——4 枚未跟踪 APK 与那枚 wheel 从此不进扫描面」按实测是错的。新规则只匹配 wheel，那 4 枚 APK 一条都不受它影响，① 实际摘掉 **1 条**（7 到 6）。余下 6 条全是 `delivery/` 下的 debug APK：4 枚未跟踪（alpha.11／alpha.12 双 ABI）＋ 2 枚已跟踪（jev 双 ABI），仍归 §12 剩下的口径。
+
+**「已推历史 7 处本机绝对路径」这条本轮做了逐词复验，结论是数字对、口径要钉死**：
+- pickaxe 按 9 个身份词扫整条分支历史，只有 `97cfda7`（10-05「同步本地工作区成果」那一枪）一枪引入过，且只落在 **4 个文件**：`backend/eval/patch-activity.js`、`research/board-recognition/report.md`、`research/board-recognition/src/common.py`、`research/board-recognition/src/gen_synth.py`。按出现次数实测总 **7** 处（本机账号名 6 次＋云盘目录名 1 次），落在 6 行上；机代号、构建号前缀、HyperOS 尾段、gh 令牌账号、既存提交身份在整条历史上 **0 命中**。
+- 案卷根 `PROGRESS.md`／`BLOCKED.md` 在这两个版本（`97cfda7` 与当前 tip）对上述 9 词全部 **0 命中**——洗标识那一枪把案卷自身洗干净了，历史里也没留。所以「7 处」不是案卷的问题，是研究脚本与一份研究文档的问题。
+- 改写面实测：要连历史一起抹掉，需重写 `97cfda7` 加其后 5 枪，共 **6 个提交**，且必须对已推分支 `feature/sensefield-dev` 用 force-push。
+- 但其中 **3 处是可执行的路径常量**（`common.py` 的 `ASSETS` 与 `SAMPLER_JAVA`、`gen_synth.py` 第 17 行、`patch-activity.js` 第 2 行），洗成占位符等于让这几个本地判卷脚本直接跑不起来；另 2 行（`report.md` 里的 `cd` 命令与云盘目录名）是散文，可直接洗不伤功能。这一句卡在口径上，见 BLOCKED §12 同日追加。
+
+**本轮另外量到两条现场事实（不在放行范围内，一个字节都没动）**：
+1. 这份 checkout 有**并行会话的未提交改动**：5 个跟踪文件处于 M 态（`research/board-recognition/PROGRESS.md`、同目录 `BLOCKED.md`、`report.md`、`src/common.py`、`android/app/src/test/java/com/openkhub/sensefield/AssistantContractsTest.java`，numstat 实测 22/0、2/2、40/14、4/3、5/1），另有一批未跟踪文件与目录；其中 `research/board-recognition/PROGRESS.md` 还带「CRLF 将被替换成 LF」的提示。也就是说 force-push 改写会让新 tip 的 blob 与这些脏工作树不一致，它们若随后提交还会把原文带回来。
+2. 未跟踪堆里有一个**畸形文件名**：名字是一段被吞掉分隔符的 shell 命令残段（形如「某个目录名 与 与 cd 家目录正斜杠Users本机账号云盘目录名Desktop听野…」，还夹着全角竖线的字节），是既往某次重定向写歪的产物，不是数据资产。它未跟踪、也没被忽略，所以既在 `check_public_repo.py` 的扫描面上，也是对外可见的身份痕迹来源之一；删不删等口径，本轮只登记。
