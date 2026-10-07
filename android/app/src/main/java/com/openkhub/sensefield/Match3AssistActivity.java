@@ -300,7 +300,16 @@ public class Match3AssistActivity extends Activity {
             toast("本机不支持录屏");
             return;
         }
-        startActivityForResult(manager.createScreenCaptureIntent(), REQ_PROJECTION);
+        if (android.os.Build.VERSION.SDK_INT >= 35) {
+            /* 整屏投影：跳过「选择单个应用」选择器——盲人用户无法操作选择器，
+             * 且单应用投影在切到游戏后停止出帧（真机诊断 81 秒只到 2 帧的根因）。
+             * 默认显示器配置 = 系统 consent 直接整屏，不再出现应用选择。 */
+            android.media.projection.MediaProjectionConfig config =
+                    android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay();
+            startActivityForResult(manager.createScreenCaptureIntent(config), REQ_PROJECTION);
+        } else {
+            startActivityForResult(manager.createScreenCaptureIntent(), REQ_PROJECTION);
+        }
     }
 
     /* ---------- 选截图 ---------- */
@@ -368,13 +377,29 @@ public class Match3AssistActivity extends Activity {
     }
 
     private void saveCalibration() {
+        int rows = 6 + rowsSpin.getSelectedItemPosition();
+        int cols = 6 + colsSpin.getSelectedItemPosition();
+        int l = parseInt(leftIn, 4), t = parseInt(topIn, 18);
+        int r = parseInt(rightIn, 96), b = parseInt(bottomIn, 82);
+        /* 写入侧同用一把闸门（BUGFIX_PLAN 修复三）：只堵实时服务的使用侧，
+         * 设置页照样还能把坏值塞回 SharedPreferences。 */
+        int[] cell = new int[2];
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        if (!Match3Sampler.plausibleCalibration(dm.widthPixels, dm.heightPixels,
+                l, t, r, b, rows, cols, cell)) {
+            toast("标定区域太小：单格只有 " + cell[0] + "x" + cell[1] + " 像素，"
+                    + "至少需要 " + Match3Sampler.minPlausibleCell(dm.widthPixels)
+                    + " 像素。请把整个棋盘框进来（当前屏 " + dm.widthPixels
+                    + "x" + dm.heightPixels + "）。");
+            return;
+        }
         GameProfile.settings(this).edit()
-                .putInt("match3_rows", 6 + rowsSpin.getSelectedItemPosition())
-                .putInt("match3_cols", 6 + colsSpin.getSelectedItemPosition())
-                .putInt("match3_l", parseInt(leftIn, 4))
-                .putInt("match3_t", parseInt(topIn, 18))
-                .putInt("match3_r", parseInt(rightIn, 96))
-                .putInt("match3_b", parseInt(bottomIn, 82))
+                .putInt("match3_rows", rows)
+                .putInt("match3_cols", cols)
+                .putInt("match3_l", l)
+                .putInt("match3_t", t)
+                .putInt("match3_r", r)
+                .putInt("match3_b", b)
                 /* 标记「玩家亲手标定过」：实时服务在自动检测失败时只信这份标定，
                  * 没有此标志一律 ABSTAIN 播报，绝不拿默认 8×8 硬读（防满屏河马式乱播） */
                 .putBoolean("match3_calibrated", true)

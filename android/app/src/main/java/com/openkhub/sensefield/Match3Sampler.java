@@ -411,6 +411,32 @@ final class Match3Sampler {
         return detectBoundsFromMask(mask);
     }
 
+    /** 单格最小可信边长（像素）：1080p 宽下等于 60，与 detectGridCount 自己的弃权门
+     *  （cw/ch < 60 就数不出周期）同一把尺；窄屏按比例放宽、下限 40，
+     *  免得把小屏上的有效标定误杀。 */
+    static int minPlausibleCell(int screenWidthPx) {
+        return Math.max(40, screenWidthPx / 18);
+    }
+
+    /** 标定框可信性闸门：按屏幕像素＋行列数算单格边长，任一边不足即判不可信。
+     *  cellOut（长度 ≥2）回填实测单格宽/高，供日志与提示里复述具体数字。
+     *  立此闸门的实据（bugreport 2026-10-07）：存机框 33%x14% 在 1080x2400 上
+     *  裁出 356x336，按 8x8 切出单格 44x42，采样点全落在格子缝隙 → 整盘未知 → 全程静默。 */
+    static boolean plausibleCalibration(int screenWidthPx, int screenHeightPx,
+                                        int l, int t, int r, int b,
+                                        int rows, int cols, int[] cellOut) {
+        int boxW = screenWidthPx * (r - l) / 100;
+        int boxH = screenHeightPx * (b - t) / 100;
+        int cellW = cols > 0 ? boxW / cols : 0;
+        int cellH = rows > 0 ? boxH / rows : 0;
+        if (cellOut != null && cellOut.length >= 2) {
+            cellOut[0] = cellW;
+            cellOut[1] = cellH;
+        }
+        int min = minPlausibleCell(screenWidthPx);
+        return cellW >= min && cellH >= min;
+    }
+
     /**
      * 格数自检：棋盘裁剪区 V 通道列均值剖面的自相关周期 ≈ 格宽
      * （棋子以格宽为周期重复；开心消消乐真机美术没有可见格线，暗线计数不可行，

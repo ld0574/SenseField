@@ -74,6 +74,20 @@ public class Match3LiveService extends Service {
     private NotificationManager notificationManager;
     private long sessionStartMs;
 
+    /* 云端识别挪出采集线程（真机 bugreport 2026-10-07 根因二）：
+     * 单线程 executor + 在途标记，同一时刻最多一个请求在飞；回包经 handler
+     * 投回采集线程取用，播报状态（去重/双重确认/最小间隔）全程只在一条线程上动。 */
+    private static final long CLOUD_RESULT_TTL_MS = 12000;
+    private java.util.concurrent.ExecutorService cloudExecutor;
+    private final java.util.concurrent.atomic.AtomicBoolean cloudInFlight =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+    private char[][] cloudMatrix;          // 只在采集线程读写（后台经 handler 投递）
+    private long cloudMatrixAt;
+    private int unreadableStreak;          // 连续「未知率>40%」的稳定窗数
+    private boolean unreadableAnnounced;   // 本轮「认不出」是否已出声
+    private boolean tinyBoxAnnounced;      // 本会话是否已提示过「标定框太小」
+    private boolean overlayHintAnnounced;  // 本会话是否已提示过「无障碍未开启」
+
     @Override
     public IBinder onBind(Intent intent) {
         return null;
@@ -118,6 +132,8 @@ public class Match3LiveService extends Service {
         awaitingConfirm = true;   // 新会话首播走双重确认，杜绝开场动画误报
         pendingMatrix = null;
         pendingStable = 0;
+        tinyBoxAnnounced = false;
+        overlayHintAnnounced = false;
         diagnostics = DiagnosticRecorder.start(this, java.util.UUID.randomUUID().toString(), sessionStartMs);
         notificationManager = getSystemService(NotificationManager.class);
         android.content.res.Resources res = getResources();
@@ -290,9 +306,12 @@ public class Match3LiveService extends Service {
                 liveCols = candCols;
                 sampler = candidate;
                 abstainAnnounced = false;
+                boolean rulerShown = SenseFieldReaderService.showRowNumbers(
+                        this, auto[0], auto[1], auto[2], auto[3], candRows);
                 Log.i(TAG, "棋盘自动适配: l=" + auto[0] + "% t=" + auto[1] + "% r=" + auto[2]
                         + "% b=" + auto[3] + "% 格数=" + candRows + "x" + candCols
-                        + "（试采验证通过）");
+                        + "（试采验证通过） " + describeCalibration());
+                hintIfReaderOff(rulerShown);
             } else if (calibrated) {
                 /* 检测不到但玩家框选过：沿用手动标定；格数仍尝试自检
                  * （7×7 的局按 8×8 读会整盘错位，这正是真机乱播的另一半成因） */
@@ -304,12 +323,31 @@ public class Match3LiveService extends Service {
                 if (n > 0) {
                     prefs.edit().putInt("match3_rows", rows).putInt("match3_cols", cols).apply();
                 }
+                /* 标定合理性闸门（BUGFIX_PLAN 修复三）：单格小于可信下限就不建 sampler，
+                 * 绝不硬读——真机那次 44 像素格子把整条链路喂成了未知垃圾。
+                 * 保持 sampler 为空让后续帧继续尝试自动适配，同时把话说明白。 */
+                int[] cell = new int[2];
+                if (!Match3Sampler.plausibleCalibration(width, height, l, t, r, b, rows, cols, cell)) {
+                    if (!tinyBoxAnnounced) {
+                        tinyBoxAnnounced = true;
+                        Log.w(TAG, "标定框不可信，拒绝沿用：单格=" + cell[0] + "x" + cell[1]
+                                + "px 下限=" + Match3Sampler.minPlausibleCell(width)
+                                + "px 自检=" + n + " " + describeCalibration());
+                        announce("你标定的棋盘区域太小，每个格子只有 " + cell[0] + " 像素，"
+                                + "我读不出来。请重新框选，把整个棋盘方方正正框进去。");
+                    }
+                    return;
+                }
                 liveRows = rows;
                 liveCols = cols;
                 sampler = new Match3Sampler(this, rows, cols, l, t, r, b);
                 abstainAnnounced = false;
+                boolean rulerShownManual =
+                        SenseFieldReaderService.showRowNumbers(this, l, t, r, b, rows);
                 Log.i(TAG, "沿用手动标定 " + rows + "x" + cols
-                        + (n > 0 ? "（格数自检=" + n + "）" : ""));
+                        + (n > 0 ? "（格数自检=" + n + "）" : "（格数自检弃权，按存值读）")
+                        + " " + describeCalibration());
+                hintIfReaderOff(rulerShownManual);
             } else {
                 /* ABSTAIN 防线：检测不到且从没框选过 → 明确播报并等待，绝不静默硬读 */
                 if (!abstainAnnounced) {
@@ -347,50 +385,52 @@ public class Match3LiveService extends Service {
         if (rawFill < STABLE_FRAMES) return;
         matrix = majorityMatrix(rawWindow);
 
+        /* 自我修复先于一切播报闸门（真机 bugreport 2026-10-07 根因三）：
+         * 旧顺序是「去重 → 首播双重确认 → 幅度门槛 → 未知率自我修复」，
+         * 标定坏掉的盘每个稳定窗都在漂，pendingStable 永远凑不满两个，
+         * 于是在双重确认那里就 return 了——后面的自我修复和「认不出」提示一次都没执行，
+         * 玩家听到的是全程静默。先判「读不读得出」，再决定「说不说」。 */
+        if (isUnreadableBoard(matrix)) {
+            matrix = repairCalibration(frame, matrix);
+        }
+        int unknown = countUnknown(matrix);
+        int total = matrix.length * matrix[0].length;
+
         /* 云端 VLM 兜底：真机截图对拍证明本地采样 49/49 全对（REAL_VIDEO_FINDINGS.md），
          * 所以本地读数优先播报；只有本地不确定（未知格 >25%）或玩家显式开启
          * match3_cloud_escalate 时才走云端。此前默认每次稳定帧都打 VLM 并用其结果
-         * 覆盖本地——VLM 读矩阵会错位，免费档还限速，正是「对两次后一直错」的元凶。 */
+         * 覆盖本地——VLM 读矩阵会错位，免费档还限速，正是「对两次后一直错」的元凶。
+         * 本轮改的是「怎么打」：HTTP 一律交独立线程，采集线程只出图、绝不等待。 */
         var prefsNow = GameProfile.settings(this);
         boolean autoCloud = prefsNow.getBoolean("match3_cloud_escalate", false);
-        int cloudUnknown = 0, cloudTotal = 0;
-        for (char[] row : matrix) {
-            for (char c : row) {
-                cloudTotal++;
-                if (c == '.') cloudUnknown++;
-            }
-        }
-        boolean suspicious = cloudUnknown * 100 > cloudTotal * 25;
+        boolean suspicious = unknown * 100 > total * 25;
         if ((suspicious || autoCloud) && "openrouter".equals(prefsNow.getString("jev_channel", "openrouter"))) {
-            int l = frame.getWidth() * prefsNow.getInt("match3_l", 4) / 100;
-            int t = frame.getHeight() * prefsNow.getInt("match3_t", 18) / 100;
-            int r = frame.getWidth() * prefsNow.getInt("match3_r", 96) / 100;
-            int b = frame.getHeight() * prefsNow.getInt("match3_b", 82) / 100;
-            if (r - l > 40 && b - t > 40) {
-                Bitmap crop = Bitmap.createBitmap(frame, l, t, r - l, b - t);
-                /* 自托管模型服务（腾讯云）优先：无配额无限速；未配置或失败回退 OpenRouter */
-                String selfUrl = prefsNow.getString("match3_cloud_url", "");
-                char[][] cloud = null;
-                if (selfUrl != null && !selfUrl.trim().isEmpty()) {
-                    cloud = CloudVision.readBoardFromServer(crop, selfUrl,
-                            matrix.length, matrix[0].length);
-                }
-                if (cloud == null) {
-                    cloud = CloudVision.readBoard(crop,
-                            prefsNow.getString("jev_api_key", ""),
-                            prefsNow.getString("jev_vlm_model", "z-ai/glm-4.5v"),
-                            matrix.length, matrix[0].length);
-                }
-                if (cloud != null && cloud.length == matrix.length
-                        && cloud[0].length == matrix[0].length) {
-                    Log.i(TAG, "云端识别接管: " + cloud.length + "x" + cloud[0].length);
-                    matrix = cloud;
-                } else if (cloud != null) {
-                    Log.i(TAG, "云端行列 " + cloud.length + "x" + cloud[0].length
-                            + " 与本地 " + matrix.length + "x" + matrix[0].length + " 不符，丢弃");
-                }
-            }
+            dispatchCloud(frame, prefsNow, matrix.length, matrix[0].length);
         }
+        matrix = takeCloudResult(matrix);
+        unknown = countUnknown(matrix);
+        total = matrix.length * matrix[0].length;
+
+        /* 认不出必须出声（根因三的另一半）：连续两个稳定窗未知率 >40% 才播一次。
+         * 留两窗（约 2.4 秒）是给关卡开场棋子掉落的多重确认余量——双重确认当初就是
+         * 为它加的，不能因为这次重排把它削弱；但绝不允许「坏盘 = 永久静默」。 */
+        if (isUnreadableBoard(matrix)) {
+            unreadableStreak++;
+            long nowUnreadable = SystemClock.elapsedRealtime();
+            if (shouldAnnounceUnreadable(unreadableStreak, unreadableAnnounced,
+                    nowUnreadable - lastAnnounceAt)) {
+                unreadableAnnounced = true;
+                lastAnnounceAt = nowUnreadable;
+                Log.w(TAG, "棋盘认不出：未知 " + unknown + "/" + total
+                        + " " + describeCalibration());
+                announce("这一盘我认不出来，棋盘的格子读不清。"
+                        + (prefsNow.getBoolean("match3_calibrated", false)
+                        ? "标定过的区域已经不对了，请重新框选标定。" : "请先框选标定棋盘区域。"));
+            }
+            return;
+        }
+        unreadableStreak = 0;
+        unreadableAnnounced = false;
 
         /* 播报签名去重：与上次已播报局面相同 → 完全静默 */
         if (matrixEquals(lastAnnouncedMatrix, matrix)) {
@@ -418,54 +458,6 @@ public class Match3LiveService extends Service {
         if (lastAnnouncedMatrix != null && diffCells < 2) {
             return;
         }
-        /* 自我修复检测：未知格占比 >40% 说明采样坏了（弹窗/切屏/标定漂移）→
-         * 重新自动适配棋盘并重采样一次；仍坏则静默（宁可不说，不播垃圾） */
-        int unknown = 0, total = 0;
-        for (char[] row : matrix) {
-            for (char c : row) {
-                total++;
-                if (Match3Sampler.isUnreadable(c)) unknown++;
-            }
-        }
-        if (unknown * 100 > total * 40) {
-            Log.i(TAG, "自我修复：未知格 " + unknown + "/" + total + "，重新自动适配");
-            int[] auto = Match3Sampler.autoDetectBoard(frame);
-            Match3Sampler candidate = null;
-            int candRows = rows(), candCols = cols();
-            if (auto != null) {
-                int n = Match3Sampler.detectGridCount(frame, auto);
-                candRows = n > 0 ? n : rows();
-                candCols = n > 0 ? n : cols();
-                candidate = new Match3Sampler(this, candRows, candCols, auto[0], auto[1], auto[2], auto[3]);
-            }
-            /* 先验证再采纳：修复采样仍一片未知 → 保留原标定静默，绝不把坏边界持久化
-             * （旧逻辑先持久化后验证，动画帧能把好标定永久改坏——真机「对两次后一直错」主嫌疑）。
-             * 分母必须用 fixed 自己的格数：新旧格数不同时沿用旧 total 会把阈值算错
-             * （旧 8×8=64 → 新 6×6=36 时阈值变成 71%，几乎全未知的标定也能被采纳）。 */
-            char[][] fixed = (candidate != null ? candidate : sampler).sample(frame);
-            int fixedCells = fixed.length * fixed[0].length;
-            if (countUnknown(fixed) * 100 > fixedCells * 40) {
-                Log.i(TAG, "自我修复后仍未识别，本轮静默且不采纳新标定");
-                awaitingConfirm = true;   // 过渡期（切屏/弹窗/结算）后重走双重确认
-                if (!abstainAnnounced
-                        && !GameProfile.settings(this).getBoolean("match3_calibrated", false)) {
-                    announce("棋盘位置变了但认不出来。请框选标定棋盘区域。");
-                    abstainAnnounced = true;
-                }
-                return;
-            }
-            if (candidate != null) {
-                var prefs = GameProfile.settings(this);
-                prefs.edit().putInt("match3_l", auto[0]).putInt("match3_t", auto[1])
-                        .putInt("match3_r", auto[2]).putInt("match3_b", auto[3])
-                        .putInt("match3_rows", candRows).putInt("match3_cols", candCols)
-                        .putBoolean("match3_calibrated", true).apply();
-                liveRows = candRows;
-                liveCols = candCols;
-                sampler = candidate;
-            }
-            matrix = fixed;
-        }
         boolean isFirst = lastAnnouncedMatrix == null;
         lastChangeAt = SystemClock.elapsedRealtime();
         List<Match3Board.Swap> swaps = Match3Board.findSwaps(matrix);
@@ -488,12 +480,151 @@ public class Match3LiveService extends Service {
             sb.append("暂无可消除交换。");
         }
         Log.i(TAG, sb.toString());
+        /* 人话之外再打一条几何与未知率：下一份 bugreport 不必再靠 skia 的
+         * JPEG 编码日志反推裁剪尺寸（BUGFIX_PLAN 修复四）。 */
+        Log.i(TAG, "播报读数 " + matrix.length + "x" + matrix[0].length
+                + " 未知=" + unknown + "/" + total + " 变化=" + diffCells + "格 "
+                + describeCalibration());
         if (diagnostics != null) {
             diagnostics.audit("BoardRecognized rows=" + matrix.length + " cols=" + matrix[0].length
                     + " unknown=" + unknown + "/" + total + " swaps=" + swaps.size());
             saveDiagnosticFrame(frame, "board_recognized");
         }
         announce(sb.toString());
+    }
+
+    /** 把当前标定的几何讲成一条日志：框百分比／裁剪像素／单格像素／格数。
+     *  这一条是本轮复盘最缺的读数——356x336 那种漂移当时只能反推。 */
+    private String describeCalibration() {
+        var prefs = GameProfile.settings(this);
+        int l = prefs.getInt("match3_l", 4), t = prefs.getInt("match3_t", 18);
+        int r = prefs.getInt("match3_r", 96), b = prefs.getInt("match3_b", 82);
+        int boxW = width * (r - l) / 100, boxH = height * (b - t) / 100;
+        return "标定=" + l + "/" + t + "/" + r + "/" + b + "% 裁剪=" + boxW + "x" + boxH
+                + "px 单格≈" + boxW / Math.max(1, cols()) + "x" + boxH / Math.max(1, rows())
+                + "px 格数=" + rows() + "x" + cols();
+    }
+
+    /** 无障碍服务没开时，行号标尺与触屏点读都是静默失效。覆盖安装必重置该授权，
+     *  每个升级新版的人都会落进这个状态，所以必须说出来（每会话一次，不抢首盘播报）。 */
+    private void hintIfReaderOff(boolean rulerShown) {
+        if (rulerShown || overlayHintAnnounced) return;
+        overlayHintAnnounced = true;
+        Log.w(TAG, "读屏辅助未启用：行号标尺与触屏点读不可用（无障碍服务未开启）");
+        announce("提示：听野的读屏辅助还没打开，行号和点读用不了。"
+                + "请到设置的无障碍里启用听野。");
+    }
+
+    /** 未知率 >40% 时的自我修复：重新自动适配＋试采验证，只有修好才采纳新标定。
+     *  修不好返回原矩阵，并把下一盘推回双重确认（调用方负责出声）。 */
+    private char[][] repairCalibration(Bitmap frame, char[][] matrix) {
+        Log.i(TAG, "自我修复：未知格 " + countUnknown(matrix) + "/"
+                + (matrix.length * matrix[0].length) + "，重新自动适配");
+        int[] auto = Match3Sampler.autoDetectBoard(frame);
+        Match3Sampler candidate = null;
+        int candRows = rows(), candCols = cols();
+        if (auto != null) {
+            int n = Match3Sampler.detectGridCount(frame, auto);
+            candRows = n > 0 ? n : rows();
+            candCols = n > 0 ? n : cols();
+            candidate = new Match3Sampler(this, candRows, candCols, auto[0], auto[1], auto[2], auto[3]);
+        }
+        /* 先验证再采纳：修复采样仍一片未知 → 保留原标定，绝不把坏边界持久化
+         * （旧逻辑先持久化后验证，动画帧能把好标定永久改坏——真机「对两次后一直错」主嫌疑）。
+         * 分母必须用 fixed 自己的格数：新旧格数不同时沿用旧 total 会把阈值算错
+         * （旧 8×8=64 → 新 6×6=36 时阈值变成 71%，几乎全未知的标定也能被采纳）。 */
+        char[][] fixed = (candidate != null ? candidate : sampler).sample(frame);
+        int fixedCells = fixed.length * fixed[0].length;
+        if (countUnknown(fixed) * 100 > fixedCells * 40) {
+            Log.i(TAG, "自我修复后仍未识别，本轮不采纳新标定");
+            awaitingConfirm = true;   // 过渡期（切屏/弹窗/结算）后重走双重确认
+            return matrix;
+        }
+        if (candidate != null) {
+            var prefs = GameProfile.settings(this);
+            prefs.edit().putInt("match3_l", auto[0]).putInt("match3_t", auto[1])
+                    .putInt("match3_r", auto[2]).putInt("match3_b", auto[3])
+                    .putInt("match3_rows", candRows).putInt("match3_cols", candCols)
+                    .putBoolean("match3_calibrated", true).apply();
+            liveRows = candRows;
+            liveCols = candCols;
+            sampler = candidate;
+        }
+        return fixed;
+    }
+
+    /** 云端派发（采集线程调用）：本线程只做取框、裁剪、编码三件事，HTTP 交独立线程；
+     *  已有一个在途就跳过——真机那次是同步等 45 秒把整条流水线堵死，
+     *  限速期排队连环打是同一根因的另一种死法。 */
+    private void dispatchCloud(Bitmap frame, android.content.SharedPreferences prefs, int rows, int cols) {
+        if (cloudInFlight.get()) return;
+        int l = frame.getWidth() * prefs.getInt("match3_l", 4) / 100;
+        int t = frame.getHeight() * prefs.getInt("match3_t", 18) / 100;
+        int r = frame.getWidth() * prefs.getInt("match3_r", 96) / 100;
+        int b = frame.getHeight() * prefs.getInt("match3_b", 82) / 100;
+        if (r - l <= 40 || b - t <= 40) return;
+        /* 编码必须在这里做完：帧的像素随时会被下一帧的回收打断，后台线程只拿字节。 */
+        String encoded;
+        Bitmap crop = Bitmap.createBitmap(frame, l, t, r - l, b - t);
+        try {
+            encoded = CloudVision.encodeForUpload(crop);
+        } catch (Exception e) {
+            Log.w(TAG, "云端裁剪编码失败（本地播报继续）: " + e.getMessage());
+            return;
+        } finally {
+            if (crop != frame) crop.recycle();
+        }
+        if (encoded == null) return;
+        final String imageB64 = encoded;
+        final String apiKey = prefs.getString("jev_api_key", "");
+        final String model = prefs.getString("jev_vlm_model", "z-ai/glm-4.5v");
+        final String selfUrl = prefs.getString("match3_cloud_url", "");
+        final Handler replyHandler = handler();   // 回包投回采集线程，播报状态单线程访问
+        if (!cloudInFlight.compareAndSet(false, true)) return;
+        if (cloudExecutor == null) {
+            cloudExecutor = java.util.concurrent.Executors.newSingleThreadExecutor(
+                    runnable -> new Thread(runnable, "m3live-cloud"));
+        }
+        Log.i(TAG, "云端兜底派发 " + rows + "x" + cols + " 裁剪=" + (r - l) + "x" + (b - t) + "px");
+        cloudExecutor.execute(() -> {
+            try {
+                /* 自托管模型服务（腾讯云）优先：无配额无限速；未配置或失败回退 OpenRouter */
+                char[][] cloud = CloudVision.readBoardFromServer(imageB64, selfUrl, rows, cols);
+                if (cloud == null) {
+                    cloud = CloudVision.readBoard(imageB64, apiKey, model, rows, cols);
+                }
+                if (cloud != null) {
+                    final char[][] result = cloud;
+                    replyHandler.post(() -> {
+                        cloudMatrix = result;
+                        cloudMatrixAt = SystemClock.elapsedRealtime();
+                    });
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "云端识别线程异常（不影响本地播报）: " + e.getMessage());
+            } finally {
+                cloudInFlight.set(false);
+            }
+        });
+    }
+
+    /** 取用云端回包：只认 12 秒内的结果（异步之后局面早变了），行列不符一律丢弃。 */
+    private char[][] takeCloudResult(char[][] local) {
+        char[][] cloud = cloudMatrix;
+        if (cloud == null) return local;
+        cloudMatrix = null;
+        long age = SystemClock.elapsedRealtime() - cloudMatrixAt;
+        if (age > CLOUD_RESULT_TTL_MS) {
+            Log.i(TAG, "云端结果已过期 " + age + "ms，丢弃");
+            return local;
+        }
+        if (cloud.length != local.length || cloud[0].length != local[0].length) {
+            Log.i(TAG, "云端行列 " + cloud.length + "x" + cloud[0].length
+                    + " 与本地 " + local.length + "x" + local[0].length + " 不符，丢弃");
+            return local;
+        }
+        Log.i(TAG, "云端识别接管: " + cloud.length + "x" + cloud[0].length);
+        return cloud;
     }
 
     /** 逐格多数票：三帧里 ≥2 帧相同的字母胜出；三帧各不相同 → '.'（未定）。 */
@@ -509,10 +640,23 @@ public class Match3LiveService extends Service {
         return out;
     }
 
-    private static int countUnknown(char[][] m) {
+    static int countUnknown(char[][] m) {
         int n = 0;
         for (char[] row : m) for (char c : row) if (Match3Sampler.isUnreadable(c)) n++;
         return n;
+    }
+
+    /** 未知率 &gt;40% 判为「这一盘读不出」。抽成静态是因为真机那次失效模式
+     *  （坏盘被前面的闸门拦下 → 永久静默）只能在喂矩阵序列的层面复现。 */
+    static boolean isUnreadableBoard(char[][] m) {
+        return countUnknown(m) * 100 > m.length * m[0].length * 40;
+    }
+
+    /** 「认不出」播报三条件：连续 2 个稳定窗、本局只说一次、已过最小播报间隔。 */
+    static boolean shouldAnnounceUnreadable(int streak, boolean alreadyAnnounced,
+                                            long sinceLastAnnounceMs) {
+        return streak >= 2 && !alreadyAnnounced
+                && sinceLastAnnounceMs >= MIN_ANNOUNCE_GAP_MS;
     }
 
     private static int countDiffCells(char[][] a, char[][] b) {
@@ -673,6 +817,14 @@ public class Match3LiveService extends Service {
 
     private void teardownMedia() {
         activeStartToken = null;   // 投影已拆：新授权须可重新启动
+        SenseFieldReaderService.hideRowNumbers();   // 标尺随会话结束隐藏
+        /* 云端在途状态随会话清零：旧授权的回包不能投给下一个会话的棋盘。 */
+        if (cloudExecutor != null) {
+            try { cloudExecutor.shutdownNow(); } catch (Exception ignored) { }
+            cloudExecutor = null;
+        }
+        cloudInFlight.set(false);
+        cloudMatrix = null;
         if (reader != null) { try { reader.close(); } catch (Exception ignored) { } reader = null; }
         if (display != null) { try { display.release(); } catch (Exception ignored) { } display = null; }
         if (projection != null) { try { projection.stop(); } catch (Exception ignored) { } projection = null; }
