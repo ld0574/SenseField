@@ -52,7 +52,7 @@
 
 ## 复现清单
 ```
-cd C:/Users/22812/OneDrive/Desktop/听野无障碍游戏辅助工具/research/board-recognition
+cd <HOME>/Desktop/听野无障碍游戏辅助工具/research/board-recognition
 python src/gen_synth.py                  # 重渲染合成集（200 帧，seed 固定可复现）
 python src/eval_all.py --c2 --c3         # 五候选同台评测+两条反向验证
 cat models/results.json                  # 全部数字

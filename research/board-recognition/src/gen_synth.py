@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """任务2：合成棋盘帧渲染器。
-素材源：C:/Users/22812/tmp-kkxk（isghost/kaixinxiaoxiaole Cocos 复刻工程，只读）
+素材源：<HOME>/tmp-kkxk（isghost/kaixinxiaoxiaole Cocos 复刻工程，只读）
 输出（相对 $RD）：
   data/synth/synth_fNNN.png   200 帧，720x1280，8x8 或 9x9 棋盘
   data/synth/labels.csv       frame_id,row,col,class（0 起）
