@@ -241,3 +241,35 @@ Jev 的 confidence 由 RLCD 训练校准；开源复刻实现的置信度分布�
 - 处置：本轮不改对方工作树。等价且可用的实现已落在 worktree `<HOME>\SenseField-fixpack-20261007`（分支 `fix/live-gates-20261007`）：`Callback.onStop` 内直接钉 `endReason` → `audit("SessionEnd …")` → `finish(该原因)` → `teardownMedia()` → 恢复出声，不依赖 `projection == null` 这种永假条件；另有每 tick `publishState`＋断流看门狗，把「投影没被掐但帧不来了」这一类也变成有声有据。两边合流时建议以 worktree 版为准；若保留对方结构，最小修法是守卫条件改成单条件 `projectionTerminated` 并恢复出声，且 `onStop` 内必须调 `teardownMedia()`。
 - 待用户裁：`Match3Coach.isPopupShowing` 阈值收紧（avgV 0.75／whiteRatio 0.55）打的确实是触点白涟漪这条路，方向不算错；但它只把「触点反馈被误判成弹窗」压住，不解决「非游戏画面被当棋盘」这条主因，别把它当批次一用。阈值抬高后真弹窗会不会漏判（漏判=弹窗期间继续播棋盘），需要真机一局验证，本轮无读数。
 - 与 §14 的关系：§14 的五批修复，批次一与批次四已在 worktree 落地并通过 Java 门禁（PROGRESS 续8 有实测数），批次二只做了一半、批次三与批次五未做。§14 那条「谁终止了这两包会话」在本两包仍不可判定——判定它所需的 instrumentation 是本轮新写的，要等下一版包。
+
+## §16 2026-10-07 把 §14 的第一问改写掉：静默段里会话没有被拆，剩下三条互斥机制等一次真机分辨
+
+- 更正对象是 §14 第一条的提法。它把症状二写成「到底是谁终止了会话不可判定」。本轮按
+  elapsed_ms 把事件重排后，问题本身换了：A 最后一次播报在 127.2 秒、会话跑到 142.826 秒；
+  B 最后一次播报在 40.5 秒、会话跑到 77.356 秒。这两段静默里 checkpoint 按 5.0 秒一条不缺
+  （A 应有 29 实测 29；B 应有 16 实测 16），而 checkpoint 只有在 `finish()` 里才被取消
+  （`DiagnosticRecorder.java:597`，调度在 :186）。所以静默起点上没有任何终止动作发生过。
+  症状二的正确写法是「会话活着却不出声」，不是「会话被谁掐了」。
+- 顺手核了尺子本身：若 recorder 进了 failure 态，checkpoint 也会自己停（:573 的
+  `if (finished || !failure.isEmpty()) return;`）。两包 `diagnostic_error` 为空串、
+  `dropped_events=0`，所以「心跳齐」这个读数不是记录器失效前的残影。
+- 这条更正也让 §15 的判法落了地：并行会话那套死闸门会产出「永久无声僵尸会话」——僵尸形态
+  不是推演，0.4.31 这两包本来就是活着而无声，只缺 `ticks` 读数才没被看出来。
+- 本节仍开放的：静默段三条互斥候选，一次真机即可分辨，不需要额外取证动作。
+  1. 帧断流——ImageReader 不再回调而投影对象仍挂着（于是 `Callback.onStop` 也不触发）。
+     新版读数：每 tick 的 `processed_frames` 停涨，满 6 秒另写 `CaptureStarved silent_ms=`。
+  2. 帧在来、每帧被某道闸门持住。新版读数：`processed_frames` 照涨而 `gate=` 稳定停在
+     某一道（screen_hold／unreadable／same_as_announced／warming_stable_window／popup_*）。
+  3. 实时链路 handler 被卡住——`onImageAvailable` 与 `tick` 排同一条线程
+     （HEAD 那份 :186 设监听、:173 与 :178 传 handler），卡住后既不识别也不播报，而
+     recorder 的心跳照常跳，与第 1、2 条同形。新版读数：`ticks` 停涨即命中。
+     另外 `Speak gate=` 审计写在 `CueDispatcher.submit`（`synchronized`，:107）之前，
+     所以真是卡在播报通道，也会留下「已决定出声、没播完」的最后一条。
+     云端 HTTP 同步等这一半已排除：HEAD 那份 :584-589 走独立 `cloudExecutor`，:582 只把
+     回包投回采集线程。
+- 会话结束点仍不唯一，本节保持开放：玩家点停止（ACTION_STOP／Activity 侧 stopService），
+  或系统在结束那一刻掐投影——0.4.31 那条会先播一句「屏幕录制已结束，需要继续请重新开始
+  实时识别。」，用户没提到听到这句，属弱证据，不作数。要新版 `SessionEnd reason=` 定音。
+- 触点白点那条（§14 第二条）结论不变，仍是机制推断。新增的 `TapProbe`／`PopupEnter` 只给
+  标量读数；图像证据仍缺一条独立的 JPEG 落盘 API，那属独立改动。
+- 前置条件照旧：上面所有新版读数都要先出一包能装的 APK，而构建与发版要一句放行。
