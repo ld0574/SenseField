@@ -1062,3 +1062,83 @@ JVM 门禁读数沿用续12 的实测（BUILD SUCCESSFUL，215 tests、0 failure
 **四、门禁与凭证（同轮实测，未顺推）。** `:app:testDebugUnitTest --offline` BUILD SUCCESSFUL in 6s、23 actionable tasks（6 executed／17 up-to-date），XML 汇总 **TOTAL tests=230 failures=0 errors=0**、测试类 35 个（补记九 那次是 227／35，多出的 3 条即本类新增）；Match3ConfidenceGateTest tests=6 failures=0 errors=0，Match3GeometrySwitchTest 8／0／0、DiagnosticSnapshotNameTest 4／0／0 未被本轮改动打破。文件换代实测：Match3LiveService.java bytes=74974、CR=0、LF=1305、sha256 前缀 4373f70e09a1e944；Match3ConfidenceGateTest.java bytes=5317、CR=0、LF=98、前缀 290400b9b9e40809；相对 449e945 该服务累计 450 增 8 删（补记九 时是 435 增 8 删）。DiagnosticRecorder.java 与 DiagnosticArchive.java 本轮未动。
 
 **五、本轮没做的三件事，别在下轮被当成已验证。** 一、没有 JVM 之外的验证：门序里新判据的落点、与几何切换闸门和冷却的先后，只有下一次真机复跑的包能证（要看 LowConfidenceHold 审计只在 screen=unknown 时出现，以及盲态下是否仍在几何切换后照常出声）。二、没有做红绿对照的真跑：「判据退回只看未知率则第二条新用例必红」这句是断言取值设计的推演，不是实测变异结果。三、仍未重新出包、未改版本号、未安装、未推送、未打 tag，候选包 12946526 字节／sha256 前缀 25cda3fb 仍不等于树内内容；隔离树工作区现在有四处行为或观测改动（补记六 投递审计、补记七 几何闸门、补记九 快照入口、本条组合判据）加候选包原有的三件套与弹窗阈值。
+
+## 续14　播报截断、坐标朝向、落子高亮：任务书三条落在隔离修复树，门禁 236/0/0/0
+
+### 一、截断的根因是一条时间常量，不是引擎含糊
+
+修前的语料读数（25 份诊断包里的 27 句实况播报）：23 句 result=FAILED，播放时长全部落在
+3994–4027ms；4 句 COMPLETED 全部在 3067ms 以下。两组零重叠，切点正是 CuePlayer 里那个固定
+4000ms 的看门狗——到点就 voice.stop()，句子长短与它无关。玩家听到的「前半句之后戛然而止」
+是代码砍的。同一切点在 0.4.33 的实时链路上复现，不是只有旧 0.4.3 才有。
+
+改法（CuePlayer.java:41-46 与 :373-399）：看门狗预算改按句长与语速算，
+
+- 每字 450ms 是 100% 语速当量（语料实测默认 180% 语速约 0.22 秒/字，留一成半余量），
+  再按设置里的语速百分比折算，外加 1500ms 标点停顿与合成起步；
+- 下界 SPEECH_TIMEOUT_MS 取修前的 4000ms：短提示的行为一点没变，旧断言不必跟着动；
+- 上界 30000ms 是拍的板——看门狗不能撤，撤了远端引擎「接单不出声」就会把队列永久占死；
+- 语速有效区间钳在 80%–240%，与下发给引擎的是同一把尺子，坏设置不会把预算算成零。
+
+最坏情况的一句实况播报（棋盘识别完成＋右下象限＋两位坐标＋共 99 处）实测 48 字，
+180% 语速拿 13500ms、拨到最慢 80% 拿 28500ms。修前这两档都是 4000ms。
+
+第二条剪刀一并拆了：请求的到期时间是排期算的，原来两个播报入口各自写死 t + 10000，
+长句起跑稍晚就会被 CueDispatcher 判 EXPIRED 再砍一次。现在排期与看门狗同模型
+（CuePlayer.speechDeadlineMs，多给 4000ms 排队余量），实时链路与播报入口两条都改。
+
+### 二、坐标两轴点名、起点方向说死
+
+播报原来只说「右下区域的第几列第几行」，玩家不知道从哪头数起，只能从头数格。现在句子
+自带绝对两轴坐标并写明起点（Match3Board.java 的 swapSpeech）：横着换说「从上数第 N 行，
+从左数第 A 列和第 B 列交换」，竖着换说「从左数第 N 列，从上数第 A 行和第 B 行交换」。
+朝向不是猜的，取自采样矩阵的格心坐标（row 0 是最上行、col 0 是最左列）。象限词保留当粗引导，
+但不再单独承担定位。
+
+Match3BoardTest:88 原来钉的是旧文案。那一条是被改的规格本身，所以就地改成新串并且仍然是
+逐字 assertEquals——没删、没放宽。
+
+### 三、落子高亮复用同一块叠层，没开读屏辅助时不许静默假成功
+
+SenseFieldReaderService 上原来只有一把行号标尺。本轮把同一块叠层扩成：行号＋列号（列号标在
+棋盘上沿）＋这一次要交换的两个格的描边（0xFF00E5FF 描边加一成透明填充，不遮挡棋面）。
+不新建 Service、不新建窗口，窗口类型仍是 TYPE_ACCESSIBILITY_OVERLAY、仍是 FLAG_NOT_TOUCHABLE，
+高亮亮到下一次播报（下一次覆盖上一次）或识别停止；识别结束撤标尺时一并撤高亮。
+
+画不画得上由返回值说话：highlightSwap 与 showBoardRuler 在无障碍服务没起时返回 false，
+调用方据此补一句语音——原来那句「读屏辅助还没打开」的提示现在把高亮也报进去了
+（行号列号、格位高亮和点读都用不了），不会出现「以为功能在」。这条口子是覆盖安装必重置
+该授权留下的，静默跳过等于骗玩家。
+
+### 四、反向验证：红绿两段都在
+
+把 speechTimeoutMs 的钳位临时换成「无视句长、恒返 4000」（假装回到修前），门禁读数：
+
+    AnnounceGuardTest > 最长句念得完 FAILED  java.lang.AssertionError at AnnounceGuardTest.java:33
+    AnnounceGuardTest > 看门狗有上界不会占死队列 FAILED  java.lang.AssertionError at AnnounceGuardTest.java:52
+    236 tests completed, 2 failed   BUILD FAILED
+
+恢复钳位后复跑：
+
+    BUILD SUCCESSFUL
+    tests=236 skipped=0 failures=0 errors=0
+
+新增 6 条用例在 AnnounceGuardTest（用例名逐条对应本轮三件事：最长句念得完、两轴坐标点名并
+说死起点、高亮只在读屏辅助开着时才有，另三条锁下界、上界与排期）。基线 230 不退：236 = 230 + 6。
+
+构建产物：:app:assembleDebug --offline 绿，app-debug.apk 12946526 字节，含 lib/arm64-v8a 的
+native 库（本树默认单 ABI）。
+
+### 五、本地证明了什么，只有领导手机能证明什么
+
+本地已证：截断根因的读数与切点；句长折算的三条阈值（下界/上界/排期）；新文案的逐字串；
+读屏辅助没起时返回 false 且不抛异常；诊断包里新增的 budget_ms 读数会随每条 Speak 落盘。
+
+只能真机证的三件，本地无设备（adb 枚举为空，那条看似有设备的读数是行尾符造成的空行）：
+
+1. 最长的一句实际念完了没有——要看下一份诊断包里 Speak 的 budget_ms 与 CuePlayback 的
+   COMPLETED/FAILED 配对，不再是 4 秒附近一片 FAILED；
+2. 高亮框与棋格对不对齐——标定是百分比，叠层用的是屏幕像素，实际偏移要眼睛或复屏截图判；
+3. 读屏辅助没开时那句补充提示有没有真的念出来。
+
+本轮不做：版本号、打包发布、push、装手机。
