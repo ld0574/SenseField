@@ -333,3 +333,14 @@ ncnn Android 归档（github.com releases），本机到该主机只有约 14 KB
 
 另有一句只有真人能答、且现在就能答的三分观察：在那段突然安静里有没有听到「屏幕录制已结束，需要继续请重新开始实时识别」。听到过说明 0.4.31 走的是 onStop 分支，用户体感的「中断」是服务被系统收走；完全没听到说明投影还活着，尾静默是闸门集体持住或帧断流。
 
+
+### §18 补记：两处必红断言由预测转为实测（10-07 13:07 本地时刻，实测）
+
+上面第二条末尾写的「此预测尚未跑成」在本条收口。跑法不是重下原生依赖，而是把隔离树的两个阈值常量临时抬成 0.4.32 的值再跑一次 JUnit，跑完立刻复位并逐字节复认。
+
+- 抬阈值前的源文件实测：<HOME> 下隔离树 Match3Coach.java 为 7177 字节、CR 0、LF 156，纯 LF 风格，sha256 前缀 59da6670。改前先实测锚点：POPUP_MIN_AVG_V = 0.62f 与 POPUP_MIN_WHITE_RATIO = 0.35f 各命中 1 次。
+- 读数一（常量临时为 0.75 与 0.55）：BUILD FAILED in 4s，GRADLE_EXIT=1，「7 tests completed, 2 failed」。两个失败点恰是 Match3PopupThresholdTest.java:25 的 brightWhiteDialogBandTriggers 与 :31 的 thresholdsAreStrictlyGreater，与 §18 正文的推演逐行对上；第 18、19、20、30 行未出现在失败列表里，即 5 项仍绿。
+- 读数二（复位到 0.62 与 0.35 后重跑同一条命令）：BUILD SUCCESSFUL in 3s，GRADLE_EXIT=0，同一批任务 5 executed／18 up-to-date。复位后的源文件复认仍是 7177 字节、CR 0、LF 156、sha256 前缀 59da6670，与抬阈值前逐字节相同。
+- 结论定死：把两份补丁合到 0.4.32 上的最小改动是「常量两行加断言两行」，不是重写测试。Match3ConfidenceGateTest 在两种阈值下都绿，说明隔离树的置信带闸门与并行会话的弹窗阈值收紧互不干扰，合流不必动置信带那条线。
+- 交付产物未受扰动：本次只跑 testDebugUnitTest，不产出 APK。跑完后隔离树 app-debug.apk 与候选包 sensefield-m3fix-candidate-arm64.apk 仍同为 12946526 字节、sha256 前缀 25cda3fb，与 §18 补记三登记的凭证一致，候选包无需重出。
+- 树状态与授权面本轮实测：源码树 HEAD 仍 8f42e4f（feature/jev-l2-judgment），案卷树 HEAD 仍 bf74c60（feature/sensefield-dev），未推提交实测 22 个。三条待裁事项即合流还是单独 0.4.33、装机与发版放行、有没有听到那句终止播报，状态不变，本条不构成任何放行。
