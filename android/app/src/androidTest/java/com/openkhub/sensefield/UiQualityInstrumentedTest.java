@@ -90,6 +90,23 @@ public final class UiQualityInstrumentedTest {
             scenario.onActivity(activity -> assertLayout(activity.findViewById(android.R.id.content), "audio-group-help"));
             screenshot("audio-group-help");
             scenario.onActivity(activity -> SettingHelp.close(activity));
+            final View[] voicePicker = new View[1];
+            scenario.onActivity(activity -> {
+                tagged(activity.findViewById(android.R.id.content), "bundled_voice_picker").performClick();
+                for (View candidate : android.view.inspector.WindowInspector.getGlobalWindowViews()) {
+                    if (find(candidate, "游戏提醒音色") != null) voicePicker[0] = candidate;
+                }
+                assertNotNull("The builtin voice picker must open", voicePicker[0]);
+            });
+            idle();
+            scenario.onActivity(activity -> {
+                assertLayout(voicePicker[0], "bundled-voice-picker");
+                assertDialogActionsVisible(voicePicker[0]);
+                assertNotNull(find(voicePicker[0], "游戏向导 · 女声"));
+                assertNotNull(find(voicePicker[0], "游戏解说 · 男声"));
+            });
+            screenshot("bundled-voice-picker");
+            scenario.onActivity(activity -> find(voicePicker[0], "取消").performClick());
         }
         capture(intent(CueSoundSettingsActivity.class), "cue-sounds");
         try (ActivityScenario<CueSoundSettingsActivity> scenario = ActivityScenario.launch(

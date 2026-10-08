@@ -523,6 +523,22 @@ final class UiKit {
         return button(context, label, primary ? ButtonStyle.FILLED : ButtonStyle.OUTLINED);
     }
 
+    /** Native checked rows must grow with system fonts instead of retaining the platform's 48dp height. */
+    static ArrayAdapter<String> singleChoiceAdapter(Context context, String[] labels) {
+        return new ArrayAdapter<String>(context, android.R.layout.simple_list_item_single_choice, labels) {
+            @Override public View getView(int position, View recycled, ViewGroup parent) {
+                TextView item = (TextView) super.getView(position, recycled, parent);
+                item.setTextSize(TEXT_BODY);
+                item.setTextColor(INK);
+                item.setSingleLine(false);
+                item.setMinimumHeight(dp(context, 64));
+                item.setLayoutParams(new android.widget.AbsListView.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                return item;
+            }
+        };
+    }
+
     static Button button(Context context, CharSequence label, ButtonStyle style) {
         Button button = new Button(context);
         button.setText(label);

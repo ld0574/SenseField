@@ -1,6 +1,6 @@
 # 听野 Gitee 下载分发与后续发布
 
-更新日期：2026-10-07。面向负责打包、上传和发包的队友。本次交付版本为 `0.4.3 / versionCode 20`，由负责人上传后生效；助手服务部署另见 [README](README.md)。
+更新日期：2026-10-08。面向负责打包、上传和发包的队友。本次交付版本为 `0.4.4 / versionCode 21`，由负责人上传后生效；助手服务部署另见 [README](README.md)。
 
 ## 下载地址怎么分工
 
@@ -9,7 +9,7 @@
 | 内容 | 公开地址 | 后续如何维护 |
 | --- | --- | --- |
 | 版本清单 | [https://888413.xyz/apk/latest.json](https://888413.xyz/apk/latest.json) | 每次发布最后覆盖，文件由最终 APK 自动生成 |
-| 当前 APK | [sensefieldv0.4.3.apk](https://gitee.com/leda/SenseField/releases/download/0.4.3/sensefieldv0.4.3.apk) | 本次新建 0.4.3 Release，上传这一份 APK |
+| 当前 APK | [sensefieldv0.4.4.apk](https://gitee.com/leda/SenseField/releases/download/0.4.4/sensefieldv0.4.4.apk) | 本次新建 0.4.4 Release，上传这一份 APK |
 | 语音模型第一片 | [sensevoice-int8-v1.zip.part01](https://gitee.com/leda/SenseField/releases/download/0.4.1/sensevoice-int8-v1.zip.part01) | 上传一次，后续 APK 继续复用 |
 | 语音模型第二片 | [sensevoice-int8-v1.zip.part02](https://gitee.com/leda/SenseField/releases/download/0.4.1/sensevoice-int8-v1.zip.part02) | 上传一次，后续 APK 继续复用 |
 
@@ -17,29 +17,31 @@
 
 清单和模型配置只填写上述永久 Release 链接。浏览器下载时可能跳转到 `foruda.gitee.com` 临时签名地址，APP 已适配本项目的跳转；不要把临时地址复制进配置或清单。不要把清单移到固定的 0.4.1 Release，否则旧 APP 无法通过固定入口发现后续版本。
 
-## 本次 0.4.3 上传什么
+## 本次 0.4.4 上传什么
 
 唯一交付位置相对于仓库根目录：
 
 ```text
-output/releases/0.4.3/
+output/releases/0.4.4/
 ├── gitee-upload/
-│   └── sensefieldv0.4.3.apk
+│   └── sensefieldv0.4.4.apk
 └── cdn-upload/
     └── latest.json
 ```
 
-先把 APK 上传到 Gitee 的 **0.4.3 Release**，确认永久下载地址与本地大小和 SHA-256 相同，再把配套 `latest.json` 覆盖到原网站 `/apk/latest.json`。文件大小、摘要和版本以这份自动生成的清单为准。
+先把 APK 上传到 Gitee 的 **0.4.4 Release**，确认永久下载地址与本地大小和 SHA-256 相同，再把配套 `latest.json` 覆盖到原网站 `/apk/latest.json`。文件大小、摘要和版本以这份自动生成的清单为准。
 
-本次只需上传这两个文件，语音模型不变。模型分片继续留在 **0.4.1 Release**；本地位于 `output/releases/0.4.1/gitee-upload/`，不要重复上传到 0.4.3。
+本次只需上传这两个文件，语音模型不变。模型分片继续留在 **0.4.1 Release**；本地位于 `output/releases/0.4.1/gitee-upload/`，不要重复上传到 0.4.4。
 
-旧 0.4.1 APK 本地交付副本已清理。本轮只交付一份0.4.3 APK，0.4.2作为设计对照保留在独立目录，上传时使用0.4.3目录中的文件。线上仍使用仅支持同源下载的旧包时，需要先手动下载 0.4.3 并覆盖安装一次；支持 Gitee 的迁移客户端可正常应用内升级。安装保留应用数据，仍由 Android 系统确认。
+旧 0.4.1 APK 本地交付副本已清理。本轮只交付一份0.4.4 APK；0.4.3作为前版对照、0.4.2作为设计对照保留在各自目录，上传时使用0.4.4目录中的文件。线上仍使用仅支持同源下载的旧包时，需要先手动下载 0.4.4 并覆盖安装一次；支持 Gitee 的迁移客户端可正常应用内升级。安装保留应用数据，仍由 Android 系统确认。
 
 ## 后续发布步骤
 
 ### 1. 构建最终 APK 和配套清单
 
-在已准备 Android 构建环境、模型资源和原签名的工作站，从仓库根目录运行：
+在已准备 Android 构建环境、模型资源、内置语音和原签名的工作站，将四个 `SENSEFIELD_KEYSTORE_PATH`、`SENSEFIELD_KEY_ALIAS`、`SENSEFIELD_KEYSTORE_PASSWORD`、`SENSEFIELD_KEY_PASSWORD` 设为本机环境变量，再从仓库根目录运行。0.4.4 仅接受正式 Release：缺少完整语音或签名便停止，不回退 Debug；生成、来源限制及校验见[离线音频构建](../../docs/development/offline-speech.md)。
+
+构建命令：
 
 ```sh
 bash scripts/build_android_preview.sh
@@ -48,8 +50,8 @@ bash scripts/build_android_preview.sh
 脚本生成：
 
 ```text
-output/releases/0.4.3/
-├── gitee-upload/sensefieldv0.4.3.apk
+output/releases/0.4.4/
+├── gitee-upload/sensefieldv0.4.4.apk
 └── cdn-upload/latest.json
 ```
 
@@ -65,47 +67,47 @@ output/releases/0.4.3/
 
 ```sh
 python3 scripts/build_app_update_manifest.py \
-  --apk output/releases/0.4.3/gitee-upload/sensefieldv0.4.3.apk \
-  --apk-url https://gitee.com/leda/SenseField/releases/download/0.4.3/sensefieldv0.4.3.apk \
-  --output output/releases/0.4.3/cdn-upload/latest.json
+  --apk output/releases/0.4.4/gitee-upload/sensefieldv0.4.4.apk \
+  --apk-url https://gitee.com/leda/SenseField/releases/download/0.4.4/sensefieldv0.4.4.apk \
+  --output output/releases/0.4.4/cdn-upload/latest.json
 ```
 
-可用 `--notes-file /path/to/update-summary.txt` 添加更新弹窗专用摘要。不要手工修改清单的版本、大小或哈希。
+可用 `--notes-file docs/releases/0.4.4/UPDATE_SUMMARY.txt` 添加更新弹窗专用摘要。不要手工修改清单的版本、大小或哈希。
 
 **弹窗摘要最多三条、总计不超过100字符（含标点和换行），每条一句短话，不加版本标题或空行。** 只写玩家最需要知道的变化；完整更新记录和使用说明留在 GitHub／Gitee Release 页面，不整篇复制到 `release_notes`。生成工具会拒绝超过三行或100字符的输入，不会自动截断。
 
-本次0.4.3使用以下摘要，可保存为 UTF-8 文本后传给 `--notes-file`：
+本次0.4.4使用以下摘要，可保存为 UTF-8 文本后传给 `--notes-file`：
 
 ```text
-• 更新消消乐识别与中断提示。
-• 优化方位语音，支持音效试听。
-• 首次说明可跳过，优化大字布局。
+内置游戏解说语音，男声默认、女声可选。
+修复连续试听卡住，完整说明可离线听。
+安装包瘦身，保留王者与消消乐辅助。
 ```
 
 只调整摘要时，从同一份最终 APK 重新生成 `latest.json` 并覆盖网站清单即可，无需重新构建 APK；核对版本、下载地址、大小和 SHA-256 均未改变。
 
 ### 2. 上传 Gitee 附件并核对
 
-本次新建 0.4.3 Release，上传 `sensefieldv0.4.3.apk`。模型分片继续使用 0.4.1 的固定资源链接；无需再次上传。
+本次新建 0.4.4 Release，上传 `sensefieldv0.4.4.apk`。模型分片继续使用 0.4.1 的固定资源链接；无需再次上传。
 
 在 Gitee 后台确保永久下载链接对应新附件。若后台不能直接覆盖，按后台能力替换同名旧 APK；避免留下多个同名 APK。此时先保留网站旧清单，下载新版公开 APK，核对它与本地最终包的大小和 SHA-256。
 
-下面以本次 0.4.3 交付为例，所有命令在仓库根目录运行；未来版本相应替换 URL、文件名和本地清单路径：
+下面以本次 0.4.4 交付为例，所有命令在仓库根目录运行；未来版本相应替换 URL、文件名和本地清单路径：
 
 ```sh
 mkdir -p output/cdn-check
 curl --fail --location --proto '=https' --proto-redir '=https' \
   --connect-timeout 10 --max-time 180 \
-  --output output/cdn-check/sensefieldv0.4.3.apk \
-  https://gitee.com/leda/SenseField/releases/download/0.4.3/sensefieldv0.4.3.apk
+  --output output/cdn-check/sensefieldv0.4.4.apk \
+  https://gitee.com/leda/SenseField/releases/download/0.4.4/sensefieldv0.4.4.apk
 
 python3 - <<'PY'
 from pathlib import Path
 import hashlib
 import json
 
-manifest = json.loads(Path('output/releases/0.4.3/cdn-upload/latest.json').read_text())
-apk = Path('output/cdn-check/sensefieldv0.4.3.apk')
+manifest = json.loads(Path('output/releases/0.4.4/cdn-upload/latest.json').read_text())
+apk = Path('output/cdn-check/sensefieldv0.4.4.apk')
 digest = hashlib.sha256()
 with apk.open('rb') as stream:
     while chunk := stream.read(1024 * 1024):
@@ -135,7 +137,7 @@ python3 - <<'PY'
 from pathlib import Path
 import json
 
-local = json.loads(Path('output/releases/0.4.3/cdn-upload/latest.json').read_text())
+local = json.loads(Path('output/releases/0.4.4/cdn-upload/latest.json').read_text())
 online = json.loads(Path('output/cdn-check/latest.json').read_text())
 if online != local:
     raise SystemExit('线上清单不一致：核对上传目录和清单缓存。')
@@ -151,19 +153,19 @@ PY
 
 2026-10-06曾出现：网站清单已经对应迁移包 `3fe263c1…`，Gitee同名附件和手机实际安装的仍是旧包 `dceb7260…`。旧包只接受原网站的同源下载地址，读取到Gitee地址便拒绝清单；界面把具体原因统一显示为“暂时无法检查更新”。
 
-当时手动覆盖正确迁移包后，自动和手动检查均显示“当前版本 0.4.1 无需更新”。现在交付统一升级到 0.4.3/code20，不再混用 0.4.1 的多个修订；需要 APK 与新清单成对上传。详见[迁移故障排查记录](../../validation/APP_UPDATE_GITEE_MIGRATION_2026-10-06.md)。其他检查失败仍需核对网络、清单响应和手机实际错误，不能一概归因为旧包。
+当时手动覆盖正确迁移包后，自动和手动检查均显示“当前版本 0.4.1 无需更新”。现在交付统一升级到 0.4.4/code21，不再混用 0.4.1 的多个修订；需要 APK 与新清单成对上传。详见[迁移故障排查记录](../../validation/APP_UPDATE_GITEE_MIGRATION_2026-10-06.md)。其他检查失败仍需核对网络、清单响应和手机实际错误，不能一概归因为旧包。
 
 ## 同版本修订与真正新版本
 
 | 发布情况 | 版本和下载地址 | 要上传什么 |
 | --- | --- | --- |
 | 同版本修订（仅负责人明确选择时） | 保持该版本名称和 code，以 SHA-256 区分修订；本次不再修订 0.4.1 | 新 APK 和重新生成的 `latest.json`；模型不动 |
-| 本次发布新版本 | `0.4.3 / code20`，新建 `0.4.3` tag，APK 名为 `sensefieldv0.4.3.apk` | 新 Release 的 APK 和固定网站上的新 `latest.json`；模型仍复用 0.4.1 |
+| 本次发布新版本 | `0.4.4 / code21`，新建 `0.4.4` tag，APK 名为 `sensefieldv0.4.4.apk` | 新 Release 的 APK 和固定网站上的新 `latest.json`；模型仍复用 0.4.1 |
 | 语音模型确实变更 | 新建独立资源名称/地址，更新 APK 内固定资源元数据，再构建 | 新模型分片、新 APK、配套清单；保留仍有客户端依赖的旧模型 |
 
-本次已按负责人要求升级到 0.4.3，避免继续覆盖 0.4.1 的混淆。以后可按发布策略选择同版本修订或新版本；真正升级时，开发者需同步修改 `android/app/build.gradle` 的 `versionName/versionCode` 与 `scripts/build_android_preview.sh` 的 `PREVIEW_VERSION_NAME/PREVIEW_VERSION_CODE`；脚本会按新版本自动生成 Gitee APK URL，固定清单地址保持不变。仅创建 Gitee 新 Release 不会自动通知旧 APP，仍需最后更新网站清单。
+本次已按负责人要求升级到 0.4.4，避免继续覆盖 0.4.1 的混淆。以后可按发布策略选择同版本修订或新版本；真正升级时，开发者需同步修改 `android/app/build.gradle` 的 `versionName/versionCode` 与 `scripts/build_android_preview.sh` 的 `PREVIEW_VERSION_NAME/PREVIEW_VERSION_CODE`；脚本会按新版本自动生成 Gitee APK URL，固定清单地址保持不变。仅创建 Gitee 新 Release 不会自动通知旧 APP，仍需最后更新网站清单。
 
-每个版本的分发目录只保留一份 APK 和配套清单；0.4.2保留在自己的目录作本轮设计对照，不混入0.4.3上传目录。临时下载用于校验的 APK 在校验后删除。`output/` 被 Git 忽略，队友需从当前交付路径取得构建产物。更高 `versionCode` 的客户端不能通过普通更新安装较低序号的旧包。
+每个版本的分发目录只保留一份 APK 和配套清单；0.4.2保留在自己的目录作本轮设计对照，不混入0.4.4上传目录。临时下载用于校验的 APK 在校验后删除。`output/` 被 Git 忽略，队友需从当前交付路径取得构建产物。更高 `versionCode` 的客户端不能通过普通更新安装较低序号的旧包。
 
 ## 模型分片与容量
 
@@ -174,8 +176,8 @@ PY
 
 两片均小于单附件 100MB，合计 160,304,482 bytes。APP 自动按顺序拼接、校验和解压，用户无需手动合并。它们是原 ZIP 的字节分片，不能各自解压，也不要重新压缩或改名。模型配置在 [sensevoice.metadata.json](../../android/app/src/main/assets/sensevoice.metadata.json)；打包工具为 [package-asr-model.py](package-asr-model.py)。
 
-当前两片模型与一个 APK 合计约 209MB。按普通仓库总附件 1GB 规划，仓库其他附件与历史 APK 也计入配额，以 Gitee 后台实际统计为准。后续不重复上传模型；清理历史附件时保留两个模型分片。拆片解决单文件限制，不减少总空间或下载量。
+当前两片模型与一个 0.4.4 APK 合计约 184.1MB。按普通仓库总附件 1GB 规划，仓库其他附件与历史 APK 也计入配额，以 Gitee 后台实际统计为准。后续不重复上传模型；清理历史附件时保留两个模型分片。拆片解决单文件限制，不减少总空间或下载量。
 
 ## 本次公开核对记录
 
-2026-10-06已完整读取这两个公开分片，大小与 SHA-256 均匹配 APP 配置，下载使用 APP 的实际 HTTPS 传输类在 Mac JVM 运行。证据见 [Gitee 分发验证](../../validation/GITEE_DISTRIBUTION_2026-10-06.md)。0.4.1 公网 APK 与清单的历史错配已另行核对，见上述迁移排查记录；0.4.3 的公网附件和清单需由负责人上传后按上述步骤验收。
+2026-10-06已完整读取这两个公开分片，大小与 SHA-256 均匹配 APP 配置，下载使用 APP 的实际 HTTPS 传输类在 Mac JVM 运行。证据见 [Gitee 分发验证](../../validation/GITEE_DISTRIBUTION_2026-10-06.md)。0.4.1 公网 APK 与清单的历史错配已另行核对，见上述迁移排查记录；0.4.4 的公网附件和清单需由负责人上传后按上述步骤验收。

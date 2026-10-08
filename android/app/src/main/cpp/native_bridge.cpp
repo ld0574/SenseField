@@ -15,6 +15,8 @@
 
 #include "layer.h"
 #include "diagnostic_pixels.h"
+#include "exact_roi_cache.h"
+#include <cpu.h>
 #include "mapassist.h"
 #include "net.h"
 #include "yolox_contract.h"
@@ -115,7 +117,21 @@ struct Session {
     // fed back into the recognizer, tracker or cue policy.
     std::vector<ma_observation> diagnostic_observations;
     int64_t diagnostic_engine_at_ms = -1;
+    // Net is destroyed before its allocators. Blob allocation has one JNI
+    // caller; workspace allocation is shared by OpenMP workers and is locked.
+    ncnn::UnlockedPoolAllocator yolox_blobs;
+    ncnn::PoolAllocator yolox_workspace;
     ncnn::Net yolox;
+    mapassist::ExactRoiCache yolox_pixels;
+    std::vector<ma_observation> yolox_cached_observations;
+    bool yolox_cache_enabled = true;
+    // Experimental only until paired precision/performance checks pass.
+    bool yolox_half_storage = false;
+    bool yolox_half_arithmetic = false;
+    bool yolox_pooling = false;
+    int64_t yolox_inferences = 0, yolox_reuses = 0;
+    int64_t yolox_compare_micros = 0, yolox_store_micros = 0, yolox_forward_micros = 0;
+    int64_t yolox_prepare_micros = 0, yolox_decode_micros = 0;
 
     ~Session() {
         ma_relation_destroy(relation);
@@ -245,14 +261,16 @@ bool load_yolox(AAssetManager *assets, Session &session) {
         return false;
     }
     session.yolox.opt.lightmode = true;
+    session.yolox.opt.blob_allocator = session.yolox_pooling ? &session.yolox_blobs : nullptr;
+    session.yolox.opt.workspace_allocator = session.yolox_pooling ? &session.yolox_workspace : nullptr;
     session.yolox.opt.num_threads = 2;
     // Sampled inference has idle gaps. Let OpenMP workers sleep immediately
     // instead of spending the default 20 ms busy-waiting after each layer.
     session.yolox.opt.openmp_blocktime = 0;
     session.yolox.opt.use_packing_layout = true;
-    session.yolox.opt.use_fp16_packed = false;
-    session.yolox.opt.use_fp16_storage = false;
-    session.yolox.opt.use_fp16_arithmetic = false;
+    session.yolox.opt.use_fp16_packed = session.yolox_half_storage;
+    session.yolox.opt.use_fp16_storage = session.yolox_half_storage;
+    session.yolox.opt.use_fp16_arithmetic = session.yolox_half_arithmetic;
     session.yolox.opt.use_vulkan_compute = false;
     session.yolox.register_custom_layer("YoloV5Focus", YoloV5Focus_layer_creator);
     const int param_status = session.yolox.load_param(assets, session.yolox_param_asset.c_str());
@@ -282,7 +300,11 @@ void append_yolox_observations(Session &session, const uint8_t *rgba,
                                std::vector<ma_observation> &observations) {
     if (!session.minimap_yolox || !minimap_ready ||
         session.yolox_class_kinds.empty() ||
-        session.yolox_class_kinds.size() != session.yolox_class_thresholds.size()) return;
+        session.yolox_class_kinds.size() != session.yolox_class_thresholds.size()) {
+        session.yolox_pixels.clear();
+        session.yolox_cached_observations.clear();
+        return;
+    }
     const PixelRect area = to_pixels(minimap_roi, width, height);
     const PixelRect direction_reference = has_rect(session.profile.minimap_direction)
             ? to_direction_reference_pixels(
@@ -291,6 +313,25 @@ void append_yolox_observations(Session &session, const uint8_t *rgba,
     const int crop_height = area.y1 - area.y0;
     if (crop_width < 2 || crop_height < 2) return;
 
+    const mapassist::ExactRoiCache::Rect cache_roi{area.x0, area.y0, crop_width, crop_height};
+    if (session.yolox_cache_enabled) {
+        const auto compare_started = std::chrono::steady_clock::now();
+        const bool identical = session.yolox_pixels.matches(rgba, width, height, row_stride, cache_roi);
+        session.yolox_compare_micros += std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - compare_started).count();
+        if (identical) {
+            session.yolox_reuses++;
+            // These exact pixels were independently captured again now.
+            // Never replay the earlier frame's observation timestamp.
+            mapassist::append_current_observations(session.yolox_cached_observations, timestamp_ms, observations);
+            return;
+        }
+    }
+    session.yolox_pixels.clear();
+    session.yolox_cached_observations.clear();
+    const size_t previous_count = observations.size();
+
+    const auto prepare_started = std::chrono::steady_clock::now();
     const int target = session.yolox_input_size;
     const float scale = std::min(static_cast<float>(target) / crop_width,
                                  static_cast<float>(target) / crop_height);
@@ -314,8 +355,14 @@ void append_yolox_observations(Session &session, const uint8_t *rgba,
         }
         return;
     }
+    session.yolox_prepare_micros += std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - prepare_started).count();
     ncnn::Mat output;
+    const auto forward_started = std::chrono::steady_clock::now();
+    session.yolox_inferences++;
     const int extract_status = extractor.extract("out0", output);
+    session.yolox_forward_micros += std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - forward_started).count();
     if (extract_status != 0 || output.empty() || output.dims != 2 ||
         !mapassist_yolox::valid_output_shape(
                 target, static_cast<int>(session.yolox_class_kinds.size()),
@@ -330,6 +377,7 @@ void append_yolox_observations(Session &session, const uint8_t *rgba,
         return;
     }
 
+    const auto decode_started = std::chrono::steady_clock::now();
     std::vector<Detection> proposals;
     proposals.reserve(32);
     int anchor = 0;
@@ -396,6 +444,15 @@ void append_yolox_observations(Session &session, const uint8_t *rgba,
                 detection.confidence,
                 timestamp_ms,
         });
+    }
+    session.yolox_decode_micros += std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - decode_started).count();
+    if (session.yolox_cache_enabled) {
+        const auto store_started = std::chrono::steady_clock::now();
+        if (session.yolox_pixels.store(rgba, width, height, row_stride, cache_roi))
+            session.yolox_cached_observations.assign(observations.begin() + previous_count, observations.end());
+        session.yolox_store_micros += std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - store_started).count();
     }
 }
 
@@ -612,6 +669,10 @@ Java_com_openkhub_sensefield_NativeBridge_nativeProcess(
     if (!session || !rgba || width <= 0 || height <= 0 ||
         width > 8192 || height > 8192 || row_stride < width * 4 ||
         capacity < required) {
+        if (session) {
+            session->yolox_pixels.clear();
+            session->yolox_cached_observations.clear();
+        }
         result[7] = -1;
     } else {
         const auto start = std::chrono::steady_clock::now();
@@ -777,6 +838,61 @@ Java_com_openkhub_sensefield_NativeBridge_nativeConfigureRelation(
 }
 
 extern "C" JNIEXPORT jlongArray JNICALL
+Java_com_openkhub_sensefield_NativeBridge_nativeReadWorkStats(JNIEnv *env, jclass, jlong handle) {
+    auto *session = reinterpret_cast<Session *>(handle);
+    if (!session) return nullptr;
+    // Schema 2 preserves all old counter positions and appends successful
+    // input preparation and output decoding microseconds. This is wall time,
+    // not device energy or process CPU time.
+    const jlong values[]{2, session->yolox_inferences, session->yolox_reuses,
+            session->yolox_compare_micros, session->yolox_store_micros,
+            session->yolox_forward_micros, static_cast<jlong>(session->yolox_pixels.bytes()),
+            session->yolox_prepare_micros, session->yolox_decode_micros};
+    jlongArray result = env->NewLongArray(9);
+    if (result) env->SetLongArrayRegion(result, 0, 9, values);
+    return result;
+}
+
+/** Test-only switch for paired synthetic performance/parity checks. */
+extern "C" JNIEXPORT void JNICALL
+Java_com_openkhub_sensefield_NativeBridge_nativeSetDetectorCache(
+        JNIEnv *, jclass, jlong handle, jboolean enabled) {
+    auto *session = reinterpret_cast<Session *>(handle);
+    if (!session) return;
+    session->yolox_cache_enabled = enabled;
+    session->yolox_pixels.clear();
+    session->yolox_cached_observations.clear();
+}
+
+/** Test-only reload: compare storage precision on unchanged pixels and weights. */
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_openkhub_sensefield_NativeBridge_nativeReloadDetectorPrecision(
+        JNIEnv *env, jclass, jlong handle, jobject java_assets, jboolean half_storage,
+        jboolean half_arithmetic, jboolean pooling) {
+    auto *session = reinterpret_cast<Session *>(handle);
+    AAssetManager *assets = java_assets ? AAssetManager_fromJava(env, java_assets) : nullptr;
+    if (!session || !assets || !session->minimap_yolox) return JNI_FALSE;
+    if (half_storage && !ncnn::cpu_support_arm_asimdhp()) return JNI_FALSE;
+    const bool previous = session->yolox_half_storage;
+    const bool previous_arithmetic = session->yolox_half_arithmetic;
+    const bool previous_pooling = session->yolox_pooling;
+    session->yolox.clear();
+    session->yolox_pixels.clear();
+    session->yolox_cached_observations.clear();
+    session->yolox_runtime_error_logged = false;
+    session->yolox_half_storage = half_storage;
+    session->yolox_half_arithmetic = half_storage && half_arithmetic;
+    session->yolox_pooling = pooling;
+    if (load_yolox(assets, *session)) return JNI_TRUE;
+    session->yolox.clear();
+    session->yolox_half_storage = previous;
+    session->yolox_half_arithmetic = previous_arithmetic;
+    session->yolox_pooling = previous_pooling;
+    load_yolox(assets, *session);
+    return JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
 Java_com_openkhub_sensefield_NativeBridge_nativeReadDiagnosticSnapshot(
         JNIEnv *env, jclass, jlong handle) {
     auto *session = reinterpret_cast<Session *>(handle);
@@ -805,6 +921,8 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_openkhub_sensefield_NativeBridge_nativeReset(JNIEnv *, jclass, jlong handle) {
     auto *session = reinterpret_cast<Session *>(handle);
     if (session) {
+        session->yolox_pixels.clear();
+        session->yolox_cached_observations.clear();
         session->diagnostic_observations.clear();
         session->diagnostic_engine_at_ms = -1;
         ma_engine_reset(session->engine);

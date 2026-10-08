@@ -24,6 +24,7 @@ if (!providedReleaseSigningInputs.isEmpty()
     )
 }
 def releaseSigningConfigured = providedReleaseSigningInputs.size() == releaseSigningInputs.size()
+def speechFixture = (findProperty('sensefieldSpeechFixture') ?: 'false').toString() == 'true'
 if (releaseSigningConfigured && !file(releaseSigningInputs.keystorePath).isFile()) {
     throw new GradleException(
             "SENSEFIELD_KEYSTORE_PATH does not point to a readable keystore: "
@@ -73,11 +74,12 @@ android {
     ndkVersion '28.2.13676358'
 
     defaultConfig {
-        applicationId 'com.openkhub.sensefield'
+        applicationId speechFixture ? 'com.openkhub.sensefield.speechfixture' : 'com.openkhub.sensefield'
         minSdk 29
         targetSdk 35
-        versionCode 20
-        versionName '0.4.3'
+        versionCode 21
+        versionName '0.4.4'
+        buildConfigField 'boolean', 'SPEECH_TEST_FIXTURE', speechFixture.toString()
         buildConfigField 'String', 'APP_UPDATE_METADATA_URL', groovy.json.JsonOutput.toJson(updateMetadataUrl)
         buildConfigField 'String', 'ASSISTANT_DEFAULT_ENDPOINT', groovy.json.JsonOutput.toJson(assistantDefaultEndpoint)
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
@@ -96,7 +98,15 @@ android {
         buildConfig true
     }
 
+    // Opt-in regression inputs from a user-provided diagnostic archive. They
+    // live in ignored output/, enter only the test APK, and are never shipped.
+    def captureScaleFixtureDir = findProperty('sensefieldCaptureScaleFixtureDir')
+    if (captureScaleFixtureDir != null) {
+        sourceSets.androidTest.assets.srcDir(file(captureScaleFixtureDir.toString()))
+    }
+
     androidResources {
+        noCompress += ['ogg']
         // Keep licenses and metadata in the APK; pinned speech weights come from CDN.
         ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:model.int8.onnx:tokens.txt'
     }
@@ -114,11 +124,19 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            testProguardFiles 'proguard-test-rules.pro'
             if (releaseSigningConfigured) {
                 signingConfig signingConfigs.release
             }
         }
+    }
+
+    packaging {
+        jniLibs.useLegacyPackaging = true
+        dex.useLegacyPackaging = true
     }
 
     externalNativeBuild {
@@ -136,6 +154,15 @@ android {
     testOptions {
         unitTests.returnDefaultValues = true
     }
+    testBuildType (findProperty('sensefieldTestBuildType') ?: 'debug').toString()
+}
+
+if (speechFixture) {
+    if (file('src/main/assets/speech/manifest.json').exists()) {
+        throw new GradleException('Real speech assets are present; test the real Release instead of synthetic fixtures.')
+    }
+    android.defaultConfig.versionName = '0.4.4-fixture'
+    android.sourceSets.main.assets.srcDir file('../../output/speech-fixture/assets')
 }
 
 // Isolated upgrade tests build a future APK without changing the delivered version.
@@ -246,4 +273,15 @@ tasks.register('verifyOnDeviceAsrAssets') {
 
 tasks.named('preBuild').configure {
     dependsOn tasks.named('verifyOnDeviceAsrAssets')
+}
+
+tasks.register('verifyBundledSpeechAssets', Exec) {
+    workingDir rootProject.projectDir.parentFile
+    def args = ['python3', 'scripts/prepare_bundled_speech.py', 'verify']
+    if (speechFixture) args += ['--destination', 'output/speech-fixture/assets/speech', '--allow-fixture']
+    commandLine args
+}
+
+tasks.matching { it.name == 'preReleaseBuild' }.configureEach {
+    dependsOn tasks.named('verifyBundledSpeechAssets')
 }

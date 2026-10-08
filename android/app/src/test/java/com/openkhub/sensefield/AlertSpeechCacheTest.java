@@ -48,7 +48,7 @@ public final class AlertSpeechCacheTest {
         assertThrows(IllegalArgumentException.class,
                 () -> AlertSpeechCache.put("test-bounds", "任意问题", new short[]{1}));
         assertThrows(IllegalArgumentException.class,
-                () -> AlertSpeechCache.put("test-bounds", "左上", new short[64001]));
+                () -> AlertSpeechCache.put("test-bounds", "左上", new short[AlertSpeechCache.MAX_SAMPLES + 1]));
     }
 
     @Test public void voiceProfilesHaveBoundedStorageAndOwnTheirInputs() {

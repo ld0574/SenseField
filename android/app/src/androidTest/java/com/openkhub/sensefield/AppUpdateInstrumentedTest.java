@@ -181,6 +181,29 @@ public class AppUpdateInstrumentedTest {
         } catch (IllegalArgumentException expected) { }
     }
 
+    @Test public void signedFuturePackageCanBeVerifiedAndSharedWithTheInstallerOffline() throws Exception {
+        localFixture = new File(context.getFilesDir(), "updates/signed-upgrade-fixture.apk");
+        assumeTrue("Seed a signed future APK in the app's updates directory", localFixture.isFile());
+        AppUpdateRelease release = releaseFor(localFixture);
+        long installed = context.getPackageManager().getPackageInfo(context.getPackageName(), 0)
+                .getLongVersionCode();
+        assertTrue("This fixture must be a genuine version upgrade", release.getVersionCode() > installed);
+        AppUpdatePackageVerifier.Result verified = AppUpdatePackageVerifier.verify(context, localFixture, release);
+        assertTrue(verified.message, verified.valid);
+        Uri uri = FileProvider.getUriForFile(context, context.getPackageName() + ".updates", localFixture);
+        try (InputStream stream = context.getContentResolver().openInputStream(uri)) {
+            assertNotNull(stream);
+            assertEquals('P', stream.read()); assertEquals('K', stream.read());
+        }
+        Intent install = new Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        assertNotNull("Android installer must resolve the verified APK", install.resolveActivity(context.getPackageManager()));
+        try (java.io.RandomAccessFile file = new java.io.RandomAccessFile(localFixture, "rw")) {
+            file.seek(10); int original = file.read(); file.seek(10); file.write(original ^ 255);
+        }
+        assertFalse("Modified downloaded bytes must be refused", AppUpdatePackageVerifier.verify(context, localFixture, release).valid);
+    }
+
     @Test public void replacementRefreshesInstalledFingerprintAndBecomesNoOp() throws Exception {
         String expected = InstrumentationRegistry.getArguments().getString("expectedInstalledSha256");
         assumeTrue("Post-install fingerprint fixture was not supplied", expected != null);

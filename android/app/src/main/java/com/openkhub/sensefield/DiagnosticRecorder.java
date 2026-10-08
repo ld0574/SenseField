@@ -8,6 +8,7 @@ import android.graphics.Bitmap;
 import android.media.AudioManager;
 import android.os.BatteryManager;
 import android.os.Build;
+import android.os.Debug;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import android.util.DisplayMetrics;
@@ -86,6 +87,11 @@ final class DiagnosticRecorder {
     private volatile long contextWindows;
     private volatile long contextRateLimited;
     private volatile long contextDeferredFrames;
+    // Written only on the single IO executor, read without the capture lock.
+    // Cumulative job cost includes image encoding, writes and job metadata.
+    private volatile long imageJobsCompleted;
+    private volatile long imageJobWallMicros;
+    private volatile long imageJobCpuMicros;
     private volatile JSONObject lastDeviceSample;
     private volatile JSONObject latestState;
     private volatile LoadSample latestLoadSample = new LoadSample(-1, -1, -1);
@@ -431,6 +437,8 @@ final class DiagnosticRecorder {
         record("image_request", object("frame_index", sample.sequence, "observed_at_ms", sample.observedAtMs,
                 "reason", reason, "window_id", windowId, "status", "queued", "raw_bytes", sample.bytes));
         IO.execute(() -> {
+            long jobStartedNs = System.nanoTime();
+            long jobCpuStartedNs = Debug.threadCpuTimeNanos();
             try {
                 if (archive == null) return;
                 if (!imageRequestValid(generation)) {
@@ -446,7 +454,12 @@ final class DiagnosticRecorder {
                 appendImageResult(sample, reason, windowId, saved == 2 ? "saved_pair" : saved == 1 ? "partial" : "not_saved");
                 archive.flush();
             } catch (Exception error) { failed(error); }
-            finally { imageBudget.release(sample.bytes); }
+            finally {
+                imageJobWallMicros += Math.max(0, (System.nanoTime() - jobStartedNs) / 1000);
+                imageJobCpuMicros += Math.max(0, (Debug.threadCpuTimeNanos() - jobCpuStartedNs) / 1000);
+                imageJobsCompleted++;
+                imageBudget.release(sample.bytes);
+            }
         });
     }
 
@@ -642,8 +655,17 @@ final class DiagnosticRecorder {
                 "max_context_copy_micros", maxContextCopyMicros, "max_context_frame_bytes", maxContextFrameBytes,
                 "context_windows", contextWindows, "context_rate_limited", contextRateLimited,
                 "context_deferred_frames", contextDeferredFrames,
+                "image_jobs_completed", imageJobsCompleted,
+                "image_job_wall_micros", imageJobWallMicros,
+                "image_job_cpu_micros", imageJobCpuMicros,
                 "image_queue_scope", "shared process budget; peaks cover process lifetime",
                 "pending_image_frames", imageBudget.pendingFrames(), "pending_image_bytes", imageBudget.pendingBytes(),
                 "peak_image_frames", imageBudget.peakFrames(), "peak_image_bytes", imageBudget.peakBytes());
+    }
+
+    /** Schema, completed image jobs, wall/CPU microseconds, pending shared frames/bytes. */
+    long[] imageWorkStats() {
+        return new long[]{1, imageJobsCompleted, imageJobWallMicros, imageJobCpuMicros,
+                imageBudget.pendingFrames(), imageBudget.pendingBytes()};
     }
 }

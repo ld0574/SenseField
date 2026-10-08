@@ -79,17 +79,7 @@ public final class CueSoundSettingsActivity extends UiActivity {
 
     private void choose(int kind, String event) {
         stopPreview();
-        ArrayAdapter<String> choices = new ArrayAdapter<String>(this,
-                android.R.layout.simple_list_item_single_choice, CueSoundLibrary.LABELS) {
-            @Override public View getView(int position, View recycled, ViewGroup parent) {
-                TextView item = (TextView) super.getView(position, recycled, parent);
-                item.setTextSize(18);
-                item.setTextColor(UiKit.INK);
-                item.setSingleLine(false);
-                item.setMinimumHeight(UiKit.dp(CueSoundSettingsActivity.this, 64));
-                return item;
-            }
-        };
+        ArrayAdapter<String> choices = UiKit.singleChoiceAdapter(this, CueSoundLibrary.LABELS);
         picker = new AlertDialog.Builder(this).setTitle(event + "音效")
                 .setSingleChoiceItems(choices, CueSoundLibrary.index(preferences.getString(
                         CueSoundLibrary.preferenceKey(kind), "classic")), (dialog, which) -> {
@@ -120,7 +110,7 @@ public final class CueSoundSettingsActivity extends UiActivity {
         }
         int current = generation;
         long now = SystemClock.elapsedRealtime();
-        previewPlayer = CuePlayer.tonePreview(this);
+        if (previewPlayer == null) previewPlayer = CuePlayer.tonePreview(this);
         CueRequest request = new CueRequest("sound-preview", "sound-preview:" + now,
                 "sound-preview:" + now, "SOUND_PREVIEW", CueRequest.Category.SYSTEM, 80,
                 now, now + 2000, CueRequest.CHANNEL_TONE, kind, 0, 0, null);
@@ -157,8 +147,9 @@ public final class CueSoundSettingsActivity extends UiActivity {
         generation++;
         handler.removeCallbacksAndMessages(null);
         if (previewPlayer != null) {
-            previewPlayer.close();
-            previewPlayer = null;
+            // Keep decoded tones and the player alive for the next click. Completion is based
+            // on the AudioTrack head; a nominal 90 ms timer must not release audible data.
+            previewPlayer.cancelPendingTone();
         }
     }
 
@@ -170,6 +161,7 @@ public final class CueSoundSettingsActivity extends UiActivity {
     @Override protected void onPause() {
         boolean wasPlaying = previewPlayer != null;
         stopPreview();
+        if (previewPlayer != null) { previewPlayer.close(); previewPlayer = null; }
         if (picker != null) picker.dismiss();
         if (wasPlaying) showStatus("试听已停止，可选择音效并重新试听。");
         super.onPause();

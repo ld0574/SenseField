@@ -74,6 +74,13 @@ public final class CaptureService extends Service {
     private long loadSkippedFrames;
     private long totalProcessingWallMs;
     private long lastProcessingWallMs;
+    private long receivedImages;
+    private long nativeRuns;
+    private long nativeWallMicros;
+    private long diagnosticWallMicros;
+    private long maxDiagnosticWallMicros;
+    private long workerCpuMs;
+    private long lastWorkLogAtMs;
     private HandlerThread workerThread;
     private Handler worker;
     private NotificationManager notificationManager;
@@ -202,11 +209,13 @@ public final class CaptureService extends Service {
                             worker.removeCallbacks(recoveryRunnable);
                             recoveryRunnable = null;
                         }
-                        if (captureHealth.check(SystemClock.elapsedRealtime(), expectFrames) ==
+                        long nowMs = SystemClock.elapsedRealtime();
+                        if (captureHealth.check(nowMs, expectFrames) ==
                                 CaptureHealthMonitor.State.STARVED) {
                             starvationCount++;
                             scheduleRecoveryLocked(expectedSessionGeneration);
                         }
+                        logCaptureWorkLocked(nowMs, false);
                         publishDiagnosticStateLocked();
                     } catch (RuntimeException error) {
                         Log.e(TAG, "Could not resize capture after display change", error);
@@ -281,6 +290,10 @@ public final class CaptureService extends Service {
                 GameProfile.settings(this).edit().putBoolean("capture_paused", paused).apply();
                 resetNativeLocked();
                 captureHealth.pause(paused, SystemClock.elapsedRealtime());
+                String pauseMessage = "CapturePause sessionId=" + auditSessionId
+                        + " paused=" + paused + " nativeRuns=" + nativeRuns;
+                Log.i(TAG, pauseMessage);
+                if (diagnostics != null) diagnostics.audit(pauseMessage);
                 publishDiagnosticStateLocked();
                 if (paused && minimapOverlay != null) minimapOverlay.clear();
                 if (cueDispatcher != null) {
@@ -420,6 +433,7 @@ public final class CaptureService extends Service {
                         + " profileVersion=" + profile.version
                         + " verified=" + profile.verified
                         + " minimapYolox=" + profile.minimapYolox
+                        + " modelInputSize=" + profile.yoloxInputSize
                         + " confidence=" + profile.yoloxConfidence
                         + " nms=" + profile.yoloxNms
                         + " minimapMinGapMs=" + minimapAppearMinGapMs
@@ -716,6 +730,7 @@ public final class CaptureService extends Service {
     }
 
     private void onImageAvailable(ImageReader source, int generation) {
+        long callbackCpuAtMs = SystemClock.currentThreadTimeMillis();
         Image image = null;
         boolean resizeAfterClose = false;
         boolean refreshAfterFrame = false;
@@ -727,6 +742,7 @@ public final class CaptureService extends Service {
             final long now = SystemClock.elapsedRealtime();
             synchronized (processingLock) {
                 if (stopping || source != reader || generation != readerGeneration) return;
+                receivedImages++;
                 CaptureHealthMonitor.State previous = captureHealth.state();
                 captureHealth.frameArrived(now);
                 lastDiagnosticFrameArrivedAtMs = now;
@@ -854,18 +870,25 @@ public final class CaptureService extends Service {
                     processingStartedAtMs = SystemClock.elapsedRealtime();
                     diagnosticProcessing = true;
                     publishDiagnosticStateLocked();
+                    long nativeStartedNs = System.nanoTime();
                     int[] result = NativeBridge.nativeProcess(nativeSession, pixels,
                             width, height, plane.getRowStride(), observedAtMs, now);
+                    nativeWallMicros += (System.nanoTime() - nativeStartedNs) / 1000;
+                    nativeRuns++;
                     if (result != null && result.length >= 5) {
                         NativeFrameResult frame = NativeBridge.parseFrameResult(result, observedAtMs);
                         assistantRelation = frame.relation;
                         assistantRelationAtMs = observedAtMs;
                         if (diagnostics != null) {
+                            long diagnosticStartedNs = System.nanoTime();
                             DiagnosticSnapshot raw = DiagnosticSnapshot.parse(
                                     NativeBridge.nativeReadDiagnosticSnapshot(nativeSession));
                             diagnostics.frame(frame, raw, pixels, width, height,
                                     plane.getRowStride(), observedAtMs,
                                     SystemClock.elapsedRealtime(), maxObservationAgeMs);
+                            long costMicros = (System.nanoTime() - diagnosticStartedNs) / 1000;
+                            diagnosticWallMicros += costMicros;
+                            maxDiagnosticWallMicros = Math.max(maxDiagnosticWallMicros, costMicros);
                         }
                         if (frame.observationCount < 0) Log.e(TAG, "Invalid direct image buffer");
                         latestNativeMicros = frame.processingMicros;
@@ -946,13 +969,14 @@ public final class CaptureService extends Service {
                     long completedAtMs = SystemClock.elapsedRealtime();
                     lastProcessingWallMs = Math.max(0, completedAtMs - processingStartedAtMs);
                     totalProcessingWallMs += lastProcessingWallMs;
-                    // Delay only the next admission. This image is already closed;
-                    // incoming callbacks still acquire/drain the latest frame and
-                    // feed capture health, without sleeping or queueing old pixels.
+                    // Keep draining while the unchanged admission policy rests;
+                    // detaching the projection failed fresh-frame experiments.
                     frameProcessing.recordProcessed(processingStartedAtMs, completedAtMs);
                     diagnosticProcessing = false;
                     publishDiagnosticStateLocked();
                 }
+                if (!stopping && source == reader && generation == readerGeneration)
+                    workerCpuMs += Math.max(0, SystemClock.currentThreadTimeMillis() - callbackCpuAtMs);
                 // Skipped callbacks do not rebuild a JSON checkpoint snapshot.
                 // The independent 500 ms watchdog publishes their arrival state.
             }
@@ -968,6 +992,26 @@ public final class CaptureService extends Service {
                 }
             }
         }
+    }
+
+    private void logCaptureWorkLocked(long nowMs, boolean force) {
+        if (!auditSessionActive || (!force && nowMs - lastWorkLogAtMs < 10000)) return;
+        lastWorkLogAtMs = nowMs;
+        String message = "CaptureWork elapsedMs=" + Math.max(0, nowMs - startedAtMs)
+                + " paused=" + paused + " captureWidth=" + frameWidth
+                + " captureHeight=" + frameHeight + " loadMode=" + frameProcessing.mode().name()
+                + " receivedImages=" + receivedImages
+                + " loadSkipped=" + loadSkippedFrames + " nativeRuns=" + nativeRuns
+                + " nativeWallMicros=" + nativeWallMicros
+                + " diagnosticWallMicros=" + diagnosticWallMicros
+                + " maxDiagnosticWallMicros=" + maxDiagnosticWallMicros
+                + " workerCpuMs=" + workerCpuMs
+                + " imageWork=" + java.util.Arrays.toString(diagnostics == null ? null
+                        : diagnostics.imageWorkStats())
+                + " detectorWork=" + java.util.Arrays.toString(nativeSession == 0 ? null
+                        : NativeBridge.nativeReadWorkStats(nativeSession));
+        Log.i(TAG, message);
+        if (diagnostics != null) diagnostics.audit(message);
     }
 
     /** Reuse the recorder's independent device sampling; never poll in the pixel loop. */
@@ -1469,6 +1513,9 @@ public final class CaptureService extends Service {
             loadSkippedFrames = 0;
             totalProcessingWallMs = 0;
             lastProcessingWallMs = 0;
+            receivedImages = nativeRuns = 0;
+            nativeWallMicros = diagnosticWallMicros = maxDiagnosticWallMicros = workerCpuMs = 0;
+            lastWorkLogAtMs = startedAtMs;
             lastDiagnosticFrameArrivedAtMs = -1;
             lastDiagnosticFrameObservedAtMs = -1;
             lastDiagnosticFrameCompletedAtMs = -1;
@@ -1570,6 +1617,7 @@ public final class CaptureService extends Service {
 
     private void finishAuditSessionLocked(String reason) {
         if (!auditSessionActive) return;
+        logCaptureWorkLocked(SystemClock.elapsedRealtime(), true);
         publishDiagnosticStateLocked();
         long endedAtMs = SystemClock.elapsedRealtime();
         if (nearZoneActive) {

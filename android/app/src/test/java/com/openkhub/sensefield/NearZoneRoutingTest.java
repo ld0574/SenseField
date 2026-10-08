@@ -130,7 +130,7 @@ public final class NearZoneRoutingTest {
     }
 
     @Test public void nearOutputDefaultsMatchAccessibleBaseline() {
-        assertEquals(180, CuePlayer.DEFAULT_TTS_RATE_PERCENT);
+        assertEquals(100, CuePlayer.DEFAULT_TTS_RATE_PERCENT);
         assertEquals(100, CuePlayer.NEAR_HAPTIC_ON_MS);
         assertEquals(140, CuePlayer.NEAR_HAPTIC_GAP_MS);
     }

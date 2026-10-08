@@ -11,7 +11,8 @@ final class SettingHelpContent {
     static String title(String key) {
         switch (key) {
             case "voice_group": return "提醒测试与语音";
-            case "speech_engine": return "选择语音引擎";
+            case "speech_bundled_voice": return "游戏提醒音色";
+            case "speech_engine": return "动态文本语音引擎";
             case "speech_offline_data": return "管理离线中文语音";
             case "speech_rate": return "语速";
             case "cue_sound_settings": return "提醒音效";
@@ -108,7 +109,7 @@ final class SettingHelpContent {
     static List<String> itemKeys(String key) {
         switch (key) {
             case "voice_group":
-                return keys("speech_engine", "speech_offline_data", "speech_rate", "cue_sound_settings", "test_cue",
+                return keys("speech_bundled_voice", "speech_engine", "speech_offline_data", "speech_rate", "cue_sound_settings", "test_cue",
                         "haptic_settings_link", "before_start_read", "reminder_guide");
             case "recognition_group":
                 return keys("recognition_experiment", "new_avatar");
@@ -156,9 +157,11 @@ final class SettingHelpContent {
     static String text(String key) {
         switch (key) {
             case "voice_group":
-                return "本组会检查手机是否有已安装的离线中文语音。可以选择引擎、管理中文语音数据、调整语速，为不同提醒选择音效并试听。附近敌人方位短句准备好后，提示音与语音可一起播放；未准备好时仍即时发出提示音。首次开始辅助会朗读完整说明，听完后默认直接开始；设置里可随时重听完整说明或单项示例，也可开启每次重听。测试或试听时请先停止游戏辅助或实时对局。";
+                return "游戏提醒内置游戏解说女声和男声两种离线音色，完整说明使用晓晓。可以调整语速、音量，为不同提醒选择音效并试听；内置方位短句准备好后，提示音与语音可一起播放。动态文本和助手回答才使用手机语音引擎。首次说明可跳过并开始，之后默认直接开始；设置里可分段重听、暂停后继续。测试或试听时请先停止游戏辅助或实时对局。";
+            case "speech_bundled_voice":
+                return "游戏解说有男声和女声，默认使用男声。固定游戏提示随安装包离线提供，不依赖手机语音引擎或网络。切换音色后会直接测试当前提醒与振动，重新开始辅助后生效；完整说明始终使用晓晓。";
             case "speech_engine":
-                return "先检查所选引擎是否有已安装的离线中文声音；不可用时自动尝试手机上的其他引擎，并在页面显示实际结果。提醒语音不使用需要联网的声音。没有可用离线中文声音时保留提示音和振动，并提示安装语音数据。更换引擎后请试听，重新开始辅助后生效。";
+                return "仅用于消消乐动态坐标、建议和助手回答等实时文本，不影响内置游戏提醒与完整说明。先检查所选引擎是否有已安装的离线中文声音；不可用时自动尝试其他已安装引擎。更换后自动试听，并显示实际结果；重新开始辅助后生效。";
             case "speech_offline_data":
                 return "打开手机的文字转语音设置，在语音引擎设置中安装或下载中文离线语音数据，再返回听野查看检查结果。不同手机的入口名称可能不同；仅有联网中文声音还不能用于实时语音提醒。";
             case "speech_rate":

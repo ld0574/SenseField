@@ -10,7 +10,7 @@ import java.util.Map;
 /** Process-local cache of fixed, nonconversational phrases, bounded to two voice profiles. */
 final class AlertSpeechCache {
     static final int SAMPLE_RATE = 16000;
-    static final int MAX_SAMPLES = SAMPLE_RATE * 4;
+    static final int MAX_SAMPLES = SAMPLE_RATE * 6;
     private static final Map<String, Map<String, short[]>> PROFILES = new LinkedHashMap<>();
 
     private AlertSpeechCache() {}
@@ -36,7 +36,7 @@ final class AlertSpeechCache {
     }
 
     static synchronized void put(String profile, String phrase, short[] pcm) {
-        if (profile == null || !phrases(false).contains(phrase)
+        if (profile == null || !BundledSpeechCatalog.isFixed(phrase)
                 || pcm == null || pcm.length == 0 || pcm.length > MAX_SAMPLES)
             throw new IllegalArgumentException("Fixed alert phrase PCM is invalid");
         Map<String, short[]> cache = PROFILES.get(profile);

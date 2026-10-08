@@ -205,9 +205,9 @@ public class Match3MergeInstrumentedTest {
             DiagnosticRecorder match3 = recordPortrait(true);
             org.json.JSONObject metadata = new org.json.JSONObject(new String(Files.readAllBytes(
                     new File(match3.directory, "metadata.json").toPath()), StandardCharsets.UTF_8));
-            assertEquals("0.4.3", metadata.getString("app_version"));
-            assertEquals("0.4.3", metadata.getString("version_name"));
-            assertEquals(20, metadata.getInt("version_code"));
+            assertEquals(BuildConfig.VERSION_NAME, metadata.getString("app_version"));
+            assertEquals(BuildConfig.VERSION_NAME, metadata.getString("version_name"));
+            assertEquals(BuildConfig.VERSION_CODE, metadata.getInt("version_code"));
             File[] images = new File(match3.directory, "images").listFiles((dir, name) -> name.startsWith("screen-"));
             assertNotNull(images);
             assertTrue(images.length > 0);

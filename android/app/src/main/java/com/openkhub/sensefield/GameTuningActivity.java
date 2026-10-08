@@ -44,6 +44,7 @@ public final class GameTuningActivity extends UiActivity {
     private CueDispatcher testDispatcher;
     private final Handler testHandler = new Handler(Looper.getMainLooper());
     private int testGeneration;
+    private int testRemainingChannels;
     private final Handler voiceCheckHandler = new Handler(Looper.getMainLooper());
     private CuePlayer voiceProbe;
     private TextView voiceStatus;
@@ -65,7 +66,12 @@ public final class GameTuningActivity extends UiActivity {
 
         LinearLayout voices = UiKit.card(this);
         SettingHelp.addGroup(this, voices, "voice_group", 12);
-        Button engines = button("选择语音引擎", false);
+        Button builtInVoice = button("提醒音色：" + selectedVoiceLabel(), false);
+        builtInVoice.setTag("bundled_voice_picker");
+        builtInVoice.setOnClickListener(view -> chooseBuiltInVoice(builtInVoice));
+        UiKit.add(voices, builtInVoice, 8);
+        UiKit.add(voices, UiKit.hint(this, "游戏提醒与完整说明使用内置离线语音。"), 8);
+        Button engines = button("动态文本语音引擎", false);
         engines.setOnClickListener(view -> chooseVoiceEngine());
         UiKit.add(voices, engines, 8);
         voiceStatus = UiKit.hint(this, "正在检查离线中文语音……");
@@ -203,7 +209,9 @@ public final class GameTuningActivity extends UiActivity {
         stopTestCue();
         stopVoiceProbe();
         final int generation = testGeneration;
-        test.setEnabled(false);
+        // Keep a repeat action available: the next tap cancels this run instead of queuing it.
+        test.setText("重播提醒与振动");
+        testRemainingChannels = 0;
         testStatus.setText((channels & CueRequest.CHANNEL_SPEECH) != 0
                 ? "正在准备测试提醒……" : "正在发送测试提醒……");
         testPlayer = new CuePlayer(this, (channels & CueRequest.CHANNEL_SPEECH) != 0);
@@ -216,11 +224,17 @@ public final class GameTuningActivity extends UiActivity {
             @Override public void onPlayback(CueRequest request, String channel,
                     long atMs, String result) {
                 Log.i("MapAssistAudio", "AudioSelfTest channel=" + channel + " result=" + result);
+                if (!"STARTED".equals(result)) testHandler.post(() -> {
+                    if (generation != testGeneration) return;
+                    int bit = "SPEECH".equals(channel) ? CueRequest.CHANNEL_SPEECH
+                            : "TONE".equals(channel) ? CueRequest.CHANNEL_TONE : 0;
+                    finishTestChannel(generation, bit);
+                });
                 if ("SPEECH".equals(channel) && ("FAILED".equals(result)
                         || "UNAVAILABLE".equals(result))) {
                     testHandler.post(() -> {
                         if (generation == testGeneration) testStatus.setText(
-                                "语音引擎未能完成这次测试播放；请检查语音引擎和音量设置。");
+                                "内置提醒语音未能完成这次播放；请检查音量后重试。");
                     });
                 } else if ("TONE".equals(channel) && "FAILED".equals(result)) {
                     testHandler.post(() -> {
@@ -249,23 +263,15 @@ public final class GameTuningActivity extends UiActivity {
             packages[i + 1] = engine.serviceInfo.packageName;
             if (packages[i + 1].equals(selected)) current = i + 1;
         }
-        ArrayAdapter<String> choices = new ArrayAdapter<String>(this,
-                android.R.layout.simple_list_item_single_choice, labels) {
-            @Override public View getView(int position, View convertView, ViewGroup parent) {
-                TextView item = (TextView) super.getView(position, convertView, parent);
-                item.setTextSize(18);
-                item.setMinimumHeight(UiKit.dp(GameTuningActivity.this, 72));
-                return item;
-            }
-        };
-        AlertDialog picker = new AlertDialog.Builder(this).setTitle("听野使用的语音引擎")
+        ArrayAdapter<String> choices = UiKit.singleChoiceAdapter(this, labels);
+        AlertDialog picker = new AlertDialog.Builder(this).setTitle("动态文本语音引擎")
                 .setSingleChoiceItems(choices, current, (dialog, which) -> {
                     stopTestCue();
                     GameProfile.settings(this).edit()
                             .putString(CuePlayer.PREF_TTS_ENGINE, packages[which]).apply();
                     testStatus.setText(getString(R.string.tuning_voice_engine_selected, labels[which]));
                     dialog.dismiss();
-                    checkOfflineVoice();
+                    previewDynamicVoice();
                 }).setNegativeButton("取消", null).show();
         UiKit.styleDialog(picker, UiKit.ButtonStyle.OUTLINED);
     }
@@ -291,12 +297,49 @@ public final class GameTuningActivity extends UiActivity {
             return;
         }
         CueDispatcher.DispatchResult result = testDispatcher.submit(example);
+        testRemainingChannels = result.acceptedChannels & channels;
         testStatus.setText(testDispatchStatus(result, channels, audioSkipped));
         if ((channels & CueRequest.CHANNEL_SPEECH) != 0 && !testPlayer.speechReady())
             testStatus.append(" " + testPlayer.speechStatusText());
-        testHandler.postDelayed(() -> {
-            if (generation == testGeneration) test.setEnabled(true);
-        }, 4500);
+        if ((testRemainingChannels & CueRequest.CHANNEL_HAPTIC) != 0) {
+            testHandler.postDelayed(() -> finishTestChannel(generation, CueRequest.CHANNEL_HAPTIC),
+                    testPlayer.hapticDurationMs(example));
+        }
+        if (testRemainingChannels == 0) finishTestChannel(generation, 0);
+    }
+
+    private void finishTestChannel(int generation, int channel) {
+        if (generation != testGeneration) return;
+        testRemainingChannels &= ~channel;
+        if (testRemainingChannels == 0 && test != null) {
+            test.setEnabled(true);
+            test.setText("测试提醒与振动");
+        }
+    }
+
+    private String selectedVoiceLabel() {
+        return BundledSpeechCatalog.VOICE_LABELS["game_male".equals(BundledSpeechCatalog.voice(
+                GameProfile.settings(this).getString(BundledSpeechCatalog.PREF_VOICE,
+                        BundledSpeechCatalog.DEFAULT_VOICE))) ? 1 : 0];
+    }
+
+    private void chooseBuiltInVoice(Button label) {
+        int selected = "game_male".equals(BundledSpeechCatalog.voice(GameProfile.settings(this)
+                .getString(BundledSpeechCatalog.PREF_VOICE, BundledSpeechCatalog.DEFAULT_VOICE))) ? 1 : 0;
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("游戏提醒音色")
+                .setSingleChoiceItems(UiKit.singleChoiceAdapter(this, BundledSpeechCatalog.VOICE_LABELS),
+                        selected, (picker, which) -> {
+                    GameProfile.settings(this).edit().putString(BundledSpeechCatalog.PREF_VOICE,
+                            BundledSpeechCatalog.VOICES[which]).apply();
+                    label.setText("提醒音色：" + selectedVoiceLabel());
+                    picker.dismiss();
+                    testCue();
+                }).setNegativeButton("取消", null).show();
+        UiKit.styleDialog(dialog, UiKit.ButtonStyle.OUTLINED);
+    }
+
+    private void previewDynamicVoice() {
+        checkOfflineVoice(true);
     }
 
     private static String testDispatchStatus(CueDispatcher.DispatchResult result, int channels,
@@ -306,7 +349,7 @@ public final class GameTuningActivity extends UiActivity {
             if ((channels & CueRequest.CHANNEL_HAPTIC) != 0) {
                 return "未能播放这次测试，请检查语音或振动设置。";
             }
-            return "未能播放声音，请检查语音引擎和媒体音量。";
+            return "未能播放声音，请检查媒体音量。";
         }
         StringBuilder status = new StringBuilder();
         if (audioSkipped) status.append("声音通道因媒体静音或音量为 0 已跳过；");
@@ -346,6 +389,8 @@ public final class GameTuningActivity extends UiActivity {
         testDispatcher = null;
         testPlayer = null;
         if (test != null) test.setEnabled(true);
+        if (test != null) test.setText("测试提醒与振动");
+        testRemainingChannels = 0;
     }
 
     @Override protected void onPause() {
@@ -363,6 +408,10 @@ public final class GameTuningActivity extends UiActivity {
     }
 
     private void checkOfflineVoice() {
+        checkOfflineVoice(false);
+    }
+
+    private void checkOfflineVoice(boolean preview) {
         stopVoiceProbe();
         if (isLiveSessionRunning()) {
             voiceStatus.setText("辅助运行中；结束后可检查离线中文语音。");
@@ -370,18 +419,35 @@ public final class GameTuningActivity extends UiActivity {
         }
         voiceStatus.setText("正在检查离线中文语音……");
         voiceProbe = CuePlayer.speechProbe(this);
-        pollOfflineVoice(voiceProbe, SystemClock.elapsedRealtime() + 20_000);
+        pollOfflineVoice(voiceProbe, SystemClock.elapsedRealtime() + 20_000, preview);
     }
 
-    private void pollOfflineVoice(CuePlayer probe, long deadline) {
+    private void pollOfflineVoice(CuePlayer probe, long deadline, boolean preview) {
         if (voiceProbe != probe) return;
         if (probe.speechPreparationFinished() || SystemClock.elapsedRealtime() >= deadline) {
             voiceStatus.setText(probe.speechPreparationFinished() ? probe.speechStatusText()
                     : "离线中文语音检查超时，请重新进入本页，或管理中文语音数据。");
+            if (preview && probe.speechReady()) {
+                long now = SystemClock.elapsedRealtime();
+                CueRequest sample = new CueRequest("dynamic-voice-sample", "voice:" + now,
+                        "voice:" + now, "DYNAMIC_VOICE_SAMPLE", CueRequest.Category.SYSTEM,
+                        80, now, now + 5000, CueRequest.CHANNEL_SPEECH, 0, 0, 0,
+                        "这是动态文本的语音试听。");
+                if (probe.speak(sample, true, new CueDispatcher.PlaybackCallback() {
+                    @Override public void onStarted(long at) {}
+                    @Override public void onFinished(long at, boolean success) {
+                        voiceCheckHandler.post(() -> {
+                            if (voiceProbe != probe) return;
+                            if (!success) voiceStatus.setText("系统语音试听未完成，请检查引擎和音量。");
+                            stopVoiceProbe();
+                        });
+                    }
+                })) return;
+            }
             stopVoiceProbe();
             return;
         }
-        voiceCheckHandler.postDelayed(() -> pollOfflineVoice(probe, deadline), 150);
+        voiceCheckHandler.postDelayed(() -> pollOfflineVoice(probe, deadline, preview), 150);
     }
 
     private void stopVoiceProbe() {

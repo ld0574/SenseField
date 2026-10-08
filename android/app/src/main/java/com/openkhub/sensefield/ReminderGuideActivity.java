@@ -64,7 +64,7 @@ public final class ReminderGuideActivity extends UiActivity {
                             : selectedSectionTitle != null
                                     ? "这一段已播放完。可以重听本段，或选择其他段落。"
                                     : "已播放完。可以再次播放，也可以返回列表。"
-                            : "未能播放完。请检查音量或中文语音引擎，再重试。");
+                            : "未能播放完。请检查音量，再重试。");
                     if (!success) offerManualReading();
                 }
             });
@@ -493,7 +493,7 @@ public final class ReminderGuideActivity extends UiActivity {
         boolean voiceNeeded = steps.stream().anyMatch(step -> step.channel == CueRequest.CHANNEL_SPEECH);
         if (voiceNeeded) {
             preparing = true;
-            status.setText("正在准备中文语音……");
+            status.setText("正在准备内置离线语音……");
             waitForVoice(generation, SystemClock.elapsedRealtime() + 3000);
         } else playback.startAt(ReminderGuideSections.sentenceSteps(steps), startIndex);
     }
@@ -505,7 +505,7 @@ public final class ReminderGuideActivity extends UiActivity {
                 handler.postDelayed(() -> waitForVoice(run, until), 100);
             } else {
                 stopExplanation();
-                status.setText("中文语音未准备好。请到声音与语音设置中选择可用的引擎，再重听说明。");
+                status.setText("内置语音未准备好。可以阅读说明，或跳过并开始辅助。");
                 offerManualReading();
             }
             return;
