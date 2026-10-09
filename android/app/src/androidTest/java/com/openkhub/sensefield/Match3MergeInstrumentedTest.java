@@ -273,7 +273,7 @@ public class Match3MergeInstrumentedTest {
                 new Intent(context(), Match3AssistActivity.class))) {
             scenario.onActivity(activity -> {
                 View root = activity.findViewById(android.R.id.content);
-                assertTrue(hasText(root, "开始实时识别"));
+                assertTrue(hasText(root, "开始辅助"));
                 assertTrue(hasText(root, "停止"));
                 assertTrue(hasText(root, "设置"));
                 assertFalse(hasText(root, "选择游戏截图"));

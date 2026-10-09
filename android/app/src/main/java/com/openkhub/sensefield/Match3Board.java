@@ -1,6 +1,7 @@
 package com.openkhub.sensefield;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.List;
 
 /**
@@ -32,13 +33,24 @@ final class Match3Board {
         final int toRow;
         final int toCol;
         final int runsFormed;
+        final int matchedCells;
+        final int longestRun;
+        final int adjacentIce;
 
         Swap(int fromRow, int fromCol, int toRow, int toCol, int runsFormed) {
+            this(fromRow, fromCol, toRow, toCol, runsFormed, 0, 0, 0);
+        }
+
+        Swap(int fromRow, int fromCol, int toRow, int toCol, int runsFormed,
+                int matchedCells, int longestRun, int adjacentIce) {
             this.fromRow = fromRow;
             this.fromCol = fromCol;
             this.toRow = toRow;
             this.toCol = toCol;
             this.runsFormed = runsFormed;
+            this.matchedCells = matchedCells;
+            this.longestRun = longestRun;
+            this.adjacentIce = adjacentIce;
         }
     }
 
@@ -122,16 +134,36 @@ final class Match3Board {
         copy[r2][c2] = tmp;
         /* 只认涉及被交换两格的新增三连：棋盘上原有的三连不算这次交换的功劳 */
         int formed = 0;
+        int longest = 0;
+        BitSet matched = null;
         for (Run run : findRuns(copy)) {
             boolean touches = run.horizontal
                     ? run.row == r1 && c1 >= run.col && c1 < run.col + run.length
                     || run.row == r2 && c2 >= run.col && c2 < run.col + run.length
                     : run.col == c1 && r1 >= run.row && r1 < run.row + run.length
                     || run.col == c2 && r2 >= run.row && r2 < run.row + run.length;
-            if (touches) formed++;
+            if (touches) {
+                formed++;
+                longest = Math.max(longest, run.length);
+                if (matched == null) matched = new BitSet(board.length * board[0].length);
+                for (int i = 0; i < run.length; i++) {
+                    int row = run.row + (run.horizontal ? 0 : i);
+                    int col = run.col + (run.horizontal ? i : 0);
+                    matched.set(row * board[0].length + col);
+                }
+            }
         }
         if (formed > 0) {
-            swaps.add(new Swap(r1, c1, r2, c2, formed));
+            BitSet ice = new BitSet(board.length * board[0].length);
+            int cols = board[0].length;
+            for (int cell = matched.nextSetBit(0); cell >= 0; cell = matched.nextSetBit(cell + 1)) {
+                int row = cell / cols, col = cell % cols;
+                if (row > 0 && copy[row - 1][col] == 'I') ice.set(cell - cols);
+                if (row + 1 < board.length && copy[row + 1][col] == 'I') ice.set(cell + cols);
+                if (col > 0 && copy[row][col - 1] == 'I') ice.set(cell - 1);
+                if (col + 1 < cols && copy[row][col + 1] == 'I') ice.set(cell + 1);
+            }
+            swaps.add(new Swap(r1, c1, r2, c2, formed, matched.cardinality(), longest, ice.cardinality()));
         }
     }
 

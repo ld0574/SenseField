@@ -107,7 +107,7 @@ public final class Match3ReleaseCaptureInstrumentedTest {
         Board[] board = new Board[1];
         org.json.JSONArray checkpoints = new org.json.JSONArray();
         try (ActivityScenario<Match3AssistActivity> scenario = ActivityScenario.launch(Match3AssistActivity.class)) {
-            scenario.onActivity(a -> click(a.getWindow().getDecorView(), "开始实时识别"));
+            scenario.onActivity(a -> click(a.getWindow().getDecorView(), "开始辅助"));
             long until = SystemClock.elapsedRealtime() + 10000;
             while (!Match3LiveService.isRunning() && SystemClock.elapsedRealtime() < until) {
                 consent(InstrumentationRegistry.getInstrumentation().getUiAutomation().getRootInActiveWindow());
@@ -163,7 +163,7 @@ public final class Match3ReleaseCaptureInstrumentedTest {
         prefs.edit().putBoolean("match3_hint_highlight_enabled", true).commit();
         Board[] board = new Board[1];
         try (ActivityScenario<Match3AssistActivity> scenario = ActivityScenario.launch(Match3AssistActivity.class)) {
-            scenario.onActivity(a -> click(a.getWindow().getDecorView(), "开始实时识别"));
+            scenario.onActivity(a -> click(a.getWindow().getDecorView(), "开始辅助"));
             long until = SystemClock.elapsedRealtime() + 10000;
             while (!Match3LiveService.isRunning() && SystemClock.elapsedRealtime() < until) {
                 consent(InstrumentationRegistry.getInstrumentation().getUiAutomation().getRootInActiveWindow());

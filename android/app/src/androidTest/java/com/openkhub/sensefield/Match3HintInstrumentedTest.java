@@ -262,7 +262,7 @@ public final class Match3HintInstrumentedTest {
     private static Object startProjection(ActivityScenario<Match3AssistActivity> scenario,
                                           SyntheticGame[] game) throws Exception {
         GameProfile.settings(context()).edit().putBoolean("match3_overlay_permission_explained", true).commit();
-        scenario.onActivity(a -> clickNamed(a.getWindow().getDecorView(), "开始实时识别"));
+        scenario.onActivity(a -> clickNamed(a.getWindow().getDecorView(), "开始辅助"));
         await("System consent starts the actual projection", 8000, () -> {
             confirmCapture(InstrumentationRegistry.getInstrumentation().getUiAutomation().getRootInActiveWindow());
             return Match3LiveService.isRunning();
@@ -289,7 +289,7 @@ public final class Match3HintInstrumentedTest {
         GameProfile.settings(context()).edit().putBoolean("match3_hint_highlight_enabled", true).apply();
         SyntheticGame[] game = new SyntheticGame[1];
         try (ActivityScenario<Match3AssistActivity> scenario = ActivityScenario.launch(Match3AssistActivity.class)) {
-            scenario.onActivity(a -> clickNamed(a.getWindow().getDecorView(), "开始实时识别"));
+            scenario.onActivity(a -> clickNamed(a.getWindow().getDecorView(), "开始辅助"));
             long until = SystemClock.elapsedRealtime() + 8000;
             while (!Match3LiveService.isRunning() && SystemClock.elapsedRealtime() < until) {
                 confirmCapture(InstrumentationRegistry.getInstrumentation().getUiAutomation().getRootInActiveWindow());

@@ -72,7 +72,7 @@ public final class Match3ToolsActivity extends UiActivity {
                 ViewGroup.LayoutParams.WRAP_CONTENT));
         setContentView(scroll);
 
-        UiKit.pageHeader(this, page, "高级识别工具", "开心消消乐");
+        UiKit.pageHeader(this, page, "截图校准与棋子学习", "开心消消乐");
         UiKit.add(page, note("实时识别会自动确认棋盘。这些工具只在识别不准或需要截图点读时使用。"), 20);
         LinearLayout screenshots = card(page, "截图试读");
         Button pick = UiKit.button(this, "选择游戏截图", true);
@@ -350,7 +350,7 @@ public final class Match3ToolsActivity extends UiActivity {
         }
         StringBuilder sb = new StringBuilder("识别矩阵（. 表示未识别，空白表示空格）：\n");
         for (char[] row : board) sb.append(String.valueOf(row)).append('\n');
-        List<Match3Board.Swap> swaps = Match3Board.findSwaps(board);
+        List<Match3Board.Swap> swaps = Match3MoveRanker.rankedSwaps(board);
         sb.append("\n可消除交换：").append(swaps.size()).append(" 处\n");
         announce("棋盘识别完成，共找到 " + swaps.size() + " 处可消除交换。");
         int spoken = 0;

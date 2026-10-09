@@ -494,7 +494,7 @@ public class Match3LiveService extends Service {
         if (changed) {
             invalidateHint(s, "BOARD_CHANGED");
             s.lastStableMatrix = matrix;
-            s.lastSwaps = Match3Board.findSwaps(matrix);
+            s.lastSwaps = Match3MoveRanker.rankedSwaps(matrix);
             s.boardRevision++; s.hintCount = 0; s.hintAttempts = 0;
             s.lastChangeAt = SystemClock.elapsedRealtime();
             s.diagnostics.audit("BoardRecognized rows=" + matrix.length + " cols=" + matrix[0].length
@@ -507,7 +507,8 @@ public class Match3LiveService extends Service {
             Match3Hint hint = s.currentHint;
             s.diagnostics.audit("Match3Hint revision=" + hint.revision + " from="
                     + hint.swap.fromRow + "," + hint.swap.fromCol + " to="
-                    + hint.swap.toRow + "," + hint.swap.toCol + " origin=top_left_zero_based");
+                    + hint.swap.toRow + "," + hint.swap.toCol + " origin=top_left_zero_based "
+                    + Match3MoveRanker.evidence(hint.swap));
             updateHintOverlay(s, hint);
         }
         if (changed && s.lastSwaps.isEmpty())

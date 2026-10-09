@@ -1,6 +1,6 @@
 # 发布与交付索引
 
-2026-10-09 [0.4.5 本地候选](0.4.5/RELEASE_NOTES.md)（`versionCode 22`）已覆盖消消乐入口与设置整理：开始识别后自动打开游戏，棋盘自动确认；高亮与语音直接设置，截图校准／棋子学习收进折叠高级工具。延续空洞、旧推荐、模板规则、高亮回采、行号读音及局后 ADB 自动诊断修订。392 项 JVM、32 项 Debug、最终正式包 16 项设备和 6 项 Python 通过；唯一同签名 24.24MB 包已覆盖手机并回读一致。制品在 `output/releases/0.4.5/`，待负责人手动上传，没有新公开 Release。真实游戏／实声／受控温升仍待测，见[当前记录](../../validation/MATCH3_UI_FLOW_0_4_5_2026-10-09.md)；[自主审查](../../validation/MATCH3_AUTONOMOUS_AUDIT_0_4_5_2026-10-09.md)、[此前真机修订](../../validation/MATCH3_0_4_5_REAL_DEVICE_FIX_2026-10-09.md)及[首轮记录](../../validation/MATCH3_HINT_0_4_5_2026-10-09.md)保留为历史。下文保留此前公开发布信息。
+2026-10-09 [0.4.5 本地候选](0.4.5/RELEASE_NOTES.md)（`versionCode 22`）已覆盖消消乐设置与局部排序：开始辅助自动打开游戏，设置与返回选择位于底部；语音独立成组，截图与学习工具直接进入。增加冰块邻接、长连与消除格数排序，目标栏尚未读取。396 项 JVM、32 项 Debug、16 项 Release 完整门禁及九种布局通过；最终按钮文案包另通过 6 项 Release 与九种主页检查。唯一同签名 24.24MB 包已覆盖手机，手机／模拟器回读一致。制品在 `output/releases/0.4.5/`，待负责人手动上传，没有新公开 Release。真实推荐价值／实声／受控温升仍待测，见[当前记录](../../validation/MATCH3_VALUE_AND_SETTINGS_0_4_5_2026-10-09.md)和[价值排序后续范围](../plans/消消乐目标价值排序.md)。[入口修订](../../validation/MATCH3_UI_FLOW_0_4_5_2026-10-09.md)与[自主审查](../../validation/MATCH3_AUTONOMOUS_AUDIT_0_4_5_2026-10-09.md)等记录保留各自历史制品。下文保留此前公开发布信息。
 
 整理日期：2026-10-08。最近一次公开主线发布为[听野0.4.4](https://github.com/ld0574/SenseField/releases/tag/v0.4.4)（`versionCode 21`，普通 Release、Latest），包含王者荣耀辅助、消消乐体验入口与默认关闭的助手。使用主线标签 `v0.4.4`，保留历史 `v0.4.3-main` 及消消乐独立发布。APK、使用方式和验证边界见[0.4.4说明](0.4.4/RELEASE_NOTES.md)。Gitee 同名 APK 和固定网站清单仍由负责人按[CDN发布步骤](../../deploy/assistant/CDN发布.md)成对手动上传，模型分片继续复用。整体 `verified` 与 `release_ready` 保持现状，不将公开发布类型当作稳定性验收结果。
 

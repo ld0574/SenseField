@@ -40,20 +40,20 @@ public final class Match3UiInstrumentedTest {
         try (ActivityScenario<Match3AssistActivity> screen = ActivityScenario.launch(intent(Match3AssistActivity.class))) {
             screen.onActivity(activity -> {
                 View root = activity.findViewById(android.R.id.content);
-                assertNotNull(find(root, "开始实时识别")); assertNotNull(find(root, "停止"));
+                assertNotNull(find(root, "开始辅助")); assertNotNull(find(root, "停止"));
                 assertFalse(find(root, "停止").isEnabled());
                 assertNotNull(root.findViewWithTag("ui_nav:设置"));
                 assertNull(find(root, "启动开心消消乐")); assertNull(find(root, "棋盘标定"));
                 assertNull(find(root, "棋子学习库")); assertNull(find(root, "选择游戏截图"));
                 if (activity.getResources().getConfiguration().fontScale <= 1f
                         && activity.getResources().getConfiguration().screenWidthDp >= 360)
-                    assertTrue(find(root, "开始实时识别").getGlobalVisibleRect(new android.graphics.Rect()));
+                    assertTrue(find(root, "开始辅助").getGlobalVisibleRect(new android.graphics.Rect()));
             });
         }
         UiQualityInstrumentedTest.capture(intent(Match3AssistActivity.class), "match3-run-light");
     }
 
-    @Test public void settingsKeepHighlightPreferenceAndAdvancedDisclosureAcrossRecreation() throws Exception {
+    @Test public void settingsKeepHighlightPreferenceAndExposeToolsDirectlyAcrossRecreation() throws Exception {
         boolean present = prefs().contains("match3_hint_highlight_enabled");
         boolean previous = prefs().getBoolean("match3_hint_highlight_enabled", true);
         try (ActivityScenario<Match3SettingsActivity> screen = ActivityScenario.launch(intent(Match3SettingsActivity.class))) {
@@ -61,20 +61,18 @@ public final class Match3UiInstrumentedTest {
                 View root = activity.findViewById(android.R.id.content);
                 assertNotNull(root.findViewWithTag("ui_nav:语音引擎与语速"));
                 assertNull(find(root, "沿用当前手机引擎，支持 MultiTTS"));
-                View advanced = root.findViewWithTag("ui_details:高级工具");
-                assertEquals(View.GONE, advanced.findViewWithTag("ui_details_body").getVisibility());
+                assertNull(root.findViewWithTag("ui_details:高级工具"));
+                assertEquals(View.VISIBLE, root.findViewWithTag("ui_nav:截图校准与棋子学习").getVisibility());
+                assertEquals(View.VISIBLE, root.findViewWithTag("ui_nav:游戏内触屏点读").getVisibility());
                 assertNull(find(root, "行数")); assertNull(find(root, "自定义名称"));
                 ((CheckBox) find(root, "交换位置高亮")).setChecked(!previous);
                 assertEquals(!previous, prefs().getBoolean("match3_hint_highlight_enabled", previous));
-                find(root, "高级工具").performClick();
-                assertEquals(View.VISIBLE, advanced.findViewWithTag("ui_details_body").getVisibility());
             });
             screen.recreate(); idle();
             screen.onActivity(activity -> {
                 View root = activity.findViewById(android.R.id.content);
                 assertEquals(!previous, ((CheckBox) find(root, "交换位置高亮")).isChecked());
-                assertEquals(View.VISIBLE, root.findViewWithTag("ui_details:高级工具")
-                        .findViewWithTag("ui_details_body").getVisibility());
+                assertEquals(View.VISIBLE, root.findViewWithTag("ui_nav:截图校准与棋子学习").getVisibility());
             });
         } finally {
             SharedPreferences.Editor edit = prefs().edit();
@@ -134,7 +132,7 @@ public final class Match3UiInstrumentedTest {
         prefs().edit().putBoolean("match3_overlay_permission_explained", true).commit();
         try (ActivityScenario<Match3AssistActivity> screen = ActivityScenario.launch(intent(Match3AssistActivity.class))) {
             assertFalse(Match3LiveService.isRunning());
-            screen.onActivity(activity -> find(activity.findViewById(android.R.id.content), "开始实时识别").performClick());
+            screen.onActivity(activity -> find(activity.findViewById(android.R.id.content), "开始辅助").performClick());
             boolean cancelled = false;
             long until = SystemClock.elapsedRealtime() + 8000;
             while (!cancelled && SystemClock.elapsedRealtime() < until) {
@@ -148,16 +146,16 @@ public final class Match3UiInstrumentedTest {
             until = SystemClock.elapsedRealtime() + 3000;
             while (!ready[0] && SystemClock.elapsedRealtime() < until) {
                 screen.onActivity(activity -> ready[0] = find(activity.findViewById(android.R.id.content),
-                        "开始实时识别").isEnabled());
+                        "开始辅助").isEnabled());
                 SystemClock.sleep(100);
             }
             assertTrue("Cancellation returns to a retryable start within 3 seconds", ready[0]);
             screen.onActivity(activity -> {
                 assertFalse(Match3LiveService.isRunning());
-                assertTrue(find(activity.findViewById(android.R.id.content), "开始实时识别").isEnabled());
+                assertTrue(find(activity.findViewById(android.R.id.content), "开始辅助").isEnabled());
             });
             screen.recreate(); idle();
-            screen.onActivity(activity -> assertTrue(find(activity.findViewById(android.R.id.content), "开始实时识别").isEnabled()));
+            screen.onActivity(activity -> assertTrue(find(activity.findViewById(android.R.id.content), "开始辅助").isEnabled()));
         } finally {
             SharedPreferences.Editor edit = prefs().edit();
             if (present) edit.putBoolean("match3_overlay_permission_explained", old); else edit.remove("match3_overlay_permission_explained");

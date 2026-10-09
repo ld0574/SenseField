@@ -16,10 +16,9 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Toast;
 
-/** Small everyday settings; learning and manual calibration are optional advanced tools. */
+/** Everyday settings with speech separated and direct access to optional recognition tools. */
 public final class Match3SettingsActivity extends UiActivity {
     private View overlayPermission;
-    private LinearLayout advanced;
     private Button listen;
     private CuePlayer preview;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -35,6 +34,13 @@ public final class Match3SettingsActivity extends UiActivity {
         LinearLayout page = UiKit.page(this);
         scroll.addView(page);
         UiKit.pageHeader(this, page, "设置", "开心消消乐辅助");
+        LinearLayout speech = UiKit.card(this);
+        UiKit.add(speech, UiKit.heading(this, "语音"), 12);
+        UiKit.add(speech, UiKit.navigationRow(this, "语音引擎与语速", "手机语音引擎、语速与试听", () ->
+                startActivity(new Intent(this, GameTuningActivity.class)
+                        .putExtra(GameTuningActivity.EXTRA_DYNAMIC_SPEECH_ONLY, true))), 0);
+        UiKit.add(page, speech, 24);
+
         LinearLayout hints = UiKit.card(this);
         UiKit.add(hints, UiKit.heading(this, "交换提示"), 12);
         CheckBox highlight = new CheckBox(this);
@@ -58,11 +64,7 @@ public final class Match3SettingsActivity extends UiActivity {
             catch (RuntimeException unavailable) { toast("请在系统设置中允许听野悬浮显示"); }
         });
         UiKit.add(hints, overlayPermission, 12);
-        UiKit.add(hints, UiKit.navigationRow(this, "语音引擎与语速", "手机语音引擎、语速与试听", () ->
-                startActivity(new Intent(this, GameTuningActivity.class)
-                        .putExtra(GameTuningActivity.EXTRA_DYNAMIC_SPEECH_ONLY, true))), 0);
         UiKit.add(page, hints, 24);
-        UiKit.add(page, UiKit.hint(this, "棋盘范围和行列数会自动确认，通常无需校准。"), 24);
 
         LinearLayout numbering = UiKit.details(this, "行列怎么数", Match3Hint.NUMBERING);
         LinearLayout numberingBody = numbering.findViewWithTag("ui_details_body");
@@ -71,15 +73,15 @@ public final class Match3SettingsActivity extends UiActivity {
         numberingBody.addView(listen);
         UiKit.add(page, numbering, 24);
 
-        advanced = UiKit.details(this, "高级工具");
-        LinearLayout body = advanced.findViewWithTag("ui_details_body");
-        UiKit.add(body, UiKit.navigationRow(this, "截图校准与棋子学习", "识别不准时使用，日常无需设置", () ->
+        LinearLayout tools = UiKit.card(this);
+        UiKit.add(tools, UiKit.heading(this, "识别与反馈"), 12);
+        UiKit.add(tools, UiKit.hint(this, "棋盘范围和行列数会自动确认，通常无需校准。"), 12);
+        UiKit.add(tools, UiKit.navigationRow(this, "截图校准与棋子学习", "识别不准时使用，日常无需设置", () ->
                 startActivity(new Intent(this, Match3ToolsActivity.class))), 12);
-        UiKit.add(body, UiKit.navigationRow(this, "游戏内触屏点读", "需 Android 14 及听野读屏服务", this::toggleExplore), 0);
-        if (state != null && state.getBoolean("advanced_open")) body.setVisibility(View.VISIBLE);
-        UiKit.add(page, advanced, 24);
-        UiKit.add(page, UiKit.navigationRow(this, "测试记录与反馈", "查看本地记录，标记和导出问题", () ->
+        UiKit.add(tools, UiKit.navigationRow(this, "游戏内触屏点读", "需 Android 14 及听野读屏服务", this::toggleExplore), 0);
+        UiKit.add(tools, UiKit.navigationRow(this, "测试记录与反馈", "查看本地记录，标记和导出问题", () ->
                 startActivity(new Intent(this, DiagnosticsActivity.class))), 0);
+        UiKit.add(page, tools, 24);
         setContentView(scroll);
         refreshPermission();
     }
@@ -91,7 +93,7 @@ public final class Match3SettingsActivity extends UiActivity {
     }
 
     private void toggleExplore() {
-        if (!Match3LiveService.isRunning()) { toast("先开始实时识别，再开启游戏内点读"); return; }
+        if (!Match3LiveService.isRunning()) { toast("先开始辅助，再开启游戏内点读"); return; }
         if (Build.VERSION.SDK_INT < 34) { toast("游戏内点读需要 Android 14；仍可使用截图点读"); return; }
         if (!SenseFieldReaderService.isConnected()) {
             toast("请先开启听野读屏服务");
@@ -143,9 +145,5 @@ public final class Match3SettingsActivity extends UiActivity {
     }
     @Override protected void onPause() { stopPreview(); super.onPause(); }
     @Override protected void onDestroy() { stopPreview(); super.onDestroy(); }
-    @Override protected void onSaveInstanceState(Bundle state) {
-        state.putBoolean("advanced_open", advanced.findViewWithTag("ui_details_body").getVisibility() == View.VISIBLE);
-        super.onSaveInstanceState(state);
-    }
     private void toast(String text) { Toast.makeText(this, text, Toast.LENGTH_LONG).show(); }
 }

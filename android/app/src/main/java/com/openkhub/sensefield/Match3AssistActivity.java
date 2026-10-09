@@ -59,7 +59,7 @@ public final class Match3AssistActivity extends UiActivity {
         scroll.addView(page);
         UiKit.addBrandHeader(page, "开心消消乐");
         UiKit.add(page, UiKit.pageTitle(this, "开心消消乐辅助"), 8);
-        UiKit.add(page, UiKit.body(this, "自动识别棋盘，用语音和高亮提示交换位置。"), 24);
+        UiKit.add(page, UiKit.body(this, "识别棋盘，用语音和高亮提示交换。"), 24);
         LinearLayout stateCard = UiKit.accentCard(this);
         UiKit.addSignatureLabel(stateCard, "运行状态 · 体验版");
         status = UiKit.text(this, "尚未开始", 24, UiKit.INK, true);
@@ -68,7 +68,7 @@ public final class Match3AssistActivity extends UiActivity {
         UiKit.add(stateCard, status, 0);
         UiKit.add(page, stateCard, 24);
         ReminderSampleGrid actions = new ReminderSampleGrid(this, 2, false, 20).fillRow();
-        start = UiKit.button(this, "开始实时识别", true);
+        start = UiKit.button(this, "开始辅助", true);
         start.setTag("match3_start");
         start.setMinHeight(UiKit.dp(this, 64));
         start.setOnClickListener(v -> startLive());
@@ -84,7 +84,10 @@ public final class Match3AssistActivity extends UiActivity {
         actions.addView(start); actions.addView(stop);
         UiKit.add(page, actions, 16);
         UiKit.add(page, UiKit.hint(this, "授权后自动打开游戏，棋盘无需手动标定。"), 24);
-        UiKit.add(page, UiKit.navigationRow(this, "设置", "交换高亮、语音与高级识别工具", () ->
+        View spacer = new View(this);
+        page.addView(spacer, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, UiKit.dp(this, 32), 1f));
+        UiKit.add(page, UiKit.navigationRow(this, "设置", "语音、交换高亮与识别工具", () ->
                 startActivity(new Intent(this, Match3SettingsActivity.class))), 12);
         UiKit.add(page, UiKit.navigationRow(this, "返回游戏选择", "切换游戏辅助", () -> {
             startActivity(new Intent(this, GameSelectionActivity.class)
