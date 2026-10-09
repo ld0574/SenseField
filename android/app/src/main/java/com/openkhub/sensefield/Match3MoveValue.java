@@ -45,6 +45,13 @@ final class Match3MoveValue {
 
     int collected(Match3Goals.Kind kind) { return collected[kind.ordinal()]; }
     int hit(Match3Goals.Kind kind) { return hits[kind.ordinal()]; }
+    boolean sameEvidence(Match3MoveValue other) {
+        return other != null && java.util.Arrays.equals(collected,other.collected)
+                && java.util.Arrays.equals(hits,other.hits) && potentialSpecials == other.potentialSpecials
+                && reason.equals(other.reason) && grounded == other.grounded
+                && swap.matchedPositions().equals(other.swap.matchedPositions())
+                && swap.adjacentIce == other.swap.adjacentIce && swap.longestRun == other.swap.longestRun;
+    }
     private static char after(Match3Position board, Match3Board.Swap swap, int r, int c) {
         if (r == swap.fromRow && c == swap.fromCol) return board.cell(swap.toRow, swap.toCol).color;
         if (r == swap.toRow && c == swap.toCol) return board.cell(swap.fromRow, swap.fromCol).color;

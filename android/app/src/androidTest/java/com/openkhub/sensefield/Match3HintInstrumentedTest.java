@@ -104,6 +104,27 @@ public final class Match3HintInstrumentedTest {
             } finally { frame.recycle(); }
         }
     }
+    @Test public void reusedTilePixelsGiveExactlyTheOriginalCenterAndCornerResults() throws Exception {
+        Method original=Match3Sampler.class.getDeclaredMethod("classifyBoardCell",Bitmap.class,
+                int.class,int.class,int.class,int.class,int.class,java.util.List.class);
+        original.setAccessible(true);
+        Method buffered=Match3Sampler.class.getDeclaredMethod("classifyBufferedCell",Bitmap.class,int[].class,
+                int.class,int.class,int.class,int.class,int.class,int.class,int.class,int.class,int.class);
+        buffered.setAccessible(true);
+        Bitmap frame=Bitmap.createBitmap(128,128,Bitmap.Config.ARGB_8888);
+        java.util.Random random=new java.util.Random(1010);
+        try {
+            int[] pixels=new int[128*128];for(int i=0;i<pixels.length;i++)pixels[i]=0xff000000|random.nextInt(0x1000000);
+            frame.setPixels(pixels,0,128,0,0,128,128);
+            for(int width:new int[]{5,8,17,33,48,64})for(int offset:new int[]{0,1,11}) {
+                int height=width+1,x=width/2,y=height/2,half=Math.max(3,width/8);
+                int[] tile=new int[width*height];frame.getPixels(tile,0,width,offset,offset,width,height);
+                assertEquals("width="+width+" origin="+offset,
+                        original.invoke(null,frame,offset+x,offset+y,width,height,half,java.util.Collections.emptyList()),
+                        buffered.invoke(null,frame,tile,width,height,x,y,width,height,half,offset+x,offset+y));
+            }
+        } finally {frame.recycle();}
+    }
     private static final class Result implements CueDispatcher.PlaybackCallback {
         final CountDownLatch ended = new CountDownLatch(1);
         boolean success; String reason;
@@ -227,7 +248,7 @@ public final class Match3HintInstrumentedTest {
         private final Paint p = new Paint();
         private int tick;
         int rows = 7, cols = 7;
-        boolean heartbeat = true, singleCellChanged;
+        boolean heartbeat = true, singleCellChanged, mostlyUnknown, endpointChanged;
         final AtomicInteger touches = new AtomicInteger();
         SyntheticGame(Context context) {
             super(context); setOnTouchListener((v, e) -> { touches.incrementAndGet(); return true; });
@@ -244,7 +265,8 @@ public final class Match3HintInstrumentedTest {
                 if (row == 0 && col == 0) color = 0;
                 if (col == 0 && (row == 1 || row == 2) || row == 0 && col == 1) color = 1;
                 if (singleCellChanged && row == rows - 1 && col == cols - 1) color = (color + 1) % colors.length;
-                p.setColor(colors[color]);
+                if(endpointChanged && row==0 && col==0)color=4;
+                p.setColor(mostlyUnknown && (row>=3 || col>=3)?0xff909090:colors[color]);
                 c.drawCircle(left + cell * (col + .5f), top + cell * (row + .5f), cell * .43f, p);
             }
             // MediaProjection emits changed surfaces; keep only an out-of-board pixel changing.
@@ -262,18 +284,43 @@ public final class Match3HintInstrumentedTest {
     }
     private static Object startProjection(ActivityScenario<Match3AssistActivity> scenario,
                                           SyntheticGame[] game) throws Exception {
+        return startProjection(scenario,game,false);
+    }
+    private static Object startProjection(ActivityScenario<Match3AssistActivity> scenario,
+                                          SyntheticGame[] game,boolean mostlyUnknown) throws Exception {
         GameProfile.settings(context()).edit().putBoolean("match3_overlay_permission_explained", true).commit();
         scenario.onActivity(a -> clickNamed(a.getWindow().getDecorView(), "开始辅助"));
         await("System consent starts the actual projection", 8000, () -> {
             confirmCapture(InstrumentationRegistry.getInstrumentation().getUiAutomation().getRootInActiveWindow());
             return Match3LiveService.isRunning();
         });
-        scenario.onActivity(a -> { game[0] = new SyntheticGame(a); a.setContentView(game[0]); });
+        scenario.onActivity(a -> { game[0] = new SyntheticGame(a);game[0].mostlyUnknown=mostlyUnknown;a.setContentView(game[0]); });
         Match3LiveService service = Match3LiveService.testInstance();
         await("A stable board produces a hint", 12000, () -> {
             Object s = get(service, "active"); return s != null && get(s, "currentHint") != null;
         });
         return get(service, "active");
+    }
+    @Test public void actualProjectionOffersACertifiedLocalExchangeInsideAnUnfamiliarBoard() throws Exception {
+        assertTrue(android.os.Build.HARDWARE.contains("ranchu") || android.os.Build.HARDWARE.contains("goldfish"));
+        SyntheticGame[] game=new SyntheticGame[1];
+        try(ActivityScenario<Match3AssistActivity> scenario=ActivityScenario.launch(Match3AssistActivity.class)) {
+            Object session=startProjection(scenario,game,true);
+            Match3Hint hint=(Match3Hint)get(session,"currentHint");assertNotNull(hint);
+            assertEquals(0,hint.swap.fromRow);assertEquals(0,hint.swap.fromCol);
+            assertEquals(0,hint.swap.toRow);assertEquals(1,hint.swap.toCol);
+            org.json.JSONObject state=new org.json.JSONObject(DiagnosticRecorder.current.stateForDiagnostics());
+            assertTrue("Unfamiliar cells do not discard a proven island",state.getInt("unknown_cells")>49*.4);
+            SystemClock.sleep(3200);assertSame(hint,get(session,"currentHint"));
+            scenario.onActivity(a->{game[0].endpointChanged=true;game[0].invalidate();});
+            await("A real endpoint change retires the old exchange",5000,()->get(session,"currentHint")!=hint);
+            java.io.File directory=context().getExternalFilesDir("match3-release-capture");assertNotNull(directory);directory.mkdirs();
+            org.json.JSONObject evidence=new org.json.JSONObject().put("source","generated_unknown_artwork_actual_projection")
+                    .put("state",state).put("retained_hint",true).put("endpoint_change_retired_hint",true)
+                    .put("independent_accuracy_evidence",false).put("acoustic_evidence",false);
+            java.nio.file.Files.write(new java.io.File(directory,"partial-board-projection.json").toPath(),
+                    evidence.toString(2).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } finally {command(Match3LiveService.ACTION_STOP);await("Stopped",5000,()->!Match3LiveService.isRunning());}
     }
     private static void command(String action) {
         context().startService(new Intent(context(), Match3LiveService.class).setAction(action));
@@ -729,7 +776,7 @@ public final class Match3HintInstrumentedTest {
                             android.os.Bundle status = new android.os.Bundle();
                             status.putString("landscape_geometry", String.valueOf(Match3Sampler.autoDetectGeometry(frame)));
                             status.putString("landscape_popup", String.valueOf(Match3Coach.isPopupShowing(frame)));
-                            status.putString("landscape_raw_fill", String.valueOf(get(rotated, "rawFill")));
+                            status.putString("landscape_unconfirmed_cells", String.valueOf(get(rotated, "unconfirmedCells")));
                             InstrumentationRegistry.getInstrumentation().sendStatus(2, status);
                         }
                     } catch (Exception error) {

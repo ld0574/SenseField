@@ -76,6 +76,8 @@ final class Match3Sampler implements AutoCloseable {
     private Match3VisualCatalog observations;
     private int[] observationPixels;
     private Match3VisualCatalog.CellCache[][] observationCache;
+    private final Match3AppearanceMotion motion=new Match3AppearanceMotion();
+    private boolean frameMotion;
 
     Match3Sampler(android.content.Context context, int rows, int cols,
                   int lPct, int tPct, int rPct, int bPct) {
@@ -117,6 +119,10 @@ final class Match3Sampler implements AutoCloseable {
 
     /** Automatic task reasoning uses observed pixels, never the names of player-learned templates. */
     Match3Position samplePosition(Bitmap bitmap) {
+        return samplePosition(bitmap,android.os.SystemClock.elapsedRealtime());
+    }
+    boolean frameMotion() { return frameMotion; }
+    Match3Position samplePosition(Bitmap bitmap,long at) {
         requireOpen(); BoardGeometry g=geometryFor(bitmap);
         if(observations==null)observations=Match3VisualCatalog.get(context);
         int capacity=(g.cellWidth()+2)*(g.cellHeight()+2);
@@ -126,6 +132,8 @@ final class Match3Sampler implements AutoCloseable {
             for(int r=0;r<g.rows;r++)for(int c=0;c<g.cols;c++)observationCache[r][c]=new Match3VisualCatalog.CellCache();
         }
         Match3Position.Cell[][] cells=new Match3Position.Cell[g.rows][g.cols];
+        List<Match3AnimalAppearance.Face> currentFaces=new ArrayList<>();
+        boolean[][] comparable=new boolean[g.rows][g.cols];
         int w=g.cellWidth(),h=g.cellHeight(),half=Math.max(3,Math.min(w,h)/8);
         for(int r=0;r<g.rows;r++)for(int c=0;c<g.cols;c++) {
             Match3Position.Cell known=observations.obstacle(bitmap,g,r,c,observationPixels,observationCache[r][c]);
@@ -136,7 +144,14 @@ final class Match3Sampler implements AutoCloseable {
             // Known object identity already takes precedence over hue. Avoid
             // re-reading those same pixels through an unused colour classifier.
             if(known!=null) { cells[r][c]=known;continue; }
-            char legacy=classifyBoardCell(bitmap,g.centerX(c),g.centerY(r),w,h,half,Collections.emptyList());
+            int left=(int)g.cellLeft(c),top=(int)g.cellTop(r);
+            int width=(int)g.cellLeft(c+1)-left,height=(int)g.cellTop(r+1)-top;
+            // obstacle() has already read these exact current pixels. Reuse them
+            // for the identical center/corner stencil instead of thousands of JNI calls.
+            char legacy=observations.available?classifyBufferedCell(bitmap,observationPixels,width,height,
+                    g.centerX(c)-left,g.centerY(r)-top,w,h,half,g.centerX(c),g.centerY(r))
+                    :classifyBoardCell(bitmap,g.centerX(c),g.centerY(r),w,h,half,Collections.emptyList());
+            comparable[r][c]=!isMovable(legacy) && legacy!=EMPTY_CELL && legacy!=GAP_CELL;
             if(!isMovable(legacy) && legacy!=EMPTY_CELL && legacy!=GAP_CELL)
                 known=observations.animal(observationCache[r][c]);
             if(known!=null)cells[r][c]=known;
@@ -147,8 +162,51 @@ final class Match3Sampler implements AutoCloseable {
                 cells[r][c]=Match3Position.Cell.obstacle(
                         legacy==UNKNOWN?Match3Position.Kind.UNKNOWN:Match3Position.Kind.SURFACE,-1);
             }
+            if(cells[r][c].kind==Match3Position.Kind.ANIMAL && observationCache[r][c].patch!=null) {
+                Match3AnimalAppearance.Face face=Match3VisualCatalog.face(observationCache[r][c],cells[r][c].color);
+                if(face.detailed)currentFaces.add(face);
+            }
         }
+        // Current-frame examples are ephemeral comparisons, never saved/trained.
+        // Two independently certified animals must support a decorated-lane fallback.
+        for(int r=0;r<g.rows;r++)for(int c=0;c<g.cols;c++)
+            if(comparable[r][c] && cells[r][c].kind!=Match3Position.Kind.ANIMAL && observationCache[r][c].patch!=null) {
+                char color=Match3AnimalAppearance.recognize(Match3VisualCatalog.face(observationCache[r][c]),currentFaces,2);
+                if(isMovable(color))cells[r][c]=Match3Position.Cell.animal(color);
+            }
+        Match3AnimalAppearance.Face[][] faces=new Match3AnimalAppearance.Face[g.rows][g.cols];
+        for(int r=0;r<g.rows;r++)for(int c=0;c<g.cols;c++)if(observationCache[r][c].patch!=null)
+            faces[r][c]=Match3VisualCatalog.face(observationCache[r][c]);
+        frameMotion=motion.accept(faces,at);
         return new Match3Position(cells);
+    }
+
+    private static char classifyBufferedCell(Bitmap bitmap,int[] pixels,int width,int height,
+                                            int x,int y,int cellW,int cellH,int half,int frameX,int frameY) {
+        int ox=cellW*42/100,oy=cellH*42/100,probe=Math.max(2,Math.min(cellW,cellH)/16);
+        // Tiny/manual cells may cross a tile edge; preserve the original full-frame sampling there.
+        if(x-ox-probe<0 || y-oy-probe<0 || x+ox+probe>=width || y+oy+probe>=height)
+            return classifyBoardCell(bitmap,frameX,frameY,cellW,cellH,half,Collections.emptyList());
+        int centre=avgPixels(pixels,width,x,y,half);
+        int[][] points={{x-ox,y-oy},{x+ox,y-oy},{x-ox,y+oy},{x+ox,y+oy}};
+        long distance=0;int backed=0;float[] hsv=new float[3];
+        for(int[] point:points) {
+            int color=avgPixels(pixels,width,point[0],point[1],probe);
+            distance+=Math.abs(Color.red(centre)-Color.red(color))+Math.abs(Color.green(centre)-Color.green(color))
+                    +Math.abs(Color.blue(centre)-Color.blue(color));
+            Color.colorToHSV(color,hsv);
+            if(hsv[2]<.5f && hsv[0]>=170f && hsv[0]<=300f)backed++;
+        }
+        if(distance/(4*3L)<=EMPTY_COLOR_DISTANCE)return EMPTY_CELL;
+        char piece=classifyCell(bitmap,frameX,frameY,half,Collections.emptyList(),centre);
+        return isMovable(piece) && backed<3?NON_SWAP_CELL:piece;
+    }
+    private static int avgPixels(int[] pixels,int width,int x,int y,int half) {
+        long r=0,g=0,b=0,n=0;
+        for(int yy=y-half;yy<=y+half;yy++)for(int xx=x-half;xx<=x+half;xx++) {
+            int color=pixels[yy*width+xx];r+=color>>16&255;g+=color>>8&255;b+=color&255;n++;
+        }
+        return Color.rgb((int)(r/n),(int)(g/n),(int)(b/n));
     }
 
     private static boolean boardEdgeSupported(Bitmap frame,BoardGeometry g,int row,int col) {

@@ -26,20 +26,26 @@ final class Match3Goals {
         final Kind kind;
         final int remaining;
         final boolean completed;
+        final String visualId;
         Target(int slot, Kind kind, int remaining, boolean completed) {
+            this(slot,kind,remaining,completed,"");
+        }
+        Target(int slot, Kind kind, int remaining, boolean completed,String visualId) {
             if (slot < 0 || slot > 7 || kind == null || remaining < -1 || remaining > 9999
-                    || completed && remaining > 0) throw new IllegalArgumentException("Invalid target");
+                    || completed && remaining > 0 || visualId==null || visualId.length()>80)
+                throw new IllegalArgumentException("Invalid target");
             this.slot = slot; this.kind = kind;
             this.remaining = completed ? 0 : remaining; this.completed = completed;
+            this.visualId=kind==Kind.UNKNOWN?visualId:"";
         }
         boolean known() { return kind != Kind.UNKNOWN && remaining >= 0; }
         @Override public boolean equals(Object object) {
             if (!(object instanceof Target)) return false;
             Target other = (Target) object;
             return slot == other.slot && kind == other.kind && remaining == other.remaining
-                    && completed == other.completed;
+                    && completed == other.completed && visualId.equals(other.visualId);
         }
-        @Override public int hashCode() { return Objects.hash(slot, kind, remaining, completed); }
+        @Override public int hashCode() { return Objects.hash(slot, kind, remaining, completed,visualId); }
     }
 
     final int level, steps;
@@ -71,7 +77,8 @@ final class Match3Goals {
     boolean sameIdentity(Match3Goals other) {
         if (other == null || level != other.level || targets.size() != other.targets.size()) return false;
         for (int i = 0; i < targets.size(); i++)
-            if (targets.get(i).slot != other.targets.get(i).slot || targets.get(i).kind != other.targets.get(i).kind) return false;
+            if (targets.get(i).slot != other.targets.get(i).slot || targets.get(i).kind != other.targets.get(i).kind
+                    || !targets.get(i).visualId.equals(other.targets.get(i).visualId)) return false;
         return true;
     }
     boolean sameValues(Match3Goals other) {
@@ -94,7 +101,7 @@ final class Match3Goals {
         if (!hudVerified) return "unread";
         StringBuilder out = new StringBuilder().append(level).append(':').append(steps);
         for (Target target : targets) out.append('|').append(target.slot).append(':').append(target.kind)
-                .append(':').append(target.remaining).append(':').append(target.completed);
+                .append(':').append(target.remaining).append(':').append(target.completed).append(':').append(target.visualId);
         return out.toString();
     }
 }

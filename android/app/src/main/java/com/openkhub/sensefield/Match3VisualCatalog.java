@@ -15,6 +15,7 @@ final class Match3VisualCatalog {
     static final class CellCache {
         int[] patch;
         Match3Position.Cell result, animal;
+        Match3AnimalAppearance.Face face;
         boolean animalChecked;
     }
     static final class Pattern {
@@ -66,19 +67,27 @@ final class Match3VisualCatalog {
     final boolean available;
     final String id;
     final List<Pattern> steps, goals, cells, animals;
+    final List<Match3AnimalAppearance.Face> animalFaces;
     final List<Glyph> glyphs, checkmarks, levelSuffixes;
     private Match3VisualCatalog() {
         available = false; id = "unavailable";
         steps = goals = cells = animals = Collections.emptyList(); glyphs = checkmarks = levelSuffixes = Collections.emptyList();
+        animalFaces=Collections.emptyList();
     }
     private Match3VisualCatalog(JSONObject json) throws Exception {
         if (!"match3-fixed-ui-v1".equals(json.getString("format"))) throw new IllegalArgumentException("Catalog format");
         id = json.getString("id"); steps = patterns(json.getJSONArray("steps"));
         goals = patterns(json.getJSONArray("goals"));
         List<Pattern> objects=new ArrayList<>(), faces=new ArrayList<>();
-        for(Pattern pattern:patterns(json.getJSONArray("cells")))
-            (pattern.kind.startsWith("animal_")?faces:objects).add(pattern);
+        List<Match3AnimalAppearance.Face> descriptors=new ArrayList<>();
+        for(Pattern pattern:patterns(json.getJSONArray("cells"))) {
+            if(pattern.kind.startsWith("animal_") && pattern.kind.length()==8) {
+                Match3AnimalAppearance.Face face=new Match3AnimalAppearance.Face(pattern.kind.charAt(7),pattern.pixels);
+                if(face.detailed) { faces.add(pattern);descriptors.add(face); }
+            } else objects.add(pattern);
+        }
         cells=Collections.unmodifiableList(objects);animals=Collections.unmodifiableList(faces);
+        animalFaces=Collections.unmodifiableList(descriptors);
         List<Glyph> parsed = new ArrayList<>(); JSONArray digits = json.getJSONArray("glyphs");
         for (int i = 0; i < digits.length(); i++) parsed.add(new Glyph(digits.getJSONObject(i)));
         glyphs = Collections.unmodifiableList(parsed); available = !steps.isEmpty() && !goals.isEmpty() && !glyphs.isEmpty();
@@ -154,7 +163,7 @@ final class Match3VisualCatalog {
         int ix = width/10, iy = height/10;
         int[] observed = patch(pixels,width,ix,iy,width-ix,height-iy);
         if(java.util.Arrays.equals(cache.patch,observed))return cache.result;
-        cache.patch=observed;cache.result=classifyObstacle(observed);cache.animalChecked=false;cache.animal=null;
+        cache.patch=observed;cache.result=classifyObstacle(observed);cache.animalChecked=false;cache.animal=null;cache.face=null;
         return cache.result;
     }
     /** A positive animal face can survive a decorated lane or an idle outline; hue alone cannot. */
@@ -163,9 +172,21 @@ final class Match3VisualCatalog {
             String kind=cache.patch==null?null:recognize(animals,cache.patch,.12f,.025f);
             if(kind!=null && kind.length()==8 && Match3Sampler.isMovable(kind.charAt(7)))
                 cache.animal=Match3Position.Cell.animal(kind.charAt(7));
+            if(cache.animal==null && cache.patch!=null) {
+                char color=Match3AnimalAppearance.recognize(face(cache),animalFaces,1);
+                if(Match3Sampler.isMovable(color))cache.animal=Match3Position.Cell.animal(color);
+            }
             cache.animalChecked=true;
         }
         return cache.animal;
+    }
+    static Match3AnimalAppearance.Face face(CellCache cache) {
+        if(cache.face==null)cache.face=new Match3AnimalAppearance.Face('.',cache.patch);
+        return cache.face;
+    }
+    static Match3AnimalAppearance.Face face(CellCache cache,char color) {
+        if(cache.face==null || cache.face.color!=color)cache.face=new Match3AnimalAppearance.Face(color,cache.patch);
+        return cache.face;
     }
     private Match3Position.Cell classifyObstacle(int[] observed) {
         String kind = recognize(cells,observed,.12f,.025f);

@@ -13,6 +13,7 @@ import java.util.List;
 final class Match3HudReader {
     private static final int WIDTH = 432, MAX_HEIGHT = 200;
     private final Match3VisualCatalog catalog;
+    private final Match3VisualIdentity identities=new Match3VisualIdentity();
     private int[] previous;
     private int previousHeight;
     private Match3Goals cached;
@@ -24,7 +25,7 @@ final class Match3HudReader {
     private String status = "unread";
     Match3HudReader(Context context) { catalog = Match3VisualCatalog.get(context); }
     String status() { return status; }
-    void clear() { previous = null; cached = null; previousHeight = 0; status = "unread"; }
+    void clear() { previous = null; cached = null; previousHeight = 0; status = "unread";identities.clear(); }
     void close() { clear(); if(headerBitmap!=null)headerBitmap.recycle();headerBitmap=null;headerCanvas=null;working=null; }
 
     private static final class Box {
@@ -142,7 +143,12 @@ final class Match3HudReader {
             Box counter=new Box((int)(b.left+b.width()*.53f),(int)(b.top+b.height()*.49f),b.right-3,b.bottom-3,0);
             boolean complete=kind!=Match3Goals.Kind.UNKNOWN && checkmark(pixels,counter);
             int count=complete?0:integer(pixels,counter,false);
-            targets.add(new Match3Goals.Target(i,kind,count,complete));
+            // Only the icon's upper area is compared: changing counter digits are
+            // not a new type, and different unknown mission artwork is not one kind.
+            String visualId=kind==Match3Goals.Kind.UNKNOWN?identities.identify(i,
+                    Match3VisualCatalog.patch(pixels,WIDTH,b.left+3,b.top+2,b.right-3,
+                            b.top+Math.max(3,(int)(b.height()*.49f)))):"";
+            targets.add(new Match3Goals.Target(i,kind,count,complete,visualId));
         }
         Box number=new Box((int)(step.left+step.width()*.10f),(int)(step.top+step.height()*.20f),
                 (int)(step.right-step.width()*.10f),(int)(step.top+step.height()*.78f),0);

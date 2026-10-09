@@ -38,7 +38,6 @@ public class Match3LiveService extends Service {
     static final String EXTRA_FULL_DISPLAY = "full_display_capture";
     private static final int NOTIFICATION_ID = 3002;
     private static final long CAPTURE_INTERVAL_MS = 800;
-    private static final int STABLE_FRAMES = 3;
     private static final long MIN_ANNOUNCE_GAP_MS = 6000;
     private static final long IDLE_HINT_MS = 15000;
     private static volatile boolean running;
@@ -89,8 +88,10 @@ public class Match3LiveService extends Service {
         long boardRevision, lastHintSpokenRevision = -1;
         int hintAttempts;
         char[][] lastStableMatrix;
-        Match3Position lastStablePosition, previousPosition;
-        int positionSamples;
+        Match3Position lastStablePosition, hintPosition;
+        Match3Goals hintGoals;
+        long hintGoalsSeenAt;
+        final Match3CellConfirmation cellConfirmation = new Match3CellConfirmation();
         Match3HudReader hudReader;
         final Match3GoalConfirmation goalConfirmation = new Match3GoalConfirmation();
         Match3Goals goals = Match3Goals.unknown(0);
@@ -108,12 +109,9 @@ public class Match3LiveService extends Service {
         volatile long frameAt;
         long processedFrames;
         String recommendationGate = "starting";
-        int unknownCells, excludedCells, visibleRuns;
+        int unknownCells, excludedCells, visibleRuns, unconfirmedCells;
         long geometryWaitingFrames, boardChangingFrames, cascadeWaitingFrames;
         long lastProcessedAt = -CAPTURE_INTERVAL_MS;
-        char[][][] rawWindow = new char[STABLE_FRAMES][][];
-        int rawIdx, rawFill;
-        final Match3BoardConfirmation confirmation = new Match3BoardConfirmation();
         List<Match3Board.Swap> lastSwaps;
         long lastChangeAt, lastAnnounceAt, lastTouchHandledAt;
         int hintCount, liveRows = 8, liveCols = 8;
@@ -366,6 +364,7 @@ public class Match3LiveService extends Service {
                     "board_revision", s.boardRevision,
                     "recommendation_gate", s.recommendationGate,
                     "unknown_cells", s.unknownCells, "excluded_cells", s.excludedCells,
+                    "unconfirmed_cells", s.unconfirmedCells, "confirmation_scope", "per_cell_fresh",
                     "visible_runs", s.visibleRuns,
                     "geometry_waiting_frames", s.geometryWaitingFrames,
                     "board_changing_frames", s.boardChangingFrames,
@@ -443,11 +442,9 @@ public class Match3LiveService extends Service {
     }
 
     private static void resetWindow(Session s) {
-        s.rawWindow = new char[STABLE_FRAMES][][];
-        s.rawIdx = s.rawFill = 0;
         s.boardValid = false;
-        s.confirmation.reset();
-        s.previousPosition = null; s.positionSamples = 0;
+        s.cellConfirmation.reset();
+        s.unconfirmedCells=0;
     }
 
     private boolean saveCalibration(Session s, int[] bounds, int rows, int cols) {
@@ -505,85 +502,88 @@ public class Match3LiveService extends Service {
             s.diagnostics.audit("Match3GoalObserved status="+s.hudReader.status()+" confirmed="+s.goals.hudVerified
                     +" level="+s.goals.level+" steps="+s.goals.steps+" key="+s.goals.key());
         }
-        Match3Position position=s.sampler.samplePosition(frame);
+        Match3Position position=s.sampler.samplePosition(frame,s.frameAt);
         s.outcomes.observeFrame(position,observedGoals,s.frameAt);
         s.outcomes.confirmed(s.goals,s.frameAt);
         boolean goalsConfirming=observedGoals.hudVerified && !s.goals.hudVerified;
-        if(goalsConfirming)invalidateHint(s,"GOAL_CONFIRMING");
-        if(position.sameCells(s.previousPosition))s.positionSamples++;else s.positionSamples=1;
-        s.previousPosition=position;
-        char[][] raw = position.matrix();
-        if (s.currentHint != null && (countDiffCells(s.lastStableMatrix, raw) > 0
-                || !position.sameCells(s.lastStablePosition)))
-            invalidateHint(s, "BOARD_CHANGED");
-        s.rawWindow[s.rawIdx] = raw;
-        s.rawIdx = (s.rawIdx + 1) % STABLE_FRAMES;
-        if (s.rawFill < STABLE_FRAMES) s.rawFill++;
-        if (s.rawFill < STABLE_FRAMES) { recommendationGate(s, "sampling"); return; }
-        // Observe EVERY raw frame. Skipping the non-majority frame would leave an
-        // accepted A in this gate and let A/B/A immediately resurrect its old hint.
-        boolean consecutivelyConfirmed = s.confirmation.accept(raw);
-        char[][] matrix = majorityMatrix(s.rawWindow);
+        if (s.currentHint != null && s.hintGoals != null && s.hintGoals.hudVerified) {
+            if (observedGoals.hudVerified) {
+                if(!s.hintGoals.sameValues(observedGoals))invalidateHint(s,"GOAL_CHANGED");
+                else s.hintGoalsSeenAt=s.frameAt;
+            } else if(s.frameAt-s.hintGoalsSeenAt>2400)invalidateHint(s,"GOAL_STALE");
+        }
+        s.visibleRuns=Match3Board.findRuns(position.matrix()).size();
+        if(s.visibleRuns>0) {
+            s.cascadeWaitingFrames++;recommendationGate(s,"cascade");
+            invalidateHint(s,"CASCADE");s.cellConfirmation.reset();return;
+        }
+        if(s.sampler.frameMotion()) {
+            s.boardChangingFrames++;recommendationGate(s,"visual_motion");
+            invalidateHint(s,"VISUAL_MOTION");s.cellConfirmation.reset();return;
+        }
+        Match3CellConfirmation.Snapshot confirmed = s.cellConfirmation.accept(position,s.frameAt);
+        if (confirmed == null) { invalidateHint(s,"OBSERVATION_INVALID");return; }
+        position = confirmed.position;
+        s.unconfirmedCells = confirmed.unconfirmed;
+        char[][] matrix = position.matrix();
         int unknown = countUnknown(matrix), total = matrix.length * matrix[0].length;
         s.unknownCells = unknown; s.excludedCells = 0;
         for (char[] row : matrix) for (char cell : row)
             if (cell == Match3Sampler.NON_SWAP_CELL) s.excludedCells++;
-        s.visibleRuns = 0;
-        if (isUnreadableBoard(matrix)) {
-            recommendationGate(s, "unreadable");
-            if (!s.abstainAnnounced) {
-                s.abstainAnnounced = true;
-                s.diagnostics.audit("Match3GeometryRejected reason=unreadable unknown=" + unknown + "/" + total);
-            }
-            invalidateBoard(s, "UNREADABLE");
-            return;
-        }
-        // Do not restore a previous-window hint over a board that is currently moving.
-        if (!matrixEquals(matrix, raw) || !consecutivelyConfirmed || s.positionSamples<STABLE_FRAMES) {
+        if (!confirmed.quiet) {
             s.boardChangingFrames++;
             recommendationGate(s, "board_changing");
+            invalidateHint(s,"BOARD_MOTION");
             return;
         }
         // Visible matches have not finished resolving. Never recommend a new
         // exchange while an automatic elimination/cascade is still on screen.
-        s.visibleRuns = Match3Board.findRuns(matrix).size();
+        s.visibleRuns = Match3Board.findRuns(position.matrix()).size();
         if (s.visibleRuns > 0) {
             s.cascadeWaitingFrames++;
             recommendationGate(s, "cascade");
             invalidateHint(s, "CASCADE");
-            s.confirmation.reset();
+            s.cellConfirmation.reset();
             return;
         }
         s.boardValid = true;
-        // The HUD is readable but not yet temporally confirmed. Do not replace
-        // the task hint with a basic hint and immediately announce it again.
-        if(goalsConfirming) { recommendationGate(s,"goal_confirming");return; }
         boolean changed = !matrixEquals(s.lastStableMatrix, matrix) || !position.sameCells(s.lastStablePosition);
         boolean goalsChanged = !s.rankedGoalKey.equals(s.goals.key());
-        // After stable confirmation, even one changed cell is a new revision.
-        // Ignoring it forever could keep a hint across a real obstacle/tile change.
         if (changed) {
-            invalidateHint(s, "BOARD_CHANGED");
             s.lastStableMatrix = matrix;
             s.lastStablePosition = position;
             s.boardRevision++;
         }
         if(changed || goalsChanged || s.rankedMoves == null) {
-            if(goalsChanged)invalidateHint(s,"GOAL_CHANGED");
             s.rankedGoalKey=s.goals.key();
             s.rankedMoves=Match3MoveRanker.rankedMoves(position,s.goals,s.outcomes.abstainedRules());
             s.lastSwaps=new java.util.ArrayList<>();
             for(Match3MoveValue value:s.rankedMoves)s.lastSwaps.add(value.swap);
-            s.hintCount = 0; s.hintAttempts = 0;
-            s.lastChangeAt = SystemClock.elapsedRealtime();
             s.diagnostics.audit("BoardRecognized rows=" + matrix.length + " cols=" + matrix[0].length
                     + " unknown=" + unknown + "/" + total + " swaps=" + s.lastSwaps.size()
-                    + " revision=" + s.boardRevision + " " + s.geometry);
+                    + " revision=" + s.boardRevision + " confirmation=per_cell " + s.geometry);
         }
+        // An unread HUD may not lend old goal values to a new hint. A still-valid
+        // existing hint can finish through a brief unread/confirmation frame.
+        if (s.currentHint != null) {
+            Match3Goals validityGoals = s.hintGoals;
+            java.util.List<Match3MoveValue> validityMoves = s.rankedMoves;
+            if (validityGoals != null && !validityGoals.key().equals(s.goals.key()))
+                validityMoves = Match3MoveRanker.rankedMoves(position,validityGoals,s.outcomes.abstainedRules());
+            if (!Match3HintValidity.valid(s.hintPosition,position,s.currentHint.value,validityMoves))
+                invalidateHint(s,"HINT_EVIDENCE_CHANGED");
+            else if (s.goals.hudVerified && !s.currentHint.goalKey.equals(s.goals.key()))
+                invalidateHint(s,"GOAL_CHANGED");
+        }
+        if(goalsConfirming && s.currentHint == null) { recommendationGate(s,"goal_confirming");return; }
         if (s.currentHint == null && s.lastSwaps != null && !s.lastSwaps.isEmpty()) {
             s.currentHint = new Match3Hint(s.diagnostics.sessionId, ++s.hintRevision, s.frameAt,
                     s.geometry, s.rankedMoves.get(0),s.goals.key());
             Match3Hint hint = s.currentHint;
+            s.hintPosition=position;s.hintGoals=s.goals;
+            s.hintGoalsSeenAt=s.frameAt;
+            s.hintCount = 0; s.hintAttempts = 0;
+            s.lastChangeAt = SystemClock.elapsedRealtime();
             s.diagnostics.audit("Match3Hint revision=" + hint.revision + " from="
                     + hint.swap.fromRow + "," + hint.swap.fromCol + " to="
                     + hint.swap.toRow + "," + hint.swap.toCol + " origin=top_left_zero_based "
@@ -609,7 +609,9 @@ public class Match3LiveService extends Service {
     private static org.json.JSONObject goalState(Match3Goals goals) {
         org.json.JSONArray targets=new org.json.JSONArray();
         for(Match3Goals.Target target:goals.targets)targets.put(DiagnosticRecorder.object("slot",target.slot,
-                "kind",target.kind.name(),"remaining",target.remaining,"completed",target.completed));
+                "kind",target.kind.name(),"visual_id",target.visualId,
+                "rule_supported",target.kind!=Match3Goals.Kind.UNKNOWN,
+                "remaining",target.remaining,"completed",target.completed));
         return DiagnosticRecorder.object("hud_verified",goals.hudVerified,"level",goals.level,"steps",goals.steps,
                 "observed_at_ms",goals.observedAtMs,"targets",targets,"unknown_count_value",-1);
     }
@@ -649,15 +651,8 @@ public class Match3LiveService extends Service {
         Match3Sampler sampler = new Match3Sampler(this, confirmed);
         boolean adopted = false;
         try {
-        if (isUnreadableBoard(sampler.sample(frame))) {
-            sampler.close();
-            s.geometryConfirmation.reset();
-            if (!s.abstainAnnounced) {
-                s.abstainAnnounced = true;
-                s.diagnostics.audit("Match3GeometryRejected reason=cells_unreadable");
-            }
-            return false;
-        }
+        // Geometry has independent edge/grid evidence. Unknown mechanics inside
+        // its rectangle do not invalidate it; recommendations require certified cells.
         var prefs = GameProfile.settings(this);
         int[] savedBounds = {prefs.getInt("match3_l", 4), prefs.getInt("match3_t", 18),
                 prefs.getInt("match3_r", 96), prefs.getInt("match3_b", 82)};
@@ -692,6 +687,7 @@ public class Match3LiveService extends Service {
     private void invalidateHint(Session s, String reason) {
         Match3Hint old = s.currentHint;
         s.currentHint = null;
+        s.hintPosition=null;s.hintGoals=null;
         String cueId = s.hintCueId; s.hintCueId = null;
         if (dispatcher != null && cueId != null) dispatcher.cancelCue(cueId, reason);
         if (s.overlay != null) s.overlay.clear();
@@ -827,18 +823,6 @@ public class Match3LiveService extends Service {
         return cols == 0 || countUnknown(matrix) * 100L > matrix.length * (long) cols * 40;
     }
 
-    private static int countDiffCells(char[][] a, char[][] b) {
-        if (a == null || b == null || a.length != b.length) return Integer.MAX_VALUE;
-        for (int r = 0; r < a.length; r++) if (a[r].length != b[r].length) return Integer.MAX_VALUE;
-        int diff = 0;
-        for (int r = 0; r < Math.min(a.length, b.length); r++) {
-            for (int c = 0; c < Math.min(a[r].length, b[r].length); c++) {
-                if (a[r][c] != b[r][c]) diff++;
-            }
-        }
-        return diff;
-    }
-
     private static boolean matrixEquals(char[][] a, char[][] b) {
         if (a == null || b == null) return false;
         if (a.length != b.length) return false;
@@ -858,6 +842,7 @@ public class Match3LiveService extends Service {
             invalidateHint(s, "FRAME_STALE");
             if(s.outcomes!=null)s.outcomes.cancel("FRAME_STALE");
             s.goalConfirmation.clear();s.goals=Match3Goals.unknown(now);
+            s.cellConfirmation.reset();
             return;
         }
         if (s.exploreMode || s.popupAnnounced || !s.boardValid) return;
