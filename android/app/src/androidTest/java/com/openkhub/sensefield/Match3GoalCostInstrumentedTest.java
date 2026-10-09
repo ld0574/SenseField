@@ -37,6 +37,7 @@ public final class Match3GoalCostInstrumentedTest {
         Bitmap[] frames={load("screen-73-2252754942.jpg"),load("screen-203-2252860078.jpg"),load("screen-229-2252881089.jpg")};
         Match3Sampler[] samplers=new Match3Sampler[frames.length];Match3HudReader reader=new Match3HudReader(context);
         long[][] wall=new long[2][30],cpu=new long[2][30];
+        long[][] goalStages=new long[3][30];
         try {
             for(int i=0;i<frames.length;i++) { BoardGeometry g=Match3Sampler.autoDetectGeometry(frames[i]);assertNotNull(g);samplers[i]=new Match3Sampler(context,g); }
             for(int iteration=-8;iteration<30;iteration++)for(int mode=0;mode<2;mode++) {
@@ -46,9 +47,17 @@ public final class Match3GoalCostInstrumentedTest {
                 BoardGeometry geometry=Match3Sampler.autoDetectGeometry(frames[index]);assertNotNull(geometry);
                 if(variant==0)Match3MoveRanker.rankedSwaps(Match3Sampler.sample(frames[index],geometry,Collections.emptyList()));
                 else {
+                    long sampledAt=SystemClock.elapsedRealtimeNanos();
                     Match3Position position=samplers[index].samplePosition(frames[index]);
+                    long readAt=SystemClock.elapsedRealtimeNanos();
                     Match3Goals goals=reader.read(frames[index],geometry,SystemClock.elapsedRealtime());
+                    long rankedAt=SystemClock.elapsedRealtimeNanos();
                     Match3MoveRanker.rankedMoves(position,goals);
+                    if(iteration>=0) {
+                        goalStages[0][iteration]=readAt-sampledAt;
+                        goalStages[1][iteration]=rankedAt-readAt;
+                        goalStages[2][iteration]=SystemClock.elapsedRealtimeNanos()-rankedAt;
+                    }
                 }
                 long cost=SystemClock.elapsedRealtimeNanos()-start,cpuCost=Debug.threadCpuTimeNanos()-cpuStart;
                 if(iteration>=0) { wall[variant][iteration]=cost;cpu[variant][iteration]=cpuCost; }
@@ -58,6 +67,9 @@ public final class Match3GoalCostInstrumentedTest {
                     .put("baseline_wall_p50_ms",percentile(wall[0],.5)).put("baseline_wall_p95_ms",percentile(wall[0],.95))
                     .put("goal_wall_p50_ms",percentile(wall[1],.5)).put("goal_wall_p95_ms",percentile(wall[1],.95))
                     .put("baseline_cpu_p95_ms",percentile(cpu[0],.95)).put("goal_cpu_p95_ms",percentile(cpu[1],.95))
+                    .put("goal_sampling_p95_ms",percentile(goalStages[0],.95))
+                    .put("goal_hud_p95_ms",percentile(goalStages[1],.95))
+                    .put("goal_ranking_p95_ms",percentile(goalStages[2],.95))
                     .put("p95_change_percent",100*(percentile(wall[1],.95)/percentile(wall[0],.95)-1))
                     .put("physical_thermal_gate_passed",false).put("patient_trial_gate_passed",false);
             File dir=context.getExternalFilesDir("match3-release-capture");assertNotNull(dir);dir.mkdirs();

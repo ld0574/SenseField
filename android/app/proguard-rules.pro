@@ -85,6 +85,61 @@
 -keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3LiveService {
     static boolean isRunning();
 }
+# Fault-photo checks cross the separate Release test APK boundary. Retain only
+# these typed observation/drawing contracts; the rest of Match3 still shrinks.
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3Sampler {
+    <init>(android.content.Context, com.openkhub.sensefield.BoardGeometry);
+    static com.openkhub.sensefield.BoardGeometry autoDetectGeometry(android.graphics.Bitmap);
+    static boolean isMovable(char);
+    com.openkhub.sensefield.Match3Position samplePosition(android.graphics.Bitmap);
+    public void close();
+}
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.BoardGeometry {
+    <init>(int,int,int,int,int,int,int,int);
+    int frameWidth; int frameHeight; int left; int top; int right; int bottom; int rows; int cols;
+    boolean sameGrid(com.openkhub.sensefield.BoardGeometry);
+}
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3Position {
+    com.openkhub.sensefield.Match3Position$Cell cell(int,int);
+    char[][] matrix();
+    boolean sameCells(com.openkhub.sensefield.Match3Position);
+}
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3Position$Cell {
+    com.openkhub.sensefield.Match3Position$Kind kind;
+    char color; boolean swappable;
+    char code();
+}
+-keep enum com.openkhub.sensefield.Match3Position$Kind { *; }
+-keep enum com.openkhub.sensefield.Match3Goals$Kind { *; }
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3Goals {
+    boolean hudVerified; int steps; java.util.List targets;
+    int remaining(com.openkhub.sensefield.Match3Goals$Kind);
+    boolean fullyKnown();
+}
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3Goals$Target {
+    com.openkhub.sensefield.Match3Goals$Kind kind; int remaining;
+}
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3HudReader {
+    <init>(android.content.Context);
+    com.openkhub.sensefield.Match3Goals read(android.graphics.Bitmap,com.openkhub.sensefield.BoardGeometry,long);
+    java.lang.String status();
+    public void close();
+}
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3Hint {
+    <init>(java.lang.String,long,long,com.openkhub.sensefield.BoardGeometry,com.openkhub.sensefield.Match3Board$Swap);
+}
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3Board$Swap {
+    <init>(int,int,int,int,int);
+}
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3HintOverlay$HintView {
+    <init>(android.content.Context);
+    com.openkhub.sensefield.Match3Hint hint;
+    void drawHint(android.graphics.Canvas);
+}
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3OverlayCaptureFilter {
+    <init>(android.content.Context);
+    boolean clean(android.graphics.Bitmap,com.openkhub.sensefield.Match3Hint,float);
+}
 -keep,allowobfuscation class com.openkhub.sensefield.DiagnosticRecorder {
     static com.openkhub.sensefield.DiagnosticRecorder current;
     static java.util.concurrent.ExecutorService IO;

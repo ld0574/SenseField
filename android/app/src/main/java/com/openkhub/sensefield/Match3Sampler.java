@@ -128,8 +128,17 @@ final class Match3Sampler implements AutoCloseable {
         Match3Position.Cell[][] cells=new Match3Position.Cell[g.rows][g.cols];
         int w=g.cellWidth(),h=g.cellHeight(),half=Math.max(3,Math.min(w,h)/8);
         for(int r=0;r<g.rows;r++)for(int c=0;c<g.cols;c++) {
-            char legacy=classifyBoardCell(bitmap,g.centerX(c),g.centerY(r),w,h,half,Collections.emptyList());
             Match3Position.Cell known=observations.obstacle(bitmap,g,r,c,observationPixels,observationCache[r][c]);
+            // Bright sky in a rectangular envelope is not a white task block.
+            // Require current board-edge support, using the existing dark/cold board domain.
+            if(known!=null && known.kind==Match3Position.Kind.SNOW && !boardEdgeSupported(bitmap,g,r,c))
+                known=Match3Position.Cell.obstacle(Match3Position.Kind.SURFACE,-1);
+            // Known object identity already takes precedence over hue. Avoid
+            // re-reading those same pixels through an unused colour classifier.
+            if(known!=null) { cells[r][c]=known;continue; }
+            char legacy=classifyBoardCell(bitmap,g.centerX(c),g.centerY(r),w,h,half,Collections.emptyList());
+            if(!isMovable(legacy) && legacy!=EMPTY_CELL && legacy!=GAP_CELL)
+                known=observations.animal(observationCache[r][c]);
             if(known!=null)cells[r][c]=known;
             else if(isMovable(legacy)) cells[r][c]=Match3Position.Cell.animal(legacy);
             else if(legacy==EMPTY_CELL || legacy==GAP_CELL)
@@ -140,6 +149,24 @@ final class Match3Sampler implements AutoCloseable {
             }
         }
         return new Match3Position(cells);
+    }
+
+    private static boolean boardEdgeSupported(Bitmap frame,BoardGeometry g,int row,int col) {
+        int l=(int)g.cellLeft(col),r=(int)g.cellLeft(col+1)-1;
+        int t=(int)g.cellTop(row),b=(int)g.cellTop(row+1)-1;
+        int x=g.centerX(col),y=g.centerY(row);float[] hsv=new float[3];
+        int[][] points={{l+1,y},{r-1,y},{x,t+1},{x,b-1}};int sides=0;
+        for(int[] point:points) {
+            boolean supported=false;
+            for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++) {
+                int xx=point[0]+dx,yy=point[1]+dy;
+                if(xx<=l || yy<=t || xx>=r || yy>=b)continue;
+                Color.colorToHSV(frame.getPixel(xx,yy),hsv);
+                if(hsv[2]<.5f && hsv[0]>=170f && hsv[0]<=300f)supported=true;
+            }
+            if(supported && ++sides>=2)return true;
+        }
+        return false;
     }
 
     /** 按标定采样整个棋盘。templates 可为 null/空。 */

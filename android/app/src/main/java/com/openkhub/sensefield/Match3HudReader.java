@@ -92,7 +92,26 @@ final class Match3HudReader {
                 candidates.add(new Box(box.left,top,box.right,box.bottom,box.area));
         }
         Box step=null;float best=Float.POSITIVE_INFINITY;
-        for (Box box:candidates) if (box.left>WIDTH*.70f) {
+        List<Box> stepCandidates=new ArrayList<>(candidates);
+        // Wide white digits can split the orange badge into separate components.
+        // Join overlapping component envelopes only in the step area, then keep
+        // the same positive badge template and independent numeral checks.
+        List<Box> fragments=new ArrayList<>();
+        for(Box box:candidates)if(box.left>WIDTH*.70f)fragments.add(box);
+        for(int i=0;i<fragments.size();i++) {
+            Box joined=fragments.get(i);boolean expanded;
+            do {
+                expanded=false;
+                for(Box other:fragments)if(other.left<joined.right && other.right>joined.left
+                        && other.top<joined.bottom && other.bottom>joined.top
+                        && (other.left<joined.left || other.right>joined.right || other.top<joined.top || other.bottom>joined.bottom)) {
+                    joined=new Box(Math.min(joined.left,other.left),Math.min(joined.top,other.top),
+                            Math.max(joined.right,other.right),Math.max(joined.bottom,other.bottom),0);expanded=true;
+                }
+            }while(expanded);
+            if(joined.width()<=100 && joined.height()<=110)stepCandidates.add(joined);
+        }
+        for (Box box:stepCandidates) if (box.left>WIDTH*.70f) {
             int[] patch=Match3VisualCatalog.patch(pixels,WIDTH,box.left,box.top,box.right,box.bottom);
             for (Match3VisualCatalog.Pattern pattern:catalog.steps) {
                 float distance=pattern.difference(patch);
@@ -101,7 +120,7 @@ final class Match3HudReader {
         }
         if (step==null) { status="step_badge_unverified";return Match3Goals.unknown(at); }
         List<Box> boxes=new ArrayList<>();
-        for (Box b:candidates) if (b!=step && b.right<step.left && Math.abs(b.top-step.top)<36 && b.height()>=30 && b.height()<=75)
+        for (Box b:candidates) if (b.right<step.left && Math.abs(b.top-step.top)<36 && b.height()>=30 && b.height()<=75)
             boxes.add(b);
         boxes.sort(Comparator.comparingInt(b->b.left));
         if (boxes.isEmpty() || boxes.size()>6) { status="goal_cards_unverified";return Match3Goals.unknown(at); }

@@ -124,4 +124,40 @@ public final class Match3GoalVisionInstrumentedTest {
             assertEquals(0,best.collected(Match3Goals.Kind.CHICK));assertEquals("清除障碍",best.reason);
         } finally { reader.close();bitmap.recycle(); }
     }
+    @Test public void boundedTemplateWorkKeepsTheFullDistanceDecisionOnKnownAndUnknownArtwork() throws Exception {
+        Match3VisualCatalog catalog=Match3VisualCatalog.get(context());
+        for(String name:new String[]{"screen-73-2252754942.jpg","screen-284-2285557292.jpg","screen-128-2290482080.jpg"}) {
+            Bitmap frame=load(name);BoardGeometry g=Match3Sampler.autoDetectGeometry(frame);assertNotNull(g);
+            try {
+                int[] pixels=new int[frame.getWidth()*frame.getHeight()];
+                frame.getPixels(pixels,0,frame.getWidth(),0,0,frame.getWidth(),frame.getHeight());
+                for(int r=0;r<g.rows;r++)for(int c=0;c<g.cols;c++) {
+                    int left=(int)g.cellLeft(c),right=(int)g.cellLeft(c+1),top=(int)g.cellTop(r),bottom=(int)g.cellTop(r+1);
+                    int ix=(right-left)/10,iy=(bottom-top)/10;
+                    int[] patch=Match3VisualCatalog.patch(pixels,frame.getWidth(),left+ix,top+iy,right-ix,bottom-iy);
+                    assertFullDecision(catalog.cells,patch);assertFullDecision(catalog.animals,patch);
+                }
+            } finally {frame.recycle();}
+        }
+        // Exact templates and unrelated solid colours include accepted, ambiguous
+        // and rejected inputs. The oracle always computes every full distance.
+        for(Match3VisualCatalog.Pattern pattern:catalog.cells)assertFullDecision(catalog.cells,pattern.pixels);
+        for(Match3VisualCatalog.Pattern pattern:catalog.animals)assertFullDecision(catalog.animals,pattern.pixels);
+        for(int color:new int[]{0,0xffffff,0x00ff00,0xff00ff}) {
+            int[] patch=new int[256];java.util.Arrays.fill(patch,color);
+            assertFullDecision(catalog.cells,patch);assertFullDecision(catalog.animals,patch);
+        }
+    }
+    private static void assertFullDecision(java.util.List<Match3VisualCatalog.Pattern> patterns,int[] patch) {
+        java.util.Map<String,Float> errors=new java.util.HashMap<>();
+        for(Match3VisualCatalog.Pattern pattern:patterns)
+            errors.merge(pattern.kind,pattern.difference(patch),Math::min);
+        String wanted=null;float first=Float.POSITIVE_INFINITY,second=Float.POSITIVE_INFINITY;
+        for(java.util.Map.Entry<String,Float> entry:errors.entrySet()) {
+            if(entry.getValue()<first) {second=first;first=entry.getValue();wanted=entry.getKey();}
+            else second=Math.min(second,entry.getValue());
+        }
+        if(first>.12f || second-first<.025f)wanted=null;
+        assertEquals("Early rejection preserves the uncapped decision",wanted,Match3VisualCatalog.recognize(patterns,patch,.12f,.025f));
+    }
 }

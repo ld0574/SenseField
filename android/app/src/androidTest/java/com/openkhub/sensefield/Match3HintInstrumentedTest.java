@@ -285,6 +285,149 @@ public final class Match3HintInstrumentedTest {
             while (in.read() != -1) { }
         }
     }
+
+    /** Real projection/dispatcher cancellation check with a controlled renderer, not acoustic evidence. */
+    @Test public void idlePhotosCannotCancelASevenSecondHintInTheActualProjection() throws Exception {
+        assertTrue(android.os.Build.HARDWARE.contains("ranchu") || android.os.Build.HARDWARE.contains("goldfish"));
+        String[] names = {"screen-284-2285557292.jpg", "screen-297-2285567809.jpg", "screen-310-2285578323.jpg"};
+        Bitmap[] frames = new Bitmap[names.length];
+        for (int i = 0; i < names.length; i++) {
+            java.io.InputStream input;
+            try { input = InstrumentationRegistry.getInstrumentation().getContext().getAssets().open(names[i]); }
+            catch (java.io.IOException absent) { Assume.assumeNoException(absent); return; }
+            try (input) { frames[i] = BitmapFactory.decodeStream(input); }
+        }
+        android.content.SharedPreferences prefs = GameProfile.settings(context());
+        java.util.Map<String, ?> previous = prefs.getAll();
+        String[] keys = {"match3_overlay_permission_explained", "match3_hint_highlight_enabled",
+                "cue_channel_speech", "cue_category_system"};
+        android.content.SharedPreferences.Editor edit = prefs.edit();
+        for (String key : keys) edit.putBoolean(key, true);
+        edit.commit();
+        android.os.Handler callbacks = new android.os.Handler(android.os.Looper.getMainLooper());
+        CountDownLatch completed = new CountDownLatch(1), installed = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<Throwable> failure = new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<CueRequest> spoken = new java.util.concurrent.atomic.AtomicReference<>();
+        AtomicInteger stopped = new AtomicInteger();
+        FeedbackPhoto[] replay = new FeedbackPhoto[1];
+        try (ActivityScenario<Match3AssistActivity> scenario = ActivityScenario.launch(Match3AssistActivity.class)) {
+            scenario.onActivity(a -> clickNamed(a.getWindow().getDecorView(), "开始辅助"));
+            await("Actual projection authorized", 10000, () -> {
+                confirmCapture(InstrumentationRegistry.getInstrumentation().getUiAutomation().getRootInActiveWindow());
+                return Match3LiveService.isRunning();
+            });
+            Match3LiveService service = Match3LiveService.testInstance();
+            assertNotNull(service);
+            ((android.os.Handler) get(service, "handler")).post(() -> {
+                try {
+                    Object session = get(service, "active");
+                    Method prepare = Match3LiveService.class.getDeclaredMethod("ensureDispatcher", session.getClass());
+                    prepare.setAccessible(true); prepare.invoke(service, session);
+                    CueDispatcher original = (CueDispatcher) get(service, "dispatcher");
+                    assertNotNull(original);
+                    CueDispatcher.Listener listener = (CueDispatcher.Listener) get(original, "listener");
+                    original.close();
+                    CueDispatcher.Renderer delayed = new CueDispatcher.Renderer() {
+                        public boolean playTone(CueRequest r, CueDispatcher.PlaybackCallback callback) { return false; }
+                        public boolean vibrate(CueRequest r) { return false; }
+                        public boolean speak(CueRequest r, boolean interrupt, CueDispatcher.PlaybackCallback callback) {
+                            spoken.set(r); callback.onStarted(SystemClock.elapsedRealtime());
+                            callbacks.postDelayed(() -> {
+                                callback.onFinished(SystemClock.elapsedRealtime(), true); completed.countDown();
+                            }, 7000);
+                            return true;
+                        }
+                        public void stopSpeech() { stopped.incrementAndGet(); callbacks.removeCallbacksAndMessages(null); }
+                    };
+                    set(service, "dispatcher", new CueDispatcher(delayed,
+                            new Match3LiveCuePolicy(new CueSettings(context())), listener, SystemClock::elapsedRealtime));
+                } catch (Throwable error) { failure.set(error); }
+                finally { installed.countDown(); }
+            });
+            assertTrue(installed.await(5, TimeUnit.SECONDS)); assertNull(failure.get());
+            scenario.onActivity(a -> { replay[0] = new FeedbackPhoto(a, frames[0]); showFeedbackPhoto(a, replay[0]); });
+            await("Stable real board starts the controlled long hint", 20000, () -> {
+                Match3DiagnosticReplayInstrumentedTest.dismissFullscreenTutorial(InstrumentationRegistry
+                        .getInstrumentation().getUiAutomation().getRootInActiveWindow());
+                return spoken.get() != null;
+            });
+            Object session = get(service, "active");
+            Match3Hint hint = (Match3Hint) get(session, "currentHint"); assertNotNull(hint);
+            long boardRevision = (long) get(session, "boardRevision");
+            long startedFrames = (long) get(session, "processedFrames");
+            for (int i = 0; i < 5; i++) {
+                Bitmap frame = frames[(i + 1) % frames.length];
+                // Keep the same real surface: changing setContentView would add
+                // layout/blank-frame transitions unrelated to sprite animation.
+                scenario.onActivity(a -> { replay[0].frame = frame; replay[0].invalidate(); });
+                SystemClock.sleep(1500);
+                assertSame("Idle artwork must not retire the exchange; "
+                        + DiagnosticRecorder.current.stateForDiagnostics(), hint, get(session, "currentHint"));
+                assertEquals(boardRevision, (long) get(session, "boardRevision"));
+            }
+            assertTrue("A seven-second utterance reaches its normal completion", completed.await(2, TimeUnit.SECONDS));
+            assertEquals("No software cancellation during idle animation", 0, stopped.get());
+            assertTrue((long) get(session, "processedFrames") >= startedFrames + 6);
+            assertNotNull(((Match3HintOverlay) get(session, "overlay")).renderedHint());
+            java.io.File directory = context().getExternalFilesDir("match3-release-capture");
+            assertNotNull(directory); directory.mkdirs();
+            String events = new String(java.nio.file.Files.readAllBytes(
+                    new java.io.File(DiagnosticRecorder.current.directory, "events.jsonl").toPath()),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            boolean finished = false;
+            for (String line : events.split("\n")) if (!line.isEmpty()) {
+                org.json.JSONObject event = new org.json.JSONObject(line), data = event.optJSONObject("data");
+                if ("CuePlayback".equals(event.optString("type")) && data != null
+                        && spoken.get().cueId.equals(data.optString("cue_id"))
+                        && "COMPLETED".equals(data.optString("result"))) finished = true;
+            }
+            assertTrue("Production listener records normal completion", finished);
+            org.json.JSONObject evidence = new org.json.JSONObject().put("source", "actual_projection_supplied_idle_photos")
+                    .put("renderer", "controlled_7000ms_callback").put("software_completion", true)
+                    .put("cancel_count", stopped.get()).put("board_revision", boardRevision)
+                    .put("acoustic_evidence", false).put("independent_accuracy_evidence", false);
+            java.nio.file.Files.write(new java.io.File(directory, "feedback-idle-speech.json").toPath(),
+                    evidence.toString(2).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } finally {
+            if (DiagnosticRecorder.current != null) {
+                java.io.File evidence = context().getExternalFilesDir("match3-release-capture");
+                assertNotNull(evidence); evidence.mkdirs();
+                java.nio.file.Files.copy(new java.io.File(DiagnosticRecorder.current.directory, "events.jsonl").toPath(),
+                        new java.io.File(evidence, "feedback-idle-events.jsonl").toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+            command(Match3LiveService.ACTION_STOP);
+            await("Projection stopped", 5000, () -> !Match3LiveService.isRunning());
+            callbacks.removeCallbacksAndMessages(null);
+            for (Bitmap frame : frames) if (frame != null) frame.recycle();
+            android.content.SharedPreferences.Editor restore = prefs.edit();
+            for (String key : keys) if (previous.containsKey(key)) restore.putBoolean(key, (Boolean) previous.get(key));
+            else restore.remove(key);
+            restore.commit();
+        }
+    }
+
+    private static void showFeedbackPhoto(Match3AssistActivity activity, View replay) {
+        activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        activity.getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+        activity.setContentView(replay);
+    }
+
+    private static final class FeedbackPhoto extends View {
+        Bitmap frame;
+        final Paint paint = new Paint();
+        int tick;
+        FeedbackPhoto(Context context, Bitmap frame) { super(context); this.frame = frame; }
+        @Override protected void onDraw(Canvas canvas) {
+            canvas.drawBitmap(frame, null, new android.graphics.Rect(0, 0, getWidth(), getHeight()), paint);
+            paint.setColor(0xff000000 | (100 + tick++ % 100));
+            canvas.drawRect(0, 0, 8, 8, paint);
+            postInvalidateDelayed(200);
+        }
+    }
     @Test public void fullProjectionKeepsRecognitionAndTouchesWorkingUnderTheHint() throws Exception {
         Assume.assumeTrue(android.provider.Settings.canDrawOverlays(context()));
         GameProfile.settings(context()).edit().putBoolean("match3_hint_highlight_enabled", true).apply();
