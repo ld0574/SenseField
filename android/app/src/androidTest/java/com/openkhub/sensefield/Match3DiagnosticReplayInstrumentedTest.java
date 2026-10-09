@@ -51,7 +51,7 @@ public final class Match3DiagnosticReplayInstrumentedTest {
         assertTrue(message, check.ready());
     }
 
-    private static void clickStart(View view) {
+    static void clickStart(View view) {
         if (view instanceof Button && "开始辅助".contentEquals(((Button) view).getText())) {
             view.performClick(); return;
         }
@@ -59,7 +59,7 @@ public final class Match3DiagnosticReplayInstrumentedTest {
             clickStart(((ViewGroup) view).getChildAt(i));
     }
 
-    private static void consent(AccessibilityNodeInfo node) {
+    static void consent(AccessibilityNodeInfo node) {
         if (node == null) return;
         String text = String.valueOf(node.getText());
         if (text.equalsIgnoreCase("Start now") || text.equalsIgnoreCase("Start recording")
@@ -69,7 +69,7 @@ public final class Match3DiagnosticReplayInstrumentedTest {
         for (int i = 0; i < node.getChildCount(); i++) consent(node.getChild(i));
     }
 
-    private static void dismissFullscreenTutorial(AccessibilityNodeInfo node) {
+    static void dismissFullscreenTutorial(AccessibilityNodeInfo node) {
         if (node == null) return;
         String text = String.valueOf(node.getText());
         if (text.equalsIgnoreCase("GOT IT") || text.equals("知道了")) {
@@ -83,7 +83,7 @@ public final class Match3DiagnosticReplayInstrumentedTest {
                 : new JSONObject(DiagnosticRecorder.current.stateForDiagnostics());
     }
 
-    private static final class Replay extends View {
+    static final class Replay extends View {
         final Bitmap frame;
         final Paint paint = new Paint();
         int tick;

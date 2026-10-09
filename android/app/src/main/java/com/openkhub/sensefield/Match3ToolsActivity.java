@@ -344,23 +344,38 @@ public final class Match3ToolsActivity extends UiActivity {
         }
         if (!saveCalibration()) return;
         drawPreview();
-        char[][] board; List<String> scan;
+        char[][] board; List<String> scan; Match3Position position; Match3Goals goals;
         try (Match3Sampler sampler = sampler()) {
-            board = sampler.sample(screenshot); scan = Match3Board.scanSpeech(board, sampler::pieceName);
+            position = sampler.samplePosition(screenshot);board=position.matrix();
+            scan = Match3Board.scanSpeech(board, sampler::pieceName);
         }
+        Match3HudReader reader=new Match3HudReader(this);
+        try { goals=reader.read(screenshot,screenshotGeometry(),android.os.SystemClock.elapsedRealtime()); }
+        finally { reader.close(); }
         StringBuilder sb = new StringBuilder("识别矩阵（. 表示未识别，空白表示空格）：\n");
         for (char[] row : board) sb.append(String.valueOf(row)).append('\n');
-        List<Match3Board.Swap> swaps = Match3MoveRanker.rankedSwaps(board);
-        sb.append("\n可消除交换：").append(swaps.size()).append(" 处\n");
-        announce("棋盘识别完成，共找到 " + swaps.size() + " 处可消除交换。");
+        List<Match3MoveValue> moves=Match3MoveRanker.rankedMoves(position,goals);
+        sb.append("\n");
+        if(goals.hudVerified) {
+            if(goals.level>=0)sb.append("第 ").append(goals.level).append(" 关，");
+            sb.append(goals.steps>=0?"剩余 "+goals.steps+" 步":"剩余步数未看清").append("\n");
+            for(Match3Goals.Target target:goals.targets)sb.append(target.kind.name).append("：")
+                    .append(target.completed?"已完成":target.remaining>=0?"剩余 "+target.remaining:"数量未看清").append("\n");
+        } else sb.append("这张截图没有确认目标，先提供基础交换。\n");
+        sb.append("\n可消除交换：").append(moves.size()).append(" 处\n");
         int spoken = 0;
-        for (Match3Board.Swap s : swaps) {
+        for (Match3MoveValue value : moves) {
+            Match3Board.Swap s=value.swap;
             if (spoken++ >= 5) break;
-            sb.append("  ").append(Match3Board.swapSpeech(s)).append('\n');
-            announce(Match3Board.swapSpeech(s));
+            String speech=Match3Coach.swapSpeechWithQuadrant(s,position.rows,position.cols)
+                    +(value.reason.isEmpty()?"":"，"+value.reason)+"。";
+            sb.append("  ").append(speech).append('\n');
+            // A single complete suggestion replaces the old burst of five QUEUE_FLUSH requests.
+            if(spoken==1)announce(speech);
         }
-        if (swaps.isEmpty()) {
-            announce("没有找到可直接消除的交换，开始逐行扫描局面。");
+        if (moves.isEmpty()) {
+            announce(goals.finished()?"截图中的目标已经完成。":goals.hudVerified && goals.steps==0
+                    ?"截图中的剩余步数已经用完。":"没有找到可直接消除的交换。");
             for (String line : scan) {
                 sb.append("  ").append(line).append('\n');
             }

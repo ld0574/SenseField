@@ -522,6 +522,31 @@ public final class Match3HintInstrumentedTest {
             command(Match3LiveService.ACTION_EXPLORE_OFF);
             await("Normal recommendations recover", 12000, () -> get(s, "currentHint") != null);
 
+            CountDownLatch ruleObserved = new CountDownLatch(1);
+            java.util.concurrent.atomic.AtomicReference<Throwable> ruleFailure = new java.util.concurrent.atomic.AtomicReference<>();
+            ((android.os.Handler) get(service, "handler")).post(() -> {
+                try {
+                    Match3GoalOutcome tracker = (Match3GoalOutcome) get(s, "outcomes");
+                    Match3Position.Cell[][] a = new Match3Position.Cell[2][3], b = new Match3Position.Cell[2][3];
+                    String[] before = {"YRY", "HYH"}, after = {"YYY", "HRH"};
+                    for (int row = 0; row < 2; row++) for (int col = 0; col < 3; col++) {
+                        char aa = before[row].charAt(col), bb = after[row].charAt(col);
+                        a[row][col] = aa == 'H' ? Match3Position.Cell.obstacle(Match3Position.Kind.EMPTY, 0) : Match3Position.Cell.animal(aa);
+                        b[row][col] = bb == 'H' ? Match3Position.Cell.obstacle(Match3Position.Kind.EMPTY, 0) : Match3Position.Cell.animal(bb);
+                    }
+                    Match3Position initial = new Match3Position(a);
+                    Match3Goals baseline = new Match3Goals(42, 8, java.util.Collections.singletonList(
+                            new Match3Goals.Target(0, Match3Goals.Kind.CHICK, 6, false)), true, 100);
+                    tracker.begin(100, initial, baseline, Match3MoveRanker.rankedMoves(initial, baseline).get(0), 100);
+                    tracker.observeFrame(new Match3Position(b), baseline, 200);
+                    tracker.confirmed(new Match3Goals(42, 7, java.util.Collections.singletonList(
+                            new Match3Goals.Target(0, Match3Goals.Kind.CHICK, 5, false)), true, 900), 900);
+                    assertTrue(tracker.abstainedRules().contains(Match3Goals.Kind.CHICK));
+                } catch (Throwable error) { ruleFailure.set(error); }
+                finally { ruleObserved.countDown(); }
+            });
+            assertTrue(ruleObserved.await(3, TimeUnit.SECONDS));assertNull(ruleFailure.get());
+
             Activity[] beforeRotation = new Activity[1];
             scenario.onActivity(a -> {
                 beforeRotation[0] = a;
@@ -536,6 +561,8 @@ public final class Match3HintInstrumentedTest {
             await("Rotation replaces capture session without reusing the old hint", 8000, () -> get(service, "active") != s);
             Object rotated = get(service, "active"); assertNotNull(rotated);
             assertNull(get(rotated, "currentHint"));
+            assertTrue("Rotation cannot revive a contradicted task rule within the same game",
+                    ((Match3GoalOutcome) get(rotated, "outcomes")).abstainedRules().contains(Match3Goals.Kind.CHICK));
             android.media.ImageReader r = (android.media.ImageReader) get(rotated, "reader");
             assertTrue("Capture really resized", r.getWidth() > r.getHeight());
             scenario.onActivity(a -> { game[0] = new SyntheticGame(a); a.setContentView(game[0]); });

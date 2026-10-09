@@ -89,6 +89,15 @@ public class Match3LiveService extends Service {
         long boardRevision, lastHintSpokenRevision = -1;
         int hintAttempts;
         char[][] lastStableMatrix;
+        Match3Position lastStablePosition, previousPosition;
+        int positionSamples;
+        Match3HudReader hudReader;
+        final Match3GoalConfirmation goalConfirmation = new Match3GoalConfirmation();
+        Match3Goals goals = Match3Goals.unknown(0);
+        String rankedGoalKey = "unread", auditedGoalKey = "";
+        long hintRevision;
+        List<Match3MoveValue> rankedMoves;
+        Match3GoalOutcome outcomes;
         Match3HintOverlay overlay;
         Match3OverlayCaptureFilter overlayFilter;
         long filteredOverlayFrames, overlayFilterMicros;
@@ -361,12 +370,18 @@ public class Match3LiveService extends Service {
                     "geometry_waiting_frames", s.geometryWaitingFrames,
                     "board_changing_frames", s.boardChangingFrames,
                     "cascade_waiting_frames", s.cascadeWaitingFrames,
+                    "goal_state", goalState(s.goals),
+                    "goal_read_status", s.hudReader == null ? "not_started" : s.hudReader.status(),
+                    "goal_rule_abstained", s.outcomes == null ? "[]" : s.outcomes.abstainedRules().toString(),
                     "geometry", s.geometry == null ? null : DiagnosticRecorder.object(
                             "left", s.geometry.left, "top", s.geometry.top,
                             "right", s.geometry.right, "bottom", s.geometry.bottom,
                             "origin", "frame_top_left_pixels"),
                     "hint", s.currentHint == null ? null : DiagnosticRecorder.object(
                             "revision", s.currentHint.revision,
+                            "goal_key", s.currentHint.goalKey,
+                            "reason", s.currentHint.value == null ? "" : s.currentHint.value.reason,
+                            "ranking_scope", s.currentHint.value == null ? "basic" : s.currentHint.value.evidence(),
                             "from_row", s.currentHint.swap.fromRow + 1, "from_col", s.currentHint.swap.fromCol + 1,
                             "to_row", s.currentHint.swap.toRow + 1, "to_col", s.currentHint.swap.toCol + 1,
                             "origin", "board_top_left_one_based"),
@@ -432,6 +447,7 @@ public class Match3LiveService extends Service {
         s.rawIdx = s.rawFill = 0;
         s.boardValid = false;
         s.confirmation.reset();
+        s.previousPosition = null; s.positionSamples = 0;
     }
 
     private boolean saveCalibration(Session s, int[] bounds, int rows, int cols) {
@@ -475,8 +491,30 @@ public class Match3LiveService extends Service {
             return;
         }
         if (s.exploreMode) { recommendationGate(s, "touch_read"); handleExploreTouch(s, frame); return; }
-        char[][] raw = s.sampler.sample(frame);
-        if (s.currentHint != null && countDiffCells(s.lastStableMatrix, raw) > 0)
+        if(s.hudReader == null)s.hudReader = new Match3HudReader(this);
+        if(s.outcomes == null)s.outcomes = new Match3GoalOutcome(result -> s.diagnostics.record("Match3GoalOutcome",
+                DiagnosticRecorder.object("hint_revision",result.hintRevision,"outcome",result.outcome,
+                        "action_evidence",result.actionEvidence,"steps_spent",result.stepsSpent,
+                        "goal_deltas",goalMap(result.deltas),"expected_lower_bounds",goalMap(result.expected),
+                        "scope","software_visual_observation; human_action_and_acoustic_evidence_unverified")));
+        Match3Goals observedGoals=s.hudReader.read(frame,s.geometry,s.frameAt);
+        s.goals=s.goalConfirmation.accept(observedGoals,SystemClock.elapsedRealtime());
+        String goalKey=s.hudReader.status()+"|"+s.goals.key();
+        if(!goalKey.equals(s.auditedGoalKey)) {
+            s.auditedGoalKey=goalKey;
+            s.diagnostics.audit("Match3GoalObserved status="+s.hudReader.status()+" confirmed="+s.goals.hudVerified
+                    +" level="+s.goals.level+" steps="+s.goals.steps+" key="+s.goals.key());
+        }
+        Match3Position position=s.sampler.samplePosition(frame);
+        s.outcomes.observeFrame(position,observedGoals,s.frameAt);
+        s.outcomes.confirmed(s.goals,s.frameAt);
+        boolean goalsConfirming=observedGoals.hudVerified && !s.goals.hudVerified;
+        if(goalsConfirming)invalidateHint(s,"GOAL_CONFIRMING");
+        if(position.sameCells(s.previousPosition))s.positionSamples++;else s.positionSamples=1;
+        s.previousPosition=position;
+        char[][] raw = position.matrix();
+        if (s.currentHint != null && (countDiffCells(s.lastStableMatrix, raw) > 0
+                || !position.sameCells(s.lastStablePosition)))
             invalidateHint(s, "BOARD_CHANGED");
         s.rawWindow[s.rawIdx] = raw;
         s.rawIdx = (s.rawIdx + 1) % STABLE_FRAMES;
@@ -501,7 +539,7 @@ public class Match3LiveService extends Service {
             return;
         }
         // Do not restore a previous-window hint over a board that is currently moving.
-        if (!matrixEquals(matrix, raw) || !consecutivelyConfirmed) {
+        if (!matrixEquals(matrix, raw) || !consecutivelyConfirmed || s.positionSamples<STABLE_FRAMES) {
             s.boardChangingFrames++;
             recommendationGate(s, "board_changing");
             return;
@@ -517,32 +555,46 @@ public class Match3LiveService extends Service {
             return;
         }
         s.boardValid = true;
-        boolean changed = !matrixEquals(s.lastStableMatrix, matrix);
+        // The HUD is readable but not yet temporally confirmed. Do not replace
+        // the task hint with a basic hint and immediately announce it again.
+        if(goalsConfirming) { recommendationGate(s,"goal_confirming");return; }
+        boolean changed = !matrixEquals(s.lastStableMatrix, matrix) || !position.sameCells(s.lastStablePosition);
+        boolean goalsChanged = !s.rankedGoalKey.equals(s.goals.key());
         // After stable confirmation, even one changed cell is a new revision.
         // Ignoring it forever could keep a hint across a real obstacle/tile change.
         if (changed) {
             invalidateHint(s, "BOARD_CHANGED");
             s.lastStableMatrix = matrix;
-            s.lastSwaps = Match3MoveRanker.rankedSwaps(matrix);
-            s.boardRevision++; s.hintCount = 0; s.hintAttempts = 0;
+            s.lastStablePosition = position;
+            s.boardRevision++;
+        }
+        if(changed || goalsChanged || s.rankedMoves == null) {
+            if(goalsChanged)invalidateHint(s,"GOAL_CHANGED");
+            s.rankedGoalKey=s.goals.key();
+            s.rankedMoves=Match3MoveRanker.rankedMoves(position,s.goals,s.outcomes.abstainedRules());
+            s.lastSwaps=new java.util.ArrayList<>();
+            for(Match3MoveValue value:s.rankedMoves)s.lastSwaps.add(value.swap);
+            s.hintCount = 0; s.hintAttempts = 0;
             s.lastChangeAt = SystemClock.elapsedRealtime();
             s.diagnostics.audit("BoardRecognized rows=" + matrix.length + " cols=" + matrix[0].length
                     + " unknown=" + unknown + "/" + total + " swaps=" + s.lastSwaps.size()
                     + " revision=" + s.boardRevision + " " + s.geometry);
         }
         if (s.currentHint == null && s.lastSwaps != null && !s.lastSwaps.isEmpty()) {
-            s.currentHint = new Match3Hint(s.diagnostics.sessionId, s.boardRevision, s.frameAt,
-                    s.geometry, s.lastSwaps.get(0));
+            s.currentHint = new Match3Hint(s.diagnostics.sessionId, ++s.hintRevision, s.frameAt,
+                    s.geometry, s.rankedMoves.get(0),s.goals.key());
             Match3Hint hint = s.currentHint;
             s.diagnostics.audit("Match3Hint revision=" + hint.revision + " from="
                     + hint.swap.fromRow + "," + hint.swap.fromCol + " to="
                     + hint.swap.toRow + "," + hint.swap.toCol + " origin=top_left_zero_based "
-                    + Match3MoveRanker.evidence(hint.swap));
+                    + hint.value.evidence()+" goal_key="+hint.goalKey);
+            s.outcomes.begin(hint.revision,position,s.goals,hint.value,s.frameAt);
             updateHintOverlay(s, hint);
         }
         if (changed && s.lastSwaps.isEmpty())
             s.diagnostics.audit("Match3Status state=no_swap speech=silent");
-        recommendationGate(s, s.currentHint == null ? "no_swap" : "ready");
+        recommendationGate(s, s.currentHint == null ? s.goals.finished()?"goals_complete"
+                :s.goals.hudVerified && s.goals.steps==0?"no_steps":"no_swap" : "ready");
         maybeAnnounceHint(s, false);
     }
 
@@ -553,6 +605,19 @@ public class Match3LiveService extends Service {
         s.diagnostics.audit("Match3RecommendationGate reason=" + reason
                 + " revision=" + s.boardRevision + " unknown=" + s.unknownCells
                 + " excluded=" + s.excludedCells + " runs=" + s.visibleRuns);
+    }
+    private static org.json.JSONObject goalState(Match3Goals goals) {
+        org.json.JSONArray targets=new org.json.JSONArray();
+        for(Match3Goals.Target target:goals.targets)targets.put(DiagnosticRecorder.object("slot",target.slot,
+                "kind",target.kind.name(),"remaining",target.remaining,"completed",target.completed));
+        return DiagnosticRecorder.object("hud_verified",goals.hudVerified,"level",goals.level,"steps",goals.steps,
+                "observed_at_ms",goals.observedAtMs,"targets",targets,"unknown_count_value",-1);
+    }
+    private static org.json.JSONObject goalMap(java.util.Map<Match3Goals.Kind,Integer> values) {
+        org.json.JSONObject result=new org.json.JSONObject();
+        for(java.util.Map.Entry<Match3Goals.Kind,Integer> entry:values.entrySet())
+            try { result.put(entry.getKey().name(),entry.getValue()); } catch(org.json.JSONException ignored) { }
+        return result;
     }
 
     private BoardGeometry estimateGeometry(Bitmap frame) {
@@ -641,6 +706,10 @@ public class Match3LiveService extends Service {
         if (s.sampler != null) s.sampler.close();
         s.sampler = null; s.geometry = null; s.geometryConfirmation.reset();
         s.lastStableMatrix = null; s.lastSwaps = null;
+        s.lastStablePosition=null;s.rankedMoves=null;s.rankedGoalKey="unread";
+        s.goalConfirmation.clear();s.goals=Match3Goals.unknown(SystemClock.elapsedRealtime());
+        if(s.hudReader!=null)s.hudReader.clear();
+        if(s.outcomes!=null)s.outcomes.cancel(reason);
         resetWindow(s);
     }
 
@@ -785,7 +854,12 @@ public class Match3LiveService extends Service {
     private void idleCheck(Session s) {
         long now = SystemClock.elapsedRealtime();
         if (!isCurrent(s)) return;
-        if (now - s.frameAt > 5000) { invalidateHint(s, "FRAME_STALE"); return; }
+        if (now - s.frameAt > 5000) {
+            invalidateHint(s, "FRAME_STALE");
+            if(s.outcomes!=null)s.outcomes.cancel("FRAME_STALE");
+            s.goalConfirmation.clear();s.goals=Match3Goals.unknown(now);
+            return;
+        }
         if (s.exploreMode || s.popupAnnounced || !s.boardValid) return;
         maybeAnnounceHint(s, false);
         if (s.currentHint != null && s.hintCount < 2 && now - s.lastChangeAt >= IDLE_HINT_MS
@@ -910,6 +984,7 @@ public class Match3LiveService extends Service {
             if (oldReader != null) try { oldReader.close(); } catch (RuntimeException ignored) { }
             if (old != null && old.frame != null && !old.frame.isRecycled()) old.frame.recycle();
             if (old != null) {
+                if(old.hudReader!=null)old.hudReader.close();
                 old.frame = null;
                 old.diagnostics.finish("m3live_session_finished");
             }
@@ -956,11 +1031,16 @@ public class Match3LiveService extends Service {
                 next.visualSuppressed = previous.visualSuppressed;
                 next.exploreMode = previous.exploreMode;
                 next.boardRevision = previous.boardRevision + 1;
+                // Rotation changes the capture surface, not the diagnostic
+                // session. A contradicted task rule remains retired this game.
+                next.outcomes = previous.outcomes;
                 reader = replacement; active = next;
                 replacement.setOnImageAvailableListener(source -> onImageAvailable(source, next), handler());
                 oldReader.close();
                 if (previous.frame != null && !previous.frame.isRecycled()) previous.frame.recycle();
                 previous.frame = null;
+                if(previous.hudReader!=null)previous.hudReader.close();
+                next.hintRevision=previous.hintRevision;
                 next.diagnostics.audit("Match3DisplayChanged frame=" + width + "x" + height);
                 scheduleTick(next);
             } catch (RuntimeException error) {

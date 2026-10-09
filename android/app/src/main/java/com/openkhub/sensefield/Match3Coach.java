@@ -20,14 +20,14 @@ final class Match3Coach {
         KNOWLEDGE.put("爆炸特效", "5 个相同的动物组成 T 形或 L 形，能合成爆炸特效，可以清除周围一圈。");
         KNOWLEDGE.put("活力鸟", "同色 5 个连成一条直线，会合成活力鸟。活力鸟和任意棋子交换，可以清除全屏该颜色。");
         KNOWLEDGE.put("组合特效", "两种特效相邻时交换，效果会叠加，威力更大。");
-        KNOWLEDGE.put("任务目标", "左上角挂牌显示本关要收集的动物和数量，达成即可过关。");
+        KNOWLEDGE.put("任务目标", "顶部挂牌显示本关要完成的目标和剩余数量。目标可能是动物或障碍；带完成勾的目标已经完成。");
         KNOWLEDGE.put("步数", "右上角数字是剩余步数，步数用完未达成目标即失败。");
-        KNOWLEDGE.put("冰块障碍", "带冰壳的棋子需要在其旁边消除一次来打碎冰壳。");
+        KNOWLEDGE.put("冰块障碍", "覆盖在动物格下方的冰层，与独立的白色方块不同；消除该格的动物可处理覆盖层，多层时需要多次处理。");
         KNOWLEDGE.put("毒水障碍", "深色毒水格会污染相邻棋子，优先在毒水旁消除。");
         KNOWLEDGE.put("藤蔓障碍", "被藤蔓锁住的棋子不能移动，先消除藤蔓上的棋子解开。");
-        KNOWLEDGE.put("冰块关卡规则", "白色冰块格不能点击移动。冰块在棋盘下方时，先消除它上方的棋子，新棋子会落下来；新棋子挨着冰块消除时，冰块才会被打碎。");
+        KNOWLEDGE.put("冰块关卡规则", "独立的白色方块不能按普通动物三连处理；消除相邻动物可以处理障碍，多层方块需要多次消除。");
         KNOWLEDGE.put("双箭头提示", "画面中的双箭头是游戏自带的推荐走法提示，指出的两个棋子交换可以消除。");
-        KNOWLEDGE.put("目标栏数字", "顶部的目标图标加数字，表示本关需要通过三连消除收集的棋子种类和数量，三个同色相连消除即可收集。");
+        KNOWLEDGE.put("目标栏数字", "顶部图标和数字表示各项任务的剩余数量。目标是小鸡时，需要消除实际出现的小鸡；只孵化鸡蛋还不等于完成收集。");
     }
 
     static String[] knowledgeNames() {
@@ -123,6 +123,8 @@ final class Match3Coach {
     static String pieceName(char c) {
         if (c == Match3Sampler.EMPTY_CELL) return "空";
         if (c == Match3Sampler.NON_SWAP_CELL) return "非普通棋子区域";
+        if (c == Match3Sampler.COIN_CELL) return "银币";
+        if (c == Match3Sampler.EGG_CELL) return "鸡蛋";
         switch (c) {
             case 'R': return "红狐狸";
             case 'O': return "棕熊";

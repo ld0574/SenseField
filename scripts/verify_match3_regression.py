@@ -17,10 +17,12 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = "com.openkhub.sensefield"
 RUNNER = PACKAGE + ".test/androidx.test.runner.AndroidJUnitRunner"
 DEBUG_CLASSES = ("Match3HintInstrumentedTest", "Match3AuditInstrumentedTest", "Match3UiInstrumentedTest",
-                 "Match3MergeInstrumentedTest", "Match3Level43InstrumentedTest", "Match3DiagnosticReplayInstrumentedTest")
+                 "Match3MergeInstrumentedTest", "Match3Level43InstrumentedTest", "Match3DiagnosticReplayInstrumentedTest",
+                 "Match3GoalVisionInstrumentedTest", "Match3GoalReplayInstrumentedTest")
 RELEASE_CLASSES = ("Match3ReleaseCaptureInstrumentedTest", "BundledAudioInstrumentedTest",
                    "DetectorReuseInstrumentedTest", "DiagnosticWorkInstrumentedTest", "ReleaseRuntimeInstrumentedTest",
-                   "Match3UiInstrumentedTest", "DiagnosticContextInstrumentedTest", "Match3DiagnosticReplayInstrumentedTest")
+                   "Match3UiInstrumentedTest", "DiagnosticContextInstrumentedTest", "Match3DiagnosticReplayInstrumentedTest",
+                   "Match3GoalReplayInstrumentedTest")
 
 
 def instrumentation_summary(output: str) -> dict:
@@ -44,6 +46,8 @@ def source_digest() -> str:
     digest = hashlib.sha256()
     paths = sorted((ROOT / "android/app/src").rglob("*.java"))
     paths += [ROOT / "android/app/build.gradle", ROOT / "android/app/proguard-rules.pro", Path(__file__)]
+    catalog = ROOT / "android/app/src/main/assets/match3-fixed-ui-v1.json"
+    if catalog.is_file(): paths.append(catalog)
     for path in paths:
         digest.update(str(path.relative_to(ROOT)).encode()); digest.update(path.read_bytes())
     return digest.hexdigest()

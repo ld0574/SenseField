@@ -3,6 +3,7 @@ package com.openkhub.sensefield;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
+import java.util.Collections;
 
 /**
  * 消消乐棋盘纯逻辑：颜色矩阵 → 三连检测 + 相邻交换枚举。
@@ -36,6 +37,8 @@ final class Match3Board {
         final int matchedCells;
         final int longestRun;
         final int adjacentIce;
+        private final BitSet positions;
+        private final List<Run> formedRuns;
 
         Swap(int fromRow, int fromCol, int toRow, int toCol, int runsFormed) {
             this(fromRow, fromCol, toRow, toCol, runsFormed, 0, 0, 0);
@@ -43,6 +46,11 @@ final class Match3Board {
 
         Swap(int fromRow, int fromCol, int toRow, int toCol, int runsFormed,
                 int matchedCells, int longestRun, int adjacentIce) {
+            this(fromRow, fromCol, toRow, toCol, runsFormed, matchedCells, longestRun, adjacentIce,
+                    new BitSet(), Collections.emptyList());
+        }
+        Swap(int fromRow, int fromCol, int toRow, int toCol, int runsFormed,
+                int matchedCells, int longestRun, int adjacentIce, BitSet positions, List<Run> formedRuns) {
             this.fromRow = fromRow;
             this.fromCol = fromCol;
             this.toRow = toRow;
@@ -51,7 +59,11 @@ final class Match3Board {
             this.matchedCells = matchedCells;
             this.longestRun = longestRun;
             this.adjacentIce = adjacentIce;
+            this.positions = (BitSet) positions.clone();
+            this.formedRuns = Collections.unmodifiableList(new ArrayList<>(formedRuns));
         }
+        BitSet matchedPositions() { return (BitSet) positions.clone(); }
+        List<Run> formedRuns() { return formedRuns; }
     }
 
     private Match3Board() {
@@ -105,19 +117,31 @@ final class Match3Board {
 
     /** 枚举所有相邻交换，返回交换后能形成三连的走法（按 formedRuns 降序、行优先排序）。 */
     static List<Swap> findSwaps(char[][] board) {
+        return findSwaps(board, null);
+    }
+    static List<Swap> findSwaps(Match3Position position) {
+        if (position == null) return new ArrayList<>();
+        boolean[][] allowed = new boolean[position.rows][position.cols];
+        for (int r = 0; r < position.rows; r++) for (int c = 0; c < position.cols; c++)
+            allowed[r][c] = position.cell(r, c).swappable;
+        return findSwaps(position.matrix(), allowed);
+    }
+    private static List<Swap> findSwaps(char[][] board, boolean[][] allowed) {
         List<Swap> swaps = new ArrayList<>();
         int cols = columns(board);
         if (cols == 0) return swaps;
         int rows = board.length;
         for (int r = 0; r < rows; r++) {
             for (int c = 0; c < cols; c++) {
-                if (!isPiece(board[r][c])) continue;
+                if (!isPiece(board[r][c]) || allowed != null && !allowed[r][c]) continue;
                 // 右邻
-                if (c + 1 < cols && isPiece(board[r][c + 1]) && board[r][c] != board[r][c + 1]) {
+                if (c + 1 < cols && isPiece(board[r][c + 1]) && board[r][c] != board[r][c + 1]
+                        && (allowed == null || allowed[r][c + 1])) {
                     addIfForms(swaps, board, r, c, r, c + 1);
                 }
                 // 下邻
-                if (r + 1 < rows && isPiece(board[r + 1][c]) && board[r][c] != board[r + 1][c]) {
+                if (r + 1 < rows && isPiece(board[r + 1][c]) && board[r][c] != board[r + 1][c]
+                        && (allowed == null || allowed[r + 1][c])) {
                     addIfForms(swaps, board, r, c, r + 1, c);
                 }
             }
@@ -136,6 +160,7 @@ final class Match3Board {
         int formed = 0;
         int longest = 0;
         BitSet matched = null;
+        List<Run> formedRuns = new ArrayList<>();
         for (Run run : findRuns(copy)) {
             boolean touches = run.horizontal
                     ? run.row == r1 && c1 >= run.col && c1 < run.col + run.length
@@ -144,6 +169,7 @@ final class Match3Board {
                     || run.col == c2 && r2 >= run.row && r2 < run.row + run.length;
             if (touches) {
                 formed++;
+                formedRuns.add(run);
                 longest = Math.max(longest, run.length);
                 if (matched == null) matched = new BitSet(board.length * board[0].length);
                 for (int i = 0; i < run.length; i++) {
@@ -163,7 +189,7 @@ final class Match3Board {
                 if (col > 0 && copy[row][col - 1] == 'I') ice.set(cell - 1);
                 if (col + 1 < cols && copy[row][col + 1] == 'I') ice.set(cell + 1);
             }
-            swaps.add(new Swap(r1, c1, r2, c2, formed, matched.cardinality(), longest, ice.cardinality()));
+            swaps.add(new Swap(r1, c1, r2, c2, formed, matched.cardinality(), longest, ice.cardinality(), matched, formedRuns));
         }
     }
 

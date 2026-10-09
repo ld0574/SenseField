@@ -24,6 +24,7 @@ final class Match3Sampler implements AutoCloseable {
     static final char GAP_CELL = 'H';   // 空位：露出棋盘底的格（下落中/布局洞），非棋子
     /** Coloured surface without an individual animal's board-backed footprint. */
     static final char NON_SWAP_CELL = '#';
+    static final char COIN_CELL = 'C', EGG_CELL = 'E';
 
     static boolean isMovable(char c) {
         return c == 'R' || c == 'O' || c == 'Y' || c == 'G' || c == 'B' || c == 'P';
@@ -35,7 +36,7 @@ final class Match3Sampler implements AutoCloseable {
 
     static boolean isUnknown(char c) {
         return !isMovable(c) && !isTemplateCode(c) && c != EMPTY_CELL && c != 'I'
-                && c != GAP_CELL && c != NON_SWAP_CELL;
+                && c != GAP_CELL && c != NON_SWAP_CELL && c != COIN_CELL && c != EGG_CELL;
     }
 
     /** Legacy non-piece predicate. Readability must use isUnknown, not this method. */
@@ -72,6 +73,9 @@ final class Match3Sampler implements AutoCloseable {
     private final List<SpecialTemplate> templates;
     private final BoardGeometry geometry;
     private boolean closed;
+    private Match3VisualCatalog observations;
+    private int[] observationPixels;
+    private Match3VisualCatalog.CellCache[][] observationCache;
 
     Match3Sampler(android.content.Context context, int rows, int cols,
                   int lPct, int tPct, int rPct, int bPct) {
@@ -109,6 +113,33 @@ final class Match3Sampler implements AutoCloseable {
     char[][] sample(Bitmap bitmap) {
         requireOpen();
         return sample(bitmap, geometryFor(bitmap), templates);
+    }
+
+    /** Automatic task reasoning uses observed pixels, never the names of player-learned templates. */
+    Match3Position samplePosition(Bitmap bitmap) {
+        requireOpen(); BoardGeometry g=geometryFor(bitmap);
+        if(observations==null)observations=Match3VisualCatalog.get(context);
+        int capacity=(g.cellWidth()+2)*(g.cellHeight()+2);
+        if(observationPixels==null || observationPixels.length<capacity)observationPixels=new int[capacity];
+        if(observationCache==null) {
+            observationCache=new Match3VisualCatalog.CellCache[g.rows][g.cols];
+            for(int r=0;r<g.rows;r++)for(int c=0;c<g.cols;c++)observationCache[r][c]=new Match3VisualCatalog.CellCache();
+        }
+        Match3Position.Cell[][] cells=new Match3Position.Cell[g.rows][g.cols];
+        int w=g.cellWidth(),h=g.cellHeight(),half=Math.max(3,Math.min(w,h)/8);
+        for(int r=0;r<g.rows;r++)for(int c=0;c<g.cols;c++) {
+            char legacy=classifyBoardCell(bitmap,g.centerX(c),g.centerY(r),w,h,half,Collections.emptyList());
+            Match3Position.Cell known=observations.obstacle(bitmap,g,r,c,observationPixels,observationCache[r][c]);
+            if(known!=null)cells[r][c]=known;
+            else if(isMovable(legacy)) cells[r][c]=Match3Position.Cell.animal(legacy);
+            else if(legacy==EMPTY_CELL || legacy==GAP_CELL)
+                cells[r][c]=Match3Position.Cell.obstacle(Match3Position.Kind.EMPTY,0);
+            else {
+                cells[r][c]=Match3Position.Cell.obstacle(
+                        legacy==UNKNOWN?Match3Position.Kind.UNKNOWN:Match3Position.Kind.SURFACE,-1);
+            }
+        }
+        return new Match3Position(cells);
     }
 
     /** 按标定采样整个棋盘。templates 可为 null/空。 */
