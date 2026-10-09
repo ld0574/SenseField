@@ -91,10 +91,24 @@
     java.io.File directory;
     java.lang.String failure;
     static *** start(android.content.Context, java.lang.String, long);
+    static *** start(android.content.Context, java.lang.String, long, boolean);
+    static java.io.File root(android.content.Context);
+    static org.json.JSONObject object(java.lang.Object[]);
     void frame(com.openkhub.sensefield.NativeFrameResult, com.openkhub.sensefield.DiagnosticSnapshot, java.nio.ByteBuffer, int, int, int, long, long, long);
     long[] imageWorkStats();
     void audit(java.lang.String);
     void finish(java.lang.String);
+}
+# Mixed-game archive tests cross the separate test-APK boundary. Preserve these
+# small contracts, including the enum's identity (R8 enum unboxing is not an ABI).
+-keep enum com.openkhub.sensefield.DiagnosticGame { *; }
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.DiagnosticsActivity {
+    static android.content.Intent intent(android.content.Context, com.openkhub.sensefield.DiagnosticGame);
+}
+-keep,allowobfuscation class com.openkhub.sensefield.DiagnosticArchive {
+    static java.io.File[] sessions(java.io.File);
+    static void writeJson(java.io.File, java.lang.String, java.lang.String);
+    static void delete(java.io.File);
 }
 -keep,allowobfuscation class com.openkhub.sensefield.NativeFrameResult {
     static *** empty();

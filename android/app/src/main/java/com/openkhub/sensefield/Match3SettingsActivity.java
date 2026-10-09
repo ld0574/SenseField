@@ -42,6 +42,7 @@ public final class Match3SettingsActivity extends UiActivity {
         UiKit.add(page, speech, 24);
 
         LinearLayout hints = UiKit.card(this);
+        hints.setTag("match3_exchange_settings");
         UiKit.add(hints, UiKit.heading(this, "交换提示"), 12);
         CheckBox highlight = new CheckBox(this);
         highlight.setText("交换位置高亮");
@@ -64,14 +65,13 @@ public final class Match3SettingsActivity extends UiActivity {
             catch (RuntimeException unavailable) { toast("请在系统设置中允许听野悬浮显示"); }
         });
         UiKit.add(hints, overlayPermission, 12);
-        UiKit.add(page, hints, 24);
-
-        LinearLayout numbering = UiKit.details(this, "行列怎么数", Match3Hint.NUMBERING);
+        LinearLayout numbering = UiKit.details(this, "行列编号说明", Match3Hint.NUMBERING);
         LinearLayout numberingBody = numbering.findViewWithTag("ui_details_body");
         listen = UiKit.button(this, "听行列说明", false);
         listen.setOnClickListener(v -> readNumbering());
         numberingBody.addView(listen);
-        UiKit.add(page, numbering, 24);
+        UiKit.add(hints, numbering, 0);
+        UiKit.add(page, hints, 24);
 
         LinearLayout tools = UiKit.card(this);
         UiKit.add(tools, UiKit.heading(this, "识别与反馈"), 12);
@@ -80,7 +80,7 @@ public final class Match3SettingsActivity extends UiActivity {
                 startActivity(new Intent(this, Match3ToolsActivity.class))), 12);
         UiKit.add(tools, UiKit.navigationRow(this, "游戏内触屏点读", "需 Android 14 及听野读屏服务", this::toggleExplore), 0);
         UiKit.add(tools, UiKit.navigationRow(this, "测试记录与反馈", "查看本地记录，标记和导出问题", () ->
-                startActivity(new Intent(this, DiagnosticsActivity.class))), 0);
+                startActivity(DiagnosticsActivity.intent(this, DiagnosticGame.MATCH3))), 0);
         UiKit.add(page, tools, 24);
         setContentView(scroll);
         refreshPermission();

@@ -19,6 +19,15 @@ class Match3GateTests(unittest.TestCase):
         self.assertEqual({"executed": 14, "skipped": 0}, gate.instrumentation_summary("OK (14 tests)\nINSTRUMENTATION_CODE: -1"))
         self.assertEqual({"executed": 14, "skipped": 1}, gate.instrumentation_summary("INSTRUMENTATION_STATUS_CODE: -3\nOK (14 tests)"))
 
+    def test_failed_assumptions_are_skipped_even_when_junit_prints_ok(self):
+        output = "\n".join((
+            "INSTRUMENTATION_STATUS: stack=org.junit.AssumptionViolatedException: Emulator only",
+            "INSTRUMENTATION_STATUS_CODE: -4",
+            "INSTRUMENTATION_STATUS_CODE: -3",
+            "INSTRUMENTATION_STATUS_CODE: 0",
+            "OK (3 tests)", "INSTRUMENTATION_CODE: -1"))
+        self.assertEqual({"executed": 3, "skipped": 2}, gate.instrumentation_summary(output))
+
     def test_automatic_regression_cannot_install_or_launch_on_a_players_phone(self):
         for serial in ("10.10.10.16:39175", "adb-6d5e44f1-KVD61h._adb-tls-connect._tcp", "device-id"):
             with self.subTest(serial=serial), self.assertRaises(ValueError):

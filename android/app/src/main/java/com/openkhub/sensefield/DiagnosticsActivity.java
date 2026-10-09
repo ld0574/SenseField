@@ -3,6 +3,7 @@ package com.openkhub.sensefield;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ClipData;
+import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
@@ -24,11 +25,14 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 /** Bottom settings entry with large controls; no computer or second recorder. */
 public final class DiagnosticsActivity extends UiActivity {
+    static final String EXTRA_GAME = "diagnostic_game";
     private static final int SAVE_REPORT = 6101;
     private TextView status;
     private RadioGroup sessions;
@@ -37,6 +41,8 @@ public final class DiagnosticsActivity extends UiActivity {
     private String selected;
     private File prepared;
     private boolean busy;
+    private boolean hasGameRecords;
+    private DiagnosticGame game;
     private String recoveryError = "";
     private final Runnable refresh = new Runnable() {
         @Override public void run() {
@@ -45,8 +51,15 @@ public final class DiagnosticsActivity extends UiActivity {
         }
     };
 
+    static Intent intent(Context context, DiagnosticGame game) {
+        return new Intent(context, DiagnosticsActivity.class).putExtra(EXTRA_GAME, game.id);
+    }
+
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        game = DiagnosticGame.fromId(getIntent().getStringExtra(EXTRA_GAME));
+        if (game == DiagnosticGame.UNKNOWN) game = DiagnosticGame.HONOR;
+        boolean match3 = game == DiagnosticGame.MATCH3;
         UiKit.configureWindow(this);
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -54,7 +67,7 @@ public final class DiagnosticsActivity extends UiActivity {
         scroll.setBackgroundColor(UiKit.PAGE);
         LinearLayout page = UiKit.page(this);
         scroll.addView(page);
-        UiKit.pageHeader(this, page, "测试记录与反馈", "王者荣耀辅助");
+        UiKit.pageHeader(this, page, "测试记录与反馈", game.label + "辅助");
         UiKit.add(page, UiKit.body(this, "每局自动记录，无需另外录屏。"), 20);
 
         // How to report a problem, as numbered steps rather than a paragraph.
@@ -62,7 +75,8 @@ public final class DiagnosticsActivity extends UiActivity {
         UiKit.add(how, UiKit.heading(this, "怎么反馈问题"), 12);
         UiKit.add(how, UiKit.steps(this,
                 "正常开始一局辅助",
-                "遇到漏报或误报，下拉通知栏，在听野通知里点“标记问题”",
+                match3 ? "遇到交换推荐、高亮或播报问题，在听野通知里点“标记问题”"
+                        : "遇到漏报或误报，下拉通知栏，在听野通知里点“标记问题”",
                 "结束后停止辅助",
                 "回到本页，选一局导出给队友"), 0);
         UiKit.add(page, how, UiKit.GAP_SECTION);
@@ -79,17 +93,22 @@ public final class DiagnosticsActivity extends UiActivity {
             DiagnosticRecorder recorder = DiagnosticRecorder.current;
             if (recorder != null && !recorder.finished) recorder.setImagesEnabled(enabled);
         });
-        UiKit.add(recording, UiKit.withHint(images, "帮助查漏报／误报；只存在手机里，不自动上传"), 12);
+        UiKit.add(recording, UiKit.withHint(images, match3
+                ? "帮助核对棋盘、交换和高亮；只存手机，不自动上传"
+                : "帮助查漏报／误报；只存在手机里，不自动上传"), 8);
+        UiKit.add(recording, UiKit.hint(this, "两款游戏共用此保存设置。"), 12);
         // The complete recording and privacy terms stay available, folded until requested.
         UiKit.add(recording, UiKit.details(this, "记录范围与隐私",
-                "首次使用默认保存画面。每约 10 秒保存背景截图；提醒时另存当时画面，并有上限地保存前后短时采样。",
-                "漏报等问题请及时下拉通知栏，展开听野通知后点“标记问题”（部分手机要点右侧箭头）。",
-                "最多 20 分钟或 60 MB，仅留最近 3 局。采样可能不完整，不等于录像。",
+                match3 ? "记录棋盘识别、交换推荐、语音播放和高亮状态。首次使用默认保存画面，每约 10 秒保存截图；标记问题时有上限地保存前后短时采样。"
+                        : "首次使用默认保存画面。每约 10 秒保存背景截图；提醒时另存当时画面，并有上限地保存前后短时采样。",
+                match3 ? "交换位置不对、推荐无助于通关或语音中断时，可展开听野通知点“标记问题”。结束后补充关卡和问题描述。"
+                        : "漏报等问题请及时下拉通知栏，展开听野通知后点“标记问题”（部分手机要点右侧箭头）。",
+                "每局最多 20 分钟或 60 MB，两款游戏合计仅留最近 3 局。采样可能不完整，不等于录像。",
                 "画面可能包含昵称、聊天等信息。只保存在手机内，不自动上传；分享前请确认愿意提供这些内容。"), 0);
         UiKit.add(page, recording, UiKit.GAP_SECTION);
 
         LinearLayout export = UiKit.card(this);
-        UiKit.add(export, UiKit.heading(this, "导出记录"), 8);
+        UiKit.add(export, UiKit.heading(this, game.label + "记录"), 8);
         status = UiKit.text(this, "正在读取记录…", 20, UiKit.INK, true);
         status.setAccessibilityLiveRegion(android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE);
         UiKit.add(export, status, 8);
@@ -101,7 +120,8 @@ public final class DiagnosticsActivity extends UiActivity {
         feedback.setMinLines(3);
         feedback.setGravity(android.view.Gravity.TOP | android.view.Gravity.START);
         feedback.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        feedback.setHint("例如：第二局 2:30 附近没人却提醒");
+        feedback.setHint(match3 ? "例如：第12关，交换框偏了一格，语音没读完"
+                : "例如：第二局 2:30 附近没人却提醒");
         LinearLayout feedbackField = UiKit.field(this, "问题说明（可选）", feedback);
         ((TextView) feedbackField.getChildAt(0)).setTextSize(UiKit.TEXT_BODY);
         ((TextView) feedbackField.getChildAt(0)).setAccessibilityHeading(true);
@@ -113,10 +133,10 @@ public final class DiagnosticsActivity extends UiActivity {
         save.setOnClickListener(v -> prepare(false));
         UiKit.add(page, export, 24);
         // Deleting is irreversible: keep it apart from export and mark it as destructive.
-        clear = button(page, "删除本地测试记录", UiKit.ButtonStyle.DANGER);
+        clear = button(page, "删除" + game.label + "记录", UiKit.ButtonStyle.DANGER);
         clear.setOnClickListener(v -> UiKit.styleDialog(new AlertDialog.Builder(this)
-                .setTitle("删除本地测试记录？")
-                .setMessage("手机里的测试记录和导出包将被删除，已分享的文件不会受影响。")
+                .setTitle("删除" + game.label + "记录？")
+                .setMessage("仅删除" + game.label + "的本地记录与导出包，已分享的文件不会受影响。")
                 .setNegativeButton("取消", null).setPositiveButton("删除", (d, which) -> clearRecords()).show(),
                 UiKit.ButtonStyle.DANGER));
         setContentView(scroll);
@@ -137,6 +157,7 @@ public final class DiagnosticsActivity extends UiActivity {
     private boolean recording() {
         DiagnosticRecorder recorder = DiagnosticRecorder.current;
         return CaptureService.isRunning()
+                || Match3LiveService.isRunning()
                 || (recorder != null && !recorder.finished);
     }
 
@@ -144,13 +165,14 @@ public final class DiagnosticsActivity extends UiActivity {
         boolean active = recording();
         share.setEnabled(!busy && !active && selected != null);
         save.setEnabled(!busy && !active && selected != null);
-        clear.setEnabled(!busy && !active && selected != null);
+        clear.setEnabled(!busy && !active && hasGameRecords);
         if (busy) return;
         DiagnosticRecorder recorder = DiagnosticRecorder.current;
         if (recorder != null && !recorder.failure.isEmpty()) UiKit.setTextIfChanged(status, recorder.failure);
         else if (!active && !recoveryError.isEmpty()) UiKit.setTextIfChanged(status, recoveryError);
-        else UiKit.setTextIfChanged(status, active ? "正在记录，请结束后停止辅助再导出"
-                : selected == null ? "还没有记录，请先开始一局辅助" : "选择一局，导出诊断包");
+        else UiKit.setTextIfChanged(status, active
+                ? (recorder == null ? "辅助正在记录" : recorder.game.label + "正在记录") + "，请停止辅助后再导出"
+                : selected == null ? "还没有" + game.label + "记录，请先开始一局辅助" : "选择一局，导出诊断包");
     }
 
     private void loadSessions() {
@@ -160,9 +182,20 @@ public final class DiagnosticsActivity extends UiActivity {
             try { DiagnosticRecovery.recover(DiagnosticRecorder.root(this), activeDirectory,
                     System.currentTimeMillis()); }
             catch (IOException error) { recoveryFailure = "部分记录未能恢复，请检查手机存储空间。"; }
-            File[] found = DiagnosticArchive.sessions(DiagnosticRecorder.root(this));
+            List<File> own = new ArrayList<>(), unknown = new ArrayList<>();
+            for (File directory : DiagnosticArchive.sessions(DiagnosticRecorder.root(this))) {
+                DiagnosticGame recordedGame = DiagnosticGame.read(directory);
+                if (recordedGame == game) own.add(directory);
+                else if (recordedGame == DiagnosticGame.UNKNOWN) unknown.add(directory);
+            }
+            boolean hasOwn = !own.isEmpty();
+            // Keep unidentifiable historical records reachable and explicitly labelled.
+            own.addAll(unknown);
+            File[] found = own.toArray(new File[0]);
+            String[] gameLabels = new String[found.length];
             String[] suffixes = new String[found.length];
             for (int i = 0; i < found.length; i++) {
+                gameLabels[i] = DiagnosticGame.read(found[i]).label;
                 switch (DiagnosticRecovery.status(found[i], activeDirectory)) {
                     case ACTIVE: suffixes[i] = " · 正在记录"; break;
                     case FINISHED: suffixes[i] = " · 已结束"; break;
@@ -176,6 +209,7 @@ public final class DiagnosticsActivity extends UiActivity {
                 sessions.removeAllViews();
                 String preferred = selected;
                 selected = null;
+                hasGameRecords = hasOwn;
                 recoveryError = loadError;
                 for (int i = 0; i < found.length; i++) {
                     File f = found[i];
@@ -188,7 +222,8 @@ public final class DiagnosticsActivity extends UiActivity {
                     try { timestamp = Long.parseLong(f.getName().split("-")[1]); }
                     catch (RuntimeException ignored) { timestamp = f.lastModified(); }
                     String date = new SimpleDateFormat("MM-dd HH:mm", Locale.CHINA).format(new Date(timestamp));
-                    b.setText(getString(R.string.diagnostic_session_label, date, suffixes[i]));
+                    b.setText(getString(R.string.diagnostic_session_label,
+                            gameLabels[i] + " · " + date, suffixes[i]));
                     b.setTag(f.getName());
                     sessions.addView(b);
                     if (f.getName().equals(preferred)) { selected = f.getName(); b.setChecked(true); }
@@ -219,6 +254,9 @@ public final class DiagnosticsActivity extends UiActivity {
             try {
                 if (recording()) throw new IOException("请先停止辅助再导出");
                 File directory = DiagnosticArchive.session(DiagnosticRecorder.root(this), id);
+                DiagnosticGame recordedGame = DiagnosticGame.read(directory);
+                if (recordedGame != game && recordedGame != DiagnosticGame.UNKNOWN)
+                    throw new IOException("这条记录属于另一款游戏，请重新选择");
                 File output = new File(new File(getCacheDir(), "diagnostic-exports"),
                         "sensefield-" + id + "-" + System.currentTimeMillis() + ".zip");
                 DiagnosticArchive.export(directory, output, note);
@@ -254,9 +292,15 @@ public final class DiagnosticsActivity extends UiActivity {
         DiagnosticRecorder.IO.execute(() -> {
             try {
                 if (recording()) throw new IOException("请先停止辅助");
-                for (File f : DiagnosticArchive.sessions(DiagnosticRecorder.root(this))) DiagnosticArchive.delete(f);
-                DiagnosticArchive.delete(new File(getCacheDir(), "diagnostic-exports"));
-                runOnUiThread(() -> { busy = false; loadSessions(); toast("本地测试记录已删除"); });
+                File exports = new File(getCacheDir(), "diagnostic-exports");
+                for (File f : DiagnosticArchive.sessions(DiagnosticRecorder.root(this))) {
+                    if (DiagnosticGame.read(f) != game) continue;
+                    String prefix = "sensefield-" + f.getName() + "-";
+                    File[] packages = exports.listFiles(file -> file.getName().startsWith(prefix));
+                    if (packages != null) for (File file : packages) DiagnosticArchive.delete(file);
+                    DiagnosticArchive.delete(f);
+                }
+                runOnUiThread(() -> { busy = false; loadSessions(); toast(game.label + "记录已删除"); });
             } catch (Exception error) { showError("删除失败：" + error.getMessage()); }
         });
     }

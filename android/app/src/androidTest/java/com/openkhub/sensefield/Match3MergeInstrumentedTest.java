@@ -213,6 +213,8 @@ public class Match3MergeInstrumentedTest {
                     new File(match3.directory, "metadata.json").toPath()), StandardCharsets.UTF_8));
             assertEquals(BuildConfig.VERSION_NAME, metadata.getString("app_version"));
             assertEquals(BuildConfig.VERSION_NAME, metadata.getString("version_name"));
+            assertEquals(DiagnosticGame.MATCH3.id, metadata.getString("game_id"));
+            assertEquals(DiagnosticGame.MATCH3, DiagnosticGame.read(match3.directory));
             assertEquals(BuildConfig.VERSION_CODE, metadata.getInt("version_code"));
             File[] images = new File(match3.directory, "images").listFiles((dir, name) -> name.startsWith("screen-"));
             assertNotNull(images);

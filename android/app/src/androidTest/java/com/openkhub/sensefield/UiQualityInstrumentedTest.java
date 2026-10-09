@@ -162,7 +162,7 @@ public final class UiQualityInstrumentedTest {
         }
     }
 
-    @Test public void pageAndHelpPositionsSurviveRecreationAndPauseResume() throws Exception {
+    @Test public void feedbackPositionsSurviveRecreationAndPauseResume() throws Exception {
         try (ActivityScenario<DiagnosticsActivity> scenario = ActivityScenario.launch(intent(DiagnosticsActivity.class))) {
             final int[] position = new int[1];
             scenario.onActivity(activity -> {
@@ -190,9 +190,13 @@ public final class UiQualityInstrumentedTest {
             scenario.onActivity(activity -> assertEquals("第二局 2:30：需要核对方向",
                     first(activity.findViewById(android.R.id.content), EditText.class).getText().toString()));
         }
-        try (ActivityScenario<Match3AssistActivity> scenario = ActivityScenario.launch(intent(Match3AssistActivity.class))) {
+    }
+
+    @Test public void pageAndHelpPositionsSurviveRecreationAndPauseResume() throws Exception {
+        try (ActivityScenario<Match3ToolsActivity> scenario = ActivityScenario.launch(intent(Match3ToolsActivity.class))) {
             scenario.onActivity(activity -> {
                 View root = activity.findViewById(android.R.id.content);
+                find(root, "手动棋盘校准").performClick();
                 first(root, EditText.class).setText("12.5");
                 first(root, Spinner.class).setSelection(1);
             });

@@ -18,7 +18,8 @@ PACKAGE = "com.openkhub.sensefield"
 RUNNER = PACKAGE + ".test/androidx.test.runner.AndroidJUnitRunner"
 DEBUG_CLASSES = ("Match3HintInstrumentedTest", "Match3AuditInstrumentedTest", "Match3UiInstrumentedTest", "Match3MergeInstrumentedTest")
 RELEASE_CLASSES = ("Match3ReleaseCaptureInstrumentedTest", "BundledAudioInstrumentedTest",
-                   "DetectorReuseInstrumentedTest", "DiagnosticWorkInstrumentedTest", "ReleaseRuntimeInstrumentedTest", "Match3UiInstrumentedTest")
+                   "DetectorReuseInstrumentedTest", "DiagnosticWorkInstrumentedTest", "ReleaseRuntimeInstrumentedTest",
+                   "Match3UiInstrumentedTest", "DiagnosticContextInstrumentedTest")
 
 
 def instrumentation_summary(output: str) -> dict:
@@ -27,7 +28,10 @@ def instrumentation_summary(output: str) -> dict:
     failed = any(marker in output for marker in ("FAILURES!!!", "INSTRUMENTATION_FAILED", "Process crashed"))
     if not ok or failed or int(ok.group(1)) == 0:
         raise RuntimeError("Instrumentation did not report a successful completed suite")
-    return {"executed": int(ok.group(1)), "skipped": output.count("INSTRUMENTATION_STATUS_CODE: -3")}
+    # AndroidJUnitRunner uses -3 for ignored tests and -4 for failed assumptions.
+    # JUnit's OK count includes both; neither is evidence of a completed check.
+    skipped = len(re.findall(r"^INSTRUMENTATION_STATUS_CODE: -(?:3|4)\s*$", output, re.M))
+    return {"executed": int(ok.group(1)), "skipped": skipped}
 
 
 def assert_emulator(serial: str) -> None:
@@ -107,8 +111,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             summary = instrumentation_summary(stdout)
             expected = sum(len(re.findall(r"@Test\b", (ROOT / "android/app/src/androidTest/java/com/openkhub/sensefield" / (c + ".java")).read_text())) for c in classes)
-            if summary["executed"] != expected:
-                raise RuntimeError("Instrumentation did not execute all selected tests")
+            if summary["executed"] != expected or summary["skipped"]:
+                raise RuntimeError("Instrumentation did not complete all selected tests without skips")
             return summary
         except RuntimeError:
             report["steps"][-1]["passed"] = False

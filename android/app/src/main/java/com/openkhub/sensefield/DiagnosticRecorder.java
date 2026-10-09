@@ -55,6 +55,7 @@ final class DiagnosticRecorder {
         return thread;
     });
     final String sessionId;
+    final DiagnosticGame game;
     final File directory;
     final long startedAtMs;
     volatile boolean finished;
@@ -134,22 +135,27 @@ final class DiagnosticRecorder {
     }
 
     static DiagnosticRecorder start(Context context, String sessionId, long startedAtMs) {
-        return start(context, sessionId, startedAtMs, false);
+        return start(context, sessionId, startedAtMs, DiagnosticGame.HONOR);
     }
 
     static DiagnosticRecorder start(Context context, String sessionId, long startedAtMs,
                                     boolean allowPortrait) {
-        DiagnosticRecorder recorder = new DiagnosticRecorder(context, sessionId, startedAtMs, allowPortrait);
+        return start(context, sessionId, startedAtMs, allowPortrait ? DiagnosticGame.MATCH3 : DiagnosticGame.HONOR);
+    }
+
+    static DiagnosticRecorder start(Context context, String sessionId, long startedAtMs, DiagnosticGame game) {
+        DiagnosticRecorder recorder = new DiagnosticRecorder(context, sessionId, startedAtMs, game);
         current = recorder;
         return recorder;
     }
 
-    private DiagnosticRecorder(Context supplied, String sessionId, long startedAtMs, boolean allowPortrait) {
-        this.allowPortrait = allowPortrait;
+    private DiagnosticRecorder(Context supplied, String sessionId, long startedAtMs, DiagnosticGame game) {
+        this.game = game;
+        this.allowPortrait = game == DiagnosticGame.MATCH3;
         context = supplied.getApplicationContext();
         this.sessionId = sessionId;
         this.startedAtMs = startedAtMs;
-        latestState = object("state", "starting", "snapshot_at_ms", startedAtMs,
+        latestState = object("game_id", game.id, "state", "starting", "snapshot_at_ms", startedAtMs,
                 "frames_expected", false, "last_frame_arrived_at_ms", -1,
                 "last_frame_observed_at_ms", -1, "last_frame_completed_at_ms", -1,
                 "processed_frames", 0, "landscape_processed_frames", 0);
@@ -164,6 +170,7 @@ final class DiagnosticRecorder {
             versionName = "unknown";
         }
         JSONObject metadata = object("schema", "sensefield.diagnostics", "schema_version", 1,
+                "game_id", game.id, "game_name", game.label,
                 "session_id", sessionId, "started_elapsed_ms", startedAtMs,
                 "started_wall_ms", System.currentTimeMillis(), "model", Build.MODEL,
                 "app_version", versionName,
@@ -641,6 +648,7 @@ final class DiagnosticRecorder {
         IO.execute(() -> {
             try {
                 if (archive != null) archive.finish(object("session_id", sessionId,
+                        "game_id", game.id,
                         "ended_at_ms", at, "duration_ms", Math.max(0, at - startedAtMs),
                         "reason", reason, "frame_count", frameSequence, "image_count", imageCount,
                         "interrupted", false, "end_observed", true, "last_state", finalState,

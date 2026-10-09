@@ -62,6 +62,8 @@ public final class Match3UiInstrumentedTest {
                 assertNotNull(root.findViewWithTag("ui_nav:语音引擎与语速"));
                 assertNull(find(root, "沿用当前手机引擎，支持 MultiTTS"));
                 assertNull(root.findViewWithTag("ui_details:高级工具"));
+                assertSame(root.findViewWithTag("match3_exchange_settings"),
+                        root.findViewWithTag("ui_details:行列编号说明").getParent());
                 assertEquals(View.VISIBLE, root.findViewWithTag("ui_nav:截图校准与棋子学习").getVisibility());
                 assertEquals(View.VISIBLE, root.findViewWithTag("ui_nav:游戏内触屏点读").getVisibility());
                 assertNull(find(root, "行数")); assertNull(find(root, "自定义名称"));

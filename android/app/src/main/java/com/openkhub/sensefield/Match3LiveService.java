@@ -197,7 +197,7 @@ public class Match3LiveService extends Service {
         android.util.DisplayMetrics dm = new android.util.DisplayMetrics();
         getSystemService(android.view.WindowManager.class).getDefaultDisplay().getRealMetrics(dm);
         DiagnosticRecorder diagnostics = DiagnosticRecorder.start(this,
-                UUID.randomUUID().toString(), SystemClock.elapsedRealtime(), true);
+                UUID.randomUUID().toString(), SystemClock.elapsedRealtime(), DiagnosticGame.MATCH3);
         String failureReason = "foreground_start_failed";
         try {
             startForeground(NOTIFICATION_ID, buildNotification(),
