@@ -337,6 +337,17 @@ public final class Match3ToolsActivity extends UiActivity {
 
     /* ---------- 截图式识别 ---------- */
 
+    /** 顶栏挂牌逐格采点（截图用），坐标同实况那条路径，未标定。 */
+    private static char[] goalCards(android.graphics.Bitmap frame) {
+        int w = frame.getWidth(), h = frame.getHeight();
+        int y = h * Match3GoalStrip.CARD_Y_PCT / 100;
+        char[] cards = new char[Match3GoalStrip.CARD_X_PCT.length];
+        for (int i = 0; i < cards.length; i++) {
+            cards[i] = Match3Sampler.classifyPoint(frame, w * Match3GoalStrip.CARD_X_PCT[i] / 100, y);
+        }
+        return cards;
+    }
+
     private void sampleAndAnnounce() {
         if (screenshot == null) {
             toast("先选择一张游戏截图");
@@ -350,8 +361,10 @@ public final class Match3ToolsActivity extends UiActivity {
         }
         StringBuilder sb = new StringBuilder("识别矩阵（. 表示未识别，空白表示空格）：\n");
         for (char[] row : board) sb.append(String.valueOf(row)).append('\n');
-        List<Match3Board.Swap> swaps = Match3MoveRanker.rankedSwaps(board);
-        sb.append("\n可消除交换：").append(swaps.size()).append(" 处\n");
+        Match3GoalStrip.Snapshot goals = Match3GoalStrip.read(goalCards(screenshot));
+        List<Match3Board.Swap> swaps = Match3MoveRanker.rankedSwaps(board, goals);
+        sb.append("\n").append(goals.describe()).append('\n');
+        sb.append("可消除交换：").append(swaps.size()).append(" 处\n");
         announce("棋盘识别完成，共找到 " + swaps.size() + " 处可消除交换。");
         int spoken = 0;
         for (Match3Board.Swap s : swaps) {

@@ -106,6 +106,7 @@ public class Match3LiveService extends Service {
         int rawIdx, rawFill;
         final Match3BoardConfirmation confirmation = new Match3BoardConfirmation();
         List<Match3Board.Swap> lastSwaps;
+        Match3GoalStrip.Snapshot lastGoals = Match3GoalStrip.untrusted("no_strip");
         long lastChangeAt, lastAnnounceAt, lastTouchHandledAt;
         int hintCount, liveRows = 8, liveCols = 8;
         boolean popupAnnounced, abstainAnnounced, boardValid;
@@ -445,6 +446,20 @@ public class Match3LiveService extends Service {
         });
     }
 
+    /**
+     * 顶栏挂牌逐格采点（实况用）。坐标取自 Match3GoalStrip 的常量，未标定：
+     * 采到的格子里只要有一个不是动物，读数就整体弃权，不会假装读出了目标。
+     */
+    private static char[] goalCards(Bitmap frame) {
+        int w = frame.getWidth(), h = frame.getHeight();
+        int y = h * Match3GoalStrip.CARD_Y_PCT / 100;
+        char[] cards = new char[Match3GoalStrip.CARD_X_PCT.length];
+        for (int i = 0; i < cards.length; i++) {
+            cards[i] = Match3Sampler.classifyPoint(frame, w * Match3GoalStrip.CARD_X_PCT[i] / 100, y);
+        }
+        return cards;
+    }
+
     private void processFrame(Session s, Bitmap frame) {
         if (!isCurrent(s)) return;
         s.boardValid = false; // This temporary processing state must not clear a valid drawing.
@@ -523,12 +538,14 @@ public class Match3LiveService extends Service {
         if (changed) {
             invalidateHint(s, "BOARD_CHANGED");
             s.lastStableMatrix = matrix;
-            s.lastSwaps = Match3MoveRanker.rankedSwaps(matrix);
+            s.lastGoals = Match3GoalStrip.read(goalCards(frame));
+            s.lastSwaps = Match3MoveRanker.rankedSwaps(matrix, s.lastGoals);
             s.boardRevision++; s.hintCount = 0; s.hintAttempts = 0;
             s.lastChangeAt = SystemClock.elapsedRealtime();
             s.diagnostics.audit("BoardRecognized rows=" + matrix.length + " cols=" + matrix[0].length
                     + " unknown=" + unknown + "/" + total + " swaps=" + s.lastSwaps.size()
-                    + " revision=" + s.boardRevision + " " + s.geometry);
+                    + " revision=" + s.boardRevision + " " + s.geometry
+                    + " " + s.lastGoals.describe());
         }
         if (s.currentHint == null && s.lastSwaps != null && !s.lastSwaps.isEmpty()) {
             s.currentHint = new Match3Hint(s.diagnostics.sessionId, s.boardRevision, s.frameAt,
@@ -537,7 +554,7 @@ public class Match3LiveService extends Service {
             s.diagnostics.audit("Match3Hint revision=" + hint.revision + " from="
                     + hint.swap.fromRow + "," + hint.swap.fromCol + " to="
                     + hint.swap.toRow + "," + hint.swap.toCol + " origin=top_left_zero_based "
-                    + Match3MoveRanker.evidence(hint.swap));
+                    + Match3MoveRanker.evidence(hint.swap, matrix, s.lastGoals));
             updateHintOverlay(s, hint);
         }
         if (changed && s.lastSwaps.isEmpty())
@@ -641,6 +658,7 @@ public class Match3LiveService extends Service {
         if (s.sampler != null) s.sampler.close();
         s.sampler = null; s.geometry = null; s.geometryConfirmation.reset();
         s.lastStableMatrix = null; s.lastSwaps = null;
+        s.lastGoals = Match3GoalStrip.untrusted("board_invalidated");
         resetWindow(s);
     }
 
