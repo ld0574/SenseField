@@ -13,12 +13,14 @@ import java.util.List;
 final class Match3GoalStrip {
 
     /**
-     * 挂牌采点位置（画面百分比）：计划书只说到「左上角挂牌」，本机无 adb 通道、没有真机像素标定过，
-     * 所以这组常量是未标定的猜测。标定前 read() 靠「任一格不是动物就整体弃权」兜住，
-     * 不会把背景色补成某种目标；弃权原因会进诊断串，装机后可直接照着改这几个值。
+     * 挂牌采点位置（画面千分比，避免浮点）。双格位与纵坐标在 27 个诊断包里 20 帧带图语料上量得：
+     * 475 宽帧两格中心 43.6%／56.5%、纵 9.0%；432 宽帧 43.1%／57.2%、纵 9.8%；卡框约 59x50 像素，
+     * 采点半宽只有 6 像素，所以取两组读数的中段就落在框内。三格位没有语料样本，
+     * 是按「两格以画面中线为中心、格距约 13.5%」推出来的，未经实测，只能当兜底布局。
      */
-    static final int CARD_Y_PCT = 5;
-    static final int[] CARD_X_PCT = {7, 14, 21};
+    static final int CARD_Y_PER_MILLE = 94;
+    static final int[] PAIR_X_PER_MILLE = {434, 570};
+    static final int[] TRIPLE_X_PER_MILLE = {366, 501, 636};
 
     /** 一次挂牌读数：可信时给出要收集的种类，不可信时给出弃权原因。 */
     static final class Snapshot {
@@ -82,6 +84,20 @@ final class Match3GoalStrip {
             if (!kinds.contains(c)) kinds.add(c);
         }
         return new Snapshot(strip.clone(), kinds, "all_slots_are_animals");
+    }
+
+    /**
+     * 两套候选采点布局按顺序试：先双格（语料里全是双格），不成再试三格。
+     * 任何一套整体读成动物就采用它，绝不把两套拼在一起；两套都不成才弃权，
+     * 弃权原因带上两套各自失败的那一格，装机后照字面就能看出该挪哪个点。
+     */
+    static Snapshot readLayouts(char[] pair, char[] triple) {
+        Snapshot p = read(pair);
+        if (p.trusted()) return p;
+        Snapshot t = read(triple);
+        if (t.trusted()) return t;
+        return new Snapshot(p.slots.clone(), new ArrayList<Character>(),
+                "no_layout_matched pair=" + p.reason() + " triple=" + t.reason());
     }
 
     private static String whyNotAnimal(char c) {

@@ -337,13 +337,18 @@ public final class Match3ToolsActivity extends UiActivity {
 
     /* ---------- 截图式识别 ---------- */
 
-    /** 顶栏挂牌逐格采点（截图用），坐标同实况那条路径，未标定。 */
-    private static char[] goalCards(android.graphics.Bitmap frame) {
+    /** 顶栏挂牌采点：双格位先试、三格位兜底，坐标取自 Match3GoalStrip 的千分比常量。 */
+    private static Match3GoalStrip.Snapshot goalCards(android.graphics.Bitmap frame) {
         int w = frame.getWidth(), h = frame.getHeight();
-        int y = h * Match3GoalStrip.CARD_Y_PCT / 100;
-        char[] cards = new char[Match3GoalStrip.CARD_X_PCT.length];
+        int y = h * Match3GoalStrip.CARD_Y_PER_MILLE / 1000;
+        return Match3GoalStrip.readLayouts(cardsAt(frame, w, y, Match3GoalStrip.PAIR_X_PER_MILLE),
+                cardsAt(frame, w, y, Match3GoalStrip.TRIPLE_X_PER_MILLE));
+    }
+
+    private static char[] cardsAt(android.graphics.Bitmap frame, int w, int y, int[] xPerMille) {
+        char[] cards = new char[xPerMille.length];
         for (int i = 0; i < cards.length; i++) {
-            cards[i] = Match3Sampler.classifyPoint(frame, w * Match3GoalStrip.CARD_X_PCT[i] / 100, y);
+            cards[i] = Match3Sampler.classifyPoint(frame, w * xPerMille[i] / 1000, y);
         }
         return cards;
     }
@@ -361,7 +366,7 @@ public final class Match3ToolsActivity extends UiActivity {
         }
         StringBuilder sb = new StringBuilder("识别矩阵（. 表示未识别，空白表示空格）：\n");
         for (char[] row : board) sb.append(String.valueOf(row)).append('\n');
-        Match3GoalStrip.Snapshot goals = Match3GoalStrip.read(goalCards(screenshot));
+        Match3GoalStrip.Snapshot goals = goalCards(screenshot);
         List<Match3Board.Swap> swaps = Match3MoveRanker.rankedSwaps(board, goals);
         sb.append("\n").append(goals.describe()).append('\n');
         sb.append("可消除交换：").append(swaps.size()).append(" 处\n");

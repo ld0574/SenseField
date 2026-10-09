@@ -56,3 +56,21 @@
   （`047ec9358fa5987d309eca34bfa6ab515667c1b8bf878f7aaf28023c47c44ee6`），服务副本无独有信息；
   日志里唯一有价值的读数已在上一条抄进本卷。同时删掉 4 个 10-07 未改名的 `_pending_assemble_*.log`、本轮跑完即废的中转文件与追加脚本。
   保留：门禁计数与案卷复扫两个可复用仪器、语料扫描读数表、挂牌截图、各轮验证脚本（删了就没法复跑取证）。
+
+## 挂牌标定落地轮 · 当轮实测 2026-10-09 21:50:59
+
+- 领导裁「改常量」这条路，已落地：`Match3GoalStrip` 换成千分比常量（纵 94‰、双格 434‰／570‰、三格 366‰／501‰／636‰），
+  新增 `readLayouts(pair, triple)`——先试双格、整体读通就采用，不成再试三格，两套都不成才弃权，
+  弃权原因带上两套各自的失败格（`no_layout_matched pair=... triple=...`）。两条接线（实况与工具页）各加一个
+  `cardsAt` 采点循环并改调 `readLayouts`；`read(char[])` 一字未动，所以既有 9 条读数用例与 12 条排序用例全绿。
+- 新增 `Match3GoalLayoutTest` 9 例（选取规则 6 例＋落点回归钉 2 例＋弃权逐位同旧 1 例），期望全部手写，不由被测评分函数反推。
+- 反向验证两轮：
+  - 把纵坐标改回旧的 50‰ → `sampledPointsStayInsideTheMeasuredCardBoxes FAILED`，报 `java.lang.AssertionError at Match3GoalLayoutTest.java:105`，`9 tests completed, 1 failed`；
+  - 把双格改成无条件返回（等于三格兜底失效）→ 4 条红，含
+    `theTripleLayoutDrivesTheGoalKeyWhenThePairIsUnreadable`、`theTripleIsUsedOnlyWhenThePairHasANonAnimalSlot`、
+    `neitherLayoutMatchedNamesBothFailingSlots`、`bothLayoutsEmptyAbstainsWithoutInventingKinds`，`9 tests completed, 4 failed`；
+  - 两轮还原后全量绿：`25 actionable tasks: 25 executed` 零 UP-TO-DATE，files=64 tests=432 failures=7 skipped=0 errors=0，
+    红的仍是同名 7 条 Windows 文件系统红。测试数 423→432（新增 9）。
+- 诚实边界：双格位与纵坐标是 20 帧语料实测；三格位是推算（语料里没有三格样本），首次真机读到三格关时要靠诊断串复核；
+  本轮全部结论只到 JVM 单测与代码路径，没有真机验证。
+- 案卷同步：待裁第 1 条改写为「已裁并做＋残余是三格位待真机复核」，标定操作卡按新常量名与新弃权格式重写（含新落点回归钉的说明）。

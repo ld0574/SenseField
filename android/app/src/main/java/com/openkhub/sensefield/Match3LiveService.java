@@ -447,15 +447,20 @@ public class Match3LiveService extends Service {
     }
 
     /**
-     * 顶栏挂牌逐格采点（实况用）。坐标取自 Match3GoalStrip 的常量，未标定：
-     * 采到的格子里只要有一个不是动物，读数就整体弃权，不会假装读出了目标。
+     * 顶栏挂牌采点（实况用）：双格位先试、三格位兜底，坐标取自 Match3GoalStrip 的千分比常量。
+     * 一套布局里只要有一格不是动物，这套就不采用；两套都不成才整体弃权，不会假装读出了目标。
      */
-    private static char[] goalCards(Bitmap frame) {
+    private static Match3GoalStrip.Snapshot goalCards(Bitmap frame) {
         int w = frame.getWidth(), h = frame.getHeight();
-        int y = h * Match3GoalStrip.CARD_Y_PCT / 100;
-        char[] cards = new char[Match3GoalStrip.CARD_X_PCT.length];
+        int y = h * Match3GoalStrip.CARD_Y_PER_MILLE / 1000;
+        return Match3GoalStrip.readLayouts(cardsAt(frame, w, y, Match3GoalStrip.PAIR_X_PER_MILLE),
+                cardsAt(frame, w, y, Match3GoalStrip.TRIPLE_X_PER_MILLE));
+    }
+
+    private static char[] cardsAt(Bitmap frame, int w, int y, int[] xPerMille) {
+        char[] cards = new char[xPerMille.length];
         for (int i = 0; i < cards.length; i++) {
-            cards[i] = Match3Sampler.classifyPoint(frame, w * Match3GoalStrip.CARD_X_PCT[i] / 100, y);
+            cards[i] = Match3Sampler.classifyPoint(frame, w * xPerMille[i] / 1000, y);
         }
         return cards;
     }
@@ -538,7 +543,7 @@ public class Match3LiveService extends Service {
         if (changed) {
             invalidateHint(s, "BOARD_CHANGED");
             s.lastStableMatrix = matrix;
-            s.lastGoals = Match3GoalStrip.read(goalCards(frame));
+            s.lastGoals = goalCards(frame);
             s.lastSwaps = Match3MoveRanker.rankedSwaps(matrix, s.lastGoals);
             s.boardRevision++; s.hintCount = 0; s.hintAttempts = 0;
             s.lastChangeAt = SystemClock.elapsedRealtime();
