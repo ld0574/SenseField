@@ -21,7 +21,7 @@
 
 版本 `0.4.5 / versionCode 22`，Android 10 及以上、arm64。正式 Release 构建，沿用原有签名，可覆盖升级。
 
-APK 大小 24,280,844 bytes（约 24.28MB），SHA-256：`b3ac783ad00341bc1a968503eb6eb0df9f285be90ad3fa191c2bee12368c1995`。最终测试与交付包字节一致；无线 ADB 已失联，本批尚未装机，之前的手机回读仅对应旧修订。
+APK 大小 24,280,840 bytes（约 24.28MB），SHA-256：`3d6ec296e43cf00457aaa6acf6f2fffaa9af40c7408ba09cb6d92f63cf822ba9`。最终测试与交付包字节一致；无线 ADB 已失联，本批尚未装机，之前的手机回读仅对应旧修订。
 
 唯一 APK：`output/releases/0.4.5/gitee-upload/sensefieldv0.4.5.apk`。匹配更新清单：`output/releases/0.4.5/cdn-upload/latest.json`。实际大小、摘要、构建和设备检查见[当前验证记录](../../../validation/match3/MATCH3_GOAL_VALUE_0_4_5_2026-10-09.md)。
 
@@ -29,7 +29,7 @@ APK 大小 24,280,844 bytes（约 24.28MB），SHA-256：`b3ac783ad00341bc1a9685
 
 ## 验证范围
 
-本次目标读取与排序修订通过 425 项 JVM、4 项 Python 门禁回归、42 项 Debug 和 21 项最终 minified Release 仪器检查，无失败／跳过；Release lint 为 0 错误／33 警告。真实投影选择手工标注的任务相关交换，验证同盘目标变化与未知关卡回退；故障图不是独立玩家验收，模拟器语音派发不计外部实声通过。模板复用后的同组模拟器软件 P95 增幅约 9.3%，手机受控温升仍待测。见[当前修订记录](../../../validation/match3/MATCH3_GOAL_VALUE_0_4_5_2026-10-09.md)。
+本次目标读取与排序修订通过 455 项 JVM、4 项 Python 门禁回归、42 项 Debug 和 21 项最终 minified Release 仪器检查，无失败／跳过；Release lint 为 0 错误／33 警告。真实投影选择手工标注的任务相关交换，验证同盘目标变化与未知关卡回退；故障图不是独立玩家验收，模拟器语音派发不计外部实声通过。模板复用后的同组模拟器软件 P95 增幅约 9.3%，手机受控温升仍待测。见[当前修订记录](../../../validation/match3/MATCH3_GOAL_VALUE_0_4_5_2026-10-09.md)。
 
 此前整段无提醒修订的 402 项 JVM、36 项 Debug／20 项 Release 与真机覆盖，仅对应其历史制品，见[前批记录](../../../validation/match3/MATCH3_NO_HINTS_0_4_5_2026-10-09.md)。
 
