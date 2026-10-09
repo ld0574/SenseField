@@ -66,4 +66,14 @@ public class Match3UnreadableGateTest {
         assertFalse(Match3LiveService.isUnreadableBoard(board(8, 8, 10)));
         assertEquals(10, Match3LiveService.countUnknown(board(8, 8, 10)));
     }
+
+    @Test public void excludedSurfaceCellsCannotBecomeMovableRunsOrExchanges() {
+        char[][] m = board(9, 9, 0);
+        for (int row = 0; row < 9; row++) java.util.Arrays.fill(m[row], Match3Sampler.NON_SWAP_CELL);
+        assertFalse(Match3LiveService.isUnreadableBoard(m));
+        assertEquals(0, Match3LiveService.countUnknown(m));
+        assertTrue(Match3Board.findRuns(m).isEmpty());
+        assertTrue(Match3Board.findSwaps(m).isEmpty());
+        assertEquals("非普通棋子区域", Match3Coach.pieceName(Match3Sampler.NON_SWAP_CELL));
+    }
 }

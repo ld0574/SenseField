@@ -257,7 +257,8 @@ public final class Match3HintInstrumentedTest {
     private static void await(String message, long timeout, Condition condition) throws Exception {
         long until = SystemClock.elapsedRealtime() + timeout;
         while (!condition.ready() && SystemClock.elapsedRealtime() < until) SystemClock.sleep(100);
-        assertTrue(message, condition.ready());
+        assertTrue(message + "; current=" + (DiagnosticRecorder.current == null ? "none"
+                : DiagnosticRecorder.current.stateForDiagnostics()), condition.ready());
     }
     private static Object startProjection(ActivityScenario<Match3AssistActivity> scenario,
                                           SyntheticGame[] game) throws Exception {
@@ -572,6 +573,15 @@ public final class Match3HintInstrumentedTest {
                 throw failure;
             }
             scenario.onActivity(a -> game[0].heartbeat = false);
+            // System bars and other windows may still repaint an otherwise still
+            // game. Stop delivery on the real reader to exercise actual no-frame
+            // expiry, rather than assuming that no game draw means no OS frame.
+            CountDownLatch noFrames = new CountDownLatch(1);
+            ((android.os.Handler) get(service, "handler")).post(() -> {
+                r.setOnImageAvailableListener(null, null);
+                noFrames.countDown();
+            });
+            assertTrue("Capture delivery is stopped on its owning worker", noFrames.await(3, TimeUnit.SECONDS));
             await("More than five seconds with no frame retires the hint", 8000, () -> get(rotated, "currentHint") == null);
             Match3HintOverlay v = (Match3HintOverlay) get(rotated, "overlay");
             assertTrue(v == null || v.renderedHint() == null);

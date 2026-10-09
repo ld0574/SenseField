@@ -18,20 +18,21 @@ python3 -m unittest discover -s tests -p test_match3_regression_gate.py
 启动一个 arm64 Android 模拟器，准备已有签名的四个环境变量：`SENSEFIELD_KEYSTORE_PATH`、`SENSEFIELD_KEY_ALIAS`、`SENSEFIELD_KEYSTORE_PASSWORD`、`SENSEFIELD_KEY_PASSWORD`。沿用交付证书，不新建签名，不将密钥写入命令记录或仓库。需要时设置 `JAVA_HOME`、`ANDROID_HOME`。
 
 ```sh
-python3 scripts/verify_match3_regression.py --mode full --serial emulator-5554
+python3 scripts/verify_match3_regression.py --mode full --serial emulator-5554 \
+  --fixtures /绝对路径/明确提供的诊断截图目录
 ```
 
 这条命令依次运行：
 
 1. 完整 JVM 回归。
-2. Debug 页面、合包、原生位图／动态 TTS 回调／真实 MediaProjection 测试：长句超过 4 秒、慢语速、引擎初始化、缺失回调、替换和迟到回调、窗口像素过滤、权限拒绝、停止持帧、旋转、关卡变化、5 秒无帧及模板资源释放。
+2. Debug 页面、合包、原生位图／动态 TTS 回调／真实 MediaProjection 测试：长句超过 4 秒、慢语速、引擎初始化、缺失回调、替换和迟到回调、窗口像素过滤、权限拒绝、停止持帧、旋转、关卡变化、5 秒无帧及模板资源释放。明确提供的第 43 关图同时检查 JPEG 与 1220×2712 录屏尺寸的 9×9 几何，以及大块障碍／布局洞不成为假三连。
 3. 正式 Release 构建、裁剪、包校验与 lint。
-4. 安装同一份 minified Release 到模拟器，检查消消乐主页、设置／语音页、高级区折叠与旋转恢复、取消系统录屏授权后可重试，再验证：持续高亮、实际交换手势穿透、局面更新、弹窗、消除中暂不推荐、重新确认 8×6 几何；同时运行已有离线音频、JNI、ASR 依赖和诊断工作回归。
+4. 安装同一份 minified Release 到模拟器，检查消消乐主页、设置／语音页、高级区折叠与旋转恢复、取消系统录屏授权后可重试，再验证：持续高亮、实际交换手势穿透、局面更新、弹窗、消除中暂不推荐、重新确认 8×6 几何；第 43 关诊断图经过真实投影必须生成手工读图核对的有效交换、高亮及接受的语音请求。同时运行已有离线音频、JNI、ASR 依赖和诊断工作回归。
 5. 收集实际模拟器截图、主页／设置／高级工具画面和状态检查点。报告的 `passed` 只表示上述工程检查通过。
 
 脚本只接受 `emulator-*`，检测到正在运行的辅助会话就停止。不会自动操作患者手机、发布包或生产服务器。ADB 的退出码不能代表仪器用例成功；必须收到完整的 `OK (...)`，崩溃或 `INSTRUMENTATION_FAILED` 都算失败。
 
-历史诊断 JPEG 可通过 `--fixtures /绝对路径/诊断截图目录` 明确提供，进入测试 APK，不进入正式 APK。没有提供时，历史图片用例标为跳过；不能将其写成通过。不得把封存录像目录传给这个参数。
+历史诊断 JPEG 通过 `--fixtures /绝对路径/诊断截图目录` 明确提供，进入测试 APK，不进入正式 APK。完整门禁需要旧 7×7 的 `screen-13-89250125.jpg`、`screen-52-89282114.jpg`、`screen-169-89377034.jpg`，以及第 43 关的 `screen-34-2258491893.jpg`、`screen-47-2258502432.jpg`、`screen-86-2258534080.jpg`。没有提供时，相应图片用例标为跳过；完整门禁拒绝任何跳过，不能将其写成通过。不得把封存录像目录传给这个参数。
 
 ## 失败与交付
 

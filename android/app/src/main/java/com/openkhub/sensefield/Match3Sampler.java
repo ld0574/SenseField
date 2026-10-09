@@ -22,6 +22,8 @@ final class Match3Sampler implements AutoCloseable {
 
     /** 确认的布局洞/下落空位，不是未识别。 */
     static final char GAP_CELL = 'H';   // 空位：露出棋盘底的格（下落中/布局洞），非棋子
+    /** Coloured surface without an individual animal's board-backed footprint. */
+    static final char NON_SWAP_CELL = '#';
 
     static boolean isMovable(char c) {
         return c == 'R' || c == 'O' || c == 'Y' || c == 'G' || c == 'B' || c == 'P';
@@ -32,7 +34,8 @@ final class Match3Sampler implements AutoCloseable {
     }
 
     static boolean isUnknown(char c) {
-        return !isMovable(c) && !isTemplateCode(c) && c != EMPTY_CELL && c != 'I' && c != GAP_CELL;
+        return !isMovable(c) && !isTemplateCode(c) && c != EMPTY_CELL && c != 'I'
+                && c != GAP_CELL && c != NON_SWAP_CELL;
     }
 
     /** Legacy non-piece predicate. Readability must use isUnknown, not this method. */
@@ -142,9 +145,7 @@ final class Match3Sampler implements AutoCloseable {
             for (int col = 0; col < cols; col++) {
                 int cx = geometry.centerX(col);
                 int cy = geometry.centerY(row);
-                board[row][col] = looksEmpty(bitmap, cx, cy, cellW, cellH)
-                        ? EMPTY_CELL
-                        : classifyCell(bitmap, cx, cy, half, templates);
+                board[row][col] = classifyBoardCell(bitmap, cx, cy, cellW, cellH, half, templates);
             }
         }
         return board;
@@ -174,10 +175,22 @@ final class Match3Sampler implements AutoCloseable {
         int cellW = g.cellWidth(), cellH = g.cellHeight();
         int cx = g.centerX(col), cy = g.centerY(row);
         int half = Math.max(3, Math.min(cellW, cellH) / 8);
-        char piece = looksEmpty(frame, cx, cy, cellW, cellH)
-                ? EMPTY_CELL
-                : classifyCell(frame, cx, cy, half, templates);
+        char piece = classifyBoardCell(frame, cx, cy, cellW, cellH, half, templates);
         return new int[]{row, col, piece};
+    }
+
+    private static char classifyBoardCell(Bitmap frame, int cx, int cy, int cellW, int cellH,
+                                          int half, List<SpecialTemplate> templates) {
+        CellAppearance appearance = cellAppearance(frame, cx, cy, cellW, cellH);
+        if (appearance.distance <= EMPTY_COLOR_DISTANCE) return EMPTY_CELL;
+        char piece = classifyCell(frame, cx, cy, half, templates, appearance.centre);
+        if (!isMovable(piece)) return piece;
+        // A hue describes appearance, not whether a cell is an ordinary animal.
+        // Large orange/purple obstacles and cyan layout holes used to become O/B,
+        // causing permanent false runs and a session that never offers any hint.
+        // An ordinary animal exposes board background at its cell corners. Reuse
+        // the existing GAP colour domain and corner stencil; do not tune HSV bins.
+        return appearance.backed >= 3 ? piece : NON_SWAP_CELL;
     }
 
     private void requireOpen() {
@@ -197,13 +210,17 @@ final class Match3Sampler implements AutoCloseable {
 
     static char classifyCell(Bitmap bitmap, int cx, int cy, int half,
                              List<SpecialTemplate> templates) {
+        return classifyCell(bitmap, cx, cy, half, templates, avgColor(bitmap, cx, cy, half));
+    }
+
+    private static char classifyCell(Bitmap bitmap, int cx, int cy, int half,
+                                    List<SpecialTemplate> templates, int rgb) {
         /* 模板优先：玩家对真实画面学习过的棋子（基础动物＋特殊棋子）最可信，
          * 先比模板（对狐狸红与棕熊棕这类相近色相远比 HSV 桶可靠），HSV 桶只做兜底。 */
         if (templates != null && !templates.isEmpty()) {
             char byTemplate = matchTemplate(bitmap, cx, cy, half, templates);
             if (byTemplate != UNKNOWN) return byTemplate;
         }
-        int rgb = avgColor(bitmap, cx, cy, half);
         if (rgb == NO_PIXELS) return UNKNOWN;
         float[] hsv = new float[3];
         Color.colorToHSV(rgb, hsv);
@@ -256,15 +273,28 @@ final class Match3Sampler implements AutoCloseable {
 
     /** 格心与格四角（棋子覆盖不到的位置）的逐通道平均色差。空格≈0，有子时远大于此。 */
     static int centerCornerDistance(Bitmap bitmap, int cx, int cy, int cellW, int cellH) {
+        return cellAppearance(bitmap, cx, cy, cellW, cellH).distance;
+    }
+
+    private static final class CellAppearance {
+        final int centre, distance, backed;
+        CellAppearance(int centre, int distance, int backed) {
+            this.centre = centre; this.distance = distance; this.backed = backed;
+        }
+    }
+
+    /** Read the existing centre/corner stencil once for both emptiness and footprint. */
+    private static CellAppearance cellAppearance(Bitmap bitmap, int cx, int cy, int cellW, int cellH) {
         int centre = avgColor(bitmap, cx, cy, Math.max(3, Math.min(cellW, cellH) / 8));
-        if (centre == NO_PIXELS) return Integer.MAX_VALUE;
+        if (centre == NO_PIXELS) return new CellAppearance(centre, Integer.MAX_VALUE, 0);
         int ox = cellW * 42 / 100, oy = cellH * 42 / 100;
         int probe = Math.max(2, Math.min(cellW, cellH) / 16);
         int[][] corners = {
                 {cx - ox, cy - oy}, {cx + ox, cy - oy}, {cx - ox, cy + oy}, {cx + ox, cy + oy}
         };
         long total = 0;
-        int counted = 0;
+        int counted = 0, backed = 0;
+        float[] hsv = new float[3];
         for (int[] p : corners) {
             int c = avgColor(bitmap, p[0], p[1], probe);
             if (c == NO_PIXELS) continue;
@@ -272,8 +302,11 @@ final class Match3Sampler implements AutoCloseable {
                     + Math.abs(Color.green(centre) - Color.green(c))
                     + Math.abs(Color.blue(centre) - Color.blue(c));
             counted++;
+            Color.colorToHSV(c, hsv);
+            if (hsv[2] < .5f && hsv[0] >= 170f && hsv[0] <= 300f) backed++;
         }
-        return counted == 0 ? Integer.MAX_VALUE : (int) (total / (counted * 3L));
+        return new CellAppearance(centre, counted == 0 ? Integer.MAX_VALUE
+                : (int) (total / (counted * 3L)), backed);
     }
 
     /** 棋盘底色常落在 HSV 弃权闸门（v<0.15）之上，光靠颜色阈值挡不住空格，改用格心与格角的局部对比。 */
@@ -498,20 +531,57 @@ final class Match3Sampler implements AutoCloseable {
         int cols = frame.getWidth() / step, rows = frame.getHeight() / step;
         boolean[][] mask = new boolean[rows][cols];
         float[] hsv = new float[3];
-        int[] line = new int[frame.getWidth()];
+        int width = frame.getWidth();
+        int[] band = new int[width * step];
         for (int r = 0; r < rows; r++) {
-            // One native read per sampled row; avoid ~50k getPixel calls per check.
-            // Coordinates, HSV conversion and mask parameters remain identical.
-            frame.getPixels(line, 0, line.length, 0, r * step + step / 2, line.length, 1);
+            // Occupancy pooling preserves borders thinner than the coarse mask.
+            // A single centre sample erased the lower component of level 43 at
+            // 1220px, although the 432px diagnostic JPEG kept the whole board.
+            // Read one bounded band; the colour domain is unchanged. Stop at the
+            // first supporting pixel and avoid HSV work on bright background.
+            frame.getPixels(band, 0, width, 0, r * step, width, step);
             for (int c = 0; c < cols; c++) {
-                Color.colorToHSV(line[c * step + step / 2], hsv);
-                mask[r][c] = hsv[2] < .45f && hsv[0] >= 170f && hsv[0] <= 300f;
+                for (int y = 0; y < step && !mask[r][c]; y++) for (int x = 0; x < step; x++) {
+                    int rgb = band[y * width + c * step + x];
+                    if (boardBackground(rgb, hsv)) {
+                        mask[r][c] = true;
+                        break;
+                    }
+                }
             }
         }
         int[] box = connectedBounds(mask);
         if (box == null) return null;
-        return new int[]{box[0] * step, box[1] * step,
-                Math.min(frame.getWidth(), box[2] * step), Math.min(frame.getHeight(), box[3] * step)};
+        int l = box[0] * step, t = box[1] * step;
+        int r = Math.min(frame.getWidth(), box[2] * step);
+        int b = Math.min(frame.getHeight(), box[3] * step);
+        // Pooling protects connectivity but must not enlarge the reported grid.
+        // Refine only the four edge bands to recover actual supporting pixels.
+        return new int[]{l + backgroundExtent(frame, l, t, step, b - t, false, false),
+                t + backgroundExtent(frame, l, t, r - l, step, true, false),
+                r - step + backgroundExtent(frame, r - step, t, step, b - t, false, true) + 1,
+                b - step + backgroundExtent(frame, l, b - step, r - l, step, true, true) + 1};
+    }
+
+    private static boolean boardBackground(int rgb, float[] hsv) {
+        if (Math.max(Color.red(rgb), Math.max(Color.green(rgb), Color.blue(rgb))) >= .45f * 255f)
+            return false;
+        Color.colorToHSV(rgb, hsv);
+        return hsv[0] >= 170f && hsv[0] <= 300f;
+    }
+
+    private static int backgroundExtent(Bitmap frame, int left, int top, int width, int height,
+                                        boolean vertical, boolean maximum) {
+        int[] pixels = new int[width * height];
+        frame.getPixels(pixels, 0, width, left, top, width, height);
+        int extent = maximum ? -1 : (vertical ? height : width);
+        float[] hsv = new float[3];
+        for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) {
+            if (!boardBackground(pixels[y * width + x], hsv)) continue;
+            int at = vertical ? y : x;
+            extent = maximum ? Math.max(extent, at) : Math.min(extent, at);
+        }
+        return extent;
     }
 
     /** Components keep disconnected letterbox strips out of the board rectangle. */
@@ -547,7 +617,10 @@ final class Match3Sampler implements AutoCloseable {
             int shortSide = Math.min(bw, bh), longSide = Math.max(bw, bh);
             // Reuse the existing 30% minimum extent and 5% dark-pixel support.
             // Supported 6..9 rectangular grids bound the legal aspect ratio.
-            if (shortSide * 10 < Math.min(width, height) * 3 || shortSide * 9 < longSide * 6
+            // A pooled bounding box can round an edge by one mask cell. Apply
+            // the aspect screen to that interval; refined pixel bounds and the
+            // independent axis checks still enforce square individual cells.
+            if (shortSide * 10 < Math.min(width, height) * 3 || (shortSide + 1) * 9 < (longSide - 1) * 6
                     || tail * 20L < (long) bw * bh) continue;
             if (tail > bestArea) { bestArea = tail; best = new int[]{left, top, right + 1, bottom + 1}; }
         }

@@ -11,23 +11,26 @@ import java.util.Locale;
 /** Launch from the visible authorization activity after the capture acknowledgement. */
 final class GameLauncher {
     static final String HONOR_OF_KINGS_PACKAGE = "com.tencent.tmgp.sgame";
+    static final String HAPPY_ANIPOP_PACKAGE = "com.happyelements.AndroidAnimal";
 
     private GameLauncher() {}
 
     static boolean openHappyAnipop(Activity activity) {
-        String selected = null;
-        for (ResolveInfo entry : activity.getPackageManager().queryIntentActivities(
+        String selected = HAPPY_ANIPOP_PACKAGE;
+        Intent launch = activity.getPackageManager().getLaunchIntentForPackage(selected);
+        // Loading every installed app's label opens its APK on the UI thread.
+        // On the player's phone that took >5s and produced an input-dispatch ANR.
+        // The usual package needs only a direct launcher lookup; channel variants
+        // are filtered by package name and never require another app's resources.
+        if (launch == null) for (ResolveInfo entry : activity.getPackageManager().queryIntentActivities(
                 new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)) {
             if (entry.activityInfo == null) continue;
             String name = entry.activityInfo.packageName;
             String lower = name.toLowerCase(Locale.ROOT);
-            CharSequence label = entry.loadLabel(activity.getPackageManager());
-            boolean isAnipop = lower.startsWith("com.happyelements.androidanimal")
-                    || (lower.contains("happyelements") && label != null && label.toString().contains("开心消消乐"));
-            if (!isAnipop) continue;
-            if (selected == null || "com.happyelements.AndroidAnimal".equals(name)) selected = name;
+            if (!lower.startsWith("com.happyelements.androidanimal")) continue;
+            launch = activity.getPackageManager().getLaunchIntentForPackage(name);
+            if (launch != null) { selected = name; break; }
         }
-        Intent launch = selected == null ? null : activity.getPackageManager().getLaunchIntentForPackage(selected);
         if (launch == null) {
             Toast.makeText(activity, "辅助已启动，未找到开心消消乐，请先安装游戏", Toast.LENGTH_LONG).show();
             Log.i("SenseFieldGameLaunch", "game=happy-anipop result=not_installed");

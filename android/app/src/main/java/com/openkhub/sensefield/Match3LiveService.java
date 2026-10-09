@@ -98,6 +98,9 @@ public class Match3LiveService extends Service {
         Bitmap frame;
         volatile long frameAt;
         long processedFrames;
+        String recommendationGate = "starting";
+        int unknownCells, excludedCells, visibleRuns;
+        long geometryWaitingFrames, boardChangingFrames, cascadeWaitingFrames;
         long lastProcessedAt = -CAPTURE_INTERVAL_MS;
         char[][][] rawWindow = new char[STABLE_FRAMES][][];
         int rawIdx, rawFill;
@@ -352,6 +355,12 @@ public class Match3LiveService extends Service {
                     "frame_width", image.getWidth(), "frame_height", image.getHeight(),
                     "board_valid", s.boardValid, "rows", s.liveRows, "cols", s.liveCols,
                     "board_revision", s.boardRevision,
+                    "recommendation_gate", s.recommendationGate,
+                    "unknown_cells", s.unknownCells, "excluded_cells", s.excludedCells,
+                    "visible_runs", s.visibleRuns,
+                    "geometry_waiting_frames", s.geometryWaitingFrames,
+                    "board_changing_frames", s.boardChangingFrames,
+                    "cascade_waiting_frames", s.cascadeWaitingFrames,
                     "geometry", s.geometry == null ? null : DiagnosticRecorder.object(
                             "left", s.geometry.left, "top", s.geometry.top,
                             "right", s.geometry.right, "bottom", s.geometry.bottom,
@@ -376,6 +385,8 @@ public class Match3LiveService extends Service {
         } catch (Exception error) {
             if (isCurrent(s)) {
                 invalidateBoard(s, "FRAME_ERROR");
+                recommendationGate(s, "frame_error");
+                s.diagnostics.audit("Match3FrameError error=" + error.getClass().getSimpleName());
                 Log.w(TAG, "帧处理失败: " + error.getClass().getSimpleName());
             }
         } finally {
@@ -438,6 +449,7 @@ public class Match3LiveService extends Service {
         if (!isCurrent(s)) return;
         s.boardValid = false; // This temporary processing state must not clear a valid drawing.
         if (Match3Coach.isPopupShowing(frame)) {
+            recommendationGate(s, "popup");
             if (!s.popupAnnounced) s.diagnostics.audit("Match3Status state=popup speech=silent");
             s.popupAnnounced = true;
             invalidateBoard(s, "POPUP");
@@ -447,6 +459,7 @@ public class Match3LiveService extends Service {
             s.popupAnnounced = false;
             invalidateBoard(s, "POPUP_CLOSED");
             s.diagnostics.audit("Match3Status state=popup_closed speech=silent");
+            recommendationGate(s, "popup_closed");
             return;
         }
         if (s.geometry != null && (s.geometry.frameWidth != frame.getWidth()
@@ -456,21 +469,30 @@ public class Match3LiveService extends Service {
         BoardGeometry candidate = estimateGeometry(frame);
         if (s.geometry != null && !s.geometry.sameGrid(candidate))
             invalidateBoard(s, candidate == null ? "GEOMETRY_UNVERIFIED" : "GEOMETRY_CHANGED");
-        if (s.sampler == null && !prepareGeometry(s, frame, candidate)) return;
-        if (s.exploreMode) { handleExploreTouch(s, frame); return; }
+        if (s.sampler == null && !prepareGeometry(s, frame, candidate)) {
+            s.geometryWaitingFrames++;
+            recommendationGate(s, candidate == null ? "geometry_unavailable" : "geometry_confirming");
+            return;
+        }
+        if (s.exploreMode) { recommendationGate(s, "touch_read"); handleExploreTouch(s, frame); return; }
         char[][] raw = s.sampler.sample(frame);
         if (s.currentHint != null && countDiffCells(s.lastStableMatrix, raw) > 0)
             invalidateHint(s, "BOARD_CHANGED");
         s.rawWindow[s.rawIdx] = raw;
         s.rawIdx = (s.rawIdx + 1) % STABLE_FRAMES;
         if (s.rawFill < STABLE_FRAMES) s.rawFill++;
-        if (s.rawFill < STABLE_FRAMES) return;
+        if (s.rawFill < STABLE_FRAMES) { recommendationGate(s, "sampling"); return; }
         // Observe EVERY raw frame. Skipping the non-majority frame would leave an
         // accepted A in this gate and let A/B/A immediately resurrect its old hint.
         boolean consecutivelyConfirmed = s.confirmation.accept(raw);
         char[][] matrix = majorityMatrix(s.rawWindow);
         int unknown = countUnknown(matrix), total = matrix.length * matrix[0].length;
+        s.unknownCells = unknown; s.excludedCells = 0;
+        for (char[] row : matrix) for (char cell : row)
+            if (cell == Match3Sampler.NON_SWAP_CELL) s.excludedCells++;
+        s.visibleRuns = 0;
         if (isUnreadableBoard(matrix)) {
+            recommendationGate(s, "unreadable");
             if (!s.abstainAnnounced) {
                 s.abstainAnnounced = true;
                 s.diagnostics.audit("Match3GeometryRejected reason=unreadable unknown=" + unknown + "/" + total);
@@ -479,10 +501,17 @@ public class Match3LiveService extends Service {
             return;
         }
         // Do not restore a previous-window hint over a board that is currently moving.
-        if (!matrixEquals(matrix, raw) || !consecutivelyConfirmed) return;
+        if (!matrixEquals(matrix, raw) || !consecutivelyConfirmed) {
+            s.boardChangingFrames++;
+            recommendationGate(s, "board_changing");
+            return;
+        }
         // Visible matches have not finished resolving. Never recommend a new
         // exchange while an automatic elimination/cascade is still on screen.
-        if (!Match3Board.findRuns(matrix).isEmpty()) {
+        s.visibleRuns = Match3Board.findRuns(matrix).size();
+        if (s.visibleRuns > 0) {
+            s.cascadeWaitingFrames++;
+            recommendationGate(s, "cascade");
             invalidateHint(s, "CASCADE");
             s.confirmation.reset();
             return;
@@ -513,7 +542,17 @@ public class Match3LiveService extends Service {
         }
         if (changed && s.lastSwaps.isEmpty())
             s.diagnostics.audit("Match3Status state=no_swap speech=silent");
+        recommendationGate(s, s.currentHint == null ? "no_swap" : "ready");
         maybeAnnounceHint(s, false);
+    }
+
+    /** Status-change logging, with cheap cumulative counters in the existing checkpoint. */
+    private void recommendationGate(Session s, String reason) {
+        if (reason.equals(s.recommendationGate)) return;
+        s.recommendationGate = reason;
+        s.diagnostics.audit("Match3RecommendationGate reason=" + reason
+                + " revision=" + s.boardRevision + " unknown=" + s.unknownCells
+                + " excluded=" + s.excludedCells + " runs=" + s.visibleRuns);
     }
 
     private BoardGeometry estimateGeometry(Bitmap frame) {
@@ -596,6 +635,8 @@ public class Match3LiveService extends Service {
     }
 
     private void invalidateBoard(Session s, String reason) {
+        if (s.geometry != null) s.diagnostics.audit("Match3GeometryInvalidated reason=" + reason
+                + " " + s.geometry);
         invalidateHint(s, reason);
         if (s.sampler != null) s.sampler.close();
         s.sampler = null; s.geometry = null; s.geometryConfirmation.reset();

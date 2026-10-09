@@ -28,6 +28,15 @@ public final class Match3GeometryTest {
             assertFalse(g.mapsToDisplay(2800, 1260));
         }
     }
+    @Test public void pooledNineBySixBoundsAllowOnlyTheirMaskQuantization() {
+        boolean[][] mask = new boolean[170][300];
+        for (int y = 40; y < 143; y++) for (int x = 25; x < 93; x++)
+            if ((y - 40) % 12 == 0 || (x - 25) % 17 == 0 || y == 142 || x == 92) mask[y][x] = true;
+        assertArrayEquals(new int[]{25, 40, 93, 143}, Match3Sampler.connectedBounds(mask));
+        boolean[][] strip = new boolean[170][300];
+        for (int y = 10; y < 160; y++) for (int x = 25; x < 93; x++) strip[y][x] = true;
+        assertNull("A thin strip is still not a supported 6..9 grid", Match3Sampler.connectedBounds(strip));
+    }
     @Test public void threeConsecutiveGeometryFramesCannotReuseAFailedOrDifferentGrid() {
         Match3GeometryConfirmation gate = new Match3GeometryConfirmation();
         BoardGeometry seven = geometry(7, 7), eight = geometry(8, 8);
