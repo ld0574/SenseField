@@ -48,10 +48,10 @@ final class Match3Coach {
         double sum = 0;
         long white = 0, n = 0;
         int step = Math.max(4, w / 120);
+        float[] hsv = new float[3];
         for (int y = t; y < b; y += step) {
             for (int x = l; x < r; x += step) {
                 int px = frame.getPixel(x, y);
-                float[] hsv = new float[3];
                 Color.colorToHSV(px, hsv);
                 sum += hsv[2];
                 if (hsv[2] > 0.85f && hsv[1] < 0.25f) white++;
@@ -97,17 +97,23 @@ final class Match3Coach {
 
     /** 统计子区域内各颜色棋子数量（直接复用采样矩阵的子块）。 */
     static RegionSummary summarizeRegion(char[][] board, int r1, int c1, int r2, int c2) {
+        return summarizeRegion(board, r1, c1, r2, c2, Match3Coach::pieceName);
+    }
+
+    static RegionSummary summarizeRegion(char[][] board, int r1, int c1, int r2, int c2,
+                                         java.util.function.Function<Character, String> names) {
         Map<String, Integer> counts = new LinkedHashMap<>();
         int total = 0, unknown = 0;
-        int rLo = Math.min(r1, r2), rHi = Math.max(r1, r2);
-        int cLo = Math.min(c1, c2), cHi = Math.max(c1, c2);
+        if (Match3Board.columns(board) == 0) return new RegionSummary(counts, 0, 0);
+        int rLo = Math.max(0, Math.min(r1, r2)), rHi = Math.max(r1, r2);
+        int cLo = Math.max(0, Math.min(c1, c2)), cHi = Math.max(c1, c2);
         for (int r = rLo; r <= rHi && r < board.length; r++) {
             for (int c = cLo; c <= cHi && c < board[r].length; c++) {
                 char piece = board[r][c];
-                String name = pieceName(piece);
+                String name = names.apply(piece);
                 counts.merge(name, 1, Integer::sum);
                 total++;
-                if (piece == '.') unknown++;
+                if (Match3Sampler.isUnknown(piece)) unknown++;
             }
         }
         return new RegionSummary(counts, total, unknown);

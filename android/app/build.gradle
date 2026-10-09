@@ -77,8 +77,8 @@ android {
         applicationId speechFixture ? 'com.openkhub.sensefield.speechfixture' : 'com.openkhub.sensefield'
         minSdk 29
         targetSdk 35
-        versionCode 21
-        versionName '0.4.4'
+        versionCode 22
+        versionName '0.4.5'
         buildConfigField 'boolean', 'SPEECH_TEST_FIXTURE', speechFixture.toString()
         buildConfigField 'String', 'APP_UPDATE_METADATA_URL', groovy.json.JsonOutput.toJson(updateMetadataUrl)
         buildConfigField 'String', 'ASSISTANT_DEFAULT_ENDPOINT', groovy.json.JsonOutput.toJson(assistantDefaultEndpoint)
@@ -161,7 +161,7 @@ if (speechFixture) {
     if (file('src/main/assets/speech/manifest.json').exists()) {
         throw new GradleException('Real speech assets are present; test the real Release instead of synthetic fixtures.')
     }
-    android.defaultConfig.versionName = '0.4.4-fixture'
+    android.defaultConfig.versionName = '0.4.5-fixture'
     android.sourceSets.main.assets.srcDir file('../../output/speech-fixture/assets')
 }
 

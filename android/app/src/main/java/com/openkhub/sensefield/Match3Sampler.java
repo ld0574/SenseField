@@ -15,27 +15,45 @@ import java.util.Map;
 
 /** 消消乐识别采样器：Bitmap＋标定 → 颜色矩阵；含特殊棋子模板匹配。
  *  Activity（截图式）与 Match3LiveService（实时式）共用，保证两条链路行为一致。 */
-final class Match3Sampler {
+final class Match3Sampler implements AutoCloseable {
     static final char UNKNOWN = '.';
     /** 确认的空格（格心与四角同色）。与 UNKNOWN 分开，否则「没棋子」和「认不出」在播报里同一个词。 */
     static final char EMPTY_CELL = ' ';
 
-    /** 该格读不出棋子（真空位或认不出）——自我修复检测按这个口径数。 */
+    /** 确认的布局洞/下落空位，不是未识别。 */
     static final char GAP_CELL = 'H';   // 空位：露出棋盘底的格（下落中/布局洞），非棋子
 
+    static boolean isMovable(char c) {
+        return c == 'R' || c == 'O' || c == 'Y' || c == 'G' || c == 'B' || c == 'P';
+    }
+
+    static boolean isTemplateCode(char c) {
+        return c >= '1' && c <= '9' || c >= 'a' && c <= 'z';
+    }
+
+    static boolean isUnknown(char c) {
+        return !isMovable(c) && !isTemplateCode(c) && c != EMPTY_CELL && c != 'I' && c != GAP_CELL;
+    }
+
+    /** Legacy non-piece predicate. Readability must use isUnknown, not this method. */
     static boolean isUnreadable(char c) {
-        return c == UNKNOWN || c == EMPTY_CELL || c == 'I' || c == GAP_CELL;
-        // 冰块/空位：非棋子格，不参与交换与走法
+        return !isMovable(c);
     }
 
     /** 特殊棋子模板：一张 32×32 裁剪图＋名字。 */
     static final class SpecialTemplate {
         final String name;
         final Bitmap thumb;
+        final int[] comparisonPixels = new int[16 * 16];
+        char code;
 
         SpecialTemplate(String name, Bitmap thumb) {
             this.name = name;
             this.thumb = thumb;
+            code = nameToLetter(name);
+            Bitmap small = Bitmap.createScaledBitmap(thumb, 16, 16, true);
+            try { small.getPixels(comparisonPixels, 0, 16, 0, 0, 16, 16); }
+            finally { if (small != thumb) small.recycle(); }
         }
     }
 
@@ -49,6 +67,8 @@ final class Match3Sampler {
     private final int rPct;
     private final int bPct;
     private final List<SpecialTemplate> templates;
+    private final BoardGeometry geometry;
+    private boolean closed;
 
     Match3Sampler(android.content.Context context, int rows, int cols,
                   int lPct, int tPct, int rPct, int bPct) {
@@ -60,11 +80,32 @@ final class Match3Sampler {
         this.rPct = rPct;
         this.bPct = bPct;
         this.templates = loadTemplates(context);
+        this.geometry = null;
+    }
+
+    Match3Sampler(android.content.Context context, BoardGeometry geometry) {
+        this.context = context;
+        this.geometry = geometry;
+        rows = geometry.rows; cols = geometry.cols;
+        int[] pct = geometry.percentages();
+        lPct = pct[0]; tPct = pct[1]; rPct = pct[2]; bPct = pct[3];
+        templates = loadTemplates(context);
+    }
+
+    private BoardGeometry geometryFor(Bitmap frame) {
+        if (geometry != null) {
+            if (geometry.frameWidth != frame.getWidth() || geometry.frameHeight != frame.getHeight())
+                throw new IllegalArgumentException("Capture size changed");
+            return geometry;
+        }
+        return BoardGeometry.fromPercent(frame.getWidth(), frame.getHeight(), rows, cols,
+                new int[]{lPct, tPct, rPct, bPct});
     }
 
     /** 按实例标定采样整盘（含特殊棋子模板匹配）。 */
     char[][] sample(Bitmap bitmap) {
-        return sample(bitmap, rows, cols, lPct, tPct, rPct, bPct, templates);
+        requireOpen();
+        return sample(bitmap, geometryFor(bitmap), templates);
     }
 
     /** 按标定采样整个棋盘。templates 可为 null/空。 */
@@ -88,17 +129,19 @@ final class Match3Sampler {
     static char[][] sample(Bitmap bitmap, int rows, int cols,
                            int lPct, int tPct, int rPct, int bPct,
                            List<SpecialTemplate> templates) {
-        int l = bitmap.getWidth() * lPct / 100;
-        int t = bitmap.getHeight() * tPct / 100;
-        int r = bitmap.getWidth() * rPct / 100;
-        int b = bitmap.getHeight() * bPct / 100;
+        return sample(bitmap, BoardGeometry.fromPercent(bitmap.getWidth(), bitmap.getHeight(),
+                rows, cols, new int[]{lPct, tPct, rPct, bPct}), templates);
+    }
+
+    static char[][] sample(Bitmap bitmap, BoardGeometry geometry, List<SpecialTemplate> templates) {
+        int rows = geometry.rows, cols = geometry.cols;
         char[][] board = new char[rows][cols];
-        int cellW = (r - l) / cols, cellH = (b - t) / rows;
+        int cellW = geometry.cellWidth(), cellH = geometry.cellHeight();
         int half = Math.max(3, Math.min(cellW, cellH) / 8);
         for (int row = 0; row < rows; row++) {
             for (int col = 0; col < cols; col++) {
-                int cx = l + cellW * col + cellW / 2;
-                int cy = t + cellH * row + cellH / 2;
+                int cx = geometry.centerX(col);
+                int cy = geometry.centerY(row);
                 board[row][col] = looksEmpty(bitmap, cx, cy, cellW, cellH)
                         ? EMPTY_CELL
                         : classifyCell(bitmap, cx, cy, half, templates);
@@ -111,23 +154,45 @@ final class Match3Sampler {
 
     int colCount() { return cols; }
 
+    /** Names/codes belong to this loaded catalog, not another screen's latest load. */
+    String pieceName(char code) {
+        requireOpen();
+        if (isTemplateCode(code)) {
+            for (SpecialTemplate template : templates) if (template.code == code) return template.name;
+            return "未识别";
+        }
+        return Match3Coach.pieceName(code);
+    }
+
     /** 触屏点读：把屏幕坐标映射到格子并分类该格（模板优先）。返回 {row,col,piece}，null=点在棋盘外。 */
     int[] touchRead(Bitmap frame, int px, int py) {
-        int l = frame.getWidth() * lPct / 100;
-        int t = frame.getHeight() * tPct / 100;
-        int r = frame.getWidth() * rPct / 100;
-        int b = frame.getHeight() * bPct / 100;
-        if (px < l || px >= r || py < t || py >= b) return null;
-        int col = (px - l) * cols / (r - l);
-        int row = (py - t) * rows / (b - t);
-        if (row < 0 || row >= rows || col < 0 || col >= cols) return null;
-        int cellW = (r - l) / cols, cellH = (b - t) / rows;
-        int cx = l + cellW * col + cellW / 2, cy = t + cellH * row + cellH / 2;
+        requireOpen();
+        BoardGeometry g = geometryFor(frame);
+        int[] hit = g.cellAt(px, py);
+        if (hit == null) return null;
+        int row = hit[0], col = hit[1];
+        int cellW = g.cellWidth(), cellH = g.cellHeight();
+        int cx = g.centerX(col), cy = g.centerY(row);
         int half = Math.max(3, Math.min(cellW, cellH) / 8);
         char piece = looksEmpty(frame, cx, cy, cellW, cellH)
                 ? EMPTY_CELL
                 : classifyCell(frame, cx, cy, half, templates);
         return new int[]{row, col, piece};
+    }
+
+    private void requireOpen() {
+        if (closed) throw new IllegalStateException("Sampler is closed");
+    }
+
+    @Override public void close() {
+        if (closed) return;
+        closed = true;
+        recycleTemplates(templates);
+    }
+
+    static void recycleTemplates(List<SpecialTemplate> templates) {
+        for (SpecialTemplate template : templates)
+            if (template.thumb != null && !template.thumb.isRecycled()) template.thumb.recycle();
     }
 
     static char classifyCell(Bitmap bitmap, int cx, int cy, int half,
@@ -225,18 +290,19 @@ final class Match3Sampler {
         Bitmap small = null;
         try {
             small = Bitmap.createScaledBitmap(cell, 16, 16, true);
-            String bestName = null;
+            int[] pixels = new int[16 * 16];
+            small.getPixels(pixels, 0, 16, 0, 0, 16, 16);
+            SpecialTemplate bestTemplate = null;
             float best = Float.MAX_VALUE;
             for (SpecialTemplate t : templates) {
-                float diff = meanAbsDiff(small, t.thumb);
+                float diff = meanAbsDiff(pixels, t.comparisonPixels);
                 if (diff < best) {
                     best = diff;
-                    bestName = t.name;
+                    bestTemplate = t;
                 }
             }
             if (best > 30f) return UNKNOWN;
-            char letter = nameToLetter(bestName);
-            return letter != UNKNOWN ? letter : templateCode(bestName);
+            return bestTemplate == null ? UNKNOWN : bestTemplate.code;
         } finally {
             if (small != null && small != cell && small != bitmap) small.recycle();
             if (cell != bitmap) cell.recycle();
@@ -246,13 +312,17 @@ final class Match3Sampler {
     /** 学习到的动物名 → 矩阵字母（基础棋子模板用固定字母，与播报名一致）。 */
     static char nameToLetter(String name) {
         if (name == null) return UNKNOWN;
-        if (name.contains("狐狸") || name.contains("红")) return 'R';
-        if (name.contains("小鸡") || name.contains("黄")) return 'Y';
-        if (name.contains("青蛙") || name.contains("绿")) return 'G';
-        if (name.contains("河马") || name.contains("蓝")) return 'B';
-        if (name.contains("棕熊") || name.contains("熊")) return 'O';
-        if (name.contains("紫猫") || name.contains("紫")) return 'P';
-        return UNKNOWN;
+        // A color substring in “蓝色冰块” or “红色木箱” does not turn an obstacle
+        // into an animal. Only explicit aliases of the six basic animals qualify.
+        switch (name.trim()) {
+            case "狐狸": case "红狐狸": case "狐狸红": case "红": case "红色": return 'R';
+            case "小鸡": case "黄小鸡": case "小鸡黄": case "黄": case "黄色": return 'Y';
+            case "青蛙": case "绿青蛙": case "青蛙绿": case "绿": case "绿色": return 'G';
+            case "河马": case "蓝河马": case "河马蓝": case "蓝": case "蓝色": return 'B';
+            case "棕熊": case "熊": case "棕熊棕": case "棕": case "棕色": return 'O';
+            case "紫猫": case "紫猫紫": case "紫": case "紫色": return 'P';
+            default: return UNKNOWN;
+        }
     }
 
     /** 模板名 → 矩阵字母。字母由本轮载入的模板集合按名字排序稳定分配，不撞车。 */
@@ -279,6 +349,10 @@ final class Match3Sampler {
             CODE_TO_NAME.put(CODE_POOL[i], names.get(i));
             NAME_TO_CODE.put(names.get(i), CODE_POOL[i]);
         }
+        for (SpecialTemplate template : templates) {
+            char animal = nameToLetter(template.name);
+            template.code = animal != UNKNOWN ? animal : templateCode(template.name);
+        }
     }
 
     /** 数字 9 个 + 小写字母 26 个：避开 R/O/Y/G/B/P 六个基础色字母与 '.'。 */
@@ -303,23 +377,14 @@ final class Match3Sampler {
         return Bitmap.createBitmap(bitmap, l, t, r - l, b - t);
     }
 
-    private static float meanAbsDiff(Bitmap a, Bitmap b) {
-        Bitmap bb = (b.getWidth() != 16 || b.getHeight() != 16)
-                ? Bitmap.createScaledBitmap(b, 16, 16, true) : b;
-        try {
-            long diff = 0;
-            for (int y = 0; y < 16; y++) {
-                for (int x = 0; x < 16; x++) {
-                    int pa = a.getPixel(x, y), pb = bb.getPixel(x, y);
-                    diff += Math.abs(Color.red(pa) - Color.red(pb))
-                            + Math.abs(Color.green(pa) - Color.green(pb))
-                            + Math.abs(Color.blue(pa) - Color.blue(pb));
-                }
-            }
-            return diff / (16f * 16f * 3f);
-        } finally {
-            if (bb != b) bb.recycle();
+    static float meanAbsDiff(int[] a, int[] b) {
+        long diff = 0;
+        for (int i = 0; i < 16 * 16; i++) {
+            diff += Math.abs(Color.red(a[i]) - Color.red(b[i]))
+                    + Math.abs(Color.green(a[i]) - Color.green(b[i]))
+                    + Math.abs(Color.blue(a[i]) - Color.blue(b[i]));
         }
+        return diff / (16f * 16f * 3f);
     }
 
     /* ---------- 棋盘自动适配：检测深色棋盘格区域的包围盒 ---------- */
@@ -404,21 +469,89 @@ final class Match3Sampler {
      * 检测不到返回 null（保持手动标定）。
      */
     static int[] autoDetectBoard(Bitmap frame) {
-        int step = Math.max(1, frame.getWidth() / 160);
+        int[] pixels = autoDetectPixels(frame);
+        if (pixels == null) return null;
+        return new BoardGeometry(frame.getWidth(), frame.getHeight(), pixels[0], pixels[1],
+                pixels[2], pixels[3], 1, 1).percentages();
+    }
+
+    static BoardGeometry autoDetectGeometry(Bitmap frame) {
+        int[] b = autoDetectPixels(frame);
+        return b == null ? null : verifiedGeometry(frame, b);
+    }
+
+    static BoardGeometry verifiedGeometry(Bitmap frame, int[] pixels) {
+        int cols = detectGridAxis(frame, pixels, false);
+        int rows = detectGridAxis(frame, pixels, true);
+        if (rows < 6 || cols < 6) return null;
+        float cellWidth = (pixels[2] - pixels[0]) / (float) cols;
+        float cellHeight = (pixels[3] - pixels[1]) / (float) rows;
+        if (Math.abs(cellWidth - cellHeight) > 2 * Math.max(1,
+                Math.min(frame.getWidth(), frame.getHeight()) / 160)) return null;
+        return new BoardGeometry(frame.getWidth(), frame.getHeight(), pixels[0], pixels[1],
+                pixels[2], pixels[3], rows, cols);
+    }
+
+    private static int[] autoDetectPixels(Bitmap frame) {
+        // Keep the same sampling density when the full display rotates.
+        int step = Math.max(1, Math.min(frame.getWidth(), frame.getHeight()) / 160);
         int cols = frame.getWidth() / step, rows = frame.getHeight() / step;
         boolean[][] mask = new boolean[rows][cols];
+        float[] hsv = new float[3];
+        int[] line = new int[frame.getWidth()];
         for (int r = 0; r < rows; r++) {
+            // One native read per sampled row; avoid ~50k getPixel calls per check.
+            // Coordinates, HSV conversion and mask parameters remain identical.
+            frame.getPixels(line, 0, line.length, 0, r * step + step / 2, line.length, 1);
             for (int c = 0; c < cols; c++) {
-                int x = Math.min(frame.getWidth() - 1, c * step + step / 2);
-                int y = Math.min(frame.getHeight() - 1, r * step + step / 2);
-                int px = frame.getPixel(x, y);
-                float[] hsv = new float[3];
-                Color.colorToHSV(px, hsv);
-                /* 棋盘底：暗（v<0.45）、偏冷色（hue 170-300）、饱和度不限（冰格也偏暗） */
-                mask[r][c] = hsv[2] < 0.45f && hsv[0] >= 170f && hsv[0] <= 300f;
+                Color.colorToHSV(line[c * step + step / 2], hsv);
+                mask[r][c] = hsv[2] < .45f && hsv[0] >= 170f && hsv[0] <= 300f;
             }
         }
-        return detectBoundsFromMask(mask);
+        int[] box = connectedBounds(mask);
+        if (box == null) return null;
+        return new int[]{box[0] * step, box[1] * step,
+                Math.min(frame.getWidth(), box[2] * step), Math.min(frame.getHeight(), box[3] * step)};
+    }
+
+    /** Components keep disconnected letterbox strips out of the board rectangle. */
+    static int[] connectedBounds(boolean[][] mask) {
+        int height = mask.length, width = mask[0].length;
+        boolean[][] seen = new boolean[height][width];
+        int[] queue = new int[height * width];
+        int bestArea = 0;
+        int[] best = null;
+        for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) {
+            if (!mask[y][x] || seen[y][x]) continue;
+            int head = 0, tail = 1, left = x, top = y, right = x, bottom = y;
+            queue[0] = y * width + x; seen[y][x] = true;
+            while (head < tail) {
+                int p = queue[head++], r = p / width, c = p % width;
+                left = Math.min(left, c); right = Math.max(right, c);
+                top = Math.min(top, r); bottom = Math.max(bottom, r);
+                // No boxed coordinates or per-pixel allocation on the capture worker.
+                if (c > 0 && mask[r][c - 1] && !seen[r][c - 1]) {
+                    seen[r][c - 1] = true; queue[tail++] = p - 1;
+                }
+                if (c + 1 < width && mask[r][c + 1] && !seen[r][c + 1]) {
+                    seen[r][c + 1] = true; queue[tail++] = p + 1;
+                }
+                if (r > 0 && mask[r - 1][c] && !seen[r - 1][c]) {
+                    seen[r - 1][c] = true; queue[tail++] = p - width;
+                }
+                if (r + 1 < height && mask[r + 1][c] && !seen[r + 1][c]) {
+                    seen[r + 1][c] = true; queue[tail++] = p + width;
+                }
+            }
+            int bw = right - left + 1, bh = bottom - top + 1;
+            int shortSide = Math.min(bw, bh), longSide = Math.max(bw, bh);
+            // Reuse the existing 30% minimum extent and 5% dark-pixel support.
+            // Supported 6..9 rectangular grids bound the legal aspect ratio.
+            if (shortSide * 10 < Math.min(width, height) * 3 || shortSide * 9 < longSide * 6
+                    || tail * 20L < (long) bw * bh) continue;
+            if (tail > bestArea) { bestArea = tail; best = new int[]{left, top, right + 1, bottom + 1}; }
+        }
+        return best;
     }
 
     /** 单格最小可信边长（像素）：1080p 宽下等于 60，与 detectGridCount 自己的弃权门
@@ -455,53 +588,49 @@ final class Match3Sampler {
      * 自相关在真机 7×7 抽帧上逐帧命中 7，合成 7×7 有守卫测试锁住；
      * 但只在按棋盘裁剪后的框内可信——喂进含天空／道具栏的宽框会自信地数成 9，
      * 调用方须先拿到 autoDetectBoard 的框。实测数据见 research/board-recognition/REAL_VIDEO_FINDINGS.md）。
-     * 返回 6..9；不可信返回 -1（调用方回退到已存格数）。
+     * 返回 6..9；不可信返回 -1。实时辅助不得把存储格数当作校验通过。
      */
     static int detectGridCount(Bitmap frame, int[] boundsPct) {
-        int w = frame.getWidth(), h = frame.getHeight();
-        int x0 = w * boundsPct[0] / 100, y0 = h * boundsPct[1] / 100;
-        int x1 = Math.min(w, w * boundsPct[2] / 100), y1 = Math.min(h, h * boundsPct[3] / 100);
-        int cw = x1 - x0, ch = y1 - y0;
-        if (cw < 60 || ch < 60) return -1;
-        int stride = Math.max(1, cw / 240);
-        int nCols = cw / stride;
-        if (nCols < 30) return -1;
-        double[] prof = new double[nCols];
-        int nRows = 0;
-        int[] rowBuf = new int[cw];
-        float[] hsv = new float[3];
-        for (int y = y0; y < y1; y += 2) {
-            frame.getPixels(rowBuf, 0, cw, x0, y, cw, 1);
-            nRows++;
-            for (int c = 0; c < nCols; c++) {
-                Color.colorToHSV(rowBuf[Math.min(cw - 1, c * stride)], hsv);
-                prof[c] += hsv[2];
+        return detectGridAxis(frame, new int[]{frame.getWidth() * boundsPct[0] / 100,
+                frame.getHeight() * boundsPct[1] / 100, frame.getWidth() * boundsPct[2] / 100,
+                frame.getHeight() * boundsPct[3] / 100}, false);
+    }
+
+    private static int detectGridAxis(Bitmap frame, int[] box, boolean vertical) {
+        int x0 = box[0], y0 = box[1], cw = box[2] - x0, ch = box[3] - y0;
+        if (x0 < 0 || y0 < 0 || box[2] > frame.getWidth() || box[3] > frame.getHeight()
+                || cw < 60 || ch < 60) return -1;
+        int length = vertical ? ch : cw, cross = vertical ? cw : ch;
+        int stride = Math.max(1, length / 240), n = length / stride;
+        if (n < 30) return -1;
+        double[] profile = new double[n];
+        int[] line = new int[length];
+        int samples = 0;
+        // V is exactly max(R,G,B)/255; no per-pixel HSV conversion is necessary.
+        for (int at = 0; at < cross; at += 2) {
+            if (vertical) frame.getPixels(line, 0, 1, x0 + at, y0, 1, ch);
+            else frame.getPixels(line, 0, cw, x0, y0 + at, cw, 1);
+            samples++;
+            for (int c = 0; c < n; c++) {
+                int rgb = line[c * stride];
+                profile[c] += Math.max(Color.red(rgb), Math.max(Color.green(rgb), Color.blue(rgb))) / 255.0;
             }
         }
-        if (nRows == 0) return -1;
-        double mean = 0;
-        for (int c = 0; c < nCols; c++) prof[c] /= nRows;
-        for (double v : prof) mean += v;
-        mean /= nCols;
-        double var = 0;
-        for (int c = 0; c < nCols; c++) {
-            prof[c] -= mean;
-            var += prof[c] * prof[c];
+        double mean = 0, variance = 0;
+        for (int c = 0; c < n; c++) { profile[c] /= samples; mean += profile[c]; }
+        mean /= n;
+        for (int c = 0; c < n; c++) { profile[c] -= mean; variance += profile[c] * profile[c]; }
+        variance /= n;
+        if (variance < 1e-6) return -1;
+        int bestD = -1; double best = -2;
+        for (int d = Math.max(2, n / 10); d <= Math.min(n / 5, n - 1); d++) {
+            double score = 0;
+            for (int c = 0; c + d < n; c++) score += profile[c] * profile[c + d];
+            score /= (n - d) * variance;
+            if (score > best) { best = score; bestD = d; }
         }
-        var /= nCols;
-        if (var < 1e-6) return -1;
-        int dMin = Math.max(2, nCols / 10), dMax = Math.min(nCols / 5, nCols - 1);
-        int bestD = -1;
-        double bestV = -2;
-        for (int d = dMin; d <= dMax; d++) {
-            double s = 0;
-            for (int c = 0; c + d < nCols; c++) s += prof[c] * prof[c + d];
-            s /= (nCols - d) * var;
-            if (s > bestV) { bestV = s; bestD = d; }
-        }
-        if (bestD < 0) return -1;
-        int n = (int) Math.round((double) nCols / bestD);
-        return (n >= 6 && n <= 9) ? n : -1;
+        int count = bestD < 0 ? -1 : (int) Math.round(n / (double) bestD);
+        return count >= 6 && count <= 9 ? count : -1;
     }
 
     /* ---------- 特殊棋子模板存取（app 私有目录 special_templates/） ---------- */
@@ -528,10 +657,15 @@ final class Match3Sampler {
     }
 
     static void saveTemplate(android.content.Context context, String name, Bitmap cell) throws IOException {
+        if (name == null || name.trim().isEmpty() || name.indexOf('/') >= 0
+                || name.indexOf('\\') >= 0 || name.indexOf('\0') >= 0)
+            throw new IOException("棋子名称不能包含路径分隔符");
         Bitmap thumb = Bitmap.createScaledBitmap(cell, 32, 32, true);
         File out = new File(templateDir(context), name + ".png");
         try (FileOutputStream fos = new FileOutputStream(out)) {
             thumb.compress(Bitmap.CompressFormat.PNG, 100, fos);
+        } finally {
+            if (thumb != cell) thumb.recycle();
         }
     }
 }

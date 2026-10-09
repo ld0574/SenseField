@@ -59,13 +59,14 @@ public class Match3PieceNameTest {
                 Match3Coach.pieceName(Match3Sampler.UNKNOWN));
     }
 
-    /** 自我修复检测按「读不出棋子」数格，两种标记都要算进去（与改用两个标记前口径一致）。 */
+    /** The legacy predicate means non-movable, not unknown. The two concepts stay distinct. */
     @Test
     public void unreadableCoversBothMarkers() {
         org.junit.Assert.assertTrue(Match3Sampler.isUnreadable(Match3Sampler.UNKNOWN));
         org.junit.Assert.assertTrue(Match3Sampler.isUnreadable(Match3Sampler.EMPTY_CELL));
         org.junit.Assert.assertFalse(Match3Sampler.isUnreadable('O'));
-        org.junit.Assert.assertFalse(Match3Sampler.isUnreadable('1'));
+        org.junit.Assert.assertTrue(Match3Sampler.isUnreadable('1'));
+        org.junit.Assert.assertFalse(Match3Sampler.isUnknown('1'));
     }
 
     /** 逐行扫描必须与点读/区域摘要同一套词表——旧 charName 念颜色词，玩家听到两套命名。 */

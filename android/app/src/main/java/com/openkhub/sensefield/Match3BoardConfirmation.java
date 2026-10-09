@@ -2,18 +2,13 @@ package com.openkhub.sensefield;
 
 import java.util.Arrays;
 
-/** Require two matching stable windows after start or a board transition. */
+/** Every changed board needs consecutive matching samples, including a returning old board. */
 final class Match3BoardConfirmation {
     private char[][] candidate;
-    private boolean waiting = true;
 
     boolean accept(char[][] board) {
-        if (!waiting) return true;
-        if (candidate != null && Arrays.deepEquals(candidate, board)) {
-            waiting = false;
-            candidate = null;
-            return true;
-        }
+        if (Match3Board.columns(board) == 0) { reset(); return false; }
+        if (candidate != null && Arrays.deepEquals(candidate, board)) return true;
         candidate = new char[board.length][];
         for (int row = 0; row < board.length; row++) candidate[row] = board[row].clone();
         return false;
@@ -21,6 +16,5 @@ final class Match3BoardConfirmation {
 
     void reset() {
         candidate = null;
-        waiting = true;
     }
 }

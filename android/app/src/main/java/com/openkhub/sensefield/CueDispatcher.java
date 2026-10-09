@@ -27,6 +27,7 @@ final class CueDispatcher implements AutoCloseable {
     interface PlaybackCallback {
         void onStarted(long atMs);
         void onFinished(long atMs, boolean success);
+        default void onFailed(long atMs, String reason) { onFinished(atMs, false); }
     }
     interface Renderer {
         boolean playTone(CueRequest request, PlaybackCallback callback);
@@ -45,6 +46,7 @@ final class CueDispatcher implements AutoCloseable {
     interface Listener {
         void onDispatch(CueRequest request, DispatchResult result);
         void onPlayback(CueRequest request, String channel, long atMs, String result);
+        default void onPlaybackFailure(CueRequest request, long atMs, String reason) { }
     }
 
     static final class DispatchResult {
@@ -346,6 +348,12 @@ final class CueDispatcher implements AutoCloseable {
                 listener.onPlayback(request, "SPEECH", atMs, "STARTED");
             }
             @Override public void onFinished(long atMs, boolean success) {
+                finish(atMs, success, null);
+            }
+            @Override public void onFailed(long atMs, String reason) {
+                finish(atMs, false, reason);
+            }
+            private void finish(long atMs, boolean success, String reason) {
                 synchronized (CueDispatcher.this) {
                     if (cancelledSpeech.remove(request.cueId)) return;
                     if (paused || playbackEpoch != speechEpoch) return;
@@ -353,6 +361,7 @@ final class CueDispatcher implements AutoCloseable {
                     listener.onPlayback(request, "SPEECH", atMs,
                             !started[0] && !request.playbackAllowedAt(atMs) ? "EXPIRED"
                                     : success ? "COMPLETED" : "FAILED");
+                    if (reason != null) listener.onPlaybackFailure(request, atMs, reason);
                     drainSpeech();
                 }
             }
@@ -430,6 +439,25 @@ final class CueDispatcher implements AutoCloseable {
     long recentAlertAtMs() { return lastAlertAtMs; }
 
     /** Clear output queued for one category when its feature is disabled/reset. */
+    /** Retire one stale recommendation without interrupting unrelated status speech. */
+    synchronized void cancelCue(String cueId, String reason) {
+        if (closed || cueId == null) return;
+        speechQueue.removeIf(pending -> {
+            if (!cueId.equals(pending.request.cueId)) return false;
+            listener.onPlayback(pending.request, "SPEECH", clock.nowMs(), "CANCELLED_" + reason);
+            return true;
+        });
+        if (speaking != null && cueId.equals(speaking.cueId)) {
+            CueRequest previous = speaking;
+            cancelledSpeech.add(previous.cueId);
+            speaking = null;
+            speechEpoch++;
+            renderer.stopSpeech();
+            listener.onPlayback(previous, "SPEECH", clock.nowMs(), "CANCELLED_" + reason);
+            drainSpeech();
+        }
+    }
+
     synchronized void clearCategory(CueRequest.Category category) {
         if (closed || category == null) return;
         speechQueue.removeIf(pending -> pending.request.category == category);

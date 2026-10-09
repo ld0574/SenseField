@@ -85,7 +85,7 @@ public class Match3BoardTest {
         assertEquals(0, s.toRow);
         assertEquals(1, s.toCol);
         assertTrue(s.runsFormed >= 1);
-        assertEquals("第 1 行，第 1 个和第 2 个交换，可以消除", Match3Board.swapSpeech(s));
+        assertEquals("第 1 行，第 1 列和第 2 列交换", Match3Board.swapSpeech(s));
     }
 
     @Test
@@ -128,27 +128,22 @@ public class Match3BoardTest {
         assertEquals("第 2 行：河马、未识别", lines.get(1));
     }
 
-    /** 玩家学过的特殊棋子（字母池 1-9/a-z）必须能参与三连：旧 isPiece 写死 6 个基础色，特效棋子在走法枚举里等于不存在。 */
+    /** Identical learned appearances do not establish that an object is a matchable animal. */
     @Test
-    public void specialPieceLettersParticipateInRuns() {
+    public void specialAppearanceLabelsDoNotInventOrdinaryRuns() {
         String[][] src = {{"R", "Y", "1", "1", "1", "G", "O", "P"}};
         List<Match3Board.Run> runs = Match3Board.findRuns(of(src));
-        assertEquals(1, runs.size());
-        assertEquals(2, runs.get(0).col);
-        assertEquals(3, runs.get(0).length);
+        assertTrue(runs.isEmpty());
     }
 
-    /** 涉及特殊棋子的交换要能被推荐出来（换完凑成竖三）。 */
+    /** Unknown special mechanics cannot supply an automatic swap recommendation. */
     @Test
-    public void swapInvolvingSpecialPieceIsProposed() {
+    public void swapInvolvingOnlyUnknownSpecialMatchingRulesIsNotProposed() {
         String[][] src = {{"R", "G", "1"}, {"Y", "O", "1"}, {"B", "1", "G"}};
         char[][] board = of(src);
         assertEquals("原盘不该有三连", 0, Match3Board.findRuns(board).size());
         List<Match3Board.Swap> swaps = Match3Board.findSwaps(board);
-        boolean found = false;
-        for (Match3Board.Swap s : swaps)
-            if (s.fromRow == 2 && s.fromCol == 1 && s.toRow == 2 && s.toCol == 2) found = true;
-        assertTrue("应推荐第 3 行第 2、3 个交换（把特殊棋子换进竖列）", found);
+        assertTrue(swaps.isEmpty());
     }
 
     /** 空格与未识别永远不算棋子，不许凑成三连或产生假走法。 */

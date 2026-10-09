@@ -79,6 +79,9 @@
             android:name=".Match3AssistActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize|stateHidden" />
+        <activity android:name=".Match3SettingsActivity" android:exported="false" />
+        <activity android:name=".Match3ToolsActivity" android:exported="false"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
         <service
             android:name=".Match3LiveService"
             android:exported="false"

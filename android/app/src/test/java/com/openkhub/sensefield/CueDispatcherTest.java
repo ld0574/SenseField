@@ -123,6 +123,26 @@ public final class CueDispatcherTest {
                 0, expires, CueRequest.CHANNEL_SPEECH, 0, 0, 0, "警报");
     }
 
+    @Test public void cancelOneHintPreservesUnrelatedSpeechAndRejectsItsLateCompletion() {
+        MutableClock clock = new MutableClock(); FakeRenderer renderer = new FakeRenderer();
+        Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+        dispatcher.submit(request("old-hint", "hint1", 70, 10000));
+        CueDispatcher.PlaybackCallback old = renderer.speechCallbacks.get("old-hint");
+        clock.now = 2000;
+        dispatcher.submit(request("status", "status", 70, 10000));
+        dispatcher.cancelCue("old-hint", "BOARD_CHANGED");
+        assertTrue(events.events.contains("old-hint:SPEECH:CANCELLED_BOARD_CHANGED"));
+        assertTrue(renderer.started.contains("status"));
+        clock.now = 4000;
+        dispatcher.submit(request("next-hint", "hint2", 70, 10000));
+        dispatcher.cancelCue("next-hint", "REPLACED");
+        old.onFinished(4500, true);
+        assertFalse(events.events.contains("old-hint:SPEECH:COMPLETED"));
+        assertFalse(renderer.started.contains("next-hint"));
+        assertFalse(events.events.contains("status:SPEECH:CANCELLED_REPLACED"));
+    }
+
     @Test public void preparedNearToneAndSpeechUseOneSubmissionAndKeepHaptics() {
         MutableClock clock = new MutableClock();
         FakeRenderer renderer = new FakeRenderer();

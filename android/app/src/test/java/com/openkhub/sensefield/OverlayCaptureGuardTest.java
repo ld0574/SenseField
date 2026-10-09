@@ -94,6 +94,24 @@ public final class OverlayCaptureGuardTest {
         assertFalse(guard.observeFrame(pixels, 100, 100, 400));
     }
 
+    @Test public void translucentBoardProbesDetectBlendedCaptureAndIgnoreClearBackground() {
+        OverlayCaptureGuard guard = new OverlayCaptureGuard();
+        float[][] points = {{.25f, .25f}};
+        guard.recordRenderedPoints(points, .75f);
+        ByteBuffer clear = ByteBuffer.allocateDirect(400 * 100);
+        for (int y = 0; y < 100; y++) for (int x = 0; x < 100; x++)
+            putRgb(clear, 400, x, y, 60, 90, 120);
+        assertFalse(guard.observeFrame(clear, 100, 100, 400));
+        ByteBuffer captured = ByteBuffer.allocateDirect(400 * 100);
+        // 75% magenta/green overlay over that same real background.
+        putRgb(captured, 400, 23, 25, 206, 23, 221);
+        putRgb(captured, 400, 27, 25, 15, 214, 30);
+        assertFalse(guard.observeFrame(captured, 100, 100, 400));
+        guard.recordRenderedPoints(points, .75f);
+        assertTrue(guard.observeFrame(captured, 100, 100, 400));
+        assertTrue(guard.isSuppressed());
+    }
+
     @Test public void renderingEachProcessedFrameDoesNotResetCaptureEvidence() {
         OverlayCaptureGuard guard = new OverlayCaptureGuard();
         NativeFrameResult frame = frame(0.25f, 0.25f);

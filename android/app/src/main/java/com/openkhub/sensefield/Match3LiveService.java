@@ -31,9 +31,11 @@ public class Match3LiveService extends Service {
     static final String ACTION_STOP = "com.openkhub.sensefield.m3live.STOP";
     static final String ACTION_EXPLORE_ON = "com.openkhub.sensefield.m3live.EXPLORE_ON";
     static final String ACTION_EXPLORE_OFF = "com.openkhub.sensefield.m3live.EXPLORE_OFF";
+    static final String ACTION_REFRESH_VISUAL = "com.openkhub.sensefield.m3live.REFRESH_VISUAL";
     static final String ACTION_MARK_ISSUE = "com.openkhub.sensefield.m3live.MARK_ISSUE";
     static final String EXTRA_RESULT_CODE = "resultCode";
     static final String EXTRA_DATA = "data";
+    static final String EXTRA_FULL_DISPLAY = "full_display_capture";
     private static final int NOTIFICATION_ID = 3002;
     private static final long CAPTURE_INTERVAL_MS = 800;
     private static final int STABLE_FRAMES = 3;
@@ -41,8 +43,27 @@ public class Match3LiveService extends Service {
     private static final long IDLE_HINT_MS = 15000;
     private static volatile boolean running;
     private static volatile boolean exploring;
+    private static java.lang.ref.WeakReference<Match3LiveService> debugInstance = new java.lang.ref.WeakReference<>(null);
+    static Match3LiveService testInstance() { return BuildConfig.DEBUG ? debugInstance.get() : null; }
     static boolean isRunning() { return running; }
     static boolean isExploreMode() { return exploring; }
+    static final String EXTRA_START_REQUEST_ID = "match3_start_request_id";
+    private static volatile StartResult lastStartResult;
+
+    /** Acknowledges this request only once the projection and frame listener are ready. */
+    static final class StartResult {
+        final String requestId;
+        final boolean ready;
+        StartResult(String requestId, boolean ready) { this.requestId = requestId; this.ready = ready; }
+    }
+    static StartResult startResult(String requestId) {
+        StartResult result = lastStartResult;
+        return result != null && requestId != null && requestId.equals(result.requestId) ? result : null;
+    }
+    private void acknowledgeStart(Intent intent, boolean ready) {
+        lastStartResult = new StartResult(intent.getStringExtra(EXTRA_START_REQUEST_ID), ready);
+        Log.i(TAG, "Match3StartResult ready=" + ready);
+    }
 
     private final Match3ProjectionSession projectionSession = new Match3ProjectionSession();
     private MediaProjection projection;
@@ -61,20 +82,31 @@ public class Match3LiveService extends Service {
         final ImageReader reader;
         final DiagnosticRecorder diagnostics;
         Match3Sampler sampler;
+        BoardGeometry geometry;
+        final Match3GeometryConfirmation geometryConfirmation = new Match3GeometryConfirmation();
+        volatile Match3Hint currentHint;
+        volatile String hintCueId;
+        long boardRevision, lastHintSpokenRevision = -1;
+        int hintAttempts;
+        char[][] lastStableMatrix;
+        Match3HintOverlay overlay;
+        Match3OverlayCaptureFilter overlayFilter;
+        long filteredOverlayFrames, overlayFilterMicros;
+        final BlackFrameMonitor blackMonitor = new BlackFrameMonitor();
+        boolean visualSuppressed, fullDisplayCapture;
+
         Bitmap frame;
-        long frameAt;
+        volatile long frameAt;
         long processedFrames;
         long lastProcessedAt = -CAPTURE_INTERVAL_MS;
         char[][][] rawWindow = new char[STABLE_FRAMES][][];
         int rawIdx, rawFill;
-        char[][] lastAnnouncedMatrix;
         final Match3BoardConfirmation confirmation = new Match3BoardConfirmation();
         List<Match3Board.Swap> lastSwaps;
         long lastChangeAt, lastAnnounceAt, lastTouchHandledAt;
         int hintCount, liveRows = 8, liveCols = 8;
         boolean popupAnnounced, abstainAnnounced, boardValid;
-        int unreadableStreak;
-        boolean unreadableAnnounced, tinyBoxAnnounced, overlayHintAnnounced;
+        boolean overlayHintAnnounced, calibrationConflictAnnounced;
         volatile boolean projectionStopped;
         volatile boolean exploreMode;
         Session(long generation, MediaProjection projection, ImageReader reader,
@@ -94,7 +126,7 @@ public class Match3LiveService extends Service {
         Log.i(TAG, "onStartCommand action=" + action + " start_id=" + startId
                 + " flags=" + flags + " projection_alive=" + (projection != null)
                 + " display_alive=" + (display != null));
-        if (ACTION_MARK_ISSUE.equals(action) || ACTION_EXPLORE_ON.equals(action)
+        if (ACTION_MARK_ISSUE.equals(action) || ACTION_REFRESH_VISUAL.equals(action) || ACTION_EXPLORE_ON.equals(action)
                 || ACTION_EXPLORE_OFF.equals(action)) {
             projectionSession.noteCommand(startId);
             Session s = active;
@@ -110,13 +142,21 @@ public class Match3LiveService extends Service {
             }
             handler().post(() -> projectionSession.runIfCurrent(s.generation, s.projection, () -> {
                 if (ACTION_MARK_ISSUE.equals(action)) s.diagnostics.markIssue();
-                else {
+                else if (ACTION_REFRESH_VISUAL.equals(action)) {
+                    if (!GameProfile.settings(this).getBoolean("match3_hint_highlight_enabled", true)) {
+                        closeOverlay(s);
+                        s.diagnostics.audit("Match3VisualDisabled reason=user_setting");
+                    } else {
+                        SenseFieldReaderService.hideRowNumbers();
+                        if (s.currentHint != null) updateHintOverlay(s, s.currentHint);
+                    }
+                } else {
                     s.exploreMode = ACTION_EXPLORE_ON.equals(action);
                     exploring = s.exploreMode;
                     if (dispatcher != null) dispatcher.clearAll();
                     s.lastTouchHandledAt = SystemClock.elapsedRealtime();
                     s.lastSwaps = null;
-                    resetWindow(s);
+                    invalidateBoard(s, "POINT_READ_MODE");
                 }
                 return true;
             }));
@@ -139,12 +179,14 @@ public class Match3LiveService extends Service {
                 && projectionSession.ignoreDuplicateStart(startId)) {
             Session current = active;
             if (current != null) current.diagnostics.audit("Match3DuplicateStart ignored start_id=" + startId);
+            acknowledgeStart(intent, running);
             return START_NOT_STICKY;
         }
         long generation = projectionSession.beginStart(startId);
         teardownMedia();
         Intent data = intent.getParcelableExtra(EXTRA_DATA);
         if (data == null || CaptureService.isRunning()) {
+            acknowledgeStart(intent, false);
             if (CaptureService.isRunning()) android.widget.Toast.makeText(this,
                     "地图识别正在使用录屏，请先停止后再开启消消乐实时识别。",
                     android.widget.Toast.LENGTH_LONG).show();
@@ -152,7 +194,8 @@ public class Match3LiveService extends Service {
             stopSelfResult(startId);
             return START_NOT_STICKY;
         }
-        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        android.util.DisplayMetrics dm = new android.util.DisplayMetrics();
+        getSystemService(android.view.WindowManager.class).getDefaultDisplay().getRealMetrics(dm);
         DiagnosticRecorder diagnostics = DiagnosticRecorder.start(this,
                 UUID.randomUUID().toString(), SystemClock.elapsedRealtime(), true);
         String failureReason = "foreground_start_failed";
@@ -169,6 +212,14 @@ public class Match3LiveService extends Service {
             if (!projectionSession.attach(generation, currentProjection))
                 throw new IllegalStateException("Projection superseded");
             currentProjection.registerCallback(new MediaProjection.Callback() {
+                @Override public void onCapturedContentResize(int width, int height) {
+                    Session current = active;
+                    if (current != null && current.generation == generation && current.fullDisplayCapture) {
+                        android.util.DisplayMetrics metrics = new android.util.DisplayMetrics();
+                        getSystemService(android.view.WindowManager.class).getDefaultDisplay().getRealMetrics(metrics);
+                        resizeCapture(current, width, height, metrics.densityDpi);
+                    }
+                }
                 @Override public void onStop() {
                     projectionSession.runIfGeneration(generation, () -> {
                         int stopId = projectionSession.stopIfCurrent(generation, currentProjection);
@@ -198,14 +249,17 @@ public class Match3LiveService extends Service {
             if (display == null) throw new IllegalStateException("Virtual display unavailable");
             failureReason = "session_setup_failed";
             Session s = new Session(generation, currentProjection, currentReader, diagnostics);
+            s.fullDisplayCapture = intent.getBooleanExtra(EXTRA_FULL_DISPLAY, false);
             active = s;
             if (!isCurrent(s)) throw new IllegalStateException("Projection stopped during setup");
             running = true;
             diagnostics.audit("Match3Session game=happy-anipop capture_interval_ms=" + CAPTURE_INTERVAL_MS);
             currentReader.setOnImageAvailableListener(source -> onImageAvailable(source, s), handler());
             scheduleTick(s);
+            acknowledgeStart(intent, true);
             Log.i(TAG, "实时识别已启动 " + dm.widthPixels + "x" + dm.heightPixels);
         } catch (RuntimeException error) {
+            acknowledgeStart(intent, false);
             Log.w(TAG, "创建消消乐录屏失败: " + failureReason + " " + error.getClass().getSimpleName());
             diagnostics.audit("Match3StartFailure reason=" + failureReason
                     + " error=" + error.getClass().getSimpleName());
@@ -239,6 +293,8 @@ public class Match3LiveService extends Service {
     /** Keep the diagnostic session available for marking/export, without continuing capture. */
     private void suspendStoppedProjection(Session s) {
         s.projectionStopped = true;
+        invalidateBoard(s, "PROJECTION_STOPPED");
+        closeOverlay(s);
         s.boardValid = false;
         s.exploreMode = exploring = false;
         s.lastSwaps = null;
@@ -261,6 +317,8 @@ public class Match3LiveService extends Service {
         Image image = null;
         Bitmap bitmap = null;
         try {
+            // Retired readers are closed on this same worker; never acquire from a stale callback.
+            if (source != s.reader || !isCurrent(s)) return;
             // Always drain, including skipped frames, so neither ImageReader slot stays occupied.
             image = source.acquireLatestImage();
             if (image == null || source != s.reader || !isCurrent(s)) return;
@@ -273,15 +331,40 @@ public class Match3LiveService extends Service {
             s.frame = bitmap;
             bitmap = null;
             s.frameAt = observedAt;
-            processFrame(s, s.frame);
+            Match3HintOverlay currentOverlay = s.overlay;
+            Match3Hint renderedHint = currentOverlay == null ? null : currentOverlay.renderedHint();
+            if (renderedHint != null) {
+                if (s.overlayFilter == null) s.overlayFilter = new Match3OverlayCaptureFilter(this);
+                long started = SystemClock.elapsedRealtimeNanos();
+                boolean filtered = s.overlayFilter.clean(s.frame, renderedHint, currentOverlay.alpha());
+                s.overlayFilterMicros += (SystemClock.elapsedRealtimeNanos() - started) / 1000;
+                if (filtered && ++s.filteredOverlayFrames == 1)
+                    s.diagnostics.audit("Match3VisualCapture mode=current_frame_unblend secure=false");
+            }
+            if (checkOverlayCapture(s, s.frame)) processFrame(s, s.frame);
             s.processedFrames++;
             s.diagnostics.publishState(DiagnosticRecorder.object("game_id", "happy-anipop",
                     "state", s.popupAnnounced ? "popup" : s.exploreMode ? "touch_read" : "capturing",
                     "snapshot_at_ms", SystemClock.elapsedRealtime(), "frames_expected", true,
                     "processed_frames", s.processedFrames, "last_frame_observed_at_ms", observedAt,
+                    "last_frame_arrived_at_ms", observedAt,
                     "last_frame_completed_at_ms", SystemClock.elapsedRealtime(),
                     "frame_width", image.getWidth(), "frame_height", image.getHeight(),
-                    "board_valid", s.boardValid, "rows", s.liveRows, "cols", s.liveCols));
+                    "board_valid", s.boardValid, "rows", s.liveRows, "cols", s.liveCols,
+                    "board_revision", s.boardRevision,
+                    "geometry", s.geometry == null ? null : DiagnosticRecorder.object(
+                            "left", s.geometry.left, "top", s.geometry.top,
+                            "right", s.geometry.right, "bottom", s.geometry.bottom,
+                            "origin", "frame_top_left_pixels"),
+                    "hint", s.currentHint == null ? null : DiagnosticRecorder.object(
+                            "revision", s.currentHint.revision,
+                            "from_row", s.currentHint.swap.fromRow + 1, "from_col", s.currentHint.swap.fromCol + 1,
+                            "to_row", s.currentHint.swap.toRow + 1, "to_col", s.currentHint.swap.toCol + 1,
+                            "origin", "board_top_left_one_based"),
+                    "highlight_suppressed", s.visualSuppressed,
+                    "highlight_visible", s.overlay != null && s.overlay.renderedHint() != null,
+                    "overlay_capture_filtered_frames", s.filteredOverlayFrames,
+                    "overlay_capture_filter_micros", s.overlayFilterMicros));
             if (isCurrent(s)) {
                 Image.Plane plane = image.getPlanes()[0];
                 ByteBuffer rgba = plane.getBuffer().duplicate();
@@ -292,8 +375,7 @@ public class Match3LiveService extends Service {
             }
         } catch (Exception error) {
             if (isCurrent(s)) {
-                s.boardValid = false;
-                s.lastSwaps = null;
+                invalidateBoard(s, "FRAME_ERROR");
                 Log.w(TAG, "帧处理失败: " + error.getClass().getSimpleName());
             }
         } finally {
@@ -339,8 +421,6 @@ public class Match3LiveService extends Service {
         s.rawIdx = s.rawFill = 0;
         s.boardValid = false;
         s.confirmation.reset();
-        s.unreadableStreak = 0;
-        s.unreadableAnnounced = false;
     }
 
     private boolean saveCalibration(Session s, int[] bounds, int rows, int cols) {
@@ -356,206 +436,247 @@ public class Match3LiveService extends Service {
 
     private void processFrame(Session s, Bitmap frame) {
         if (!isCurrent(s)) return;
-        s.boardValid = false;
-        boolean popup = Match3Coach.isPopupShowing(frame);
-        if (popup) {
-            if (!s.popupAnnounced && !s.exploreMode) announce(s, "检测到游戏说明弹窗。读完或跳过后就可以开始了。");
+        s.boardValid = false; // This temporary processing state must not clear a valid drawing.
+        if (Match3Coach.isPopupShowing(frame)) {
+            if (!s.popupAnnounced) s.diagnostics.audit("Match3Status state=popup speech=silent");
             s.popupAnnounced = true;
-            resetWindow(s);
+            invalidateBoard(s, "POPUP");
             return;
         }
         if (s.popupAnnounced) {
             s.popupAnnounced = false;
-            resetWindow(s);
-            if (!s.exploreMode) announce(s, "说明已结束，可以开始游戏了。");
+            invalidateBoard(s, "POPUP_CLOSED");
+            s.diagnostics.audit("Match3Status state=popup_closed speech=silent");
             return;
         }
-
-        if (s.sampler == null) {
-            var prefs = GameProfile.settings(this);
-            boolean calibrated = prefs.getBoolean("match3_calibrated", false);
-            int[] auto = Match3Sampler.autoDetectBoard(frame);
-            Match3Sampler candidate = null;
-            int candRows = 0, candCols = 0;
-            if (auto != null) {
-                int n = Match3Sampler.detectGridCount(frame, auto);
-                candRows = n > 0 ? n : Math.max(6, Math.min(9, prefs.getInt("match3_rows", 8)));
-                candCols = n > 0 ? n : Math.max(6, Math.min(9, prefs.getInt("match3_cols", 8)));
-                candidate = new Match3Sampler(this, candRows, candCols, auto[0], auto[1], auto[2], auto[3]);
-
-                char[][] probe = candidate.sample(frame);
-                if (countUnknown(probe) * 100 > probe.length * probe[0].length * 40) {
-                    Log.i(TAG, "自动适配命中但采样验证失败（未知过多），本帧不采纳");
-                    candidate = null;
-                }
-            }
-            if (candidate != null) {
-                if (!saveCalibration(s, auto, candRows, candCols)) return;
-                s.liveRows = candRows;
-                s.liveCols = candCols;
-                s.sampler = candidate;
-                s.abstainAnnounced = false;
-                updateRowNumbers(s, auto, candRows);
-                Log.i(TAG, "棋盘自动适配: l=" + auto[0] + "% t=" + auto[1] + "% r=" + auto[2]
-                        + "% b=" + auto[3] + "% 格数=" + candRows + "x" + candCols
-                        + "（试采验证通过） " + describeCalibration(s, frame));
-            } else if (calibrated) {
-
-                int l = prefs.getInt("match3_l", 4), t = prefs.getInt("match3_t", 18);
-                int r = prefs.getInt("match3_r", 96), b = prefs.getInt("match3_b", 82);
-                int n = Match3Sampler.detectGridCount(frame, new int[]{l, t, r, b});
-                int rows = n > 0 ? n : Math.max(6, Math.min(9, prefs.getInt("match3_rows", 8)));
-                int cols = n > 0 ? n : Math.max(6, Math.min(9, prefs.getInt("match3_cols", 8)));
-                int[] cell = new int[2];
-                if (!Match3Sampler.plausibleCalibration(frame.getWidth(), frame.getHeight(),
-                        l, t, r, b, rows, cols, cell)) {
-                    if (!s.tinyBoxAnnounced) {
-                        s.tinyBoxAnnounced = true;
-                        s.diagnostics.audit("Match3CalibrationRejected cell=" + cell[0] + "x" + cell[1]
-                                + "px " + describeCalibration(s, frame));
-                        announce(s, "棋盘标定区域太小或超出画面，读不清格子。请重新框选整个棋盘。");
-                    }
-                    return;
-                }
-                if (n > 0) {
-                    if (!projectionSession.runIfCurrent(s.generation, s.projection, () -> {
-                        prefs.edit().putInt("match3_rows", rows).putInt("match3_cols", cols).apply();
-                        return true;
-                    })) return;
-                }
-                s.liveRows = rows;
-                s.liveCols = cols;
-                s.sampler = new Match3Sampler(this, rows, cols, l, t, r, b);
-                s.abstainAnnounced = false;
-                updateRowNumbers(s, new int[]{l, t, r, b}, rows);
-                Log.i(TAG, "沿用手动标定 " + rows + "x" + cols
-                        + (n > 0 ? "（格数自检=" + n + "）" : "（格数自检弃权，按存值读）")
-                        + " " + describeCalibration(s, frame));
-            } else {
-
-                if (!s.abstainAnnounced && !s.exploreMode) {
-                    announce(s, "还没找到棋盘位置。请先框选标定棋盘区域，或者多等几秒我再试。");
-                    s.abstainAnnounced = true;
-                    Log.i(TAG, "棋盘自动适配未命中且无手动标定，ABSTAIN 等待框选或后续帧重试");
-                }
-                return;
-            }
-        }
-        if (s.exploreMode) {
-            handleExploreTouch(s, frame);
-            return;
-        }
-        char[][] matrix = s.sampler.sample(frame);
-
-        s.rawWindow[s.rawIdx] = matrix;
+        if (s.geometry != null && (s.geometry.frameWidth != frame.getWidth()
+                || s.geometry.frameHeight != frame.getHeight())) invalidateBoard(s, "CAPTURE_SIZE");
+        // A new level can still have readable colours inside the OLD rectangle.
+        // Revalidate using this same 800ms sample, rather than trusting those colours.
+        BoardGeometry candidate = estimateGeometry(frame);
+        if (s.geometry != null && !s.geometry.sameGrid(candidate))
+            invalidateBoard(s, candidate == null ? "GEOMETRY_UNVERIFIED" : "GEOMETRY_CHANGED");
+        if (s.sampler == null && !prepareGeometry(s, frame, candidate)) return;
+        if (s.exploreMode) { handleExploreTouch(s, frame); return; }
+        char[][] raw = s.sampler.sample(frame);
+        if (s.currentHint != null && countDiffCells(s.lastStableMatrix, raw) > 0)
+            invalidateHint(s, "BOARD_CHANGED");
+        s.rawWindow[s.rawIdx] = raw;
         s.rawIdx = (s.rawIdx + 1) % STABLE_FRAMES;
         if (s.rawFill < STABLE_FRAMES) s.rawFill++;
         if (s.rawFill < STABLE_FRAMES) return;
-        matrix = majorityMatrix(s.rawWindow);
-
-        // 实时棋盘链路仅在本地识别；实验云端实现不进入录屏线程。
-
-        int unknown = 0, total = 0;
-        for (char[] row : matrix) {
-            for (char c : row) {
-                total++;
-                if (Match3Sampler.isUnreadable(c)) unknown++;
+        // Observe EVERY raw frame. Skipping the non-majority frame would leave an
+        // accepted A in this gate and let A/B/A immediately resurrect its old hint.
+        boolean consecutivelyConfirmed = s.confirmation.accept(raw);
+        char[][] matrix = majorityMatrix(s.rawWindow);
+        int unknown = countUnknown(matrix), total = matrix.length * matrix[0].length;
+        if (isUnreadableBoard(matrix)) {
+            if (!s.abstainAnnounced) {
+                s.abstainAnnounced = true;
+                s.diagnostics.audit("Match3GeometryRejected reason=unreadable unknown=" + unknown + "/" + total);
             }
+            invalidateBoard(s, "UNREADABLE");
+            return;
         }
-        if (unknown * 100 > total * 40) {
-            Log.i(TAG, "自我修复：未知格 " + unknown + "/" + total + "，重新自动适配");
-            int[] auto = Match3Sampler.autoDetectBoard(frame);
-            Match3Sampler candidate = null;
-            int candRows = rows(s), candCols = cols(s);
-            if (auto != null) {
-                int n = Match3Sampler.detectGridCount(frame, auto);
-                candRows = n > 0 ? n : rows(s);
-                candCols = n > 0 ? n : cols(s);
-                candidate = new Match3Sampler(this, candRows, candCols, auto[0], auto[1], auto[2], auto[3]);
-            }
-
-            char[][] fixed = (candidate != null ? candidate : s.sampler).sample(frame);
-            int fixedCells = fixed.length * fixed[0].length;
-            if (countUnknown(fixed) * 100 > fixedCells * 40) {
-                Log.i(TAG, "自我修复后仍未识别，不采纳新标定");
-                s.confirmation.reset();
-                s.unreadableStreak++;
-                long now = SystemClock.elapsedRealtime();
-                if (shouldAnnounceUnreadable(s.unreadableStreak, s.unreadableAnnounced,
-                        now - s.lastAnnounceAt)) {
-                    s.unreadableAnnounced = true;
-                    s.lastAnnounceAt = now;
-                    s.diagnostics.audit("Match3BoardUnreadable unknown=" + unknown + "/" + total
-                            + " " + describeCalibration(s, frame));
-                    announce(s, "这一盘的格子读不清，请重新框选标定棋盘区域。");
-                }
-                return;
-            }
-            if (candidate != null) {
-                var prefs = GameProfile.settings(this);
-                if (!saveCalibration(s, auto, candRows, candCols)) return;
-                s.liveRows = candRows;
-                s.liveCols = candCols;
-                s.sampler = candidate;
-                updateRowNumbers(s, auto, candRows);
-            }
-            resetWindow(s);
-            return; // 新标定重新积累稳定窗，不拿单帧直接播报。
+        // Do not restore a previous-window hint over a board that is currently moving.
+        if (!matrixEquals(matrix, raw) || !consecutivelyConfirmed) return;
+        // Visible matches have not finished resolving. Never recommend a new
+        // exchange while an automatic elimination/cascade is still on screen.
+        if (!Match3Board.findRuns(matrix).isEmpty()) {
+            invalidateHint(s, "CASCADE");
+            s.confirmation.reset();
+            return;
         }
-        s.unreadableStreak = 0;
-        s.unreadableAnnounced = false;
-        // Opening animations and transitions must settle across two majority windows.
-        if (!s.confirmation.accept(matrix)) return;
         s.boardValid = true;
-        if (matrixEquals(s.lastAnnouncedMatrix, matrix)) {
-            return;
-        }
-
-        int diffCells = countDiffCells(s.lastAnnouncedMatrix, matrix);
-        if (s.lastAnnouncedMatrix != null && diffCells < 2) {
-            return;
-        }
-
-        boolean isFirst = s.lastAnnouncedMatrix == null;
-        s.lastChangeAt = SystemClock.elapsedRealtime();
-        List<Match3Board.Swap> swaps = Match3Board.findSwaps(matrix);
-        s.lastSwaps = swaps;
-        long now = SystemClock.elapsedRealtime();
-        if (!isFirst && now - s.lastAnnounceAt < MIN_ANNOUNCE_GAP_MS) {
-
-            return;
-        }
-        s.lastAnnouncedMatrix = matrix;
-        s.hintCount = 0;
-        s.lastAnnounceAt = now;
-        StringBuilder sb = new StringBuilder(isFirst ? "棋盘识别完成。" : "局面更新。");
-        if (!swaps.isEmpty()) {
-            sb.append(Match3Coach.swapSpeechWithQuadrant(swaps.get(0), s.liveRows, s.liveCols));
-            if (swaps.size() > 1) sb.append("，共 ").append(swaps.size()).append(" 处");
-        } else {
-            sb.append("暂无可消除交换。");
-        }
-        Log.i(TAG, sb.toString());
-        Log.i(TAG, "播报读数 " + matrix.length + "x" + matrix[0].length
-                + " 未知=" + unknown + "/" + total + " 变化=" + diffCells + "格 "
-                + describeCalibration(s, frame));
-        if (s.diagnostics != null) {
+        boolean changed = !matrixEquals(s.lastStableMatrix, matrix);
+        // After stable confirmation, even one changed cell is a new revision.
+        // Ignoring it forever could keep a hint across a real obstacle/tile change.
+        if (changed) {
+            invalidateHint(s, "BOARD_CHANGED");
+            s.lastStableMatrix = matrix;
+            s.lastSwaps = Match3Board.findSwaps(matrix);
+            s.boardRevision++; s.hintCount = 0; s.hintAttempts = 0;
+            s.lastChangeAt = SystemClock.elapsedRealtime();
             s.diagnostics.audit("BoardRecognized rows=" + matrix.length + " cols=" + matrix[0].length
-                    + " unknown=" + unknown + "/" + total + " swaps=" + swaps.size());
-
+                    + " unknown=" + unknown + "/" + total + " swaps=" + s.lastSwaps.size()
+                    + " revision=" + s.boardRevision + " " + s.geometry);
         }
-        announce(s, sb.toString());
+        if (s.currentHint == null && s.lastSwaps != null && !s.lastSwaps.isEmpty()) {
+            s.currentHint = new Match3Hint(s.diagnostics.sessionId, s.boardRevision, s.frameAt,
+                    s.geometry, s.lastSwaps.get(0));
+            Match3Hint hint = s.currentHint;
+            s.diagnostics.audit("Match3Hint revision=" + hint.revision + " from="
+                    + hint.swap.fromRow + "," + hint.swap.fromCol + " to="
+                    + hint.swap.toRow + "," + hint.swap.toCol + " origin=top_left_zero_based");
+            updateHintOverlay(s, hint);
+        }
+        if (changed && s.lastSwaps.isEmpty())
+            s.diagnostics.audit("Match3Status state=no_swap speech=silent");
+        maybeAnnounceHint(s, false);
     }
 
-    private String describeCalibration(Session s, Bitmap frame) {
+    private BoardGeometry estimateGeometry(Bitmap frame) {
+        BoardGeometry candidate = Match3Sampler.autoDetectGeometry(frame);
         var prefs = GameProfile.settings(this);
-        int l = prefs.getInt("match3_l", 4), t = prefs.getInt("match3_t", 18);
-        int r = prefs.getInt("match3_r", 96), b = prefs.getInt("match3_b", 82);
-        int w = frame.getWidth() * (r - l) / 100;
-        int h = frame.getHeight() * (b - t) / 100;
-        return "标定=" + l + "/" + t + "/" + r + "/" + b + "% 裁剪=" + w + "x" + h
-                + "px 单格≈" + w / Math.max(1, cols(s)) + "x" + h / Math.max(1, rows(s))
-                + "px 格数=" + rows(s) + "x" + cols(s);
+        if (candidate == null && prefs.getBoolean("match3_calibrated", false)) {
+            int[] pct = {prefs.getInt("match3_l", 4), prefs.getInt("match3_t", 18),
+                    prefs.getInt("match3_r", 96), prefs.getInt("match3_b", 82)};
+            if (Match3Sampler.plausibleCalibration(frame.getWidth(), frame.getHeight(),
+                    pct[0], pct[1], pct[2], pct[3], prefs.getInt("match3_rows", 8),
+                    prefs.getInt("match3_cols", 8), new int[2])) {
+                candidate = Match3Sampler.verifiedGeometry(frame, new int[]{
+                        frame.getWidth() * pct[0] / 100, frame.getHeight() * pct[1] / 100,
+                        frame.getWidth() * pct[2] / 100, frame.getHeight() * pct[3] / 100});
+            }
+        }
+        return candidate;
+    }
+
+    private boolean prepareGeometry(Session s, Bitmap frame, BoardGeometry candidate) {
+        BoardGeometry confirmed = s.geometryConfirmation.accept(candidate);
+        if (confirmed == null) {
+            if (candidate == null && !s.abstainAnnounced && !s.exploreMode) {
+                s.abstainAnnounced = true;
+                s.diagnostics.audit("Match3GeometryRejected reason=bounds_or_grid_unconfirmed");
+            }
+            return false;
+        }
+        Match3Sampler sampler = new Match3Sampler(this, confirmed);
+        boolean adopted = false;
+        try {
+        if (isUnreadableBoard(sampler.sample(frame))) {
+            sampler.close();
+            s.geometryConfirmation.reset();
+            if (!s.abstainAnnounced) {
+                s.abstainAnnounced = true;
+                s.diagnostics.audit("Match3GeometryRejected reason=cells_unreadable");
+            }
+            return false;
+        }
+        var prefs = GameProfile.settings(this);
+        int[] savedBounds = {prefs.getInt("match3_l", 4), prefs.getInt("match3_t", 18),
+                prefs.getInt("match3_r", 96), prefs.getInt("match3_b", 82)};
+        BoardGeometry saved = null;
+        try { saved = BoardGeometry.fromPercent(frame.getWidth(), frame.getHeight(),
+                prefs.getInt("match3_rows", 8), prefs.getInt("match3_cols", 8), savedBounds); }
+        catch (IllegalArgumentException ignored) { }
+        boolean calibrationConflict = saved == null || saved.rows != confirmed.rows || saved.cols != confirmed.cols
+                || !java.util.Arrays.equals(savedBounds, confirmed.percentages());
+        if (prefs.getBoolean("match3_calibrated", false) && calibrationConflict
+                && !s.calibrationConflictAnnounced && !s.exploreMode) {
+            s.calibrationConflictAnnounced = true;
+            s.diagnostics.audit("Match3CalibrationConflict stored=" + saved + " detected=" + confirmed);
+        }
+        if (!saveCalibration(s, confirmed.percentages(), confirmed.rows, confirmed.cols)) {
+            sampler.close(); return false;
+        }
+        s.geometry = confirmed; s.sampler = sampler;
+        adopted = true;
+        s.liveRows = confirmed.rows; s.liveCols = confirmed.cols; s.abstainAnnounced = false;
+        resetWindow(s);
+        s.diagnostics.audit("Match3GeometryConfirmed " + confirmed + " samples=3 axes=independent");
+        if (!prefs.getBoolean("match3_hint_highlight_enabled", true))
+            updateRowNumbers(s, confirmed.percentages(), confirmed.rows);
+        else SenseFieldReaderService.hideRowNumbers();
+        return true;
+        } finally {
+            if (!adopted) sampler.close();
+        }
+    }
+
+    private void invalidateHint(Session s, String reason) {
+        Match3Hint old = s.currentHint;
+        s.currentHint = null;
+        String cueId = s.hintCueId; s.hintCueId = null;
+        if (dispatcher != null && cueId != null) dispatcher.cancelCue(cueId, reason);
+        if (s.overlay != null) s.overlay.clear();
+        if (s.overlayFilter != null) s.overlayFilter.clear();
+        if (old != null) s.diagnostics.audit("Match3HintCleared revision=" + old.revision + " reason=" + reason);
+    }
+
+    private void invalidateBoard(Session s, String reason) {
+        invalidateHint(s, reason);
+        if (s.sampler != null) s.sampler.close();
+        s.sampler = null; s.geometry = null; s.geometryConfirmation.reset();
+        s.lastStableMatrix = null; s.lastSwaps = null;
+        resetWindow(s);
+    }
+
+    private void closeOverlay(Session s) {
+        if (s != null && s.overlay != null) {
+            s.overlay.close(); s.overlay = null; s.blackMonitor.reset();
+            if (s.overlayFilter != null) s.overlayFilter.clear();
+        }
+    }
+
+    private void updateHintOverlay(Session s, Match3Hint hint) {
+        if (s.visualSuppressed || !s.fullDisplayCapture
+                || !GameProfile.settings(this).getBoolean("match3_hint_highlight_enabled", true)) return;
+        if (s.overlay == null) s.overlay = Match3HintOverlay.create(this);
+        if (s.overlay != null && !s.overlay.isClosed()) {
+            s.overlay.update(hint, () -> active == s && !s.projectionStopped && s.currentHint == hint);
+        } else if (!s.overlayHintAnnounced) {
+            s.overlayHintAnnounced = true;
+            s.diagnostics.audit("Match3VisualUnavailable reason=permission_or_window");
+        }
+    }
+
+    private void suppressVisual(Session s, String reason) {
+        s.visualSuppressed = true;
+        closeOverlay(s);
+        s.diagnostics.audit("Match3VisualDisabled reason=" + reason);
+        if (!"permission_or_window".equals(reason)) new Handler(getMainLooper()).post(() -> {
+            if (active == s && !s.projectionStopped) android.widget.Toast.makeText(this,
+                    "本机暂时无法安全显示交换高亮，继续使用语音提示。", android.widget.Toast.LENGTH_LONG).show();
+        });
+    }
+
+    private boolean checkOverlayCapture(Session s, Bitmap frame) {
+        if (s.overlay == null) return true;
+        if (s.overlay.isClosed() || !android.provider.Settings.canDrawOverlays(this)) {
+            suppressVisual(s, "permission_or_window");
+            return true;
+        }
+        Match3Hint shown = s.overlay.renderedHint();
+        if (shown == null) return true;
+        boolean black = blackBoardRegion(frame, shown.geometry);
+        BlackFrameMonitor.Action action = s.blackMonitor.update(black, true, SystemClock.elapsedRealtime());
+        if (action == BlackFrameMonitor.Action.DISABLE_OVERLAY) {
+            suppressVisual(s, "capture_blackout");
+            return false; // wait for a clean frame after removing our window
+        }
+        return !black;
+    }
+
+    private static boolean blackBoardRegion(Bitmap frame, BoardGeometry g) {
+        int bright = 0, count = 0;
+        for (int row = 0; row < g.rows; row++) for (int col = 0; col < g.cols; col++) {
+            int px = frame.getPixel(g.centerX(col), g.centerY(row)); count++;
+            if (android.graphics.Color.red(px) + android.graphics.Color.green(px)
+                    + android.graphics.Color.blue(px) > 18) bright++;
+        }
+        return bright == 0 && count > 0;
+    }
+
+    private void maybeAnnounceHint(Session s, boolean repeat) {
+        Match3Hint hint = s.currentHint;
+        long now = SystemClock.elapsedRealtime();
+        if (hint == null || !s.boardValid || now - s.frameAt > 5000
+                || now - s.lastAnnounceAt < MIN_ANNOUNCE_GAP_MS
+                || s.hintAttempts >= 3 || !repeat && s.lastHintSpokenRevision == hint.revision) return;
+        // Initial status speech can be ahead of this one; the playback guard rejects old boards.
+        ensureDispatcher(s);
+        String cueId = hint.sessionId + ":hint:" + hint.revision + ":" + now;
+        if (s.hintCueId != null) dispatcher.cancelCue(s.hintCueId, "REPLACED");
+        s.hintCueId = cueId; s.lastAnnounceAt = now; s.hintAttempts++;
+        s.diagnostics.audit("Match3Speech: " + hint.speech);
+        CueDispatcher.DispatchResult result = dispatcher.submit(new CueRequest(hint.sessionId, cueId, "m3live:hint:" + hint.revision,
+                "消消乐交换提示", CueRequest.Category.SYSTEM, 70, now, now + 10000,
+                Match3LiveCuePolicy.REQUESTED_CHANNELS, 0, 0, 0, hint.speech,
+                Float.NaN, Float.NaN, 0, -1, () -> active == s && !s.projectionStopped
+                        && s.currentHint == hint && SystemClock.elapsedRealtime() - s.frameAt <= 5000));
+        if (result.audioQueued() || "channels_disabled".equals(result.reason)
+                || "category_disabled".equals(result.reason)) s.lastHintSpokenRevision = hint.revision;
     }
 
     private void updateRowNumbers(Session s, int[] bounds, int rows) {
@@ -564,7 +685,7 @@ public class Match3LiveService extends Service {
                     bounds[0], bounds[1], bounds[2], bounds[3], rows);
             if (!available && !s.overlayHintAnnounced) {
                 s.overlayHintAnnounced = true;
-                announce(s, "行号和触屏点读需要开启听野读屏辅助，可在系统无障碍设置中开启。");
+                s.diagnostics.audit("Match3RowNumbersUnavailable reason=accessibility_not_enabled speech=silent");
             }
             return true;
         });
@@ -584,17 +705,15 @@ public class Match3LiveService extends Service {
     }
 
     static int countUnknown(char[][] m) {
+        if (Match3Board.columns(m) == 0) return 0;
         int n = 0;
-        for (char[] row : m) for (char c : row) if (Match3Sampler.isUnreadable(c)) n++;
+        for (char[] row : m) for (char c : row) if (Match3Sampler.isUnknown(c)) n++;
         return n;
     }
 
     static boolean isUnreadableBoard(char[][] matrix) {
-        return countUnknown(matrix) * 100 > matrix.length * matrix[0].length * 40;
-    }
-
-    static boolean shouldAnnounceUnreadable(int streak, boolean alreadyAnnounced, long sinceLastAnnounceMs) {
-        return streak >= 2 && !alreadyAnnounced && sinceLastAnnounceMs >= MIN_ANNOUNCE_GAP_MS;
+        int cols = Match3Board.columns(matrix);
+        return cols == 0 || countUnknown(matrix) * 100L > matrix.length * (long) cols * 40;
     }
 
     private static int countDiffCells(char[][] a, char[][] b) {
@@ -623,15 +742,14 @@ public class Match3LiveService extends Service {
 
     private void idleCheck(Session s) {
         long now = SystemClock.elapsedRealtime();
-        if (!isCurrent(s) || s.exploreMode || s.popupAnnounced || !s.boardValid
-                || now - s.frameAt > 5000) return;
-        if (s.lastAnnouncedMatrix != null && s.lastSwaps != null && !s.lastSwaps.isEmpty()
-                && s.hintCount < 2 && now - s.lastChangeAt >= IDLE_HINT_MS
+        if (!isCurrent(s)) return;
+        if (now - s.frameAt > 5000) { invalidateHint(s, "FRAME_STALE"); return; }
+        if (s.exploreMode || s.popupAnnounced || !s.boardValid) return;
+        maybeAnnounceHint(s, false);
+        if (s.currentHint != null && s.hintCount < 2 && now - s.lastChangeAt >= IDLE_HINT_MS
                 && now - s.lastAnnounceAt >= MIN_ANNOUNCE_GAP_MS) {
-            s.lastAnnounceAt = s.lastChangeAt = now;
-            s.hintCount++;
-            announce(s, (s.hintCount == 1 ? "还在犹豫的话，" : "仍然可以：")
-                    + Match3Board.swapSpeech(s.lastSwaps.get(0)) + "。不需要时忽略即可。");
+            s.lastChangeAt = now; s.hintCount++;
+            maybeAnnounceHint(s, true);
         }
     }
 
@@ -645,7 +763,7 @@ public class Match3LiveService extends Service {
                 SenseFieldReaderService.latestTouchX(), SenseFieldReaderService.latestTouchY());
         if (hit == null) return;
         announce(s, "第 " + (hit[0] + 1) + " 行，第 " + (hit[1] + 1) + " 列："
-                + Match3Coach.pieceName((char) hit[2]) + "，"
+                + s.sampler.pieceName((char) hit[2]) + "，"
                 + Match3Coach.quadrantOf(hit[0], hit[1], rows(s), cols(s)) + "区域。");
     }
 
@@ -656,6 +774,22 @@ public class Match3LiveService extends Service {
         try {
             projectionSession.runIfCurrent(s.generation, s.projection, () -> {
             if (!isCurrent(s)) return false;
+            ensureDispatcher(s);
+            long t = SystemClock.elapsedRealtime();
+            String sessionId = s.diagnostics.sessionId;
+            s.diagnostics.audit("Match3Speech: " + speech);
+            dispatcher.submit(new CueRequest(sessionId, sessionId + ":" + t, "m3live:announce",
+                    "消消乐实时播报", CueRequest.Category.SYSTEM, 70, t, t + 10000,
+                    Match3LiveCuePolicy.REQUESTED_CHANNELS, 0, 0, 0, speech));
+            return true;
+            });
+        } catch (RuntimeException error) {
+            Log.w(TAG, "播报通道异常（不致命）: " + error.getClass().getSimpleName());
+            if (isCurrent(s)) s.diagnostics.audit("Match3SpeechFailure error=" + error.getClass().getSimpleName());
+        }
+    }
+
+    private void ensureDispatcher(Session s) {
             if (dispatcher == null) {
                 player = new CuePlayer(this);
                 dispatcher = new CueDispatcher(player, new Match3LiveCuePolicy(new CueSettings(this)),
@@ -669,6 +803,10 @@ public class Match3LiveService extends Service {
                                         + " outcome=" + result.outcome + " reason=" + result.reason
                                         + " channels=" + result.acceptedChannels);
                             }
+                            @Override public void onPlaybackFailure(CueRequest request, long atMs, String reason) {
+                                auditCue(request, "Match3PlaybackFailure cue_id=" + request.cueId
+                                        + " at_ms=" + atMs + " reason=" + reason);
+                            }
                             @Override public void onPlayback(CueRequest request, String channel,
                                     long atMs, String result) {
                                 DiagnosticRecorder recorder = diagnosticsForCue(request);
@@ -678,18 +816,6 @@ public class Match3LiveService extends Service {
                             }
                         }, SystemClock::elapsedRealtime);
             }
-            long t = SystemClock.elapsedRealtime();
-            String sessionId = s.diagnostics.sessionId;
-            s.diagnostics.audit("Match3Speech: " + speech);
-            dispatcher.submit(new CueRequest(sessionId, sessionId + ":" + t, "m3live:announce",
-                    "消消乐实时播报", CueRequest.Category.SYSTEM, 70, t, t + 10000,
-                    Match3LiveCuePolicy.REQUESTED_CHANNELS, 0, 0, 0, speech));
-            return true;
-            });
-        } catch (RuntimeException error) {
-            Log.w(TAG, "播报通道异常（不致命）: " + error.getClass().getSimpleName());
-            if (isCurrent(s)) s.diagnostics.audit("Match3SpeechFailure error=" + error.getClass().getSimpleName());
-        }
     }
 
     private void auditCue(CueRequest request, String message) {
@@ -730,30 +856,88 @@ public class Match3LiveService extends Service {
         running = exploring = false;
         Session old = active;
         active = null;
+        ImageReader oldReader = reader;
+        VirtualDisplay oldDisplay = display;
+        MediaProjection oldProjection = projection;
+        reader = null; display = null; projection = null;
         SenseFieldReaderService.hideRowNumbers();
+        Runnable retireCapture = () -> {
+            // ImageReader.close() invalidates acquired planes, including native ByteBuffers.
+            // Retire it only after onImageAvailable has returned and closed its Image.
+            if (old != null) { invalidateBoard(old, "SERVICE_STOPPED"); closeOverlay(old); }
+            if (oldReader != null) try { oldReader.close(); } catch (RuntimeException ignored) { }
+            if (old != null && old.frame != null && !old.frame.isRecycled()) old.frame.recycle();
+            if (old != null) {
+                old.frame = null;
+                old.diagnostics.finish("m3live_session_finished");
+            }
+        };
         if (handler != null) {
             if (old != null) handler.removeCallbacksAndMessages(old);
-            // Recycling is queued after any in-progress recognition using this bitmap.
-            handler.post(() -> {
-                if (old != null && old.frame != null && !old.frame.isRecycled()) old.frame.recycle();
-                if (old != null) old.frame = null;
-            });
-        }
+            handler.post(retireCapture);
+        } else retireCapture.run();
         if (dispatcher != null) dispatcher.clearAll();
-        if (old != null) old.diagnostics.finish("m3live_session_finished");
-        if (reader != null) { try { reader.close(); } catch (Exception ignored) { } reader = null; }
-        if (display != null) { try { display.release(); } catch (Exception ignored) { } display = null; }
-        if (projection != null) { try { projection.stop(); } catch (Exception ignored) { } projection = null; }
+        if (oldDisplay != null) try { oldDisplay.release(); } catch (RuntimeException ignored) { }
+        if (oldProjection != null) try { oldProjection.stop(); } catch (RuntimeException ignored) { }
+    }
+
+    @Override public void onConfigurationChanged(android.content.res.Configuration configuration) {
+        super.onConfigurationChanged(configuration);
+        // API34 reports the actual mirrored-content size after the compositor has rotated.
+        // A configuration event can precede that transition and scale/crop the old content.
+        if (android.os.Build.VERSION.SDK_INT >= 34) return;
+        Session previous = active;
+        if (previous == null || previous.projectionStopped) return;
+        handler().post(() -> {
+            if (!isCurrent(previous)) return;
+            android.util.DisplayMetrics metrics = new android.util.DisplayMetrics();
+            getSystemService(android.view.WindowManager.class).getDefaultDisplay().getRealMetrics(metrics);
+            resizeCapture(previous, metrics.widthPixels, metrics.heightPixels, metrics.densityDpi);
+        });
+    }
+
+    /** Capture-worker only: retire old frames and map the new surface to real captured content. */
+    private void resizeCapture(Session previous, int width, int height, int densityDpi) {
+            if (!isCurrent(previous) || width <= 0 || height <= 0) return;
+            if (previous.reader.getWidth() == width && previous.reader.getHeight() == height) return;
+            invalidateBoard(previous, "DISPLAY_CHANGED"); closeOverlay(previous);
+            ImageReader replacement = null;
+            try {
+                replacement = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
+                display.setSurface(null);
+                display.resize(width, height, densityDpi);
+                display.setSurface(replacement.getSurface());
+                handler().removeCallbacksAndMessages(previous);
+                ImageReader oldReader = reader;
+                Session next = new Session(previous.generation, previous.projection, replacement, previous.diagnostics);
+                next.fullDisplayCapture = previous.fullDisplayCapture;
+                next.visualSuppressed = previous.visualSuppressed;
+                next.exploreMode = previous.exploreMode;
+                next.boardRevision = previous.boardRevision + 1;
+                reader = replacement; active = next;
+                replacement.setOnImageAvailableListener(source -> onImageAvailable(source, next), handler());
+                oldReader.close();
+                if (previous.frame != null && !previous.frame.isRecycled()) previous.frame.recycle();
+                previous.frame = null;
+                next.diagnostics.audit("Match3DisplayChanged frame=" + width + "x" + height);
+                scheduleTick(next);
+            } catch (RuntimeException error) {
+                if (replacement != null) replacement.close();
+                previous.diagnostics.audit("Match3DisplayResizeFailed error=" + error.getClass().getSimpleName());
+                previous.projection.stop();
+            }
     }
 
     @Override public void onCreate() {
         super.onCreate();
+        if (BuildConfig.DEBUG) debugInstance = new java.lang.ref.WeakReference<>(this);
         NotificationManager nm = getSystemService(NotificationManager.class);
         if (nm != null) nm.createNotificationChannel(new android.app.NotificationChannel("m3live",
                 "消消乐实时识别", NotificationManager.IMPORTANCE_LOW));
     }
 
     @Override public void onDestroy() {
+        if (debugInstance.get() == this) debugInstance.clear();
         projectionSession.invalidate(0);
         teardownMedia();
         if (dispatcher != null) dispatcher.close();

@@ -98,6 +98,7 @@ docs/**
 !docs/releases/0.4.1/
 !docs/releases/0.4.3/
 !docs/releases/0.4.4/
+!docs/releases/0.4.5/
 !docs/README.md
 !docs/公开文档范围.md
 !docs/design/技术方案.md
@@ -110,6 +111,8 @@ docs/**
 !docs/development/外部数据引入与预训练.md
 !docs/development/app-update.md
 !docs/development/offline-speech.md
+!docs/development/android-adb-diagnostics.md
+!docs/development/match3-regression.md
 !docs/development/assistant-android-transport-test.md
 !docs/development/assistant-gateway-test-deployment.md
 !docs/plans/黑客松方案收敛与实施路线.md
@@ -138,6 +141,8 @@ docs/**
 !docs/releases/0.4.3/RELEASE_NOTES.md
 !docs/releases/0.4.4/RELEASE_NOTES.md
 !docs/releases/0.4.4/UPDATE_SUMMARY.txt
+!docs/releases/0.4.5/RELEASE_NOTES.md
+!docs/releases/0.4.5/UPDATE_SUMMARY.txt
 !docs/releases/GITHUB发布检查清单.md
 !docs/releases/README.md
 !docs/releases/版本命名规范.md

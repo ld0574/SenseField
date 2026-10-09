@@ -174,6 +174,12 @@ public class Match3MergeInstrumentedTest {
             java.lang.reflect.Method teardown = Match3LiveService.class.getDeclaredMethod("teardownMedia");
             teardown.setAccessible(true);
             teardown.invoke(service);
+            // Teardown is deliberately queued after any ImageReader owner on the capture worker.
+            java.util.concurrent.CountDownLatch retired = new java.util.concurrent.CountDownLatch(1);
+            java.lang.reflect.Field captureHandler = Match3LiveService.class.getDeclaredField("handler");
+            captureHandler.setAccessible(true);
+            ((android.os.Handler) captureHandler.get(service)).post(retired::countDown);
+            assertTrue(retired.await(5, TimeUnit.SECONDS));
             drainDiagnostics();
             assertTrue(recorder.finished);
             assertTrue(new File(recorder.directory, "summary.json").isFile());
@@ -267,10 +273,12 @@ public class Match3MergeInstrumentedTest {
                 new Intent(context(), Match3AssistActivity.class))) {
             scenario.onActivity(activity -> {
                 View root = activity.findViewById(android.R.id.content);
-                assertTrue(hasText(root, "开始实时识别（录屏授权）"));
-                assertTrue(hasText(root, "选择游戏截图"));
-                assertTrue(hasText(root, "查看诊断记录与导出（需先停止识别）"));
-                assertTrue(hasText(root, "实验判定设置与自测"));
+                assertTrue(hasText(root, "开始实时识别"));
+                assertTrue(hasText(root, "停止"));
+                assertTrue(hasText(root, "设置"));
+                assertFalse(hasText(root, "选择游戏截图"));
+                assertFalse(hasText(root, "启动开心消消乐"));
+                assertFalse(hasText(root, "实验判定设置与自测"));
                 assertFalse(hasText(root, "图标消歧判定"));
             });
         } finally { prefs.edit().putBoolean(JevSettings.PREF_ENABLED, enabled).commit(); }

@@ -82,13 +82,18 @@
 -keepclassmembers,allowobfuscation class com.openkhub.sensefield.CaptureService {
     static boolean isRunning();
 }
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3LiveService {
+    static boolean isRunning();
+}
 -keep,allowobfuscation class com.openkhub.sensefield.DiagnosticRecorder {
+    static com.openkhub.sensefield.DiagnosticRecorder current;
     static java.util.concurrent.ExecutorService IO;
     java.io.File directory;
     java.lang.String failure;
     static *** start(android.content.Context, java.lang.String, long);
     void frame(com.openkhub.sensefield.NativeFrameResult, com.openkhub.sensefield.DiagnosticSnapshot, java.nio.ByteBuffer, int, int, int, long, long, long);
     long[] imageWorkStats();
+    void audit(java.lang.String);
     void finish(java.lang.String);
 }
 -keep,allowobfuscation class com.openkhub.sensefield.NativeFrameResult {

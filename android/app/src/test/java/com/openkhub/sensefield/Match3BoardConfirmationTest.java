@@ -11,10 +11,12 @@ public final class Match3BoardConfirmationTest {
         assertTrue(gate.accept(board("RYO", "GRB")));
     }
 
-    @Test public void normalUpdatesDoNotRepeatTheOpeningConfirmation() {
+    @Test public void changedBoardsNeedConfirmationButUnchangedFramesRemainAccepted() {
         Match3BoardConfirmation gate = new Match3BoardConfirmation();
         assertFalse(gate.accept(board("ROY")));
         assertTrue(gate.accept(board("ROY")));
+        assertTrue(gate.accept(board("ROY")));
+        assertFalse(gate.accept(board("RYO")));
         assertTrue(gate.accept(board("RYO")));
     }
 

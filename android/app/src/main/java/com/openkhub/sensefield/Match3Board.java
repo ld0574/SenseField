@@ -6,9 +6,9 @@ import java.util.List;
 /**
  * 消消乐棋盘纯逻辑：颜色矩阵 → 三连检测 + 相邻交换枚举。
  * 只依赖 char[][]，可在 JVM 单元测试中覆盖（不碰 Bitmap/Android API）。
- * 字母表：R O Y G B P 基础动物；1-9/a-z 玩家学过的特殊棋子（见 Match3Sampler.assignCodes）；
+ * 字母表：R O Y G B P 基础动物；1-9/a-z 玩家学过的外观标签（供点读，不推断交换规则）；
  * ' ' 空格；'.' 未识别。播报叫法一律走 Match3Coach.pieceName，本类不再自带词表；
- * 哪些字符算「一颗棋子」一律走 Match3Sampler.isUnreadable，本类不另立名单。
+ * 哪些字符算「一颗棋子」一律走 Match3Sampler.isMovable，本类不另立名单。
  */
 final class Match3Board {
 
@@ -45,19 +45,25 @@ final class Match3Board {
     private Match3Board() {
     }
 
-    /**
-     * 能参与三连的格 = 既不是空格也不是未识别。
-     * 以前这里写死只认 6 个基础色字母，玩家学过的特殊棋子（1-9/a-z）在走法枚举里等于不存在，
-     * 提示永远不会推荐涉及特效棋子的交换。同字母即同棋子，特殊棋子按自己的字母匹配。
-     */
+    /** Only confirmed basic animals carry ordinary color-matching/swap semantics. */
     static boolean isPiece(char c) {
-        return !Match3Sampler.isUnreadable(c);
+        return Match3Sampler.isMovable(c);
+    }
+
+    /** Invalid/incomplete capture results are not playable boards. */
+    static int columns(char[][] board) {
+        if (board == null || board.length == 0 || board[0] == null || board[0].length == 0) return 0;
+        int cols = board[0].length;
+        for (char[] row : board) if (row == null || row.length != cols) return 0;
+        return cols;
     }
 
     /** 横纵两个方向的三连及以上（同一长连只报一次，起点为其最左/最上格）。 */
     static List<Run> findRuns(char[][] board) {
         List<Run> runs = new ArrayList<>();
-        int rows = board.length, cols = board[0].length;
+        int cols = columns(board);
+        if (cols == 0) return runs;
+        int rows = board.length;
         for (int r = 0; r < rows; r++) {
             int run = 1;
             for (int c = 1; c <= cols; c++) {
@@ -88,7 +94,9 @@ final class Match3Board {
     /** 枚举所有相邻交换，返回交换后能形成三连的走法（按 formedRuns 降序、行优先排序）。 */
     static List<Swap> findSwaps(char[][] board) {
         List<Swap> swaps = new ArrayList<>();
-        int rows = board.length, cols = board[0].length;
+        int cols = columns(board);
+        if (cols == 0) return swaps;
+        int rows = board.length;
         for (int r = 0; r < rows; r++) {
             for (int c = 0; c < cols; c++) {
                 if (!isPiece(board[r][c])) continue;
@@ -130,20 +138,25 @@ final class Match3Board {
     /** 一条可消除走法的播报文案（行/列从 1 数起，与语音习惯一致）。 */
     static String swapSpeech(Swap s) {
         if (s.fromRow == s.toRow) {
-            return "第 " + (s.fromRow + 1) + " 行，第 " + (s.fromCol + 1) + " 个和第 "
-                    + (s.toCol + 1) + " 个交换，可以消除";
+            return "第 " + (s.fromRow + 1) + " 行，第 " + (s.fromCol + 1) + " 列和第 "
+                    + (s.toCol + 1) + " 列交换";
         }
-        return "第 " + (s.fromCol + 1) + " 列，第 " + (s.fromRow + 1) + " 个和第 "
-                + (s.toRow + 1) + " 个交换，可以消除";
+        return "第 " + (s.fromRow + 1) + " 行和第 " + (s.toRow + 1) + " 行，第 "
+                + (s.fromCol + 1) + " 列交换";
     }
 
     /** 局面逐行扫描播报文案。 */
     static List<String> scanSpeech(char[][] board) {
+        return scanSpeech(board, Match3Coach::pieceName);
+    }
+
+    static List<String> scanSpeech(char[][] board, java.util.function.Function<Character, String> names) {
         List<String> lines = new ArrayList<>();
+        if (columns(board) == 0) return lines;
         for (int r = 0; r < board.length; r++) {
             StringBuilder sb = new StringBuilder("第 " + (r + 1) + " 行：");
             for (int c = 0; c < board[r].length; c++) {
-                sb.append(Match3Coach.pieceName(board[r][c]));
+                sb.append(names.apply(board[r][c]));
                 if (c < board[r].length - 1) sb.append("、");
             }
             lines.add(sb.toString());

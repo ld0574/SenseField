@@ -626,6 +626,13 @@ final class CuePlayer implements CueDispatcher.Renderer {
                         && voice.getFeatures().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED));
     }
 
+    static Voice selectedOfflineVoice(Voice current, Set<Voice> available) {
+        if (offlineChinese(current)) return current;
+        return available == null ? null : available.stream().filter(CuePlayer::offlineChinese)
+                .sorted(java.util.Comparator.<Voice>comparingInt(value -> OfflineTtsPolicy.localeOrder(value.getLocale()))
+                        .thenComparing(Voice::getName)).findFirst().orElse(null);
+    }
+
     /** Voice discovery and synthesis never hold the lock used by the recognition thread. */
     private void configureOfflineVoice(TextToSpeech engine, String selected, int index, int generation) {
         try {
@@ -634,14 +641,12 @@ final class CuePlayer implements CueDispatcher.Renderer {
                 mainHandler.post(() -> advanceVoiceEngine(engine, index, generation));
                 return;
             }
-            Set<Voice> voices = engine.getVoices();
-            Voice offline = voices == null ? null : voices.stream()
-                    .filter(CuePlayer::offlineChinese)
-                    .sorted(java.util.Comparator.<Voice>comparingInt(
-                            value -> OfflineTtsPolicy.localeOrder(value.getLocale()))
-                            .thenComparing(Voice::getName)).findFirst().orElse(null);
-            if (offline == null && offlineChinese(engine.getVoice())) offline = engine.getVoice();
-            if (offline == null || engine.setVoice(offline) != TextToSpeech.SUCCESS
+            Voice current = engine.getVoice();
+            boolean preserveEngineVoice = offlineChinese(current);
+            Voice offline = selectedOfflineVoice(current, preserveEngineVoice ? null : engine.getVoices());
+            // MultiTTS owns its selected voice. Do not overwrite a valid engine default
+            // with the first alphabetically enumerated voice or a redundant setVoice call.
+            if (offline == null || (!preserveEngineVoice && engine.setVoice(offline) != TextToSpeech.SUCCESS)
                     || !offlineChinese(engine.getVoice())) {
                 mainHandler.post(() -> advanceVoiceEngine(engine, index, generation));
                 return;
@@ -675,7 +680,8 @@ final class CuePlayer implements CueDispatcher.Renderer {
                     }
                     ttsAuditState = "AlertTts status=ready offline=true engine=" + engineName
                             + " voice=" + voiceName + " ratePercent=" + speechRate
-                            + " fallback=" + usedFallback;
+                            + " fallback=" + usedFallback
+                            + " voiceSource=" + (preserveEngineVoice ? "engine_default" : "offline_fallback");
                 }
                 auditAudio(ttsAuditState);
                 finishPendingDynamic(true);
@@ -708,7 +714,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
                     // must not cut speech that has already started and is still playing.
                     long duration = request == null ? 30_000 : Math.min(30_000, Math.max(4000,
                             request.speech.length() * 700L + 3000));
-                    mainHandler.postDelayed(() -> timeoutDynamicSpeech(id, callback, engine), duration);
+                    mainHandler.postDelayed(() -> timeoutDynamicSpeech(id, callback, engine, "PLAYBACK_TIMEOUT"), duration);
                 }
             }
             @Override public void onDone(String id) {
@@ -749,7 +755,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
                 CueDispatcher.PlaybackCallback callback = speechCallbacks.remove(id);
                 clearDynamicDeadline(id);
                 if (callback != null)
-                    callback.onFinished(SystemClock.elapsedRealtime(), false);
+                    callback.onFailed(SystemClock.elapsedRealtime(), "ENGINE_ERROR");
                 Log.w(TAG, "TTS failed for " + id);
             }
             @Override public void onStop(String id, boolean interrupted) {
@@ -1191,13 +1197,18 @@ final class CuePlayer implements CueDispatcher.Renderer {
         try {
             if (request.category == CueRequest.Category.NEAR_ZONE)
                 auditAudio("AlertTts cueId=" + request.cueId + " cache=miss offline=true");
-            Runnable waiting = () -> timeoutDynamicSpeech(utteranceId, callback, voice);
+            Runnable waiting = () -> timeoutDynamicSpeech(utteranceId, callback, voice, "START_TIMEOUT");
             speechStartTimeouts.put(utteranceId, waiting);
             mainHandler.postDelayed(waiting, speechTimeoutMs(request));
             int result;
             synchronized (assistantTtsSubmissionLock) {
                 if (closed || speechCallbacks.get(utteranceId) != callback) return false;
-                result = voice.speak(request.speech,
+                String spoken = Match3SpeechText.isBoardCue(request.eventKey)
+                        ? Match3SpeechText.forTts(request.speech) : request.speech;
+                if (Match3SpeechText.isBoardCue(request.eventKey))
+                    auditAudio("Match3Tts cueId=" + request.cueId + " source=" + request.speech
+                            + " spoken=" + spoken);
+                result = voice.speak(spoken,
                         alertQueueMode(request, interrupt, false),
                         parameters, utteranceId);
             }
@@ -1218,7 +1229,8 @@ final class CuePlayer implements CueDispatcher.Renderer {
         speechRequests.remove(id);
     }
 
-    private void timeoutDynamicSpeech(String id, CueDispatcher.PlaybackCallback callback, TextToSpeech voice) {
+    private void timeoutDynamicSpeech(String id, CueDispatcher.PlaybackCallback callback, TextToSpeech voice,
+                                      String reason) {
         // Check and stop atomically against new submissions on the same engine. Old timers
         // cannot stop a replacement preview, even if a vendor omits its onStop callback.
         synchronized (assistantTtsSubmissionLock) {
@@ -1228,7 +1240,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
                 Log.w(TAG, "Could not stop timed-out dynamic speech", error);
             }
         }
-        callback.onFinished(SystemClock.elapsedRealtime(), false);
+        callback.onFailed(SystemClock.elapsedRealtime(), reason);
     }
 
     private boolean synthesizeAssistant(CueRequest request,

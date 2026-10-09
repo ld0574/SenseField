@@ -34,6 +34,7 @@ import java.util.List;
 /** Advanced profile and cue tuning for the selected game adapter. */
 public final class GameTuningActivity extends UiActivity {
     private static final int REQUEST_OVERLAY = 1004;
+    static final String EXTRA_DYNAMIC_SPEECH_ONLY = "dynamic_speech_only";
 
     private CheckBox minimapOverlay;
     private RadioGroup presets;
@@ -62,6 +63,23 @@ public final class GameTuningActivity extends UiActivity {
         LinearLayout content = UiKit.page(this);
         scroll.addView(content);
 
+        if (getIntent().getBooleanExtra(EXTRA_DYNAMIC_SPEECH_ONLY, false)) {
+            UiKit.pageHeader(this, content, "语音引擎与语速", "开心消消乐辅助");
+            LinearLayout speech = UiKit.card(this);
+            UiKit.add(speech, UiKit.heading(this, "交换提示语音"), 12);
+            UiKit.add(speech, UiKit.hint(this, "使用当前选择的手机语音引擎，保留原音源；语速与其他游戏共用。"), 12);
+            addDynamicSpeechControls(speech);
+            Button preview = button("试听交换提示", false);
+            preview.setTag("match3_voice_preview");
+            preview.setOnClickListener(v -> previewDynamicVoice());
+            UiKit.add(speech, preview, 12);
+            testStatus = UiKit.hint(this, "切换引擎后自动试听，也可重复点击试听。");
+            testStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+            UiKit.add(speech, testStatus, 0);
+            UiKit.add(content, speech, 0);
+            setContentView(scroll);
+            return;
+        }
         UiKit.pageHeader(this, content, "配置与调参", "王者荣耀辅助");
 
         LinearLayout voices = UiKit.card(this);
@@ -71,17 +89,7 @@ public final class GameTuningActivity extends UiActivity {
         builtInVoice.setOnClickListener(view -> chooseBuiltInVoice(builtInVoice));
         UiKit.add(voices, builtInVoice, 8);
         UiKit.add(voices, UiKit.hint(this, "游戏提醒与完整说明使用内置离线语音。"), 8);
-        Button engines = button("动态文本语音引擎", false);
-        engines.setOnClickListener(view -> chooseVoiceEngine());
-        UiKit.add(voices, engines, 8);
-        voiceStatus = UiKit.hint(this, "正在检查离线中文语音……");
-        voiceStatus.setTag("offline_tts_status");
-        voiceStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-        UiKit.add(voices, voiceStatus, 12);
-        Button voiceData = button("管理离线中文语音", false);
-        voiceData.setOnClickListener(view -> manageOfflineVoice());
-        UiKit.add(voices, voiceData, 16);
-        addSpeechRateControl(voices);
+        addDynamicSpeechControls(voices);
         Button sounds = button("提醒音效", false);
         sounds.setOnClickListener(view -> startActivity(new Intent(this, CueSoundSettingsActivity.class)));
         UiKit.add(voices, sounds, 12);
@@ -246,6 +254,20 @@ public final class GameTuningActivity extends UiActivity {
         }, SystemClock::elapsedRealtime);
         prepareTestCue(generation, channels, audioSkipped,
                 SystemClock.elapsedRealtime() + 3000);
+    }
+
+    private void addDynamicSpeechControls(LinearLayout parent) {
+        Button engines = button("动态文本语音引擎", false);
+        engines.setOnClickListener(view -> chooseVoiceEngine());
+        UiKit.add(parent, engines, 8);
+        voiceStatus = UiKit.hint(this, "正在检查离线中文语音……");
+        voiceStatus.setTag("offline_tts_status");
+        voiceStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        UiKit.add(parent, voiceStatus, 12);
+        Button voiceData = button("管理离线中文语音", false);
+        voiceData.setOnClickListener(view -> manageOfflineVoice());
+        UiKit.add(parent, voiceData, 16);
+        addSpeechRateControl(parent);
     }
 
     private void chooseVoiceEngine() {
@@ -432,7 +454,9 @@ public final class GameTuningActivity extends UiActivity {
                 CueRequest sample = new CueRequest("dynamic-voice-sample", "voice:" + now,
                         "voice:" + now, "DYNAMIC_VOICE_SAMPLE", CueRequest.Category.SYSTEM,
                         80, now, now + 5000, CueRequest.CHANNEL_SPEECH, 0, 0, 0,
-                        "这是动态文本的语音试听。");
+                        getIntent().getBooleanExtra(EXTRA_DYNAMIC_SPEECH_ONLY, false)
+                                ? Match3SpeechText.forTts("右下区域，第五行，第四列和第五列交换。")
+                                : "这是动态文本的语音试听。");
                 if (probe.speak(sample, true, new CueDispatcher.PlaybackCallback() {
                     @Override public void onStarted(long at) {}
                     @Override public void onFinished(long at, boolean success) {

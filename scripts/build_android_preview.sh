@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-readonly PREVIEW_VERSION_NAME='0.4.4'
-readonly PREVIEW_VERSION_CODE='21'
+readonly PREVIEW_VERSION_NAME='0.4.5'
+readonly PREVIEW_VERSION_CODE='22'
 readonly DEFAULT_UPDATE_MANIFEST_URL='https://888413.xyz/apk/latest.json'
 readonly DEFAULT_UPDATE_APK_URL="https://gitee.com/leda/SenseField/releases/download/${PREVIEW_VERSION_NAME}/sensefieldv${PREVIEW_VERSION_NAME}.apk"
 readonly PREVIEW_ABI='arm64-v8a'
@@ -225,6 +225,6 @@ mkdir -p "$cdn_dir"
 "$python_bin" "$repo_root/scripts/build_app_update_manifest.py" \
   --apk "$candidate_apk" \
   --apk-url "$SENSEFIELD_UPDATE_APK_URL" --output "$cdn_dir/latest.json" \
-  --notes-file "$repo_root/docs/releases/0.4.4/UPDATE_SUMMARY.txt"
+  --notes-file "$repo_root/docs/releases/${PREVIEW_VERSION_NAME}/UPDATE_SUMMARY.txt"
 printf 'Gitee APK：%s\n' "$candidate_apk"
 printf '网站版本清单：%s/latest.json\n' "$cdn_dir"

@@ -603,6 +603,13 @@ final class DiagnosticRecorder {
     /** Published snapshots are immutable and never require the processing lock to read. */
     void publishState(JSONObject state) { if (!finished) latestState = state; }
 
+    /** A local read-only snapshot for same-signature ADB diagnostics; no exported component. */
+    @androidx.annotation.Keep
+    String stateForDiagnostics() {
+        JSONObject state = latestState;
+        return state == null ? "{}" : state.toString();
+    }
+
     private void checkpoint(long nowMs) {
         if (finished || !failure.isEmpty()) return;
         try {

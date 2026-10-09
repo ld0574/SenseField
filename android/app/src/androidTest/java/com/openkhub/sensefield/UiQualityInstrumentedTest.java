@@ -470,7 +470,7 @@ public final class UiQualityInstrumentedTest {
         }
     }
 
-    private static void capture(Intent intent, String name) throws Exception {
+    static void capture(Intent intent, String name) throws Exception {
         try (ActivityScenario<Activity> scenario = ActivityScenario.launch(intent)) {
             idle();
             scenario.onActivity(activity -> {
