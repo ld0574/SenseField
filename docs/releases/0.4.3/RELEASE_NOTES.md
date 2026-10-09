@@ -13,7 +13,7 @@
 - 合入消消乐分支截至 `5484401` 的修订：冰块／空位、标定检查、读不清反馈、行号标尺、录屏中断提示和播报审计；开心消消乐仍为体验功能。
 - AI助手默认关闭，可在设置中按需开启。
 
-小地图长方形预警范围尚未加入，本版保留现有范围、识别与敌人再出现规则。近期独立分支的新提交不自动计入这份APK，已合入来源以[消消乐合并记录的追加修订](../../../validation/MATCH3_LATEST_MERGE_0_4_3_2026-10-07.md)为准。
+小地图长方形预警范围尚未加入，本版保留现有范围、识别与敌人再出现规则。近期独立分支的新提交不自动计入这份APK，已合入来源以[消消乐合并记录的追加修订](../../../validation/match3/MATCH3_LATEST_MERGE_0_4_3_2026-10-07.md)为准。
 
 ## 安装与使用
 
@@ -43,4 +43,4 @@
 | GitHub附件准备目录 | `output/releases/0.4.3/github-upload/`；仅一个APK、使用说明和校验文本 |
 | 配套CDN清单 | `output/releases/0.4.3/cdn-upload/latest.json`，仍指向Gitee的0.4.3APK；由负责人手动上传 |
 
-本次合并后重新构建并覆盖同一0.4.3。当前唯一包依据见[消消乐追加合并](../../../validation/MATCH3_LATEST_MERGE_0_4_3_2026-10-07.md)；[首次说明](../../../validation/GUIDE_SKIP_VIEWPORT_0_4_3_2026-10-07.md)、[患者缓存实测](../../../validation/PATIENT_AUDIO_LIVE_0_4_3_2026-10-07.md)和[音频修订](../../../validation/PATIENT_AUDIO_REPAIR_0_4_3_2026-10-07.md)继续保留各自历史包信息。GitHub上传的是当前APK的副本，不含私有日志、患者截图、模型独立资源包或密钥；Gitee和固定网站清单继续按[CDN发布步骤](../../../deploy/assistant/CDN发布.md)手动维护。
+本次合并后重新构建并覆盖同一0.4.3。当前唯一包依据见[消消乐追加合并](../../../validation/match3/MATCH3_LATEST_MERGE_0_4_3_2026-10-07.md)；[首次说明](../../../validation/android/GUIDE_SKIP_VIEWPORT_0_4_3_2026-10-07.md)、[患者缓存实测](../../../validation/audio/PATIENT_AUDIO_LIVE_0_4_3_2026-10-07.md)和[音频修订](../../../validation/audio/PATIENT_AUDIO_REPAIR_0_4_3_2026-10-07.md)继续保留各自历史包信息。GitHub上传的是当前APK的副本，不含私有日志、患者截图、模型独立资源包或密钥；Gitee和固定网站清单继续按[CDN发布步骤](../../../deploy/assistant/CDN发布.md)手动维护。

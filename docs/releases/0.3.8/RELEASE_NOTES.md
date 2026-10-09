@@ -39,4 +39,4 @@
 
 标签 `v0.3.8` 指向 `408f32a44a7ff58c5d69c5be8efa3d8d352afa9f`。APK 未重建；实际 Manifest、v2 签名、大小及 SHA-256 已复核，采用与既有体验版相同的 Android Debug 签名。
 
-后续验证与证据边界见[0.3.8 改造、验证与交付后反馈](../../../validation/NEXT_VERSION_0.3.8_2026-10-03.md)。
+后续验证与证据边界见[0.3.8 改造、验证与交付后反馈](../../../validation/performance/NEXT_VERSION_0.3.8_2026-10-03.md)。

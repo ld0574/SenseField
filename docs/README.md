@@ -1,6 +1,6 @@
 # 听野文档索引
 
-按用途查阅产品方案、实施计划、开发指南和发布记录。文档中的历史实验结论保留原始日期，最新验证结论见[当前验证状态](../validation/STATUS.md)。
+按用途查阅产品方案、实施计划、开发指南和发布记录。文档中的历史实验结论保留原始日期，最新验证结论见[当前验证状态](../validation/STATUS.md)，逐批证据见[验证记录索引](../validation/README.md)。
 
 需求与赛事资料、项目自写方案、开发与发布说明，以及整理后的公开调研摘要可纳入公开仓库；具体范围见[公开文档范围](公开文档范围.md)。原始会议与完整检索稿保留本地。
 
@@ -9,9 +9,10 @@
 | 需要做什么 | 从这里开始 |
 | --- | --- |
 | 了解玩家问题与产品边界 | [赛题背景](design/赛题背景.md) |
-| 安装公开体验版 | [0.3.8 安装与使用说明](releases/0.3.8/RELEASE_NOTES.md) |
-| 查看最新版本变化 | [0.3.8 公开体验版](releases/0.3.8/RELEASE_NOTES.md) |
-| 查看当前源码候选 | [0.4.1 候选说明](releases/0.4.1/RELEASE_NOTES.md) · [Gitee 迁移记录](../validation/GITEE_DISTRIBUTION_2026-10-06.md)（模型公开字节核对通过；迁移 APK 与清单另行验收） |
+| 安装已公开版本 | [0.4.4 安装与使用说明](releases/0.4.4/RELEASE_NOTES.md) · [发布索引](releases/README.md) |
+| 查看最新版本变化 | [版本与交付索引](releases/README.md) |
+| 查看当前源码候选 | [0.4.5 候选说明](releases/0.4.5/RELEASE_NOTES.md) · [当前验证状态](../validation/STATUS.md) |
+| 查找测试与排查记录 | [按主题查找验证记录](../validation/README.md) |
 | 部署助手服务 | [直接启动与部署步骤](../deploy/assistant/README.md)（部署脚本统一在 `deploy/assistant/`） |
 | 上传 APK、模型与后续发包 | [Gitee 下载分发与后续发布](../deploy/assistant/CDN发布.md)（同版本覆盖、新版本、固定清单和下载核对） |
 | 参与开发或标注 | [团队协作与本地运行](development/团队协作与本地运行.md) |
@@ -32,8 +33,8 @@
 | 文档 | 内容 |
 | --- | --- |
 | [黑客松方案收敛与实施路线](plans/黑客松方案收敛与实施路线.md) | 已定决策、工作包、日程与实施记录 |
-| [符合度复核与 0.4.0 证据计划](plans/符合度改造方案.md) | 35 项历史评估的证据边界与 0.4.0 网络数据路径 |
-| [0.4.0 目标、接口与验收记录](../validation/GOAL_0.4.0_2026-10-03.md) | 开发中的语音与画面助手目标、接口和待验证条件 |
+| [符合度复核与迭代证据](plans/符合度改造方案.md) | 历史评估、逐批实现／验证边界及当前待验证项目 |
+| [0.4.0 目标、接口与验收记录](../validation/assistant/GOAL_0.4.0_2026-10-03.md) | 开发中的语音与画面助手目标、接口和待验证条件 |
 
 ## 开发与数据 · `development/`
 
@@ -47,7 +48,7 @@
 
 ## 发布记录 · `releases/`
 
-[发布索引](releases/README.md)汇总 0.3.0-alpha.1、0.3.1–0.3.8、0.4.0 历史工程候选与 0.4.1 自动更新候选说明，并提供[版本命名规范](releases/版本命名规范.md)和[GitHub 发布检查清单](releases/GITHUB发布检查清单.md)。公开体验版、本地候选和开发中的源码版本分别记录。
+[发布索引](releases/README.md)汇总已记录的 0.4.4 公开主线发布、0.4.5 消消乐分支本地候选及此前版本，并提供[版本命名规范](releases/版本命名规范.md)和[GitHub 发布检查清单](releases/GITHUB发布检查清单.md)。公开体验版、本地候选和开发中的源码版本分别记录。
 
 ## 需求与赛事资料 · `requirements/`
 
@@ -65,6 +66,6 @@
 
 - `docs/` 只保存文档，包括 Markdown 与已有 PDF。APK、ZIP、校验文件和交付元数据留在 `output/releases/<版本>/`；发布文档可记录文件名、大小、SHA-256 和公开下载地址。
 - 部署脚本、反代和服务模板及部署操作入口统一放在 `deploy/assistant/`；部署主文档为该目录的 `README.md`。
-- 验证、诊断和逐场实验记录继续放在 `validation/`，训练命令放在 `training/README.md`。
+- 验证、诊断和逐场实验记录按主题放在 `validation/` 子目录，并更新[验证索引](../validation/README.md)；当前状态放在 `validation/STATUS.md`，旧状态快照进入 `validation/archive/`。训练命令放在 `training/README.md`。
 - 新增文档时更新本索引；新增交付时在 `releases/<版本>/` 保存说明，并更新发布索引。
 - 项目自写文档按文件加入 `.gitignore` 与公开仓库检查脚本的允许清单，原始参考资料保留本地。

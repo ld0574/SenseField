@@ -4,7 +4,7 @@
 
 ## 交付状态与构建版本
 
-2026-10-08 当前主线交付为[听野0.4.4](https://github.com/ld0574/SenseField/releases/tag/v0.4.4)（`versionCode 21`，普通 Release、Latest）。附件、签名及测试范围见[0.4.4说明](0.4.4/RELEASE_NOTES.md)及[本次发布核对](../../validation/GITHUB_RELEASE_0_4_4_2026-10-08.md)，完整历史见[发布索引](README.md)。历史主线 `v0.4.3-main` 和消消乐独立发布保留。普通 Release 不自动改变 `verified`／`release_ready`，版本名称继续使用 `a.b.c`。
+2026-10-08 当前主线交付为[听野0.4.4](https://github.com/ld0574/SenseField/releases/tag/v0.4.4)（`versionCode 21`，普通 Release、Latest）。附件、签名及测试范围见[0.4.4说明](0.4.4/RELEASE_NOTES.md)及[本次发布核对](../../validation/releases/GITHUB_RELEASE_0_4_4_2026-10-08.md)，完整历史见[发布索引](README.md)。历史主线 `v0.4.3-main` 和消消乐独立发布保留。普通 Release 不自动改变 `verified`／`release_ready`，版本名称继续使用 `a.b.c`。
 
 发布前核对 `android/app/build.gradle`、`scripts/build_android_preview.sh` 和实际 APK 的版本、升级序号与签名，准备新版本交付时同步配置与脚本。发布说明必须对应实际 APK 和该版本的验证证据。历史 [0.3.0-alpha.1 发布说明](0.3.0-alpha.1/RELEASE_NOTES.md)与[检查记录](0.3.0-alpha.1/CHECKLIST.md)保留原始信息。
 

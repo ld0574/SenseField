@@ -1,6 +1,6 @@
 # Android 自动更新开发说明
 
-2026-10-06当前策略：固定版本清单保留`https://888413.xyz/apk/latest.json`，APK改为听野Gitee Release，例如`https://gitee.com/leda/SenseField/releases/download/0.4.1/sensefieldv0.4.1.apk`。语音模型拆成两个小于100MB的固定资源附件，由APP拼接校验解压，后续Release不重复上传模型。迁移APK必须先手动覆盖安装一次，旧客户端同源规则不能自动接收Gitee地址。迁移版允许固定自有清单指向本项目Gitee Release，并适配实际附件/foruda签名跳转；其他跨域仍拒绝。APK大小、SHA、包名、版本与签名检查均保留。队友发布操作见[Gitee下载分发与后续发布](../../deploy/assistant/CDN发布.md)，工程证据见[Gitee迁移记录](../../validation/GITEE_DISTRIBUTION_2026-10-06.md)。
+2026-10-06当前策略：固定版本清单保留`https://888413.xyz/apk/latest.json`，APK改为听野Gitee Release，例如`https://gitee.com/leda/SenseField/releases/download/0.4.1/sensefieldv0.4.1.apk`。语音模型拆成两个小于100MB的固定资源附件，由APP拼接校验解压，后续Release不重复上传模型。迁移APK必须先手动覆盖安装一次，旧客户端同源规则不能自动接收Gitee地址。迁移版允许固定自有清单指向本项目Gitee Release，并适配实际附件/foruda签名跳转；其他跨域仍拒绝。APK大小、SHA、包名、版本与签名检查均保留。队友发布操作见[Gitee下载分发与后续发布](../../deploy/assistant/CDN发布.md)，工程证据见[Gitee迁移记录](../../validation/releases/GITEE_DISTRIBUTION_2026-10-06.md)。
 
 当前源码与预览版本为 `0.4.1 / versionCode 18`。历史测试包大小与当时线上状态单独保留在文末，当前交付以2026-10-06迁移记录为准。
 
@@ -80,6 +80,6 @@ fixture 仅用于本地 debug 复现。只把临时 CA 加入隔离的 debug 构
 
 2026-10-04时，更新器清单已配置为 `https://888413.xyz/apk/latest.json`，APK地址仍为同源的 `https://888413.xyz/apk/sensefieldv0.4.1.apk`。当时公开APK为21,400,339 bytes，SHA-256 `b2a4dd6a0ea2b699a72500f10af69ef97b3a870ba1c2f760733db4c76b71203a`；清单返回404，新的同版本包未上传。这是当时的状态，不是2026-10-06 Gitee附件的核对结果。
 
-该轮本地候选为 `0.4.1/code18`，21,400,339 bytes，SHA-256 `88992f7ef9323ad58558fcf5b4ee8ff8ad384f8e7405a567beaeb2389be8539d`。JVM 212项、Python自动更新专项28项、Android updater instrumentation 7项、arm64 build/lint通过。本地TLS fixture通过Android系统UPDATE安装该包，追加安装后指纹/no-op检查；这些结果不代表公网CDN清单或当前Gitee手机链路通过，见[历史CDN修订记录](../../validation/APP_UPDATE_CDN_0.4.1_2026-10-04.md)。
+该轮本地候选为 `0.4.1/code18`，21,400,339 bytes，SHA-256 `88992f7ef9323ad58558fcf5b4ee8ff8ad384f8e7405a567beaeb2389be8539d`。JVM 212项、Python自动更新专项28项、Android updater instrumentation 7项、arm64 build/lint通过。本地TLS fixture通过Android系统UPDATE安装该包，追加安装后指纹/no-op检查；这些结果不代表公网CDN清单或当前Gitee手机链路通过，见[历史CDN修订记录](../../validation/releases/APP_UPDATE_CDN_0.4.1_2026-10-04.md)。
 
-此前的 0.4.1 GitHub stable Release 解析器使用合成 metadata 验证；工作站直接请求 GitHub Latest API 遇到匿名限流，应用显示可重试状态且游戏入口仍可用，没有证明真实 GitHub 检查或下载成功。Linux loopback fixture 和真实系统 UPDATE UI 流程使用隔离测试 APK 完成，不代表 GitHub 或当前 CDN 已联通。该轮冷启动检查频率及旋转/权限设置返回行为经代码审查确认，没有专门的生命周期 instrumentation。旧 APK 的文件信息和验证证据继续保留在[原 0.4.1 自动更新验证记录](../../validation/APP_UPDATE_0.4.1_2026-10-04.md)，本次同版本修订的产物和 CDN 读取结果应另行记录，不覆盖旧 hash 或旧构建结果。
+此前的 0.4.1 GitHub stable Release 解析器使用合成 metadata 验证；工作站直接请求 GitHub Latest API 遇到匿名限流，应用显示可重试状态且游戏入口仍可用，没有证明真实 GitHub 检查或下载成功。Linux loopback fixture 和真实系统 UPDATE UI 流程使用隔离测试 APK 完成，不代表 GitHub 或当前 CDN 已联通。该轮冷启动检查频率及旋转/权限设置返回行为经代码审查确认，没有专门的生命周期 instrumentation。旧 APK 的文件信息和验证证据继续保留在[原 0.4.1 自动更新验证记录](../../validation/releases/APP_UPDATE_0.4.1_2026-10-04.md)，本次同版本修订的产物和 CDN 读取结果应另行记录，不覆盖旧 hash 或旧构建结果。

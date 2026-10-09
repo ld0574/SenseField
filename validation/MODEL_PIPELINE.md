@@ -16,7 +16,7 @@
 
 导出/parity原始产物在ignored `build/ignored/v6-512-export`。仅12张开发图的parity不是独立质量验收。元数据仍 `verified=false`、`release_ready=false`；本轮未改模型、阈值或转换规则，也未打开video9/video12。
 
-桌面2线程preprocess+inference P95为28.9552 ms；[0.3.5实机记录](HEAT_RETEST_0.3.5_2026-10-02.md)的native P50/P95为314.5/431.9 ms，处理约2.08 FPS。桌面与手机数字不可互换，native耗时也不是实际发声时延。试用目标、500 ms观测预算与严格最终门槛见[Goal记录](SCORE_RECOVERY_GOAL_2026-10-03.md#三种指标口径)。
+桌面2线程preprocess+inference P95为28.9552 ms；[0.3.5实机记录](performance/HEAT_RETEST_0.3.5_2026-10-02.md)的native P50/P95为314.5/431.9 ms，处理约2.08 FPS。桌面与手机数字不可互换，native耗时也不是实际发声时延。试用目标、500 ms观测预算与严格最终门槛见[Goal记录](protocols/SCORE_RECOVERY_GOAL_2026-10-03.md#三种指标口径)。
 
 ## HD bootstrap v2 PyTorch 开发候选（2026-09-29，历史320基线）
 
@@ -111,7 +111,7 @@ video4/5 纳入前的 v3 checkpoint、阈值 `0.21` 以及 parity 指标保留�
 
 自适应候选链路使用另一段 video7 的 10 秒开发片段重跑：122 帧中首帧为 `searching` 并保持小地图静默，随后 121 帧为 `locked`；得到 31 个 YOLOX 检测、31 个 observation 和 2 条事件，开发机单次回放约 33.1 FPS、处理 P95 约 28.1 ms。输入片段 SHA-256 为 `7e9ef922c19f52200946eecd281d95cee2a5c5bd7eec941b9ba640acf4941746`，候选 profile 为 `8c98248b896483c71c4a2ed4152aaac64ba878c1bb48d6b69942adba0431f3c3`，预测 JSONL 为 `e603f129aaadd676199a463b7ab12d63d1000b77658bc80a1d89e808ddc483a8`，provenance 为 `3f74e29ee7544a1737f4863ad3014e8f101bf697a099337c23a3d1b3b572ab65`。它当时证明定位器、动态 ROI、ncnn 和事件层已连通；后续核对该时段的 5 个人工采样点均为零框，因此 31 个检测也暴露了旧模型误报。
 
-随后在 video8 修正标签上做的 post-hoc 配对诊断记录了固定 ROI 与自适应候选在同一 ncnn 路径下分别为 58.14% / 81.40% 和 52.16% / 78.60%（precision / recall）。这些仅是受右缘截断污染的旧 crop-relative 历史值；标签和裁剪完整性没有边界触碰审计，不能据此比较模型或判断完整地图效果。动态并集裁剪也会改变旧 YOLOX 输入分布；当前 Android ROI 与权重不变，不能直接扩大 ROI 并沿用旧权重。详细边界见[定位器记录](MINIMAP_LOCATOR.md)。
+随后在 video8 修正标签上做的 post-hoc 配对诊断记录了固定 ROI 与自适应候选在同一 ncnn 路径下分别为 58.14% / 81.40% 和 52.16% / 78.60%（precision / recall）。这些仅是受右缘截断污染的旧 crop-relative 历史值；标签和裁剪完整性没有边界触碰审计，不能据此比较模型或判断完整地图效果。动态并集裁剪也会改变旧 YOLOX 输入分布；当前 Android ROI 与权重不变，不能直接扩大 ROI 并沿用旧权重。详细边界见[定位器记录](models/MINIMAP_LOCATOR.md)。
 
 模型配置为 `verified: false`。本段记录的旧 APK profile 曾显式设置 `minimap_yolox:false`，开发测试者当时需要导入与权重匹配的固定 ROI profile；该旧候选已退役。当前 APK 的 HD 实验 profile 在新安装时启用模型，实验识别和新头像提醒默认开启，用户选择关闭会保留。`video7` 人机历史盲测只有 65.57% precision／63.49% recall，因此不能作为发布验收证据。
 

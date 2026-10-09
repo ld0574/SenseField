@@ -22,14 +22,14 @@
 
 APK 大小 24,237,904 bytes（约 24.24MB），SHA-256：`4f8707ed8fbb808d0dc8ca0fd84b486942e4ae521eb3479bbfa2e439438b8e2a`。本次同版本修订已覆盖安装到测试手机，手机回读与最终测试及交付包完全一致。
 
-唯一 APK：`output/releases/0.4.5/gitee-upload/sensefieldv0.4.5.apk`。匹配更新清单：`output/releases/0.4.5/cdn-upload/latest.json`。实际大小、摘要、构建和设备检查见[当前验证记录](../../../validation/MATCH3_NO_HINTS_0_4_5_2026-10-09.md)。
+唯一 APK：`output/releases/0.4.5/gitee-upload/sensefieldv0.4.5.apk`。匹配更新清单：`output/releases/0.4.5/cdn-upload/latest.json`。实际大小、摘要、构建和设备检查见[当前验证记录](../../../validation/match3/MATCH3_NO_HINTS_0_4_5_2026-10-09.md)。
 
 由负责人先手动上传 Gitee 的 `0.4.5` APK，核对下载文件后，再覆盖网站 `https://888413.xyz/apk/latest.json`。清单指向 `https://gitee.com/leda/SenseField/releases/download/0.4.5/sensefieldv0.4.5.apk`；语音模型继续复用已有分片。更新弹窗只使用[三行摘要](UPDATE_SUMMARY.txt)，完整操作见[CDN 发布说明](../../../deploy/assistant/CDN发布.md)。本轮不自动发布或上传。
 
 ## 验证范围
 
-本次识别修订通过 402 项 JVM、4 项 Python 门禁回归、36 项 Debug 和 20 项最终 minified Release 仪器检查，无失败／跳过；Release lint 为 0 错误／33 警告。诊断图经过真实录屏服务取得有效推荐、实际高亮和接受的语音派发，动态语音的外部发声不计为通过；本次手机已覆盖回读并重新监听，新的真实对局、引擎实声和热对照仍待测。见[当前修订记录](../../../validation/MATCH3_NO_HINTS_0_4_5_2026-10-09.md)。
+本次识别修订通过 402 项 JVM、4 项 Python 门禁回归、36 项 Debug 和 20 项最终 minified Release 仪器检查，无失败／跳过；Release lint 为 0 错误／33 警告。诊断图经过真实录屏服务取得有效推荐、实际高亮和接受的语音派发，动态语音的外部发声不计为通过；本次手机已覆盖回读并重新监听，新的真实对局、引擎实声和热对照仍待测。见[当前修订记录](../../../validation/match3/MATCH3_NO_HINTS_0_4_5_2026-10-09.md)。
 
-此前设置与游戏反馈修订的 400 项 JVM、9 项 Release 针对性检查和九种宽度／字号共 27 项设置／反馈检查仅对应其历史包，没有在本次识别修改后重复声称大字或全功能验收；见[此前界面记录](../../../validation/MATCH3_DIAGNOSTIC_CONTEXT_0_4_5_2026-10-09.md)。
+此前设置与游戏反馈修订的 400 项 JVM、9 项 Release 针对性检查和九种宽度／字号共 27 项设置／反馈检查仅对应其历史包，没有在本次识别修改后重复声称大字或全功能验收；见[此前界面记录](../../../validation/match3/MATCH3_DIAGNOSTIC_CONTEXT_0_4_5_2026-10-09.md)。
 
-旧诊断截图、独立规则校验和测试棋盘用于故障回归。此前局部排序与新设置的 396 项 JVM、32 项 Debug、16 项 Release、九种布局共 36 项，以及开始按钮文案包的 6 项 Release／九种主页检查，保留各自历史制品范围，见[此前记录](../../../validation/MATCH3_VALUE_AND_SETTINGS_0_4_5_2026-10-09.md)。真实推荐价值、所选引擎实声和受控温升继续待测；消消乐保持体验版，评分与 `verified`／`release_ready` 不变。[后续价值排序范围](../../plans/消消乐目标价值排序.md)保留目标识别与任务收益要求。
+旧诊断截图、独立规则校验和测试棋盘用于故障回归。此前局部排序与新设置的 396 项 JVM、32 项 Debug、16 项 Release、九种布局共 36 项，以及开始按钮文案包的 6 项 Release／九种主页检查，保留各自历史制品范围，见[此前记录](../../../validation/match3/MATCH3_VALUE_AND_SETTINGS_0_4_5_2026-10-09.md)。真实推荐价值、所选引擎实声和受控温升继续待测；消消乐保持体验版，评分与 `verified`／`release_ready` 不变。[后续价值排序范围](../../plans/消消乐目标价值排序.md)保留目标识别与任务收益要求。

@@ -25,8 +25,8 @@ sys.path.insert(0, str(ROOT / "python"))
 from mapassist.extract_frame import extract  # noqa: E402
 
 
-# ROI conventions follow validation/VIDEO_INTAKE_2026-09-28.md and the
-# video13-specific [x, y, width, height] declaration in validation/VIDEO13.md.
+# ROI conventions follow validation/models/VIDEO_INTAKE_2026-09-28.md and the
+# video13-specific [x, y, width, height] declaration in validation/models/VIDEO13.md.
 # All other entries here are widget bounds [left, top, right, bottom).
 SOURCES: dict[str, dict[str, object]] = {
     "video1hd": {"path": "video/video1hd.mp4", "rotation": 90,

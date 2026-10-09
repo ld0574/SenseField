@@ -12,7 +12,7 @@
 
 支持 Android 10（API 29）及以上、arm64-v8a，同签名旧候选可覆盖安装。开始前先试听声音与震动，完成对局后停止辅助并导出诊断 ZIP，记录双手操控时的漏报、迟报和发热体验。
 
-`output/releases/0.3.3/` 没有单独的使用说明；本文的变化与复测信息依据[漏报排查记录](../../../validation/TOUCH_ALERT_DIAG_2026-10-02.md)整理。后续队友反馈预警改善，日志仍显示明显升温，见[0.3.4 发热分析](../../../validation/HEAT_LOAD_0.3.4_2026-10-02.md)。
+`output/releases/0.3.3/` 没有单独的使用说明；本文的变化与复测信息依据[漏报排查记录](../../../validation/honor/TOUCH_ALERT_DIAG_2026-10-02.md)整理。后续队友反馈预警改善，日志仍显示明显升温，见[0.3.4 发热分析](../../../validation/performance/HEAT_LOAD_0.3.4_2026-10-02.md)。
 
 500 ms 是单条观测的年龄上限，不能作为实际发声延迟或稳定性验收结论。
 
@@ -28,4 +28,4 @@ APK、ZIP 和校验文件保存在本地 `output/releases/0.3.3/`，不纳入文
 | APK SHA-256 | `8341c47a7344e4a49279179fc3e92484cc888026d9f055fd705fce2e101f9ae1` |
 
 
-后续验证与证据边界见[操控期间漏报排查](../../../validation/TOUCH_ALERT_DIAG_2026-10-02.md)。
+后续验证与证据边界见[操控期间漏报排查](../../../validation/honor/TOUCH_ALERT_DIAG_2026-10-02.md)。

@@ -1,6 +1,6 @@
 # 0.4.4 离线提示音频与正式包构建
 
-2026-10-08 女声再修订：按用户已选中的 Fish「游戏向导」替换 24 条固定提示女声，网页速度 0.9x，不额外添加逗号或停顿。408 个女声语速文件重制，448 个男声及完整说明文件摘要保持一致；男声继续默认。本批记录见 [游戏向导女声验证](../../validation/FISH_GAME_GUIDE_0_4_4_2026-10-08.md)，原双解说音色保留为 [历史记录](../../validation/FISH_VOICE_0_4_4_2026-10-08.md)。
+2026-10-08 女声再修订：按用户已选中的 Fish「游戏向导」替换 24 条固定提示女声，网页速度 0.9x，不额外添加逗号或停顿。408 个女声语速文件重制，448 个男声及完整说明文件摘要保持一致；男声继续默认。本批记录见 [游戏向导女声验证](../../validation/audio/FISH_GAME_GUIDE_0_4_4_2026-10-08.md)，原双解说音色保留为 [历史记录](../../validation/audio/FISH_VOICE_0_4_4_2026-10-08.md)。
 
 固定游戏提示使用内置录音，不初始化手机 TTS 或 ASR。界面显示「游戏解说 · 男声」与「游戏向导 · 女声」。24 条固定提示各有 80%～240%、每档 10% 的 17 档保音高音频，两种音色都以用户接受的网页 0.9x 录音作为 APP 100% 语速基准。未设置或未知音色默认男声，已明确选择的女声保持女声；旧晓晓映射女声、云希映射男声。已有手动语速、音量不覆盖。完整说明按原文拆成 40 句，只保留原晓晓，播放时使用 Android 的保音高变速。音量在 AudioTrack 播放时调整。两字方位开关、提醒设置和助手默认关闭继续保留。
 
@@ -60,6 +60,6 @@ bash scripts/build_android_preview.sh
 
 ## 验证与待测
 
-运行带 `-PsensefieldTestBuildType=release` 的 `testReleaseUnitTest`、`lintRelease` 和设备测试。当前女声批次记录见 [游戏向导记录](../../validation/FISH_GAME_GUIDE_0_4_4_2026-10-08.md)，原双解说音色见 [10 月 8 日历史记录](../../validation/FISH_VOICE_0_4_4_2026-10-08.md)，前一候选的完整流程见 [10 月 7 日记录](../../validation/OFFLINE_SPEECH_0_4_4_2026-10-07.md)。保留的少量测试接口用于测试实际 minified Release；依赖私有字段反射的旧 UI 测试使用 Debug 辅助构建并分别记录，不拿它们替代正式包证据。
+运行带 `-PsensefieldTestBuildType=release` 的 `testReleaseUnitTest`、`lintRelease` 和设备测试。当前女声批次记录见 [游戏向导记录](../../validation/audio/FISH_GAME_GUIDE_0_4_4_2026-10-08.md)，原双解说音色见 [10 月 8 日历史记录](../../validation/audio/FISH_VOICE_0_4_4_2026-10-08.md)，前一候选的完整流程见 [10 月 7 日记录](../../validation/audio/OFFLINE_SPEECH_0_4_4_2026-10-07.md)。保留的少量测试接口用于测试实际 minified Release；依赖私有字段反射的旧 UI 测试使用 Debug 辅助构建并分别记录，不拿它们替代正式包证据。
 
 合成音频 fixture 使用独立包名、明确的 fixture 版本，只能在没有真实素材时生成；交付门禁拒绝它。Android 10、16KB 系统的实际安装、真机外部录音与受控温升未验证时必须保持待测。声音是否清楚、音效与语音的实际间隙、患者体验不能由播放回调代替。

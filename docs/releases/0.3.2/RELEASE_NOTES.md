@@ -27,4 +27,4 @@ APK、ZIP 和校验文件保存在本地 `output/releases/0.3.2/`，不纳入文
 
 说明来源：`output/releases/0.3.2/试用步骤.md`。
 
-后续验证与证据边界见[0.3.2 改造记录](../../../validation/NEXT_VERSION_0.3.2_2026-10-02.md)。
+后续验证与证据边界见[0.3.2 改造记录](../../../validation/android/NEXT_VERSION_0.3.2_2026-10-02.md)。

@@ -64,25 +64,27 @@
 
 ## 开发版本边界
 
-- 当前 HD 小地图模型尚未通过独立留出验收。主画面红色候选不能直接代表附近的敌方英雄，该分支默认关闭且不进入本次发布；原因和后续门控见[主画面边缘复核记录](validation/MAIN_EDGE_REVIEW.md)。
+- 当前 HD 小地图模型尚未通过独立留出验收。主画面红色候选不能直接代表附近的敌方英雄，该分支默认关闭且不进入本次发布；原因和后续门控见[主画面边缘复核记录](validation/models/MAIN_EDGE_REVIEW.md)。
 - Android APK 当前只构建 `arm64-v8a`，最低 Android API 为 29，目标 API 为 35。没有 arm64-v8a 的设备不在本候选支持范围内。
 - `MediaProjection` 用于在用户每次明确授权后取得整屏帧；悬浮窗权限（`SYSTEM_ALERT_WINDOW`）用于可选视觉提示与助手小圆点；通知权限用于前台截屏服务的状态和操作入口。小地图识别、筛选与本地预警在设备上处理。语音由手机识别，画面上传需单独开启；助手服务断开不影响本地预警。
-- 没有完整签名环境变量时，发布脚本沿用Android Gradle的标准debug signing，签名类型在交付记录中说明，当前上传文件名为`sensefieldv<版本>.apk`。发布签名材料由发布者通过环境变量提供，脚本不会生成或上传keystore。GitHub Release按[发布检查清单](docs/releases/GITHUB发布检查清单.md)复核，说明必须对应实际构建版本。
+- 发布脚本要求完整的四个 `SENSEFIELD_*` 签名变量，使用现有证书构建正式 Release；缺少签名配置时停止。上传文件名为 `sensefieldv<版本>.apk`，脚本不会生成或上传 keystore。GitHub Release 按[发布检查清单](docs/releases/GITHUB发布检查清单.md)复核，说明对应实际构建版本。
 
-历史 2026-10-01 团队测试版已完成 Release 构建：方位语音、无障碍震动、统一授权与底部大按钮，定位状态仅日志。[历史预发布下载](https://github.com/ld0574/SenseField/releases/tag/v0.3.0-alpha.1)；[真机反馈](validation/ANDROID_LIVE_SMOKE_2026-10-01.md)和[发布说明](docs/releases/0.3.0-alpha.1/RELEASE_NOTES.md)保留实验模型与验收边界。
+历史 2026-10-01 团队测试版已完成 Release 构建：方位语音、无障碍震动、统一授权与底部大按钮，定位状态仅日志。[历史预发布下载](https://github.com/ld0574/SenseField/releases/tag/v0.3.0-alpha.1)；[真机反馈](validation/android/ANDROID_LIVE_SMOKE_2026-10-01.md)和[发布说明](docs/releases/0.3.0-alpha.1/RELEASE_NOTES.md)保留实验模型与验收边界。
 
 ## 当前进度
 
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
-| 0.4.3 学习与设置 | 本次主线完整交付；玩家理解待验证 | 正文完整遵循系统字号，按实际文字宽度重排控件；分组说明一次点击打开，支持按段听与暂停继续。首次说明可随时跳过，底部保留开始入口。四种内置音效按类型选择，选中立即试听；中文声音状态与固定方位短句缓存补强。最终358项JVM、27项设备检查和11格首次说明布局矩阵通过，前批证据分别保存；外部实声、TalkBack、其他手机与受控温升待测，见[0.4.3说明](docs/releases/0.4.3/RELEASE_NOTES.md)。 |
+| 0.4.5 消消乐候选 | 分支本地 Release，已覆盖手机 | 当前无提醒修订、交换高亮、设置与反馈有逐批验证；新对局、引擎实声和受控温升待测，见[当前验证状态](validation/STATUS.md)与[候选说明](docs/releases/0.4.5/RELEASE_NOTES.md)。 |
+| 0.4.4 公开主线 | 已记录 GitHub 普通 Release | 固定提示离线双音色、连续试听与瘦身正式包；公开发布核对见[发布记录](validation/releases/GITHUB_RELEASE_0_4_4_2026-10-08.md)，实际热验收继续待测。 |
+| 0.4.3 学习与设置（历史） | 历史主线交付；玩家理解待验证 | 正文完整遵循系统字号，按实际文字宽度重排控件；分组说明一次点击打开，支持按段听与暂停继续。首次说明可随时跳过，底部保留开始入口。四种内置音效按类型选择，选中立即试听；中文声音状态与固定方位短句缓存补强。最终358项JVM、27项设备检查和11格首次说明布局矩阵通过，前批证据分别保存；外部实声、TalkBack、其他手机与受控温升待测，见[0.4.3说明](docs/releases/0.4.3/RELEASE_NOTES.md)。 |
 | Android 屏幕采集 | 已实现实验链路 | Android 13/14 模拟器流程已验证；Android 14 首轮真机已跑通授权、横屏采集和提示播放，长时会话验收仍待完成。截屏服务以前台通知运行，画面只在本地处理。 |
 | 小地图识别 | 首装默认启用 HD 实验模型与新头像提醒 | 本机 APK 内置启用检测器的匹配 profile；模型权重仍不纳入 Git，干净克隆需提供匹配权重才能运行。实验候选尚未通过严格跨运行时一致性和独立留出验证，可在设置中关闭。 |
-| 主画面边缘候选分支 | 候选诊断完成、分类器未接入、默认关闭 | 现有标签只能作为红色候选／困难负样本诊断，不能作为敌方英雄真值；见[复核记录](validation/MAIN_EDGE_REVIEW.md)。 |
-| 小地图近区提醒 | 已实现实验链路，频率修订待新对局验证 | 双类模型识别自身小地图标记；持续可见只提醒一次，进出范围不重播。短漏检/邻近换号保持已提醒状态，连续可靠缺席3秒才确认消失，之后返回仍需新2/3识别。其他目标仍在附近也可触发。半径暂从0.20缩到0.16，尚未独立标定；同一组日志实体回放90→30次不代表真机效果，见[频率修订](validation/NEAR_ZONE_FREQUENCY_REPAIR_2026-10-06.md)。 |
+| 主画面边缘候选分支 | 候选诊断完成、分类器未接入、默认关闭 | 现有标签只能作为红色候选／困难负样本诊断，不能作为敌方英雄真值；见[复核记录](validation/models/MAIN_EDGE_REVIEW.md)。 |
+| 小地图近区提醒 | 已实现实验链路，频率修订待新对局验证 | 双类模型识别自身小地图标记；持续可见只提醒一次，进出范围不重播。短漏检/邻近换号保持已提醒状态，连续可靠缺席3秒才确认消失，之后返回仍需新2/3识别。其他目标仍在附近也可触发。半径暂从0.20缩到0.16，尚未独立标定；同一组日志实体回放90→30次不代表真机效果，见[频率修订](validation/honor/NEAR_ZONE_FREQUENCY_REPAIR_2026-10-06.md)。 |
 | 0.4.0 语音与画面助手（历史能力） | 历史工程候选，未发布 | 语音、画面理解及低频主动观察默认关闭；连续语音由用户选择。此前 0.4.0 合并树的 JVM、Android instrumentation、HTTPS/WSS 合成输入、native、Python、构建与 lint 结果见[历史记录](docs/releases/0.4.0/RELEASE_NOTES.md)，不作为 0.4.1 的测试证据。Android 10/API 29 起的静音 `USAGE_GAME` 探测轨道不能证明游戏自身轨道走耳机；耳机路由、外部实声时延、热负载与玩家验收仍待验证。 |
-| 0.4.1 CDN 修订 | 同版本工程验证通过，待手动上传 | 从项目 CDN 读取清单并下载 APK；版本名称和序号相同但 SHA-256 不同时提示修订更新。用户手动覆盖上传 APK 和自动生成的清单，保留签名验证与系统安装确认。详见[本轮记录](validation/APP_UPDATE_CDN_0.4.1_2026-10-04.md)。 |
-| 0.4.1 首次自动更新（历史） | 自动更新专项验证通过，未发布 | 默认检查 GitHub Latest 普通稳定 Release；每次冷启动最多检查一次，可关闭并可手动检查。用户选择后才下载，校验 APK 大小、SHA-256、包名、版本和相同签名，再交给 Android 系统安装器确认。游戏辅助运行中不下载或安装；更新服务失败不影响本地辅助。更新流程不传输画面、语音或助手凭据。JVM 全套 217 项（含 updater 新增 13 项）、Python 543 项通过/1 项跳过、4 项 Android updater instrumentation、arm64 build/lint 通过；Linux fixture 两次下载共 42,685,346 bytes。真实 UI 流程已通过系统 UPDATE 安装隔离的 0.4.2/code19 测试包。冷启动/旋转频率为代码复核项，没有专门的生命周期 instrumentation。详见[验证记录](validation/APP_UPDATE_0.4.1_2026-10-04.md)。 |
+| 0.4.1 CDN 修订 | 同版本工程验证通过，待手动上传 | 从项目 CDN 读取清单并下载 APK；版本名称和序号相同但 SHA-256 不同时提示修订更新。用户手动覆盖上传 APK 和自动生成的清单，保留签名验证与系统安装确认。详见[本轮记录](validation/releases/APP_UPDATE_CDN_0.4.1_2026-10-04.md)。 |
+| 0.4.1 首次自动更新（历史） | 自动更新专项验证通过，未发布 | 默认检查 GitHub Latest 普通稳定 Release；每次冷启动最多检查一次，可关闭并可手动检查。用户选择后才下载，校验 APK 大小、SHA-256、包名、版本和相同签名，再交给 Android 系统安装器确认。游戏辅助运行中不下载或安装；更新服务失败不影响本地辅助。更新流程不传输画面、语音或助手凭据。JVM 全套 217 项（含 updater 新增 13 项）、Python 543 项通过/1 项跳过、4 项 Android updater instrumentation、arm64 build/lint 通过；Linux fixture 两次下载共 42,685,346 bytes。真实 UI 流程已通过系统 UPDATE 安装隔离的 0.4.2/code19 测试包。冷启动/旋转频率为代码复核项，没有专门的生命周期 instrumentation。详见[验证记录](validation/releases/APP_UPDATE_0.4.1_2026-10-04.md)。 |
 | 开心消消乐伴随体验 | 主线已合并，实验功能 | 截图标定或授权后约 1 Hz 采样棋盘，播报可形成三连的相邻交换；Jev 仅有单独配置的示例判定。识别依赖手动标定和颜色启发式，实局准确率、特殊棋子完整规则和玩家效果未验证；不会替玩家操作。 |
 | 视野记忆与提示 | 实验版，需玩家验证 | 已接入多帧确认、事件跟踪、优先级、密集模式及多通道提示；0.3.5队友反馈双手操控正常。约04:35方向反馈可能与之后目标移动有关，仍待同一时刻证据。 |
 | 诊断与反馈闭环 | 本地工具 | ZIP可生成cue/事件/热量/截图报告；匿名试用表可记录开关对照、理解和干扰，并导出JSON。见下方工具入口。 |
@@ -99,13 +101,13 @@
 
 ## 诊断与玩家试用
 
-- [离线诊断报告](validation/DIAGNOSTIC_REPORT.md)：从应用导出的ZIP生成本地HTML/JSON，逐条检查提示、事件截图和运行负载。播放回调与实际听到分开记录。
-- [离线诊断对照](validation/DIAGNOSTIC_COMPARE.md)：并列两局的处理、复制、队列、截图覆盖和温度指标，保留条件差异、中断及重复输入等证据缺口。
-- [0.3.7两局热反馈](validation/HEAT_RETEST_0.3.7_2026-10-03.md) · [0.3.8修正记录](validation/NEXT_VERSION_0.3.8_2026-10-03.md)：提前降载并说明提示延迟代价，真机降温仍待验证。
-- [匿名玩家试用套件](validation/PLAYER_TRIAL_KIT.md) · [打开离线记录表](validation/player-trial.html)：记录辅助开关对照、提示理解/感知、帮助和干扰；不自动上传，导出后再由负责人保管。
-- [助手外部音频测量](validation/GOAL_0.4.0_2026-10-03.md)：用外部录像标记实际说话、停播和第一段有用回答；`python -m mapassist.measure_assistant_latency` 只接受外部录音标注，不以 ASR、TTS 或播放回调代替物理声音。
-- [Android 自动更新开发说明](docs/development/app-update.md) · [0.4.1 CDN 同版本修订记录](validation/APP_UPDATE_CDN_0.4.1_2026-10-04.md) · [首次 GitHub 更新器历史记录](validation/APP_UPDATE_0.4.1_2026-10-04.md)：当前清单默认指向项目 CDN；首次 GitHub 更新器证据保留为历史。
-- [评审补强与复现入口](validation/SCORE_RECOVERY_GOAL_2026-10-03.md)：历史需求缺口、现有实现、验证边界与下一轮验收。
+- [离线诊断报告](validation/protocols/DIAGNOSTIC_REPORT.md)：从应用导出的ZIP生成本地HTML/JSON，逐条检查提示、事件截图和运行负载。播放回调与实际听到分开记录。
+- [离线诊断对照](validation/protocols/DIAGNOSTIC_COMPARE.md)：并列两局的处理、复制、队列、截图覆盖和温度指标，保留条件差异、中断及重复输入等证据缺口。
+- [0.3.7两局热反馈](validation/performance/HEAT_RETEST_0.3.7_2026-10-03.md) · [0.3.8修正记录](validation/performance/NEXT_VERSION_0.3.8_2026-10-03.md)：提前降载并说明提示延迟代价，真机降温仍待验证。
+- [匿名玩家试用套件](validation/protocols/PLAYER_TRIAL_KIT.md) · [打开离线记录表](validation/player-trial.html)：记录辅助开关对照、提示理解/感知、帮助和干扰；不自动上传，导出后再由负责人保管。
+- [助手外部音频测量](validation/assistant/GOAL_0.4.0_2026-10-03.md)：用外部录像标记实际说话、停播和第一段有用回答；`python -m mapassist.measure_assistant_latency` 只接受外部录音标注，不以 ASR、TTS 或播放回调代替物理声音。
+- [Android 自动更新开发说明](docs/development/app-update.md) · [0.4.1 CDN 同版本修订记录](validation/releases/APP_UPDATE_CDN_0.4.1_2026-10-04.md) · [首次 GitHub 更新器历史记录](validation/releases/APP_UPDATE_0.4.1_2026-10-04.md)：当前清单默认指向项目 CDN；首次 GitHub 更新器证据保留为历史。
+- [评审补强与复现入口](validation/protocols/SCORE_RECOVERY_GOAL_2026-10-03.md)：历史需求缺口、现有实现、验证边界与下一轮验收。
 
 ## 本地运行
 
@@ -139,7 +141,7 @@ cd android
 | `python/mapassist/` | 数据处理、回放、标注与评测工具 |
 | `training/` | 模型训练与评估工具 |
 | `profiles/` | 识别区域和参数配置 |
-| `validation/` | 验证状态与实验记录 |
+| `validation/` | [当前状态与按主题整理的验证记录](validation/README.md) |
 
 ## 文档
 
@@ -149,12 +151,12 @@ cd android
 | --- | --- |
 | 赛题背景与用户问题 | [赛题背景](docs/design/赛题背景.md) |
 | 产品和系统方案 | [技术方案](docs/design/技术方案.md)、[视野记忆设计](docs/design/视野记忆.md) |
-| 实施路线与当前Goal | [黑客松方案收敛与实施路线](docs/plans/黑客松方案收敛与实施路线.md)、[历史评审核对](validation/SCORE_RECOVERY_GOAL_2026-10-03.md)、[0.4.0助手验收](validation/GOAL_0.4.0_2026-10-03.md)、[0.4.1自动更新验证](validation/APP_UPDATE_0.4.1_2026-10-04.md) |
+| 实施路线与当前Goal | [黑客松方案收敛与实施路线](docs/plans/黑客松方案收敛与实施路线.md)、[历史评审核对](validation/protocols/SCORE_RECOVERY_GOAL_2026-10-03.md)、[0.4.0助手验收](validation/assistant/GOAL_0.4.0_2026-10-03.md)、[0.4.1自动更新验证](validation/releases/APP_UPDATE_0.4.1_2026-10-04.md) |
 | 端侧事件处理 | [事件感知与可靠性方案](docs/design/端侧事件感知与可靠性增强技术方案.md) |
 | 助手服务部署 | [直接启动与部署步骤](deploy/assistant/README.md) |
 | APK 与语音资源分发 | [Gitee 上传、同版本覆盖与后续发布](deploy/assistant/CDN发布.md) |
 | 开发与本地运行 | [团队协作与本地运行](docs/development/团队协作与本地运行.md)、[Android 自动更新](docs/development/app-update.md)、[贡献指南](CONTRIBUTING.md) |
-| 当前验证结论 | [验证状态](validation/STATUS.md) |
+| 当前验证结论 | [验证状态](validation/STATUS.md) · [按主题查找记录](validation/README.md) |
 | 第三方依赖和许可 | [第三方声明](THIRD_PARTY_NOTICES.md) |
 
 逐场录像、标注与历史实验文档保留在 `validation/` 中供需要时查阅，不逐项放在项目首页。

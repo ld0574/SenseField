@@ -6,19 +6,19 @@
 
 安装包与语音资源大文件改为从听野Gitee Release下载；固定版本清单仍用原网站，便于发现后续版本。首次开启连续语音才下载资源，模型分为90MB、70.3MB两包，自动校验、拼接解压；旧缓存和兼容断点继续复用。模型只上传一次，后续Release共用，不重复占附件配额。
 
-旧APK需先手动安装一次迁移版，之后可按清单下载Gitee更新；系统安装确认及原签名校验保留。Gitee的本仓库附件与foruda签名跳转采用明确白名单，HTTPS、APK大小/SHA/版本/签名校验不降低。助手默认关闭、近区频率修订和消消乐保留，版本仍为0.4.1/code18。详情、上传文件与验证边界见[Gitee分发记录](../../../validation/GITEE_DISTRIBUTION_2026-10-06.md)。
+旧APK需先手动安装一次迁移版，之后可按清单下载Gitee更新；系统安装确认及原签名校验保留。Gitee的本仓库附件与foruda签名跳转采用明确白名单，HTTPS、APK大小/SHA/版本/签名校验不降低。助手默认关闭、近区频率修订和消消乐保留，版本仍为0.4.1/code18。详情、上传文件与验证边界见[Gitee分发记录](../../../validation/releases/GITEE_DISTRIBUTION_2026-10-06.md)。
 
 ## 2026-10-06 过密提醒与范围修订（当前）
 
 修正短漏检、轨迹换号造成的重复提醒：持续可见只提醒一次，进出范围不重播；连续可靠缺席3秒才确认消失，确认后返回重新识别并提醒。其他新目标仍可触发。临时预警半径缩小20%，尚未独立标定。AI助手仍默认关闭，开心消消乐保留，版本与签名沿用0.4.1/code18。
 
-同一组记录实体回放由90次降到30次，间隔中位数2.426→9.398秒；这是事件逻辑对照，不是新真机表现或召回率结果。短时真实消失可能不重报，重叠头像的身份仍不可靠。30个C++关系场景／4个CTest目标、49项相关Python、323项JVM及lint通过（0错误、34警告）。当前包与latest.json供负责人手动覆盖，见[频率修订记录](../../../validation/NEAR_ZONE_FREQUENCY_REPAIR_2026-10-06.md)。新对局实声、漏报、打扰与温升待测；门禁和评分保持原值。
+同一组记录实体回放由90次降到30次，间隔中位数2.426→9.398秒；这是事件逻辑对照，不是新真机表现或召回率结果。短时真实消失可能不重报，重叠头像的身份仍不可靠。30个C++关系场景／4个CTest目标、49项相关Python、323项JVM及lint通过（0错误、34警告）。当前包与latest.json供负责人手动覆盖，见[频率修订记录](../../../validation/honor/NEAR_ZONE_FREQUENCY_REPAIR_2026-10-06.md)。新对局实声、漏报、打扰与温升待测；门禁和评分保持原值。
 
 ## 2026-10-06 近区敌人再次出现（首版历史）
 
 敌人持续可见时保持去重；可靠小地图观察下确认消失后，任意时长返回预警范围都重新确认并提醒，其他敌人仍在附近也不拦截。方向和距离取本次新出现的目标，多目标同帧确认合并一次。持续可见但仅出范围保留半径滞回；旧缓存框、短暂自身/地图失效及定位恢复换号不会充当新的识别命中或真实消失。密集模式保留每个新近区事件的配置语音通道，仍只保留一个最新待播项、过期不补播。
 
-26个原生关系场景及4个CTest目标、323项JVM、45项相关Python通过，最终构建/lint通过（0错误、34项警告）。版本保持0.4.1/code18，AI助手默认关闭并包含消消乐；CDN APK和latest.json由负责人手动覆盖。工程证据见[再出现修订记录](../../../validation/NEAR_ZONE_REAPPEARANCE_2026-10-06.md)。本次没有增加识别/截图频率，新的真实对局提示率、实声、误报、打扰与热量尚未验证，旧开发回放频率不代表此次结果。声音清晰度和实验呈现反馈仍按原记录保留，门禁/分数不变。
+26个原生关系场景及4个CTest目标、323项JVM、45项相关Python通过，最终构建/lint通过（0错误、34项警告）。版本保持0.4.1/code18，AI助手默认关闭并包含消消乐；CDN APK和latest.json由负责人手动覆盖。工程证据见[再出现修订记录](../../../validation/honor/NEAR_ZONE_REAPPEARANCE_2026-10-06.md)。本次没有增加识别/截图频率，新的真实对局提示率、实声、误报、打扰与热量尚未验证，旧开发回放频率不代表此次结果。声音清晰度和实验呈现反馈仍按原记录保留，门禁/分数不变。
 
 ## 2026-10-06 AI助手默认关闭（当前策略）
 
@@ -26,7 +26,7 @@
 
 默认模式不启动助手录音、语音资源下载、画面上传或助手小圆点；本地敌人提醒独立运行。运行中关闭总开关会取消助手请求及回复、释放录音和收起小圆点；不把默认关闭表述为模型响应速度或回答质量已经修复。0.4.1/code18同版本修订，评分与验收状态保持原值。
 
-322项JVM、30项模拟器助手回归、构建与lint通过。APK与配套`latest.json`已同步到`output/releases/0.4.1/cdn-upload/`，详见[本轮记录](../../../validation/ASSISTANT_DEFAULT_OFF_2026-10-06.md)。
+322项JVM、30项模拟器助手回归、构建与lint通过。APK与配套`latest.json`已同步到`output/releases/0.4.1/cdn-upload/`，详见[本轮记录](../../../validation/assistant/ASSISTANT_DEFAULT_OFF_2026-10-06.md)。
 
 ## 2026-10-06 CDN语音资源与免连接码修订（当前交付）
 
@@ -36,13 +36,13 @@
 
 配套部署说明集中在[deploy/assistant/README.md](../../../deploy/assistant/README.md)。必须先更新后端并上传固定模型资源，再覆盖CDN APK和自动生成的latest.json。此前205 MiB整包及连接码说明属于历史构建，不适用于此修订。未替用户上传CDN或登录生产服务器，真实生产视觉/实声链路待部署后验收；本机TLS合成适配器结果不代表真实模型响应速度。
 
-详见[当前交付验证记录](../../../validation/ASSISTANT_CDN_DEFAULT_2026-10-06.md)。
+详见[当前交付验证记录](../../../validation/assistant/ASSISTANT_CDN_DEFAULT_2026-10-06.md)。
 
 ## 2026-10-06 线上服务配套测试包
 
 按用户部署服务后的授权，生成 `0.4.1 / code18` 配套APK，默认画面服务为 `https://sf.888413.xyz`，内置手机侧离线语音识别模型。安装包为214,861,660 bytes，SHA-256 `9b47b8f872cf00475506b8fe67ed00248a2c39e741063a0320376dd98f3e8b0c`。本包为与原候选同签名的Debug测试包，编译、lint、实际包内地址与模型校验通过；公网HTTPS健康接口200、未认证视觉请求401，尚未进行有效生产连接码的画面与实声端到端验收。
 
-旧测试设置不会被覆盖；更新后在“语音与画面助手”中点“使用听野线上服务”，填生产体验连接码并保存，再重新开始辅助。新安装仍需连接码和单独授权画面理解。APK与自动生成的CDN清单保存在 `output/releases/0.4.1/apk-production-2026-10-06/`；规范CDN文件同步到 `output/releases/0.4.1/cdn-upload/`，原规范交付留档至 `archive-before-production-2026-10-06/`。未自动安装、上传或发布，详见[本轮配套APK记录](../../../validation/ASSISTANT_PRODUCTION_APK_2026-10-06.md)。
+旧测试设置不会被覆盖；更新后在“语音与画面助手”中点“使用听野线上服务”，填生产体验连接码并保存，再重新开始辅助。新安装仍需连接码和单独授权画面理解。APK与自动生成的CDN清单保存在 `output/releases/0.4.1/apk-production-2026-10-06/`；规范CDN文件同步到 `output/releases/0.4.1/cdn-upload/`，原规范交付留档至 `archive-before-production-2026-10-06/`。未自动安装、上传或发布，详见[本轮配套APK记录](../../../validation/assistant/ASSISTANT_PRODUCTION_APK_2026-10-06.md)。
 
 ## 2026-10-04 CDN 同版本修订（历史）
 
@@ -50,7 +50,7 @@
 
 JVM 212 项、Python 自动更新专项 28 项、Android updater instrumentation 7 项、arm64 build/lint 均通过。Android 专项覆盖本地 TLS 下载、同字节拒绝、同签名同版本不同 SHA 修订接受、异签名拒绝及 provider 访问范围。另有 1 项安装后指纹/no-op 复核确认实际安装内容 SHA 与新 APK 相符，后续检查不会对同一字节重复提示。
 
-真实 UI 流程已在 Mac localhost TLS fixture 上由已安装的旧同版本包进入“同版本修订安装包”下载，并通过 Android 系统 UPDATE 安装为本轮 APK；没有用 `adb install` 安装新 APK。该本地 TLS 结果不代表 CDN 在线更新成功。CDN APK URL 的真实 GET 目前返回旧 APK（21,400,339 bytes，SHA-256 `b2a4dd6a0ea2b699a72500f10af69ef97b3a870ba1c2f760733db4c76b71203a`），而清单 URL 返回 HTTP 404；新 APK 和工具生成的 `latest.json` 仍待用户按 APK 先、清单后的顺序手动上传，并刷新两条 CDN 缓存。清单 404 时没有进行 CDN manifest 在线检查。详见[本轮 CDN 修订验证记录](../../../validation/APP_UPDATE_CDN_0.4.1_2026-10-04.md)。整体 `verified=false`、`release_ready=false`，UI 安装成功也不替代玩家、热负载或实声验收。
+真实 UI 流程已在 Mac localhost TLS fixture 上由已安装的旧同版本包进入“同版本修订安装包”下载，并通过 Android 系统 UPDATE 安装为本轮 APK；没有用 `adb install` 安装新 APK。该本地 TLS 结果不代表 CDN 在线更新成功。CDN APK URL 的真实 GET 目前返回旧 APK（21,400,339 bytes，SHA-256 `b2a4dd6a0ea2b699a72500f10af69ef97b3a870ba1c2f760733db4c76b71203a`），而清单 URL 返回 HTTP 404；新 APK 和工具生成的 `latest.json` 仍待用户按 APK 先、清单后的顺序手动上传，并刷新两条 CDN 缓存。清单 404 时没有进行 CDN manifest 在线检查。详见[本轮 CDN 修订验证记录](../../../validation/releases/APP_UPDATE_CDN_0.4.1_2026-10-04.md)。整体 `verified=false`、`release_ready=false`，UI 安装成功也不替代玩家、热负载或实声验收。
 
 ## 0.4.1 首次 GitHub 更新器构建（历史证据）
 
@@ -64,6 +64,6 @@ JVM 212 项、Python 自动更新专项 28 项、Android updater instrumentation
 
 自动更新专项的 JVM 全套 217 项（含 updater 新增 13 项）、Python fixture 子集 13 项、全 Python 套件 543 项通过/1 项跳过、Android updater instrumentation 4 项、arm64 build/lint 均已通过。GitHub stable Release 解析器使用合成 stable metadata 验证；工作站对 GitHub Latest 的直接 API 请求遇到匿名 API 限流，应用显示可重试状态且游戏入口仍可用，因此未验证该工作站上的实时 GitHub 检查或下载。Linux loopback TLS fixture 收到 3 次清单请求和 2 次 APK 下载，共传输 42,685,346 bytes，0 次 404，下载内容的字节数和 SHA-256 均核对通过。真实 UI 流程完成了隔离未来版本 `0.4.2 / versionCode 19` 的来源安装授权与系统 UPDATE 安装；更新后系统实际安装为 0.4.2/code19，不是以 `adb install` 替代升级。该 APK 只作升级验证，不是公开版本。随后 Android 14 arm64 模拟器恢复干净的 0.4.1/code18 候选包并成功完成冷启动。冷启动单次检查和旋转/权限设置返回不重复触发的行为经代码审查确认；没有专门的生命周期 instrumentation。
 
-候选安装包：`output/releases/0.4.1/听野v0.4.1 安卓测试安装包.apk`；大小 21,400,339 bytes，SHA-256 `b2a4dd6a0ea2b699a72500f10af69ef97b3a870ba1c2f760733db4c76b71203a`。实际包版本 `0.4.1 / versionCode 18`、minSdk 29、targetSdk 35、arm64-v8a，使用本机 Android Debug 签名，证书 SHA-256 `5a42a53a8f06850e89c46ea193931e9853e3ce7cff99551b42e8b414a1eaaf68`。包内扫描确认默认 GitHub 更新源存在，未发现 fixture 测试 CA、`18766` 测试端口 URL 或提取到的测试凭据值。此为本地 Debug 测试候选，仍未发布，也不改变 `verified=false` 或 `release_ready=false`。详细证据见[0.4.1 验证记录](../../../validation/APP_UPDATE_0.4.1_2026-10-04.md)。
+候选安装包：`output/releases/0.4.1/听野v0.4.1 安卓测试安装包.apk`；大小 21,400,339 bytes，SHA-256 `b2a4dd6a0ea2b699a72500f10af69ef97b3a870ba1c2f760733db4c76b71203a`。实际包版本 `0.4.1 / versionCode 18`、minSdk 29、targetSdk 35、arm64-v8a，使用本机 Android Debug 签名，证书 SHA-256 `5a42a53a8f06850e89c46ea193931e9853e3ce7cff99551b42e8b414a1eaaf68`。包内扫描确认默认 GitHub 更新源存在，未发现 fixture 测试 CA、`18766` 测试端口 URL 或提取到的测试凭据值。此为本地 Debug 测试候选，仍未发布，也不改变 `verified=false` 或 `release_ready=false`。详细证据见[0.4.1 验证记录](../../../validation/releases/APP_UPDATE_0.4.1_2026-10-04.md)。
 
 0.4.0 的语音与画面助手、消消乐体验入口及其历史验证边界保留在[0.4.0 工程候选记录](../0.4.0/RELEASE_NOTES.md)，不因版本递增而改写。目标玩家实际体验、实体机持续运行、热负载和小地图独立留出验收仍未通过；0.4.1 的自动更新验证也不能替代这些门禁。

@@ -69,6 +69,6 @@
 
 使用 `scripts/verify_android_ui_matrix.py` 在指定测试设备上跑 320／360／432dp × 100%／150%／200%，另跑横屏与关键弹窗。真实 Android 截图和几何／文字断言互相补充，截图仍需逐屏审视；测试通过不等于患者可读性通过。
 
-最终记录见 [本轮验证](../../validation/ANDROID_UI_0_4_3_2026-10-07.md)。唯一交付 APK、配套 latest.json、实际截图和对照画廊统一位于 `output/releases/0.4.3/`。上传顺序见 [CDN 发布](../../deploy/assistant/CDN发布.md)。
+最终记录见 [本轮验证](../../validation/android/ANDROID_UI_0_4_3_2026-10-07.md)。唯一交付 APK、配套 latest.json、实际截图和对照画廊统一位于 `output/releases/0.4.3/`。上传顺序见 [CDN 发布](../../deploy/assistant/CDN发布.md)。
 
 实体手机、患者阅读、真实游戏中操作、TalkBack 实际使用与受控温升仍需独立验证。沿用《符合度改造方案》的受控条件；不修改历史评分、`verified` 或 `release_ready`，不自动发布。

@@ -30,4 +30,4 @@ APK、ZIP 和校验文件保存在本地 `output/releases/0.3.6/`，不纳入文
 
 说明来源：`output/releases/0.3.6/听野v0.3.6 使用说明.txt`。 构建元数据来源：同目录 `handoff.json`。
 
-后续验证与证据边界见[0.3.6 改造与验证记录](../../../validation/NEXT_VERSION_0.3.6_2026-10-03.md)。
+后续验证与证据边界见[0.3.6 改造与验证记录](../../../validation/releases/NEXT_VERSION_0.3.6_2026-10-03.md)。
