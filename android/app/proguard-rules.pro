@@ -92,6 +92,11 @@
     static com.openkhub.sensefield.BoardGeometry autoDetectGeometry(android.graphics.Bitmap);
     static boolean isMovable(char);
     com.openkhub.sensefield.Match3Position samplePosition(android.graphics.Bitmap);
+    com.openkhub.sensefield.Match3Position samplePosition(android.graphics.Bitmap,long);
+    static char[][] sample(android.graphics.Bitmap,com.openkhub.sensefield.BoardGeometry,java.util.List);
+    int[] elementPatch(int,int);
+    int[] elementEnvelope(int,int);
+    int directAnimals; int inferredAnimals; int uncertainAnimals;
     public void close();
 }
 -keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.BoardGeometry {
@@ -107,14 +112,17 @@
 -keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3Position$Cell {
     com.openkhub.sensefield.Match3Position$Kind kind;
     char color; boolean swappable;
+    com.openkhub.sensefield.Match3Position$SwapPermission swapPermission;
     char code();
 }
 -keep enum com.openkhub.sensefield.Match3Position$Kind { *; }
+-keep enum com.openkhub.sensefield.Match3Position$SwapPermission { *; }
 -keep enum com.openkhub.sensefield.Match3Goals$Kind { *; }
 -keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3Goals {
     boolean hudVerified; int steps; java.util.List targets;
     int remaining(com.openkhub.sensefield.Match3Goals$Kind);
     boolean fullyKnown();
+    static com.openkhub.sensefield.Match3Goals unknown(long);
 }
 -keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3Goals$Target {
     com.openkhub.sensefield.Match3Goals$Kind kind; int remaining;
@@ -140,6 +148,58 @@
     <init>(android.content.Context);
     boolean clean(android.graphics.Bitmap,com.openkhub.sensefield.Match3Hint,float);
 }
+# Element evidence and mathematical comparisons used by the separate minified
+# test APK. Preserve only these contracts, including the copied test sprites.
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3AnimalAppearance$Body {
+    <init>(int[]);
+    int[] copyPatch();
+    float difference(com.openkhub.sensefield.Match3AnimalAppearance$Body);
+}
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3AnimalAppearance$Face {
+    <init>(char,int[]);
+    boolean detailed;
+    float difference(com.openkhub.sensefield.Match3AnimalAppearance$Face);
+}
+-keepclassmembers,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3AnimalAppearance {
+    static char recognize(com.openkhub.sensefield.Match3AnimalAppearance$Face,java.util.List,int);
+}
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3VisualCatalog {
+    java.util.List animals; java.util.List animalFaces; java.util.List animalBodies; java.util.List bodyColors;
+    static com.openkhub.sensefield.Match3VisualCatalog get(android.content.Context);
+    com.openkhub.sensefield.Match3Position$Cell animal(com.openkhub.sensefield.Match3VisualCatalog$CellCache);
+    com.openkhub.sensefield.Match3AnimalAppearance$Reference trustedReference(com.openkhub.sensefield.Match3VisualCatalog$CellCache);
+    static java.lang.String recognize(java.util.List,int[],float,float);
+    static int[] patch(int[],int,int,int,int,int);
+}
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3VisualCatalog$CellCache {
+    <init>(); int[] patch; int[] envelope;
+}
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3VisualCatalog$Pattern {
+    java.lang.String kind; int[] pixels;
+}
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3CellConfirmation {
+    <init>();
+    com.openkhub.sensefield.Match3CellConfirmation$Snapshot accept(com.openkhub.sensefield.Match3Position,long);
+}
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3CellConfirmation$Snapshot {
+    com.openkhub.sensefield.Match3Position position;
+}
+-keepclassmembers,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3MoveRanker {
+    static java.util.List rankedMoves(com.openkhub.sensefield.Match3Position,com.openkhub.sensefield.Match3Goals);
+}
+-keepclassmembers,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3HintValidity {
+    static boolean valid(com.openkhub.sensefield.Match3Position,com.openkhub.sensefield.Match3Position,com.openkhub.sensefield.Match3MoveValue,java.util.List);
+}
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3UnknownElements {
+    <init>();
+    java.util.List observe(com.openkhub.sensefield.Match3UnknownElements$Observation[][],long);
+}
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3UnknownElements$Observation {
+    <init>(com.openkhub.sensefield.Match3Position$Cell,int[]);
+}
+-keepclassmembers,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3UnknownElements$Sample {
+    java.lang.String filename();
+}
 -keep,allowobfuscation class com.openkhub.sensefield.DiagnosticRecorder {
     static com.openkhub.sensefield.DiagnosticRecorder current;
     static java.util.concurrent.ExecutorService IO;
@@ -147,6 +207,9 @@
     java.lang.String failure;
     static *** start(android.content.Context, java.lang.String, long);
     static *** start(android.content.Context, java.lang.String, long, boolean);
+    static *** start(android.content.Context, java.lang.String, long, com.openkhub.sensefield.DiagnosticGame);
+    void setImagesEnabled(boolean);
+    void elementSample(android.graphics.Bitmap,com.openkhub.sensefield.BoardGeometry,com.openkhub.sensefield.Match3UnknownElements$Sample);
     static java.io.File root(android.content.Context);
     static org.json.JSONObject object(java.lang.Object[]);
     void frame(com.openkhub.sensefield.NativeFrameResult, com.openkhub.sensefield.DiagnosticSnapshot, java.nio.ByteBuffer, int, int, int, long, long, long);
@@ -164,6 +227,7 @@
     static java.io.File[] sessions(java.io.File);
     static void writeJson(java.io.File, java.lang.String, java.lang.String);
     static void delete(java.io.File);
+    static void export(java.io.File,java.io.File,java.lang.String);
 }
 -keep,allowobfuscation class com.openkhub.sensefield.NativeFrameResult {
     static *** empty();

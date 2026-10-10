@@ -179,6 +179,9 @@ final class DiagnosticRecorder {
                 "sdk", Build.VERSION.SDK_INT, "screen_width_px", display.widthPixels,
                 "screen_height_px", display.heightPixels, "density_dpi", display.densityDpi,
                 "images_enabled", imagesEnabled, "portrait_images_allowed", allowPortrait, "image_period_ms", IMAGE_PERIOD_MS,
+                "match3_element_family_limit", Match3UnknownElements.MAX_FAMILIES,
+                "match3_element_samples_per_family", Match3UnknownElements.MAX_SAMPLES_PER_FAMILY,
+                "match3_element_thumbnail_px", 64, "match3_element_scope", "local_diagnostics_only_not_rule_admission",
                 "context_sample_period_ms", DiagnosticImageWindow.SAMPLE_PERIOD_MS,
                 "context_pre_ms", DiagnosticImageWindow.PRE_WINDOW_MS,
                 "context_post_ms", DiagnosticImageWindow.POST_WINDOW_MS,
@@ -253,6 +256,58 @@ final class DiagnosticRecorder {
     void audit(String message) {
         if (message.contains("sessionId=") && !message.contains("sessionId=" + sessionId)) return;
         record("audit", object("message", message));
+    }
+
+    /** Small representative crops from the existing processed frame; encoding stays on shared IO. */
+    void elementSample(Bitmap frame,BoardGeometry geometry,Match3UnknownElements.Sample sample) {
+        JSONObject data=object("family_id",sample.familyId,"scope","session_local_diagnostic_only",
+                "sample_number",sample.sampleNumber,"row",sample.row+1,"col",sample.col+1,
+                "observed_at_ms",sample.at,"kind",sample.observation.cell.kind.name(),
+                "appearance_color",sample.observation.cell.kind==Match3Position.Kind.ANIMAL?String.valueOf(sample.observation.cell.color):null,
+                "swap_permission",sample.observation.cell.swapPermission.name(),"rule_supported",false,
+                "reason",sample.reason(),"catalog_admission","requires_independent_identity_cover_and_rule_review");
+        record("Match3ElementObserved",data);
+        synchronized(imageStateLock) {
+            if(finished || !failure.isEmpty() || !imagesEnabled || imageLimit) {
+                record("Match3ElementSample",object("family_id",sample.familyId,"status","images_disabled_or_closed"));return;
+            }
+            int left=(int)geometry.cellLeft(sample.col),top=(int)geometry.cellTop(sample.row);
+            int width=(int)geometry.cellLeft(sample.col+1)-left,height=(int)geometry.cellTop(sample.row+1)-top;
+            final long bytes=64*64*4L+(long)width*height*4;
+            if(!imageBudget.tryAcquire(bytes)) {
+                imageDrops.incrementAndGet();record("Match3ElementSample",object("family_id",sample.familyId,"status","budget_busy"));return;
+            }
+            Bitmap copied=null;
+            boolean submitted=false;
+            try {
+                // Read directly into a bounded 64px thumbnail; never retain the full capture or its bitmap.
+                int[] pixels=new int[64*64];
+                int[] tile=new int[width*height];frame.getPixels(tile,0,width,left,top,width,height);
+                for(int y=0;y<64;y++)for(int x=0;x<64;x++)pixels[y*64+x]=tile[
+                        Math.min(height-1,(2*y+1)*height/128)*width+Math.min(width-1,(2*x+1)*width/128)];
+                copied=Bitmap.createBitmap(pixels,64,64,Bitmap.Config.ARGB_8888);
+                Bitmap crop=copied;long generation=imageGeneration;
+                IO.execute(() -> {
+                    String status="cancelled";
+                    try {
+                        if(archive!=null && imageRequestValid(generation)) {
+                            ByteArrayOutputStream encoded=new ByteArrayOutputStream();
+                            if(crop.compress(Bitmap.CompressFormat.PNG,100,encoded))
+                                status=archive.elementImage(sample.filename(),encoded.toByteArray())?"saved":"limit";
+                        }
+                        if(archive!=null)archive.append(object("type","Match3ElementSample","at_ms",SystemClock.elapsedRealtime(),
+                                "data",object("family_id",sample.familyId,"sample_number",sample.sampleNumber,
+                                        "file","elements/"+sample.filename(),"status",status,"observed_at_ms",sample.at)).toString());
+                    } catch(Exception error) { failed(error); }
+                    finally { crop.recycle();imageBudget.release(bytes); }
+                });
+                submitted=true;
+                copied=null;
+            } finally {
+                if(copied!=null)copied.recycle();
+                if(!submitted)imageBudget.release(bytes);
+            }
+        }
     }
 
     void dispatch(CueRequest request, String outcome, String reason, int acceptedChannels) {

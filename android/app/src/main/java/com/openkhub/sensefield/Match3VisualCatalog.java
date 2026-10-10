@@ -14,17 +14,24 @@ final class Match3VisualCatalog {
     static final int PATCH = 16;
     static final class CellCache {
         int[] patch;
+        int[] envelope;
         Match3Position.Cell result, animal;
+        Match3Position.Cell inferred;
         Match3AnimalAppearance.Face face;
+        Match3AnimalAppearance.Body body;
         boolean animalChecked;
+        boolean inferredChecked;
+        long inferredRevision;
     }
     static final class Pattern {
         final String kind;
+        final String rule;
         final int[] pixels;
         final boolean[] mask;
         final int supported;
         Pattern(JSONObject json) throws Exception {
             kind = json.getString("kind");
+            rule = json.optString("rule", "unverified");
             JSONArray p = json.getJSONArray("pixels"), m = json.getJSONArray("mask");
             if (p.length() != PATCH * PATCH || m.length() != p.length()) throw new IllegalArgumentException("Template shape");
             pixels = new int[p.length()]; mask = new boolean[p.length()];
@@ -68,11 +75,15 @@ final class Match3VisualCatalog {
     final String id;
     final List<Pattern> steps, goals, cells, animals;
     final List<Match3AnimalAppearance.Face> animalFaces;
+    final List<Match3AnimalAppearance.Body> animalBodies;
+    final List<Character> bodyColors;
     final List<Glyph> glyphs, checkmarks, levelSuffixes;
     private Match3VisualCatalog() {
         available = false; id = "unavailable";
         steps = goals = cells = animals = Collections.emptyList(); glyphs = checkmarks = levelSuffixes = Collections.emptyList();
         animalFaces=Collections.emptyList();
+        animalBodies=Collections.emptyList();
+        bodyColors=Collections.emptyList();
     }
     private Match3VisualCatalog(JSONObject json) throws Exception {
         if (!"match3-fixed-ui-v1".equals(json.getString("format"))) throw new IllegalArgumentException("Catalog format");
@@ -81,13 +92,25 @@ final class Match3VisualCatalog {
         List<Pattern> objects=new ArrayList<>(), faces=new ArrayList<>();
         List<Match3AnimalAppearance.Face> descriptors=new ArrayList<>();
         for(Pattern pattern:patterns(json.getJSONArray("cells"))) {
-            if(pattern.kind.startsWith("animal_") && pattern.kind.length()==8) {
+            if(pattern.kind.startsWith("animal_") && pattern.kind.length()==8
+                    && "ordinary_uncovered_animal".equals(pattern.rule)) {
                 Match3AnimalAppearance.Face face=new Match3AnimalAppearance.Face(pattern.kind.charAt(7),pattern.pixels);
                 if(face.detailed) { faces.add(pattern);descriptors.add(face); }
-            } else objects.add(pattern);
+            } else if(!pattern.kind.startsWith("animal_"))objects.add(pattern);
         }
         cells=Collections.unmodifiableList(objects);animals=Collections.unmodifiableList(faces);
         animalFaces=Collections.unmodifiableList(descriptors);
+        List<Match3AnimalAppearance.Body> bodies=new ArrayList<>();List<Character> colors=new ArrayList<>();
+        JSONArray envelopes=json.getJSONArray("ordinary_envelopes");
+        for(int i=0;i<envelopes.length();i++) {
+            JSONObject item=envelopes.getJSONObject(i);
+            if(!"ordinary_uncovered_animal".equals(item.optString("rule")))continue;
+            char color=item.getString("color").charAt(0);if(!Match3Sampler.isMovable(color))throw new IllegalArgumentException("Animal envelope");
+            JSONArray values=item.getJSONArray("pixels");if(values.length()!=256)throw new IllegalArgumentException("Envelope shape");
+            int[] patch=new int[256];for(int p=0;p<256;p++)patch[p]=values.getInt(p);
+            bodies.add(new Match3AnimalAppearance.Body(patch));colors.add(color);
+        }
+        animalBodies=Collections.unmodifiableList(bodies);bodyColors=Collections.unmodifiableList(colors);
         List<Glyph> parsed = new ArrayList<>(); JSONArray digits = json.getJSONArray("glyphs");
         for (int i = 0; i < digits.length(); i++) parsed.add(new Glyph(digits.getJSONObject(i)));
         glyphs = Collections.unmodifiableList(parsed); available = !steps.isEmpty() && !goals.isEmpty() && !glyphs.isEmpty();
@@ -109,7 +132,7 @@ final class Match3VisualCatalog {
         synchronized (Match3VisualCatalog.class) {
             if (loaded == null) try (java.io.InputStream input = context.getAssets().open("match3-fixed-ui-v1.json")) {
                 java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream(); byte[] buffer = new byte[4096]; int n;
-                while ((n = input.read(buffer)) > 0) { if (output.size() + n > 262144) throw new IllegalArgumentException("Catalog size"); output.write(buffer,0,n); }
+                while ((n = input.read(buffer)) > 0) { if (output.size() + n > 327680) throw new IllegalArgumentException("Catalog size"); output.write(buffer,0,n); }
                 loaded = new Match3VisualCatalog(new JSONObject(new String(output.toByteArray(), StandardCharsets.UTF_8)));
             } catch (Exception ignored) { loaded = new Match3VisualCatalog(); }
             return loaded;
@@ -162,23 +185,47 @@ final class Match3VisualCatalog {
         frame.getPixels(pixels,0,width,left,top,width,height);
         int ix = width/10, iy = height/10;
         int[] observed = patch(pixels,width,ix,iy,width-ix,height-iy);
-        if(java.util.Arrays.equals(cache.patch,observed))return cache.result;
-        cache.patch=observed;cache.result=classifyObstacle(observed);cache.animalChecked=false;cache.animal=null;cache.face=null;
+        int[] envelope=patch(pixels,width,0,0,width,height);
+        if(java.util.Arrays.equals(cache.patch,observed) && java.util.Arrays.equals(cache.envelope,envelope))return cache.result;
+        cache.patch=observed;cache.envelope=envelope;cache.result=classifyObstacle(observed);cache.animalChecked=false;cache.animal=null;cache.face=null;cache.body=null;
+        cache.inferredChecked=false;cache.inferred=null;
         return cache.result;
     }
     /** A positive animal face can survive a decorated lane or an idle outline; hue alone cannot. */
     Match3Position.Cell animal(CellCache cache) {
         if(!cache.animalChecked) {
-            String kind=cache.patch==null?null:recognize(animals,cache.patch,.12f,.025f);
-            if(kind!=null && kind.length()==8 && Match3Sampler.isMovable(kind.charAt(7)))
-                cache.animal=Match3Position.Cell.animal(kind.charAt(7));
-            if(cache.animal==null && cache.patch!=null) {
+            if(cache.patch!=null) {
                 char color=Match3AnimalAppearance.recognize(face(cache),animalFaces,1);
-                if(Match3Sampler.isMovable(color))cache.animal=Match3Position.Cell.animal(color);
+                String exact=face(cache).detailed?recognize(animals,cache.patch,.12f,.025f):null;
+                if(exact!=null) {
+                    char ordinary=exact.charAt(7);
+                    // An exact certified sprite admits expressions not represented by its centered face.
+                    // Conflicting positive identities still abstain; hue is never an identity source.
+                    if(Match3Sampler.isMovable(color) && color!=ordinary)color='.';
+                    else color=ordinary;
+                }
+                if(Match3Sampler.isMovable(color)) {
+                    boolean plain=false;
+                    for(int i=0;i<animalBodies.size();i++)if(bodyColors.get(i)==color
+                            && body(cache).difference(animalBodies.get(i))<=Match3AnimalAppearance.MAXIMUM) {
+                        plain=true;break;
+                    }
+                    cache.animal=plain?Match3Position.Cell.animal(color):Match3Position.Cell.animalIdentity(color);
+                }
             }
             cache.animalChecked=true;
         }
         return cache.animal;
+    }
+    static Match3AnimalAppearance.Body body(CellCache cache) {
+        if(cache.body==null && cache.envelope!=null)cache.body=new Match3AnimalAppearance.Body(cache.envelope);
+        if(cache.body==null)throw new IllegalArgumentException("Missing complete tile envelope");
+        return cache.body;
+    }
+    Match3AnimalAppearance.Reference trustedReference(CellCache cache) {
+        Match3Position.Cell animal=animal(cache);
+        return animal!=null && animal.swappable
+                ?new Match3AnimalAppearance.Reference(face(cache,animal.color),body(cache)):null;
     }
     static Match3AnimalAppearance.Face face(CellCache cache) {
         if(cache.face==null)cache.face=new Match3AnimalAppearance.Face('.',cache.patch);

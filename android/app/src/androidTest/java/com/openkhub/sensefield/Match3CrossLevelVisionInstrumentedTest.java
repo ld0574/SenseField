@@ -19,13 +19,14 @@ public final class Match3CrossLevelVisionInstrumentedTest {
     @Test public void generatedRectanglesWithUnfamiliarObjectsKeepTheirKnownAnimalIsland() {
         int[] colors={0xffeb2020,0xff44d832,0xff55a9ed,0xffefb630,0xffb15edb,0xffc78030};
         String names="RGBYPO";String[] island={"RGR","BRY","GPO"};
+        Match3TestSprites sprites=new Match3TestSprites(context());
         for(int rows=6;rows<=9;rows++)for(int cols=6;cols<=9;cols++) {
             Bitmap frame=Bitmap.createBitmap(432,960,Bitmap.Config.ARGB_8888);Canvas canvas=new Canvas(frame);Paint paint=new Paint();
             int left=20,top=320,cell=42;canvas.drawColor(0xff33c9ef);
             paint.setColor(0xff1e2a58);canvas.drawRect(left,top,left+cols*cell,top+rows*cell,paint);
             for(int r=0;r<rows;r++)for(int c=0;c<cols;c++) {
-                paint.setColor(r<3 && c<3?colors[names.indexOf(island[r].charAt(c))]:0xff909090);
-                canvas.drawCircle(left+cell*(c+.5f),top+cell*(r+.5f),cell*.42f,paint);
+                if(r<3 && c<3)sprites.draw(canvas,left+cell*c,top+cell*r,cell,island[r].charAt(c));
+                else { paint.setColor(0xff909090);canvas.drawCircle(left+cell*(c+.5f),top+cell*(r+.5f),cell*.42f,paint); }
             }
             try(Match3Sampler sampler=new Match3Sampler(context(),new BoardGeometry(432,960,left,top,left+cols*cell,top+rows*cell,rows,cols))) {
                 Match3Position position=sampler.samplePosition(frame);
@@ -43,7 +44,7 @@ public final class Match3CrossLevelVisionInstrumentedTest {
         JSONArray cells=catalog.getJSONArray("cells");int checked=0;
         for(int index=0;index<cells.length();index++) {
             JSONObject source=cells.getJSONObject(index);String kind=source.getString("kind");
-            if(!kind.startsWith("animal_") || kind.equals("animal_B"))continue; // independently inspected cyan hole, no face
+            if(!kind.startsWith("animal_") || !"ordinary_uncovered_animal".equals(source.optString("rule")))continue;
             JSONArray pixels=source.getJSONArray("pixels");
             for(int offset:new int[]{0,16}) {
                 Bitmap frame=Bitmap.createBitmap(432,960,Bitmap.Config.ARGB_8888),tile=Bitmap.createBitmap(16,16,Bitmap.Config.ARGB_8888);
@@ -58,10 +59,11 @@ public final class Match3CrossLevelVisionInstrumentedTest {
                 try(Match3Sampler sampler=new Match3Sampler(context(),new BoardGeometry(432,960,20,320,340,640,8,8))) {
                     Match3Position position=sampler.samplePosition(frame);
                     assertEquals(kind+" decorated lane offset="+offset,kind.charAt(7),position.cell(0,0).color);
+                    assertFalse("Unfamiliar outer covering is not certified by the identical center face",position.cell(0,0).swappable);
                     checked++;
                 } finally {tile.recycle();frame.recycle();}
             }
         }
-        assertEquals(28,checked);
+        assertEquals(40,checked);
     }
 }

@@ -56,11 +56,13 @@ public final class Match3ReleaseCaptureInstrumentedTest {
     private static final class Board extends View {
         final AtomicInteger touches = new AtomicInteger();
         private final Paint paint = new Paint();
+        private final Match3TestSprites sprites;
         private int tick;
         boolean changed, popup, cascade;
         int rows = 7, cols = 7;
         Board(Context context) {
             super(context);
+            sprites=new Match3TestSprites(context);
             setOnTouchListener((v, event) -> { touches.incrementAndGet(); return true; });
         }
         @Override protected void onDraw(Canvas canvas) {
@@ -75,8 +77,7 @@ public final class Match3ReleaseCaptureInstrumentedTest {
                 if (sourceRow == 0 && sourceCol < 3) index = sourceCol == 1 ? 1 : 0;
                 if (sourceRow == 1 && sourceCol == 1) index = 0;
                 if (cascade && row == 2 && col >= 1 && col <= 3) index = 0;
-                paint.setColor(colors[index]);
-                canvas.drawCircle(left + (col + .5f) * cell, top + (row + .5f) * cell, cell * .41f, paint);
+                sprites.draw(canvas,left+col*cell,top+row*cell,cell,"YRGBPO".charAt(index));
             }
             if (popup) {
                 paint.setColor(0xfff8f8f8);

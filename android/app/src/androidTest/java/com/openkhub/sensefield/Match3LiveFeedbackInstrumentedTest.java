@@ -99,7 +99,7 @@ public final class Match3LiveFeedbackInstrumentedTest {
     }
     @Test public void anUnchangedBoardDoesNotRetireItsHintOnIdleSpriteAnimation() throws Exception {
         for(int width:new int[]{432,1080,1220}) {
-        Match3Position first=null;BoardGeometry firstGeometry=null;
+        Match3Position first=null;BoardGeometry firstGeometry=null;Match3MoveValue retained=null;
         for(String name:new String[]{"screen-284-2285557292.jpg","screen-297-2285567809.jpg","screen-310-2285578323.jpg"}) {
             Bitmap original=load(name),frame=Bitmap.createScaledBitmap(original,width,width==1220?2712:Math.round(width*960f/432),true);
             if(frame!=original)original.recycle();
@@ -110,8 +110,20 @@ public final class Match3LiveFeedbackInstrumentedTest {
                 Log.i("Match3Feedback",name+" width="+width+" "+geometry+"="+matrix(p));
                 if(first!=null) {
                     assertTrue("Idle animation preserves confirmed geometry at "+width,firstGeometry.sameGrid(geometry));
-                    assertTrue("20 steps and the same board; a sprite glow is not a new exchange at "+width,first.sameCells(p));
-                } else {first=p;firstGeometry=geometry;}
+                    List<String> changes=new ArrayList<>();
+                    for(int r=0;r<p.rows;r++)for(int c=0;c<p.cols;c++)if(!first.cell(r,c).equals(p.cell(r,c)))
+                        changes.add((r+1)+","+(c+1)+":"+first.cell(r,c).kind+"/"+first.cell(r,c).color+"/"+first.cell(r,c).swapPermission
+                                +"->"+p.cell(r,c).kind+"/"+p.cell(r,c).color+"/"+p.cell(r,c).swapPermission);
+                    for(int r=0;r<p.rows;r++)for(int c=0;c<p.cols;c++)if(first.cell(r,c).kind==Match3Position.Kind.ANIMAL) {
+                        assertEquals("Idle animation must preserve identity at "+r+","+c,Match3Position.Kind.ANIMAL,p.cell(r,c).kind);
+                        assertEquals("Idle animation must preserve colour at "+r+","+c,first.cell(r,c).color,p.cell(r,c).color);
+                    }
+                    assertTrue("A localized cover abstention must not retire an unaffected exchange at "+width+" changes="+changes,
+                            Match3HintValidity.valid(first,p,retained,Match3MoveRanker.rankedMoves(p,Match3Goals.unknown(0))));
+                } else {
+                    first=p;firstGeometry=geometry;
+                    List<Match3MoveValue> moves=Match3MoveRanker.rankedMoves(p,Match3Goals.unknown(0));assertFalse(moves.isEmpty());retained=moves.get(0);
+                }
             } finally {frame.recycle();}
         }
         }

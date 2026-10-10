@@ -92,6 +92,7 @@ public class Match3LiveService extends Service {
         Match3Goals hintGoals;
         long hintGoalsSeenAt;
         final Match3CellConfirmation cellConfirmation = new Match3CellConfirmation();
+        Match3UnknownElements unknownElements=new Match3UnknownElements();
         Match3HudReader hudReader;
         final Match3GoalConfirmation goalConfirmation = new Match3GoalConfirmation();
         Match3Goals goals = Match3Goals.unknown(0);
@@ -365,6 +366,12 @@ public class Match3LiveService extends Service {
                     "recommendation_gate", s.recommendationGate,
                     "unknown_cells", s.unknownCells, "excluded_cells", s.excludedCells,
                     "unconfirmed_cells", s.unconfirmedCells, "confirmation_scope", "per_cell_fresh",
+                    "animal_direct_catalog", s.sampler==null?0:s.sampler.directAnimals,
+                    "animal_current_frame", s.sampler==null?0:s.sampler.inferredAnimals,
+                    "animal_cover_unverified", s.sampler==null?0:s.sampler.uncertainAnimals,
+                    "element_review_families", s.unknownElements.familyCount(),
+                    "element_review_saturated", s.unknownElements.saturatedObservations,
+                    "element_review_ambiguous", s.unknownElements.ambiguousObservations,
                     "visible_runs", s.visibleRuns,
                     "geometry_waiting_frames", s.geometryWaitingFrames,
                     "board_changing_frames", s.boardChangingFrames,
@@ -444,6 +451,7 @@ public class Match3LiveService extends Service {
     private static void resetWindow(Session s) {
         s.boardValid = false;
         s.cellConfirmation.reset();
+        s.unknownElements.resetStability();
         s.unconfirmedCells=0;
     }
 
@@ -514,13 +522,17 @@ public class Match3LiveService extends Service {
         }
         s.visibleRuns=Match3Board.findRuns(position.matrix()).size();
         if(s.visibleRuns>0) {
+            s.unknownElements.resetStability();
             s.cascadeWaitingFrames++;recommendationGate(s,"cascade");
             invalidateHint(s,"CASCADE");s.cellConfirmation.reset();return;
         }
         if(s.sampler.frameMotion()) {
+            s.unknownElements.resetStability();
             s.boardChangingFrames++;recommendationGate(s,"visual_motion");
             invalidateHint(s,"VISUAL_MOTION");s.cellConfirmation.reset();return;
         }
+        for(Match3UnknownElements.Sample sample:s.unknownElements.observe(s.sampler.reviewElements(position),s.frameAt))
+            s.diagnostics.elementSample(frame,s.geometry,sample);
         Match3CellConfirmation.Snapshot confirmed = s.cellConfirmation.accept(position,s.frameAt);
         if (confirmed == null) { invalidateHint(s,"OBSERVATION_INVALID");return; }
         position = confirmed.position;
@@ -544,6 +556,7 @@ public class Match3LiveService extends Service {
             recommendationGate(s, "cascade");
             invalidateHint(s, "CASCADE");
             s.cellConfirmation.reset();
+            s.unknownElements.resetStability();
             return;
         }
         s.boardValid = true;
@@ -1019,6 +1032,8 @@ public class Match3LiveService extends Service {
                 // Rotation changes the capture surface, not the diagnostic
                 // session. A contradicted task rule remains retired this game.
                 next.outcomes = previous.outcomes;
+                next.unknownElements=previous.unknownElements;
+                next.unknownElements.resetStability();
                 reader = replacement; active = next;
                 replacement.setOnImageAvailableListener(source -> onImageAvailable(source, next), handler());
                 oldReader.close();

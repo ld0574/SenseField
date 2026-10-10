@@ -38,7 +38,7 @@ final class Match3CellConfirmation {
             Match3Position.Cell cell = observed.cell(r,c), animal = lastAnimal[r][c];
             // A colour change or a visible falling vacancy is motion anywhere on the board.
             // A failed classifier alone only removes this cell's support, not the entire board.
-            if (animal != null && (cell.kind == Match3Position.Kind.ANIMAL && !cell.equals(animal)
+            if (animal != null && (cell.kind == Match3Position.Kind.ANIMAL && cell.color!=animal.color
                     || cell.kind == Match3Position.Kind.EMPTY)) moved = true;
             if (cell.kind == Match3Position.Kind.ANIMAL) lastAnimal[r][c] = cell;
             else if (cell.kind == Match3Position.Kind.EMPTY) lastAnimal[r][c] = null;

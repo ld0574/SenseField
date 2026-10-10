@@ -113,11 +113,13 @@ docs/**
 !docs/development/offline-speech.md
 !docs/development/android-adb-diagnostics.md
 !docs/development/match3-regression.md
+!docs/development/match3-element-evidence.md
 !docs/development/assistant-android-transport-test.md
 !docs/development/assistant-gateway-test-deployment.md
 !docs/plans/黑客松方案收敛与实施路线.md
 !docs/plans/符合度改造方案.md
 !docs/plans/消消乐目标价值排序.md
+!docs/plans/消消乐新元素可信识别.md
 !docs/references/README.md
 !docs/requirements/README.md
 !docs/requirements/为视力障碍玩家打造识别全屏地图的工具.pdf

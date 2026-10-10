@@ -78,6 +78,9 @@ final class Match3Sampler implements AutoCloseable {
     private Match3VisualCatalog.CellCache[][] observationCache;
     private final Match3AppearanceMotion motion=new Match3AppearanceMotion();
     private boolean frameMotion;
+    private List<Match3AnimalAppearance.Reference> lastTrusted=Collections.emptyList();
+    private long trustedRevision;
+    int directAnimals, inferredAnimals, uncertainAnimals, unfamiliarCells;
 
     Match3Sampler(android.content.Context context, int rows, int cols,
                   int lPct, int tPct, int rPct, int bPct) {
@@ -132,8 +135,9 @@ final class Match3Sampler implements AutoCloseable {
             for(int r=0;r<g.rows;r++)for(int c=0;c<g.cols;c++)observationCache[r][c]=new Match3VisualCatalog.CellCache();
         }
         Match3Position.Cell[][] cells=new Match3Position.Cell[g.rows][g.cols];
-        List<Match3AnimalAppearance.Face> currentFaces=new ArrayList<>();
+        List<Match3AnimalAppearance.Reference> trusted=new ArrayList<>();
         boolean[][] comparable=new boolean[g.rows][g.cols];
+        directAnimals=inferredAnimals=uncertainAnimals=unfamiliarCells=0;
         int w=g.cellWidth(),h=g.cellHeight(),half=Math.max(3,Math.min(w,h)/8);
         for(int r=0;r<g.rows;r++)for(int c=0;c<g.cols;c++) {
             Match3Position.Cell known=observations.obstacle(bitmap,g,r,c,observationPixels,observationCache[r][c]);
@@ -144,49 +148,90 @@ final class Match3Sampler implements AutoCloseable {
             // Known object identity already takes precedence over hue. Avoid
             // re-reading those same pixels through an unused colour classifier.
             if(known!=null) { cells[r][c]=known;continue; }
-            int left=(int)g.cellLeft(c),top=(int)g.cellTop(r);
-            int width=(int)g.cellLeft(c+1)-left,height=(int)g.cellTop(r+1)-top;
-            // obstacle() has already read these exact current pixels. Reuse them
-            // for the identical center/corner stencil instead of thousands of JNI calls.
-            char legacy=observations.available?classifyBufferedCell(bitmap,observationPixels,width,height,
-                    g.centerX(c)-left,g.centerY(r)-top,w,h,half,g.centerX(c),g.centerY(r))
-                    :classifyBoardCell(bitmap,g.centerX(c),g.centerY(r),w,h,half,Collections.emptyList());
-            comparable[r][c]=!isMovable(legacy) && legacy!=EMPTY_CELL && legacy!=GAP_CELL;
-            if(!isMovable(legacy) && legacy!=EMPTY_CELL && legacy!=GAP_CELL)
-                known=observations.animal(observationCache[r][c]);
+            // Hue and board corners can detect vacancies; neither grants animal identity or permission.
+            known=observations.animal(observationCache[r][c]);
             if(known!=null)cells[r][c]=known;
-            else if(isMovable(legacy)) cells[r][c]=Match3Position.Cell.animal(legacy);
-            else if(legacy==EMPTY_CELL || legacy==GAP_CELL)
-                cells[r][c]=Match3Position.Cell.obstacle(Match3Position.Kind.EMPTY,0);
             else {
-                cells[r][c]=Match3Position.Cell.obstacle(
-                        legacy==UNKNOWN?Match3Position.Kind.UNKNOWN:Match3Position.Kind.SURFACE,-1);
+                int left=(int)g.cellLeft(c),top=(int)g.cellTop(r);
+                int width=(int)g.cellLeft(c+1)-left,height=(int)g.cellTop(r+1)-top;
+                // Known animal identity already wins over the unused hue path.
+                // For remaining cells reuse the exact pixels read by obstacle().
+                CellAppearance footprint=observations.available?bufferedAppearance(bitmap,observationPixels,width,height,
+                        g.centerX(c)-left,g.centerY(r)-top,w,h,half,g.centerX(c),g.centerY(r))
+                        :cellAppearance(bitmap,g.centerX(c),g.centerY(r),w,h);
+                char legacy=classifyAppearance(bitmap,g.centerX(c),g.centerY(r),half,footprint);
+                cells[r][c]=legacy==EMPTY_CELL || legacy==GAP_CELL
+                        ?Match3Position.Cell.obstacle(Match3Position.Kind.EMPTY,0)
+                        :Match3Position.Cell.obstacle(legacy==UNKNOWN?Match3Position.Kind.UNKNOWN:Match3Position.Kind.SURFACE,-1);
             }
-            if(cells[r][c].kind==Match3Position.Kind.ANIMAL && observationCache[r][c].patch!=null) {
-                Match3AnimalAppearance.Face face=Match3VisualCatalog.face(observationCache[r][c],cells[r][c].color);
-                if(face.detailed)currentFaces.add(face);
+            comparable[r][c]=known==null && cells[r][c].kind!=Match3Position.Kind.EMPTY;
+            if(cells[r][c].kind==Match3Position.Kind.ANIMAL && cells[r][c].swappable
+                    && observationCache[r][c].patch!=null) {
+                Match3AnimalAppearance.Reference reference=observations.trustedReference(observationCache[r][c]);
+                if(reference!=null)trusted.add(reference);
+                directAnimals++;
             }
         }
-        // Current-frame examples are ephemeral comparisons, never saved/trained.
-        // Two independently certified animals must support a decorated-lane fallback.
+        // Freeze direct-catalog + plain-sprite evidence before the fallback pass.
+        // Inferred animals and uncertain covers cannot seed or confirm another candidate.
+        if(!sameReferences(lastTrusted,trusted)) { lastTrusted=trusted;trustedRevision++; }
         for(int r=0;r<g.rows;r++)for(int c=0;c<g.cols;c++)
-            if(comparable[r][c] && cells[r][c].kind!=Match3Position.Kind.ANIMAL && observationCache[r][c].patch!=null) {
-                char color=Match3AnimalAppearance.recognize(Match3VisualCatalog.face(observationCache[r][c]),currentFaces,2);
-                if(isMovable(color))cells[r][c]=Match3Position.Cell.animal(color);
+            if(comparable[r][c] && observationCache[r][c].patch!=null) {
+                Match3VisualCatalog.CellCache cache=observationCache[r][c];
+                // Both candidate patches were read from this frame and checked
+                // exactly by obstacle(). Frozen references are compared by
+                // descriptor identity, so any source change invalidates fallback.
+                if(!cache.inferredChecked || cache.inferredRevision!=trustedRevision) {
+                    cache.inferred=Match3AnimalAppearance.infer(Match3VisualCatalog.face(cache),
+                            Match3VisualCatalog.body(cache),trusted);
+                    cache.inferredChecked=true;cache.inferredRevision=trustedRevision;
+                }
+                Match3Position.Cell inferred=cache.inferred;
+                if(inferred!=null) {
+                    cells[r][c]=inferred;if(inferred.swappable)inferredAnimals++;
+                }
             }
         Match3AnimalAppearance.Face[][] faces=new Match3AnimalAppearance.Face[g.rows][g.cols];
-        for(int r=0;r<g.rows;r++)for(int c=0;c<g.cols;c++)if(observationCache[r][c].patch!=null)
-            faces[r][c]=Match3VisualCatalog.face(observationCache[r][c]);
+        for(int r=0;r<g.rows;r++)for(int c=0;c<g.cols;c++) {
+            if(observationCache[r][c].patch!=null)faces[r][c]=Match3VisualCatalog.face(observationCache[r][c]);
+            if(cells[r][c].kind==Match3Position.Kind.ANIMAL && !cells[r][c].swappable)uncertainAnimals++;
+            else if(cells[r][c].kind==Match3Position.Kind.UNKNOWN || cells[r][c].kind==Match3Position.Kind.SURFACE)unfamiliarCells++;
+        }
         frameMotion=motion.accept(faces,at);
         return new Match3Position(cells);
+    }
+    private static boolean sameReferences(List<Match3AnimalAppearance.Reference> a,
+                                          List<Match3AnimalAppearance.Reference> b) {
+        if(a.size()!=b.size())return false;
+        for(int i=0;i<a.size();i++)if(a.get(i).face!=b.get(i).face || a.get(i).body!=b.get(i).body)return false;
+        return true;
+    }
+    int[] elementPatch(int row,int col) { return observationCache[row][col].patch; }
+    int[] elementEnvelope(int row,int col) { return observationCache[row][col].envelope; }
+    Match3UnknownElements.Observation[][] reviewElements(Match3Position position) {
+        Match3UnknownElements.Observation[][] out=new Match3UnknownElements.Observation[rows][cols];
+        for(int r=0;r<rows;r++)for(int c=0;c<cols;c++)if(Match3UnknownElements.needsReview(position.cell(r,c))
+                && observationCache[r][c].patch!=null)
+            out[r][c]=new Match3UnknownElements.Observation(position.cell(r,c),observationCache[r][c].envelope);
+        return out;
     }
 
     private static char classifyBufferedCell(Bitmap bitmap,int[] pixels,int width,int height,
                                             int x,int y,int cellW,int cellH,int half,int frameX,int frameY) {
+        return classifyAppearance(bitmap,frameX,frameY,half,bufferedAppearance(bitmap,pixels,width,height,
+                x,y,cellW,cellH,half,frameX,frameY));
+    }
+    private static char classifyAppearance(Bitmap bitmap,int x,int y,int half,CellAppearance appearance) {
+        if(appearance.distance<=EMPTY_COLOR_DISTANCE)return EMPTY_CELL;
+        char piece=classifyCell(bitmap,x,y,half,Collections.emptyList(),appearance.centre);
+        return isMovable(piece) && appearance.backed<3?NON_SWAP_CELL:piece;
+    }
+    private static CellAppearance bufferedAppearance(Bitmap bitmap,int[] pixels,int width,int height,
+                                            int x,int y,int cellW,int cellH,int half,int frameX,int frameY) {
         int ox=cellW*42/100,oy=cellH*42/100,probe=Math.max(2,Math.min(cellW,cellH)/16);
         // Tiny/manual cells may cross a tile edge; preserve the original full-frame sampling there.
         if(x-ox-probe<0 || y-oy-probe<0 || x+ox+probe>=width || y+oy+probe>=height)
-            return classifyBoardCell(bitmap,frameX,frameY,cellW,cellH,half,Collections.emptyList());
+            return cellAppearance(bitmap,frameX,frameY,cellW,cellH);
         int centre=avgPixels(pixels,width,x,y,half);
         int[][] points={{x-ox,y-oy},{x+ox,y-oy},{x-ox,y+oy},{x+ox,y+oy}};
         long distance=0;int backed=0;float[] hsv=new float[3];
@@ -197,9 +242,7 @@ final class Match3Sampler implements AutoCloseable {
             Color.colorToHSV(color,hsv);
             if(hsv[2]<.5f && hsv[0]>=170f && hsv[0]<=300f)backed++;
         }
-        if(distance/(4*3L)<=EMPTY_COLOR_DISTANCE)return EMPTY_CELL;
-        char piece=classifyCell(bitmap,frameX,frameY,half,Collections.emptyList(),centre);
-        return isMovable(piece) && backed<3?NON_SWAP_CELL:piece;
+        return new CellAppearance(centre,(int)(distance/(4*3L)),backed);
     }
     private static int avgPixels(int[] pixels,int width,int x,int y,int half) {
         long r=0,g=0,b=0,n=0;

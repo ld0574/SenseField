@@ -59,6 +59,13 @@ final class DiagnosticArchive implements AutoCloseable {
         imageBytes += jpeg.length;
         return true;
     }
+    boolean elementImage(String name,byte[] png) throws IOException {
+        if(!name.matches("u(?:[1-9]|1[0-9]|2[0-4])-[12]\\.png"))throw new IOException("无效的元素文件名");
+        if(closed || png==null || png.length>64*64*4+1024 || imageBytes+png.length>IMAGE_LIMIT)return false;
+        File elements=new File(directory,"elements");
+        if(!elements.mkdirs() && !elements.isDirectory())throw new IOException("无法建立元素目录");
+        Files.write(new File(elements,name).toPath(),png);imageBytes+=png.length;return true;
+    }
 
     void finish(String summary) throws IOException {
         if (closed) return;
@@ -149,6 +156,12 @@ final class DiagnosticArchive implements AutoCloseable {
                 for (File file : files) if (file.isFile()
                         && file.getName().matches("(?:screen|map)-[0-9]+-[0-9]+\\.jpg"))
                     entry(out, directory, file, "images/" + file.getName());
+            }
+            File[] elements=new File(directory,"elements").listFiles();
+            if(elements!=null) {
+                Arrays.sort(elements,Comparator.comparing(File::getName));
+                for(File file:elements)if(file.isFile() && file.getName().matches("u(?:[1-9]|1[0-9]|2[0-4])-[12]\\.png"))
+                    entry(out,directory,file,"elements/"+file.getName());
             }
             out.putNextEntry(new ZipEntry("feedback.txt"));
             out.write((feedback == null ? "" : feedback).getBytes(StandardCharsets.UTF_8));

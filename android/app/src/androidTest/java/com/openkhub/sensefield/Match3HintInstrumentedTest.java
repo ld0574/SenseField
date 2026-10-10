@@ -246,12 +246,13 @@ public final class Match3HintInstrumentedTest {
     }
     private static final class SyntheticGame extends View {
         private final Paint p = new Paint();
+        private final Match3TestSprites sprites;
         private int tick;
         int rows = 7, cols = 7;
         boolean heartbeat = true, singleCellChanged, mostlyUnknown, endpointChanged;
         final AtomicInteger touches = new AtomicInteger();
         SyntheticGame(Context context) {
-            super(context); setOnTouchListener((v, e) -> { touches.incrementAndGet(); return true; });
+            super(context);sprites=new Match3TestSprites(context);setOnTouchListener((v, e) -> { touches.incrementAndGet(); return true; });
         }
         @Override protected void onDraw(Canvas c) {
             c.drawColor(Color.rgb(50, 200, 240));
@@ -266,8 +267,9 @@ public final class Match3HintInstrumentedTest {
                 if (col == 0 && (row == 1 || row == 2) || row == 0 && col == 1) color = 1;
                 if (singleCellChanged && row == rows - 1 && col == cols - 1) color = (color + 1) % colors.length;
                 if(endpointChanged && row==0 && col==0)color=4;
-                p.setColor(mostlyUnknown && (row>=3 || col>=3)?0xff909090:colors[color]);
-                c.drawCircle(left + cell * (col + .5f), top + cell * (row + .5f), cell * .43f, p);
+                if(mostlyUnknown && (row>=3 || col>=3)) {
+                    p.setColor(0xff909090);c.drawCircle(left + cell * (col + .5f), top + cell * (row + .5f), cell * .43f, p);
+                } else sprites.draw(c,left+cell*col,top+cell*row,cell,"YRGBPO".charAt(color));
             }
             // MediaProjection emits changed surfaces; keep only an out-of-board pixel changing.
             p.setColor(Color.rgb(100 + tick++ % 100, 130, 200)); c.drawRect(0, 0, 8, 8, p);
@@ -401,6 +403,7 @@ public final class Match3HintInstrumentedTest {
             Object session = get(service, "active");
             Match3Hint hint = (Match3Hint) get(session, "currentHint"); assertNotNull(hint);
             long boardRevision = (long) get(session, "boardRevision");
+            long observedRevision = boardRevision;
             long startedFrames = (long) get(session, "processedFrames");
             for (int i = 0; i < 5; i++) {
                 Bitmap frame = frames[(i + 1) % frames.length];
@@ -410,7 +413,11 @@ public final class Match3HintInstrumentedTest {
                 SystemClock.sleep(1500);
                 assertSame("Idle artwork must not retire the exchange; "
                         + DiagnosticRecorder.current.stateForDiagnostics(), hint, get(session, "currentHint"));
-                assertEquals(boardRevision, (long) get(session, "boardRevision"));
+                // An unrelated cell's cover evidence may change the observation
+                // revision. The valid exchange must keep its own hint identity.
+                long currentRevision = (long) get(session, "boardRevision");
+                assertTrue("Observation revisions never move backwards", currentRevision >= observedRevision);
+                observedRevision = currentRevision;
             }
             assertTrue("A seven-second utterance reaches its normal completion", completed.await(2, TimeUnit.SECONDS));
             assertEquals("No software cancellation during idle animation", 0, stopped.get());
@@ -432,6 +439,7 @@ public final class Match3HintInstrumentedTest {
             org.json.JSONObject evidence = new org.json.JSONObject().put("source", "actual_projection_supplied_idle_photos")
                     .put("renderer", "controlled_7000ms_callback").put("software_completion", true)
                     .put("cancel_count", stopped.get()).put("board_revision", boardRevision)
+                    .put("final_board_revision", observedRevision).put("hint_revision", hint.revision)
                     .put("acoustic_evidence", false).put("independent_accuracy_evidence", false);
             java.nio.file.Files.write(new java.io.File(directory, "feedback-idle-speech.json").toPath(),
                     evidence.toString(2).getBytes(java.nio.charset.StandardCharsets.UTF_8));

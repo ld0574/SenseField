@@ -35,6 +35,7 @@
 | [黑客松方案收敛与实施路线](plans/黑客松方案收敛与实施路线.md) | 已定决策、工作包、日程与实施记录 |
 | [符合度复核与迭代证据](plans/符合度改造方案.md) | 历史评估、逐批实现／验证边界及当前待验证项目 |
 | [消消乐通关价值排序](plans/消消乐目标价值排序.md) | 本地任务读取、独立棋子状态、一步收益排序与独立验收边界 |
+| [消消乐新元素可信识别 Goal](plans/消消乐新元素可信识别.md) | 外观身份、交换权限、目标效果分别核验；陌生家族自动归集与验收边界 |
 | [0.4.0 目标、接口与验收记录](../validation/assistant/GOAL_0.4.0_2026-10-03.md) | 开发中的语音与画面助手目标、接口和待验证条件 |
 
 ## 开发与数据 · `development/`
@@ -43,6 +44,8 @@
 | --- | --- |
 | [团队协作与本地运行](development/团队协作与本地运行.md) | 环境安装、标注、回放、Android 构建与协作约定 |
 | [外部数据引入与预训练](development/外部数据引入与预训练.md) | 来源审计、导入要求与训练顺序 |
+| [消消乐自动回归](development/match3-regression.md) | JVM、原生故障序列、投影、最终 Release 与门禁复现 |
+| [消消乐元素证据与扩展](development/match3-element-evidence.md) | 不凭颜色猜规则，按家族补一次证据，诊断图片与缓存的边界 |
 | [Android 真实助手传输测试](development/assistant-android-transport-test.md) | 合成输入、临时证书、真实 GLM/CPU ASR 与正式客户端联调 |
 | [Linux 测试网关部署](development/assistant-gateway-test-deployment.md) | 隔离测试部署、CPU 依赖、HTTPS/WSS 与未覆盖门禁 |
 | [Android 自动更新](development/app-update.md) | 0.4.1/code18：固定网站清单与 Gitee APK 下载、同版本 SHA 修订及校验规则；历史同源 CDN 结果单独保留。实际发包见[Gitee发布步骤](../deploy/assistant/CDN发布.md) |

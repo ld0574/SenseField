@@ -13,19 +13,27 @@ final class Match3Position {
         final SwapPermission swapPermission;
         final int layers, iceLayers;
         Cell(Kind kind, char color, boolean swappable, int layers, int iceLayers) {
+            this(kind,color,swappable?SwapPermission.YES:kind==Kind.SNOW || kind==Kind.EMPTY || kind==Kind.ANIMAL
+                    ?SwapPermission.NO:SwapPermission.UNKNOWN,layers,iceLayers);
+        }
+        private Cell(Kind kind, char color, SwapPermission permission, int layers, int iceLayers) {
             if (kind == null || layers < -1 || iceLayers < -1 || layers > 5 || iceLayers > 3
                     || kind != Kind.ANIMAL && color != '\0'
                     || kind == Kind.ANIMAL && Match3Goals.Kind.animal(color) == Match3Goals.Kind.UNKNOWN
-                    || swappable && kind != Kind.ANIMAL) throw new IllegalArgumentException("Unverified cell rule");
-            this.kind = kind; this.color = color; this.swappable = swappable;
-            this.swapPermission=swappable?SwapPermission.YES:kind==Kind.SNOW || kind==Kind.EMPTY || kind==Kind.ANIMAL
-                    ?SwapPermission.NO:SwapPermission.UNKNOWN;
+                    || permission == null || permission==SwapPermission.YES
+                    && (kind != Kind.ANIMAL || layers < 0 || iceLayers < 0)) throw new IllegalArgumentException("Unverified cell rule");
+            this.kind = kind; this.color = color; this.swapPermission=permission;
+            this.swappable=permission==SwapPermission.YES;
             this.layers = layers; this.iceLayers = iceLayers;
         }
-        static Cell animal(char c) { return new Cell(Kind.ANIMAL, c, true, 0, 0); }
+        /** Explicit ordinary-animal rule, for verified sprites or abstract rule fixtures. */
+        static Cell animal(char c) { return new Cell(Kind.ANIMAL, c, SwapPermission.YES, 0, 0); }
+        /** Recognizing a face does not establish the covering state or exchange mechanics. */
+        static Cell animalIdentity(char c) { return new Cell(Kind.ANIMAL,c,SwapPermission.UNKNOWN,-1,-1); }
         static Cell obstacle(Kind kind, int layers) { return new Cell(kind, '\0', false, layers, 0); }
         char code() {
-            if (kind == Kind.ANIMAL) return color;
+            // An unverified covering cannot complete a match or lend it a certain task gain.
+            if (kind == Kind.ANIMAL) return swapPermission==SwapPermission.UNKNOWN?'#':color;
             if (kind == Kind.SNOW) return 'I';
             if (kind == Kind.COIN) return 'C';
             if (kind == Kind.EGG) return 'E';
@@ -36,10 +44,10 @@ final class Match3Position {
         @Override public boolean equals(Object object) {
             if (!(object instanceof Cell)) return false;
             Cell other = (Cell) object;
-            return kind == other.kind && color == other.color && swappable == other.swappable
+            return kind == other.kind && color == other.color && swapPermission == other.swapPermission
                     && layers == other.layers && iceLayers == other.iceLayers;
         }
-        @Override public int hashCode() { return Objects.hash(kind, color, swappable, layers, iceLayers); }
+        @Override public int hashCode() { return Objects.hash(kind, color, swapPermission, layers, iceLayers); }
     }
     final int rows, cols;
     private final Cell[][] cells;
