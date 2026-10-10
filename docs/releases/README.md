@@ -1,18 +1,18 @@
 # 发布与交付索引
 
-2026-10-10 [0.4.5 本地候选](0.4.5/RELEASE_NOTES.md)（`versionCode 22`）分开核验元素身份、完整格子／交换权限和目标收益；新外观自动归集为诊断家族，未知规则不参与推荐，可靠区域继续提示。478 项 JVM、4 项 Python、62 项 Debug／37 项最终 Release 通过，lint 0 错误／33 警告，详见[当前证据](../../validation/match3/MATCH3_ELEMENT_EVIDENCE_0_4_5_2026-10-10.md)。
+更新于 2026-10-10。当前主线为[0.4.5](0.4.5/RELEASE_NOTES.md)（`versionCode 22`），消消乐代码已完整合入 `main`，包含两款游戏入口、离线固定语音与默认关闭的助手。负责人已在 [Gitee 0.4.5](https://gitee.com/leda/SenseField/releases/tag/0.4.5) 公开安装包，并更新固定网站清单；本轮只读核对下载文件，不代为发布。
 
-唯一同签名包约 24.35MB，测试、清单及模拟器回读摘要一致，在 `output/releases/0.4.5/` 供手动上传。手机本批未装机；真实准确率、推荐收益、外部实声与温升继续待测。没有新公开 Release。下文保留此前公开发布信息。
+公开 APK 为 24,364,276 bytes（约 24.36MB），SHA-256 `00c3b31434d26d105eb0b96f6cad30506756f3d7d550fa752074a5ac2e86c4e4`。Gitee 下载字节与本地已测同签名 Release 一致，线上 `latest.json` 与本地清单完全匹配。文件继续保留在 `output/releases/0.4.5/`，后续按 [CDN 发布步骤](../../deploy/assistant/CDN发布.md)上传，语音识别模型分片继续复用。
 
-整理日期：2026-10-08。最近一次公开主线发布为[听野0.4.4](https://github.com/ld0574/SenseField/releases/tag/v0.4.4)（`versionCode 21`，普通 Release、Latest），包含王者荣耀辅助、消消乐体验入口与默认关闭的助手。使用主线标签 `v0.4.4`，保留历史 `v0.4.3-main` 及消消乐独立发布。APK、使用方式和验证边界见[0.4.4说明](0.4.4/RELEASE_NOTES.md)。Gitee 同名 APK 和固定网站清单仍由负责人按[CDN发布步骤](../../deploy/assistant/CDN发布.md)成对手动上传，模型分片继续复用。整体 `verified` 与 `release_ready` 保持现状，不将公开发布类型当作稳定性验收结果。
+本包对应的工程检查为 495 项 JVM、4 项 Python、73 项 Debug／48 项 minified Release 通过，lint 0 错误／33 警告；手机与模拟器安装摘要一致。最新真实试用仍不满意，目标识别、建议收益和提示完整性继续整改；独立准确率、外部实声及受控温升仍待独立验收。工程检查和公开分发不改变评分、`verified` 或 `release_ready`，详见[当前证据与试用记录](../../validation/match3/MATCH3_TASK_FEEDBACK_0_4_5_2026-10-10.md)。
 
-0.4.4 内置游戏解说男声和游戏向导女声，男声默认、女声可选，完整说明可离线播放，修复连续试听；正式 Release 包 24.22MB，沿用 0.4.3 签名。GitHub 三个附件的大小与摘要已逐项核对，见[本次发布记录](../../validation/releases/GITHUB_RELEASE_0_4_4_2026-10-08.md)。真机语音已有正向反馈，发热目标和受控温升门禁仍未完成；没有改动生产服务。
+最近已记录的 GitHub 主线发布仍为[听野 0.4.4](https://github.com/ld0574/SenseField/releases/tag/v0.4.4)（`versionCode 21`，普通 Release）。其离线双音色、连续试听与 24.22MB 正式包的发布核对保留在[历史记录](../../validation/releases/GITHUB_RELEASE_0_4_4_2026-10-08.md)，各批次验收结果以对应制品为准。
 
 ## 版本记录
 
 | 版本 | 日期 | versionCode | 交付状态 | 主要内容与说明 |
 | --- | --- | ---: | --- | --- |
-| [0.4.5](0.4.5/RELEASE_NOTES.md) | 2026-10-10 | 22 | 消消乐分支本地同签名 Release 候选；本批未装机／上传 | 元素身份与权限核验、未知家族诊断、可靠区域提示、目标排序与高亮；独立验收待测 |
+| [0.4.5](0.4.5/RELEASE_NOTES.md) | 2026-10-10 | 22 | 已合入 main；Gitee APK 与线上清单核对一致 | 稀疏整盘定位、确认的一步任务收益排序与交换高亮、最后目标准备建议；消消乐仍为体验版，最新试用问题继续整改 |
 | [0.4.4](0.4.4/RELEASE_NOTES.md) | 2026-10-08 | 21 | GitHub 普通 Release、Latest；Gitee／网站由负责人同步 | 默认游戏解说男声／可选游戏向导女声、离线完整说明、连续试听修复、24.22MB 正式包；受控温升待测 |
 | [0.4.3](0.4.3/RELEASE_NOTES.md) | 2026-10-07 | 20 | 历史主线普通 Release，独立标签 `v0.4.3-main` | 大字与导航改进、消消乐最新已验证合并、离线中文检查和方位缓存、内置音效自动试听、首次说明可随时跳过 |
 | 0.4.2 | 2026-10-06 | 19 | 主线历史本地交付；同名消消乐分支发布另计 | 分组帮助及首次学习流程，见[当批记录](../../validation/android/ANDROID_0_4_2_HELP_ONBOARDING_2026-10-06.md) |

@@ -172,3 +172,9 @@
 负责人先要求合入 main，再安排伙伴测试，并随后明确由自己发布。已将 `feature/jev-l2-judgment` 的 17 个后续提交快进合入原 `main`，应用代码与已测 `0fefaef8e031d02e0a3533063e81404de29a011f` 完全相同；不改版本、重新构建或换包。继续交付上述 24,364,276-byte 0.4.5／code22 APK 与匹配 `latest.json`；发布步骤更新到 [CDN 发布说明](../../deploy/assistant/CDN发布.md)。本轮只提交合入与交付文档、推送 main，Gitee 发行版、镜像同步和公网清单由负责人操作，不将准备完成写成已发布。
 
 真实任务识别、策略收益、完整语音和复杂机制仍需整改；伙伴测试用于收集新证据，不表示患者验收已通过。评分、`verified`／`release_ready` 以及独立声音／温升门禁保持原状态。
+
+## 负责人公开分发后的只读核对
+
+2026-10-10 在修正项目 README 时，只读核对 [Gitee 0.4.5](https://gitee.com/leda/SenseField/releases/tag/0.4.5)、公开 APK 和固定网站 `https://888413.xyz/apk/latest.json`。公开 APK 下载共 24,364,276 bytes，SHA-256 为 `00c3b31434d26d105eb0b96f6cad30506756f3d7d550fa752074a5ac2e86c4e4`，与上述已测正式包一致；线上清单与本地 `cdn-upload/latest.json` 完全相同。私有核对收据保存在 `validation/private/readme-0.4.5-public-check-20261010.json`。
+
+公开操作由负责人完成，本轮未上传、发布、登录服务器或安装 APK；没有核对 Gitee 源码标签与 GitHub `main` 是否一致。该记录只证明公开分发字节与已测制品匹配，不新增准确率、玩家收益、实声或温升证据，不改变评分与患者门禁。

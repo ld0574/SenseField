@@ -12,4 +12,6 @@
 
 消消乐仍为体验版。冰花等复杂障碍、特殊组合和多步策略继续完善；准备建议不保证后续收益或通关。王者提醒、现有离线音色及 AI 助手默认关闭保持不变。
 
-本修订继续使用 0.4.5／code22。安装包与更新清单统一位于 `output/releases/0.4.5/`，由负责人手动上传。工程检查与实际体验分别记录，详见[验证记录](../../../validation/match3/MATCH3_TASK_FEEDBACK_0_4_5_2026-10-10.md)；发布步骤见[CDN 发布说明](../../../deploy/assistant/CDN发布.md)。
+本修订继续使用 0.4.5／code22，已合入 `main`。[下载安卓安装包](https://gitee.com/leda/SenseField/releases/download/0.4.5/sensefieldv0.4.5.apk) · [Gitee 发行版](https://gitee.com/leda/SenseField/releases/tag/0.4.5)。2026-10-10 已只读核对公开包与本地验证包一致，线上更新清单匹配。安装包与清单仍统一位于 `output/releases/0.4.5/`，后续由负责人手动发布。
+
+工程检查与实际体验分别记录，详见[验证记录](../../../validation/match3/MATCH3_TASK_FEEDBACK_0_4_5_2026-10-10.md)；发布步骤见[CDN 发布说明](../../../deploy/assistant/CDN发布.md)。

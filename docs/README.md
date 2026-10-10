@@ -9,9 +9,9 @@
 | 需要做什么 | 从这里开始 |
 | --- | --- |
 | 了解玩家问题与产品边界 | [赛题背景](design/赛题背景.md) |
-| 安装已公开版本 | [0.4.4 安装与使用说明](releases/0.4.4/RELEASE_NOTES.md) · [发布索引](releases/README.md) |
+| 安装已公开版本 | [Gitee 0.4.5](https://gitee.com/leda/SenseField/releases/tag/0.4.5) · [安装与使用说明](releases/0.4.5/RELEASE_NOTES.md) |
 | 查看最新版本变化 | [版本与交付索引](releases/README.md) |
-| 查看当前源码候选 | [0.4.5 候选说明](releases/0.4.5/RELEASE_NOTES.md) · [当前验证状态](../validation/STATUS.md) |
+| 查看当前主线与验证边界 | [0.4.5 说明](releases/0.4.5/RELEASE_NOTES.md) · [当前验证状态](../validation/STATUS.md) |
 | 查找测试与排查记录 | [按主题查找验证记录](../validation/README.md) |
 | 部署助手服务 | [直接启动与部署步骤](../deploy/assistant/README.md)（部署脚本统一在 `deploy/assistant/`） |
 | 上传 APK、模型与后续发包 | [Gitee 下载分发与后续发布](../deploy/assistant/CDN发布.md)（同版本覆盖、新版本、固定清单和下载核对） |
@@ -52,7 +52,7 @@
 
 ## 发布记录 · `releases/`
 
-[发布索引](releases/README.md)汇总已记录的 0.4.4 公开主线发布、0.4.5 消消乐分支本地候选及此前版本，并提供[版本命名规范](releases/版本命名规范.md)和[GitHub 发布检查清单](releases/GITHUB发布检查清单.md)。公开体验版、本地候选和开发中的源码版本分别记录。
+[发布索引](releases/README.md)汇总 0.4.5 主线与 Gitee 公开安装包、此前 GitHub 发布及历史交付，并提供[版本命名规范](releases/版本命名规范.md)和[GitHub 发布检查清单](releases/GITHUB发布检查清单.md)。公开分发与实际体验验收分别记录；消消乐仍为体验版。
 
 ## 需求与赛事资料 · `requirements/`
 
