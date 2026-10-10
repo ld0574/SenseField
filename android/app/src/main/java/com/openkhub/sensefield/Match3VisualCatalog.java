@@ -26,12 +26,14 @@ final class Match3VisualCatalog {
     static final class Pattern {
         final String kind;
         final String rule;
+        final float aspect;
         final int[] pixels;
         final boolean[] mask;
         final int supported;
         Pattern(JSONObject json) throws Exception {
             kind = json.getString("kind");
             rule = json.optString("rule", "unverified");
+            aspect=(float)json.optDouble("aspect",0);
             JSONArray p = json.getJSONArray("pixels"), m = json.getJSONArray("mask");
             if (p.length() != PATCH * PATCH || m.length() != p.length()) throw new IllegalArgumentException("Template shape");
             pixels = new int[p.length()]; mask = new boolean[p.length()];
@@ -73,14 +75,14 @@ final class Match3VisualCatalog {
     private static volatile Match3VisualCatalog loaded;
     final boolean available;
     final String id;
-    final List<Pattern> steps, goals, cells, animals;
+    final List<Pattern> steps, goals, cells, animals, largeObjects;
     final List<Match3AnimalAppearance.Face> animalFaces;
     final List<Match3AnimalAppearance.Body> animalBodies;
     final List<Character> bodyColors;
     final List<Glyph> glyphs, checkmarks, levelSuffixes;
     private Match3VisualCatalog() {
         available = false; id = "unavailable";
-        steps = goals = cells = animals = Collections.emptyList(); glyphs = checkmarks = levelSuffixes = Collections.emptyList();
+        steps = goals = cells = animals = largeObjects = Collections.emptyList(); glyphs = checkmarks = levelSuffixes = Collections.emptyList();
         animalFaces=Collections.emptyList();
         animalBodies=Collections.emptyList();
         bodyColors=Collections.emptyList();
@@ -89,6 +91,10 @@ final class Match3VisualCatalog {
         if (!"match3-fixed-ui-v1".equals(json.getString("format"))) throw new IllegalArgumentException("Catalog format");
         id = json.getString("id"); steps = patterns(json.getJSONArray("steps"));
         goals = patterns(json.getJSONArray("goals"));
+        List<Pattern> large=new ArrayList<>();
+        if(json.has("large_objects"))for(Pattern p:patterns(json.getJSONArray("large_objects")))
+            if("cookie".equals(p.kind) && "identity_only_2x2".equals(p.rule))large.add(p);
+        largeObjects=Collections.unmodifiableList(large);
         List<Pattern> objects=new ArrayList<>(), faces=new ArrayList<>();
         List<Match3AnimalAppearance.Face> descriptors=new ArrayList<>();
         for(Pattern pattern:patterns(json.getJSONArray("cells"))) {

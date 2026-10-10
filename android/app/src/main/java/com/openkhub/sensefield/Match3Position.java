@@ -4,19 +4,22 @@ import java.util.Objects;
 
 /** Piece identity, swap permission and the stationary covering layer are independent. */
 final class Match3Position {
-    enum Kind { ANIMAL, COIN, SNOW, EGG, SPECIAL, EMPTY, SURFACE, UNKNOWN }
+    enum Kind { ANIMAL, COIN, SNOW, EGG, COOKIE, SPECIAL, EMPTY, SURFACE, UNKNOWN }
     enum SwapPermission { YES, NO, UNKNOWN }
     static final class Cell {
         final Kind kind;
         final char color;
         final boolean swappable;
         final SwapPermission swapPermission;
-        final int layers, iceLayers;
+        final int layers, iceLayers, objectId;
         Cell(Kind kind, char color, boolean swappable, int layers, int iceLayers) {
             this(kind,color,swappable?SwapPermission.YES:kind==Kind.SNOW || kind==Kind.EMPTY || kind==Kind.ANIMAL
                     ?SwapPermission.NO:SwapPermission.UNKNOWN,layers,iceLayers);
         }
         private Cell(Kind kind, char color, SwapPermission permission, int layers, int iceLayers) {
+            this(kind,color,permission,layers,iceLayers,-1);
+        }
+        private Cell(Kind kind, char color, SwapPermission permission, int layers, int iceLayers,int objectId) {
             if (kind == null || layers < -1 || iceLayers < -1 || layers > 5 || iceLayers > 3
                     || kind != Kind.ANIMAL && color != '\0'
                     || kind == Kind.ANIMAL && Match3Goals.Kind.animal(color) == Match3Goals.Kind.UNKNOWN
@@ -25,12 +28,15 @@ final class Match3Position {
             this.kind = kind; this.color = color; this.swapPermission=permission;
             this.swappable=permission==SwapPermission.YES;
             this.layers = layers; this.iceLayers = iceLayers;
+            this.objectId=objectId;
         }
         /** Explicit ordinary-animal rule, for verified sprites or abstract rule fixtures. */
         static Cell animal(char c) { return new Cell(Kind.ANIMAL, c, SwapPermission.YES, 0, 0); }
         /** Recognizing a face does not establish the covering state or exchange mechanics. */
         static Cell animalIdentity(char c) { return new Cell(Kind.ANIMAL,c,SwapPermission.UNKNOWN,-1,-1); }
         static Cell obstacle(Kind kind, int layers) { return new Cell(kind, '\0', false, layers, 0); }
+        /** Reviewed whole-object identity; no invented layer count or removal rule. */
+        static Cell cookie(int anchor) { return new Cell(Kind.COOKIE,'\0',SwapPermission.NO,-1,0,anchor); }
         char code() {
             // An unverified covering cannot complete a match or lend it a certain task gain.
             if (kind == Kind.ANIMAL) return swapPermission==SwapPermission.UNKNOWN?'#':color;
@@ -45,9 +51,9 @@ final class Match3Position {
             if (!(object instanceof Cell)) return false;
             Cell other = (Cell) object;
             return kind == other.kind && color == other.color && swapPermission == other.swapPermission
-                    && layers == other.layers && iceLayers == other.iceLayers;
+                    && layers == other.layers && iceLayers == other.iceLayers && objectId==other.objectId;
         }
-        @Override public int hashCode() { return Objects.hash(kind, color, swapPermission, layers, iceLayers); }
+        @Override public int hashCode() { return Objects.hash(kind, color, swapPermission, layers, iceLayers,objectId); }
     }
     final int rows, cols;
     private final Cell[][] cells;

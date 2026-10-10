@@ -575,6 +575,21 @@ public class Match3LiveService extends Service {
             s.diagnostics.audit("BoardRecognized rows=" + matrix.length + " cols=" + matrix[0].length
                     + " unknown=" + unknown + "/" + total + " swaps=" + s.lastSwaps.size()
                     + " revision=" + s.boardRevision + " confirmation=per_cell " + s.geometry);
+            org.json.JSONArray candidates=new org.json.JSONArray();
+            for(int i=0;i<Math.min(3,s.rankedMoves.size());i++) {
+                Match3MoveValue value=s.rankedMoves.get(i);
+                org.json.JSONObject gains=new org.json.JSONObject(),contacts=new org.json.JSONObject();
+                for(Match3Goals.Kind kind:Match3Goals.Kind.values())if(s.goals.active(kind))try {
+                    gains.put(kind.name(),value.collected(kind));contacts.put(kind.name(),value.hit(kind));
+                } catch(org.json.JSONException ignored) { }
+                candidates.put(DiagnosticRecorder.object("rank",i+1,"from_row",value.swap.fromRow,
+                        "from_col",value.swap.fromCol,"to_row",value.swap.toRow,"to_col",value.swap.toCol,
+                        "value",value.evidence(),"reason",value.reason,"physical_lower_bounds",gains,"contacts",contacts));
+            }
+            s.diagnostics.record("Match3Ranking",DiagnosticRecorder.object("board_revision",s.boardRevision,
+                    "goal_key",s.goals.key(),"goal_read_status",s.hudReader.status(),"admitted_moves",s.rankedMoves.size(),
+                    "top_candidates",candidates,"coordinates","top_left_zero_based",
+                    "scope","direct_one_move_and_object_proximity; random_cascades_and_unknown_layers_excluded"));
         }
         // An unread HUD may not lend old goal values to a new hint. A still-valid
         // existing hint can finish through a brief unread/confirmation frame.
@@ -623,7 +638,9 @@ public class Match3LiveService extends Service {
         org.json.JSONArray targets=new org.json.JSONArray();
         for(Match3Goals.Target target:goals.targets)targets.put(DiagnosticRecorder.object("slot",target.slot,
                 "kind",target.kind.name(),"visual_id",target.visualId,
-                "rule_supported",target.kind!=Match3Goals.Kind.UNKNOWN,
+                "identity_supported",target.kind!=Match3Goals.Kind.UNKNOWN,
+                "rule_supported",target.kind!=Match3Goals.Kind.UNKNOWN && target.kind!=Match3Goals.Kind.COOKIE,
+                "effect_scope",target.kind==Match3Goals.Kind.COOKIE?"object_proximity_only; layers_and_removal_unverified":"observed_type",
                 "remaining",target.remaining,"completed",target.completed));
         return DiagnosticRecorder.object("hud_verified",goals.hudVerified,"level",goals.level,"steps",goals.steps,
                 "observed_at_ms",goals.observedAtMs,"targets",targets,"unknown_count_value",-1);

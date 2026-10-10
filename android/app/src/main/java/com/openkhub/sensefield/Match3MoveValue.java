@@ -20,26 +20,34 @@ final class Match3MoveValue {
         int complete = 0, progress = 0, units = 0, relevant = 0, positive = 0;
         boolean all = goals.fullyKnown() && !goals.finished();
         Match3Goals.Kind spoken = null;
+        Match3Goals.Kind related = null;
         for (Match3Goals.Kind kind : Match3Goals.Kind.values()) {
+            if(!goals.active(kind))continue;
             int remaining = goals.remaining(kind);
-            if (remaining <= 0) continue;
-            int gain = Math.min(remaining, collected[kind.ordinal()]);
-            if (gain > 0) { units += gain; progress += (int) (1000L * gain / remaining); positive++; spoken = kind; }
-            if (gain >= remaining) complete++; else all = false;
+            int gain = remaining>0?Math.min(remaining, collected[kind.ordinal()]):0;
+            if (gain > 0) {
+                units += gain; if(remaining>0)progress += (int) (1000L * gain / remaining);
+                positive++; spoken = kind;
+            }
+            if (remaining>0 && gain >= remaining) complete++; else all = false;
             relevant += hits[kind.ordinal()];
+            if(remaining<0)relevant+=collected[kind.ordinal()];
+            if(hits[kind.ordinal()]>0 || remaining<0 && collected[kind.ordinal()]>0)related=kind;
         }
         // An egg hit prepares a chick task, but never invents newly spawned or collected chicks.
-        if (goals.remaining(Match3Goals.Kind.CHICK) > 0) relevant += hits[Match3Goals.Kind.EGG.ordinal()];
+        if (goals.active(Match3Goals.Kind.CHICK)) relevant += hits[Match3Goals.Kind.EGG.ordinal()];
         completedTargets = complete; progressMilli = progress; directUnits = units;
         boolean known=false;
-        for(Match3Goals.Kind kind:Match3Goals.Kind.values())if(goals.remaining(kind)>0)known=true;
+        for(Match3Goals.Kind kind:Match3Goals.Kind.values())if(goals.active(kind))known=true;
         grounded=known;
         relevantHits = relevant; allTargetsFinish = all;
         if (positive > 1) reason = "兼顾任务";
         else if (positive == 1) reason = spoken.color != '\0' ? "收集" + spoken.name
                 : spoken == Match3Goals.Kind.COIN ? "收集银币" : "清除障碍";
-        else if (relevant > 0) reason = goals.remaining(Match3Goals.Kind.CHICK) > 0
-                && hits[Match3Goals.Kind.EGG.ordinal()] > 0 ? "靠近鸡蛋" : "清理障碍";
+        else if (relevant > 0) reason = goals.active(Match3Goals.Kind.CHICK)
+                && hits[Match3Goals.Kind.EGG.ordinal()] > 0 ? "靠近鸡蛋"
+                :goals.active(Match3Goals.Kind.COOKIE) && hits[Match3Goals.Kind.COOKIE.ordinal()]>0?"靠近饼干"
+                :related!=null && related.color!='\0'?"优先"+related.name:"清理障碍";
         else reason = "";
     }
 
@@ -91,13 +99,21 @@ final class Match3MoveValue {
             if (c > 0) affected.set(p - 1);
             if (c + 1 < board.cols) affected.set(p + 1);
         }
+        java.util.Set<Integer> cookieObjects=new java.util.HashSet<>();
         for (int p = affected.nextSetBit(0); p >= 0; p = affected.nextSetBit(p + 1)) {
             int r = p / board.cols, c = p % board.cols;
             Match3Position.Cell cell = board.cell(r, c);
             Match3Goals.Kind kind = cell.kind == Match3Position.Kind.SNOW ? Match3Goals.Kind.SNOW
                     : cell.kind == Match3Position.Kind.COIN ? Match3Goals.Kind.COIN
-                    : cell.kind == Match3Position.Kind.EGG ? Match3Goals.Kind.EGG : Match3Goals.Kind.UNKNOWN;
-            if (kind == Match3Goals.Kind.UNKNOWN || !guaranteedNeighbour(board, matched, components, r, c)) continue;
+                    : cell.kind == Match3Position.Kind.EGG ? Match3Goals.Kind.EGG
+                    : cell.kind == Match3Position.Kind.COOKIE ? Match3Goals.Kind.COOKIE : Match3Goals.Kind.UNKNOWN;
+            if (kind == Match3Goals.Kind.UNKNOWN)continue;
+            boolean touches=kind==Match3Goals.Kind.COOKIE?guaranteedObjectNeighbour(board,matched,components,cell.objectId,r,c)
+                    :guaranteedNeighbour(board,matched,components,r,c);
+            if(!touches)continue;
+            // Four covered cells describe one large object. Count one opportunity,
+            // never four predicted removals or an unverified number of layers.
+            if(kind==Match3Goals.Kind.COOKIE && !cookieObjects.add(cell.objectId>=0?cell.objectId:p))continue;
             hits[kind.ordinal()]++;
             if ((kind == Match3Goals.Kind.SNOW || kind == Match3Goals.Kind.COIN) && cell.layers == 1)
                 counts[kind.ordinal()]++;
@@ -108,11 +124,25 @@ final class Match3MoveValue {
 
     private static boolean guaranteedNeighbour(Match3Position board, BitSet matched,
                                                List<BitSet> special, int r, int c) {
-        BitSet neighbours = new BitSet();
+        return guaranteedNeighbours(neighbours(board,matched,r,c),special);
+    }
+    private static BitSet neighbours(Match3Position board,BitSet matched,int r,int c) {
+        BitSet neighbours=new BitSet();
         if (r > 0 && matched.get((r - 1) * board.cols + c)) neighbours.set((r - 1) * board.cols + c);
         if (r + 1 < board.rows && matched.get((r + 1) * board.cols + c)) neighbours.set((r + 1) * board.cols + c);
         if (c > 0 && matched.get(r * board.cols + c - 1)) neighbours.set(r * board.cols + c - 1);
         if (c + 1 < board.cols && matched.get(r * board.cols + c + 1)) neighbours.set(r * board.cols + c + 1);
+        return neighbours;
+    }
+    private static boolean guaranteedObjectNeighbour(Match3Position board,BitSet matched,List<BitSet> special,int id,int r,int c) {
+        if(id<0)return guaranteedNeighbour(board,matched,special,r,c);
+        BitSet around=new BitSet();
+        for(int rr=0;rr<board.rows;rr++)for(int cc=0;cc<board.cols;cc++)
+            if(board.cell(rr,cc).kind==Match3Position.Kind.COOKIE && board.cell(rr,cc).objectId==id)
+                around.or(neighbours(board,matched,rr,cc));
+        return guaranteedNeighbours(around,special);
+    }
+    private static boolean guaranteedNeighbours(BitSet neighbours,List<BitSet> special) {
         BitSet possiblyHeld = new BitSet();
         for (BitSet component : special) {
             BitSet overlap = (BitSet) component.clone(); overlap.and(neighbours);

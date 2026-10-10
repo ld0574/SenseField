@@ -70,12 +70,40 @@ public final class Match3GoalValueTest {
         assertEquals(0, value.collected(Match3Goals.Kind.CHICK)); assertEquals(0, value.directUnits);
         assertEquals(1, value.hit(Match3Goals.Kind.EGG)); assertEquals("靠近鸡蛋", value.reason);
     }
-    @Test public void unknownCountsOrUnknownGoalKindsDoNotProduceATaskClaim() {
+    @Test public void unknownGoalKindsDoNotProduceATaskClaim() {
         Match3Position p = board("YRYHHH", "HYHHHH");
-        for (Match3Goals g : Arrays.asList(goals(2, Match3Goals.Kind.CHICK, -1), goals(2, Match3Goals.Kind.UNKNOWN, 3), Match3Goals.unknown(100))) {
+        for (Match3Goals g : Arrays.asList(goals(2, Match3Goals.Kind.UNKNOWN, 3), Match3Goals.unknown(100))) {
             Match3MoveValue value = Match3MoveRanker.rankedMoves(p, g).get(0);
             assertEquals(0, value.directUnits); assertFalse(value.allTargetsFinish); assertEquals("", value.reason);
         }
+    }
+    @Test public void unreadCountRetainsTaskPriorityWithoutInventingUnitsOrCompletion() {
+        Match3Position p=board("BYBHHH","IBIHHH","HHHHHH","YRYHHH","HYHHHH","HHHHHH");
+        Match3Goals g=goals(5,Match3Goals.Kind.CHICK,-1);
+        Match3MoveValue best=Match3MoveRanker.rankedMoves(p,g).get(0);
+        assertEquals(3,best.swap.fromRow);assertEquals(1,best.swap.fromCol);
+        assertEquals(0,best.directUnits);assertEquals(0,best.progressMilli);assertEquals(0,best.completedTargets);
+        assertFalse(best.allTargetsFinish);assertEquals(-1,g.remaining(Match3Goals.Kind.CHICK));
+        assertEquals("优先小鸡",best.reason);
+    }
+    @Test public void aLargeCookieIsOneRelatedObjectAndNeverAPredictedRemoval() {
+        String[] grid={"HHHKKH","YRYKKH","HYHHHH","HHHHHH","BBGBHH","HHBHHH"};
+        Match3Position p=board(grid);Match3Position.Cell[][] cells=new Match3Position.Cell[p.rows][p.cols];
+        for(int r=0;r<p.rows;r++)for(int c=0;c<p.cols;c++)
+            cells[r][c]=grid[r].charAt(c)=='K'?Match3Position.Cell.cookie(3):p.cell(r,c);
+        p=new Match3Position(cells);
+        Match3MoveValue best=Match3MoveRanker.rankedMoves(p,goals(5,Match3Goals.Kind.COOKIE,8)).get(0);
+        assertEquals(1,best.swap.fromRow);assertEquals(1,best.swap.fromCol);
+        assertEquals("靠近饼干",best.reason);assertEquals(1,best.hit(Match3Goals.Kind.COOKIE));
+        assertEquals(0,best.collected(Match3Goals.Kind.COOKIE));assertEquals(0,best.directUnits);
+        assertFalse(best.allTargetsFinish);assertEquals(-1,p.cell(0,3).layers);assertFalse(p.cell(0,3).swappable);
+    }
+    @Test public void twoHitQuadrantsDoNotTurnOneCookieIntoTwoTaskOpportunities() {
+        String[] grid={"HKKHHH","HKKHHH","YYRYHH","HHYHHH"};
+        Match3Position p=board(grid);Match3Position.Cell[][] cells=new Match3Position.Cell[p.rows][p.cols];
+        for(int r=0;r<p.rows;r++)for(int c=0;c<p.cols;c++)cells[r][c]=grid[r].charAt(c)=='K'?Match3Position.Cell.cookie(1):p.cell(r,c);
+        Match3MoveValue v=at(new Match3Position(cells),goals(5,Match3Goals.Kind.COOKIE,8),2,2,3,2);
+        assertEquals(1,v.hit(Match3Goals.Kind.COOKIE));assertEquals(0,v.directUnits);
     }
     @Test public void duplicateTaskFieldsCountOnlyOnceAndConflictingCopiesAreUnknown() {
         Match3Position p = board("YRYHHH", "HYHHHH");

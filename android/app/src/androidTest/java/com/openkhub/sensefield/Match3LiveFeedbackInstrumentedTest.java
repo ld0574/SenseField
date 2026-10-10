@@ -165,7 +165,7 @@ public final class Match3LiveFeedbackInstrumentedTest {
     @Test public void jarsAndCookiesInTheNewMissionCardsCannotBecomeChickGoals() throws Exception {
         String[] names={"screen-24-2290398043.jpg","screen-128-2290482080.jpg","screen-258-2290586993.jpg"};
         Match3Goals.Kind[][] kinds={{Match3Goals.Kind.SNOW,Match3Goals.Kind.UNKNOWN,Match3Goals.Kind.COIN},
-                {Match3Goals.Kind.UNKNOWN,Match3Goals.Kind.COIN},{Match3Goals.Kind.UNKNOWN,Match3Goals.Kind.SNOW}};
+                {Match3Goals.Kind.COOKIE,Match3Goals.Kind.COIN},{Match3Goals.Kind.UNKNOWN,Match3Goals.Kind.SNOW}};
         int[][] counts={{20,12,16},{18,32},{27,20}};int[] steps={26,20,27};
         for(int i=0;i<names.length;i++) {
             Bitmap frame=load(names[i]);Match3HudReader reader=new Match3HudReader(context());
@@ -177,7 +177,11 @@ public final class Match3LiveFeedbackInstrumentedTest {
                     assertEquals("Known artwork is distinct from an unverified jar/cookie rule",kinds[i][t],goals.targets.get(t).kind);
                     assertEquals(counts[i][t],goals.targets.get(t).remaining);
                 }
-                assertEquals(-1,goals.remaining(Match3Goals.Kind.CHICK));assertFalse(goals.fullyKnown());
+                assertEquals(-1,goals.remaining(Match3Goals.Kind.CHICK));
+                // Levels 51 and 53 contain jars, not cookies. Their rules and
+                // identities remain unverified; only the reviewed cookie is known.
+                if(i==1)assertTrue("All HUD identities/counts, not all mechanics, are known",goals.fullyKnown());
+                else assertFalse("Unverified jars must remain unknown",goals.fullyKnown());
             } finally {reader.close();frame.recycle();}
         }
     }

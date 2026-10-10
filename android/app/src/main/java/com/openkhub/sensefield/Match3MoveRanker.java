@@ -19,7 +19,7 @@ final class Match3MoveRanker {
         if (board == null || goals == null || goals.hudVerified && (goals.steps == 0 || goals.finished())) return moves;
         for (Match3Board.Swap swap : Match3Board.findSwaps(board)) moves.add(Match3MoveValue.evaluate(board, goals, swap,abstained));
         boolean knownTarget=false;
-        for(Match3Goals.Kind kind:Match3Goals.Kind.values())if(goals.remaining(kind)>0)knownTarget=true;
+        for(Match3Goals.Kind kind:Match3Goals.Kind.values())if(goals.active(kind))knownTarget=true;
         final boolean hasTarget=knownTarget;
         moves.sort((a, b) -> {
             int order = Boolean.compare(b.allTargetsFinish, a.allTargetsFinish);

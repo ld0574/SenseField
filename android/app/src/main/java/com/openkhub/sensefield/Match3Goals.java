@@ -11,7 +11,7 @@ final class Match3Goals {
         RED('R', "红狐狸"), BEAR('O', "棕熊"), CHICK('Y', "小鸡"),
         FROG('G', "青蛙"), HIPPO('B', "河马"), CAT('P', "紫猫"),
         COIN('\0', "银币"), SNOW('\0', "白色方块"), ICE('\0', "冰层"),
-        EGG('\0', "鸡蛋"), UNKNOWN('\0', "未确认目标");
+        EGG('\0', "鸡蛋"), COOKIE('\0', "饼干"), UNKNOWN('\0', "未确认目标");
         final char color;
         final String name;
         Kind(char color, String name) { this.color = color; this.name = name; }
@@ -96,6 +96,21 @@ final class Match3Goals {
             found = true; count = target.remaining;
         }
         return found ? count : -1;
+    }
+    /** An unread numeral does not erase an explicitly observed, unfinished task kind. */
+    boolean active(Kind kind) {
+        if(!hudVerified || kind==Kind.UNKNOWN)return false;
+        boolean unfinished=false,finished=false;
+        int known=-1;
+        for(Target target:targets)if(target.kind==kind) {
+            if(target.remaining>=0) {
+                if(known>=0 && known!=target.remaining)return false;
+                known=target.remaining;
+            }
+            if(target.completed || target.remaining==0)finished=true;
+            else unfinished=true;
+        }
+        return unfinished && !finished;
     }
     String key() {
         if (!hudVerified) return "unread";

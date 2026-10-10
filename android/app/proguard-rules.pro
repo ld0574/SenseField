@@ -187,6 +187,11 @@
 -keepclassmembers,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3MoveRanker {
     static java.util.List rankedMoves(com.openkhub.sensefield.Match3Position,com.openkhub.sensefield.Match3Goals);
 }
+-keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3MoveValue {
+    com.openkhub.sensefield.Match3Board$Swap swap;
+    int directUnits; int relevantHits; java.lang.String reason;
+    int collected(com.openkhub.sensefield.Match3Goals$Kind);
+}
 -keepclassmembers,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3HintValidity {
     static boolean valid(com.openkhub.sensefield.Match3Position,com.openkhub.sensefield.Match3Position,com.openkhub.sensefield.Match3MoveValue,java.util.List);
 }

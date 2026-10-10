@@ -63,13 +63,17 @@ final class Match3HudReader {
         }
         int sourceHeight=Math.min(geometry.top,MAX_HEIGHT*frame.getWidth()/WIDTH);
         if (sourceHeight<=0) { status="no_header"; return Match3Goals.unknown(at); }
-        int height=Math.max(1,sourceHeight*WIDTH/frame.getWidth());
+        int height=Math.max(1,(int)Math.ceil(sourceHeight*WIDTH/(double)frame.getWidth()));
         if(headerBitmap==null || headerBitmap.getHeight()!=height) {
             if(headerBitmap!=null)headerBitmap.recycle();
             headerBitmap=Bitmap.createBitmap(WIDTH,height,Bitmap.Config.ARGB_8888);headerCanvas=new Canvas(headerBitmap);
             working=new int[WIDTH*height];previous=null;
         }
-        headerCanvas.drawBitmap(frame,new Rect(0,0,frame.getWidth(),sourceHeight),new Rect(0,0,WIDTH,height),null);
+        // Preserve square pixels. Rounding both source and destination heights
+        // independently squeezed small numerals at widths such as 1220.
+        int saved=headerCanvas.save();
+        float scale=WIDTH/(float)frame.getWidth();headerCanvas.scale(scale,scale);
+        headerCanvas.drawBitmap(frame,0,0,null);headerCanvas.restoreToCount(saved);
         int[] pixels=working;headerBitmap.getPixels(pixels,0,WIDTH,0,0,WIDTH,height);
         if (height==previousHeight && Arrays.equals(previous,pixels) && cached!=null)
             return new Match3Goals(cached.level,cached.steps,cached.targets,cached.hudVerified,at);
@@ -92,7 +96,7 @@ final class Match3HudReader {
             if (box.bottom-top>=18 && box.bottom-top<=110)
                 candidates.add(new Box(box.left,top,box.right,box.bottom,box.area));
         }
-        Box step=null;float best=Float.POSITIVE_INFINITY;
+        Box step;
         List<Box> stepCandidates=new ArrayList<>(candidates);
         // Wide white digits can split the orange badge into separate components.
         // Join overlapping component envelopes only in the step area, then keep
@@ -112,13 +116,22 @@ final class Match3HudReader {
             }while(expanded);
             if(joined.width()<=100 && joined.height()<=110)stepCandidates.add(joined);
         }
-        for (Box box:stepCandidates) if (box.left>WIDTH*.70f) {
-            int[] patch=Match3VisualCatalog.patch(pixels,WIDTH,box.left,box.top,box.right,box.bottom);
-            for (Match3VisualCatalog.Pattern pattern:catalog.steps) {
-                float distance=pattern.difference(patch);
-                if (distance<best && distance<=.14f) { best=distance;step=box; }
+        // A difficulty label can split/cover the upper golden edge. Normalize
+        // from the observed width and lower edge using the approved badge's
+        // aspect; the original positive template AND independent digits still
+        // have to pass. No old HUD or counter is borrowed.
+        step=findStep(pixels,stepCandidates,true);
+        // Normal badges already have a positive match. Only allocate and
+        // compare normalized candidates when the current badge is obscured.
+        if(step==null)for(Box box:new ArrayList<>(stepCandidates))if(box.left>WIDTH*.70f)
+            for(Match3VisualCatalog.Pattern pattern:catalog.steps)if(pattern.aspect>0) {
+                int normalizedHeight=Math.round(box.width()/pattern.aspect);
+                int normalizedTop=box.bottom-normalizedHeight;
+                if(normalizedTop>=20 && normalizedHeight>=box.height() && normalizedHeight<=110)
+                    stepCandidates.add(new Box(box.left,normalizedTop,box.right,box.bottom,box.area));
             }
-        }
+        if(step==null)step=findStep(pixels,stepCandidates,true);
+        if(step==null)step=findStep(pixels,stepCandidates,false);
         if (step==null) { status="step_badge_unverified";return Match3Goals.unknown(at); }
         List<Box> boxes=new ArrayList<>();
         for (Box b:candidates) if (b.right<step.left && Math.abs(b.top-step.top)<36 && b.height()>=30 && b.height()<=75)
@@ -140,7 +153,10 @@ final class Match3HudReader {
             String identity=Match3VisualCatalog.recognize(catalog.goals,patch,.14f,.025f);
             Match3Goals.Kind kind=Match3Goals.Kind.UNKNOWN;
             if (identity!=null) try { kind=Match3Goals.Kind.valueOf(identity); } catch (IllegalArgumentException ignored) { }
-            Box counter=new Box((int)(b.left+b.width()*.53f),(int)(b.top+b.height()*.49f),b.right-3,b.bottom-3,0);
+            // Keep the numeral's antialias fringe inside the sampled field.
+            // The golden frame is not white; discarding three border pixels
+            // clipped valid bottom/right strokes after projection scaling.
+            Box counter=new Box((int)(b.left+b.width()*.53f),(int)(b.top+b.height()*.49f),b.right-1,b.bottom-1,0);
             boolean complete=kind!=Match3Goals.Kind.UNKNOWN && checkmark(pixels,counter);
             int count=complete?0:integer(pixels,counter,false);
             // Only the icon's upper area is compared: changing counter digits are
@@ -150,14 +166,34 @@ final class Match3HudReader {
                             b.top+Math.max(3,(int)(b.height()*.49f)))):"";
             targets.add(new Match3Goals.Target(i,kind,count,complete,visualId));
         }
-        Box number=new Box((int)(step.left+step.width()*.10f),(int)(step.top+step.height()*.20f),
-                (int)(step.right-step.width()*.10f),(int)(step.top+step.height()*.78f),0);
-        int remaining=integer(pixels,number,true);
+        int remaining=integer(pixels,stepNumber(step),true);
         status=remaining>=0?"observed":"steps_unread";
         int top=boxes.stream().mapToInt(b->b.top).min().orElse(0);
         Box levelBox=new Box(5,Math.max(0,top-12),Math.min(112,boxes.get(0).left-8),Math.min(height,top+24),0);
         int level=level(pixels,levelBox);
         return new Match3Goals(level,remaining,targets,true,at);
+    }
+    private static Box stepNumber(Box step) {
+        return new Box((int)(step.left+step.width()*.10f),(int)(step.top+step.height()*.20f),
+                (int)(step.right-step.width()*.10f),(int)(step.top+step.height()*.78f),0);
+    }
+    private Box findStep(int[] pixels,List<Box> candidates,boolean requireNumeral) {
+        Box step=null;float best=Float.POSITIVE_INFINITY;
+        for(Box box:candidates)if(box.left>WIDTH*.70f) {
+            int[] patch=Match3VisualCatalog.patch(pixels,WIDTH,box.left,box.top,box.right,box.bottom);
+            int numeral=-2;
+            for(Match3VisualCatalog.Pattern pattern:catalog.steps) {
+                float distance=pattern.difference(patch);
+                if(distance<best && distance<=.14f) {
+                    if(requireNumeral) {
+                        if(numeral==-2)numeral=integer(pixels,stepNumber(box),true);
+                        if(numeral<0)continue;
+                    }
+                    best=distance;step=box;
+                }
+            }
+        }
+        return step;
     }
     private boolean checkmark(int[] pixels,Box box) {
         int green=0;boolean[] mask=new boolean[box.width()*box.height()];
@@ -197,13 +233,17 @@ final class Match3HudReader {
         }
         List<Box> glyphs=new ArrayList<>();int tallest=0;
         for(Box b:components(mask,box.width(),box.height(),box.left,box.top)) {
+            // Resampling can widen one numeral beyond the accepted aspect.
+            // Discarding it would turn 47 into 4 (or 17 into 1). A substantial
+            // unrecognized glyph invalidates the whole number instead.
             if(b.height()>=7 && b.width()>=Math.max(3,b.height()*.25f)
                     && (b.right>=box.right || b.bottom>=box.bottom || step && (b.left<=box.left || b.top<=box.top))) return -1;
             if(b.left<=box.left || b.top<=box.top || b.right>=box.right || b.bottom>=box.bottom
-                    || b.height()<7 || b.width()>b.height()*.85f || b.area<5) continue;
+                    || b.height()<7 || b.area<5) continue;
+            if(b.width()>b.height()*.85f)return -1;
             glyphs.add(b);tallest=Math.max(tallest,b.height());
         }
-        final int maxHeight=tallest;glyphs.removeIf(b->b.height()<maxHeight*.72f);
+        for(Box b:glyphs)if(b.height()<tallest*.72f)return -1;
         glyphs.sort(Comparator.comparingInt(b->b.left));
         if(glyphs.isEmpty() || glyphs.size()>(step?3:4)) return -1;
         int result=0,lastRight=-1;

@@ -100,11 +100,14 @@ public final class Match3GoalVisionInstrumentedTest {
         bitmap=load("screen-47-2258502432.jpg");
         try(Match3Sampler sampler=new Match3Sampler(context(),new BoardGeometry(432,960,12,322,420,730,9,9))) {
             Match3Position p=sampler.samplePosition(bitmap);
-            assertEquals(Match3Position.Kind.SURFACE,p.cell(5,5).kind);assertFalse(p.cell(5,5).swappable);
+            assertEquals(Match3Position.Kind.COOKIE,p.cell(5,5).kind);assertFalse(p.cell(5,5).swappable);
+            assertEquals(-1,p.cell(5,5).layers);
             Match3Goals goal=new Match3HudReader(context()).read(bitmap,header(bitmap),100);
             assertEquals(43,goal.level);
-            assertEquals(Match3Goals.Kind.UNKNOWN,goal.targets.get(0).kind);
-            assertFalse(goal.fullyKnown());assertFalse(goal.finished());
+            assertEquals(Match3Goals.Kind.COOKIE,goal.targets.get(0).kind);
+            assertFalse(goal.finished());
+            for(Match3MoveValue value:Match3MoveRanker.rankedMoves(p,goal))
+                assertEquals("Known cookie identity must not invent a removal rule",0,value.collected(Match3Goals.Kind.COOKIE));
         } finally { bitmap.recycle(); }
     }
     @Test public void aRealLabelledBoardPrefersTheMoveThatTouchesSnowAndAnEggOverAnUnrelatedTopTriple() throws Exception {

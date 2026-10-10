@@ -16,6 +16,8 @@ import java.util.Map;
 /** 消消乐识别采样器：Bitmap＋标定 → 颜色矩阵；含特殊棋子模板匹配。
  *  Activity（截图式）与 Match3LiveService（实时式）共用，保证两条链路行为一致。 */
 final class Match3Sampler implements AutoCloseable {
+    private int[][] largeObjectPatches;
+    private boolean[] largeObjectMatches;
     static final char UNKNOWN = '.';
     /** 确认的空格（格心与四角同色）。与 UNKNOWN 分开，否则「没棋子」和「认不出」在播报里同一个词。 */
     static final char EMPTY_CELL = ' ';
@@ -172,6 +174,7 @@ final class Match3Sampler implements AutoCloseable {
                 directAnimals++;
             }
         }
+        recognizeLargeObjects(g,cells,comparable);
         // Freeze direct-catalog + plain-sprite evidence before the fallback pass.
         // Inferred animals and uncertain covers cannot seed or confirm another candidate.
         if(!sameReferences(lastTrusted,trusted)) { lastTrusted=trusted;trustedRevision++; }
@@ -199,6 +202,37 @@ final class Match3Sampler implements AutoCloseable {
         }
         frameMotion=motion.accept(faces,at);
         return new Match3Position(cells);
+    }
+    private void recognizeLargeObjects(BoardGeometry g,Match3Position.Cell[][] cells,boolean[][] comparable) {
+        if(observations.largeObjects.isEmpty())return;
+        if(largeObjectPatches==null) {
+            largeObjectPatches=new int[g.rows*g.cols][];largeObjectMatches=new boolean[g.rows*g.cols];
+        }
+        for(int r=0;r+1<g.rows;r++)for(int c=0;c+1<g.cols;c++) {
+            boolean eligible=true;
+            for(int rr=r;rr<=r+1;rr++)for(int cc=c;cc<=c+1;cc++) {
+                Match3Position.Kind kind=cells[rr][cc].kind;
+                if(kind!=Match3Position.Kind.UNKNOWN && kind!=Match3Position.Kind.SURFACE)eligible=false;
+            }
+            if(!eligible)continue;
+            int anchor=r*g.cols+c;
+            // Reuse this frame's complete per-cell envelopes. No new capture,
+            // native pixel reads, learned prototype or partial-face permission.
+            int[] patch=new int[256];
+            for(int y=0;y<16;y++)for(int x=0;x<16;x++) {
+                int[] envelope=observationCache[r+y/8][c+x/8].envelope;
+                patch[y*16+x]=envelope[(2*(y%8)+1)*16+2*(x%8)+1];
+            }
+            if(!java.util.Arrays.equals(largeObjectPatches[anchor],patch)) {
+                largeObjectPatches[anchor]=patch;
+                largeObjectMatches[anchor]="cookie".equals(Match3VisualCatalog.recognize(observations.largeObjects,patch,.12f,.025f));
+            }
+            if(!largeObjectMatches[anchor])continue;
+            Match3Position.Cell object=Match3Position.Cell.cookie(anchor);
+            for(int rr=r;rr<=r+1;rr++)for(int cc=c;cc<=c+1;cc++) {
+                cells[rr][cc]=object;comparable[rr][cc]=false;
+            }
+        }
     }
     private static boolean sameReferences(List<Match3AnimalAppearance.Reference> a,
                                           List<Match3AnimalAppearance.Reference> b) {
@@ -675,13 +709,23 @@ final class Match3Sampler implements AutoCloseable {
     static BoardGeometry verifiedGeometry(Bitmap frame, int[] pixels) {
         int cols = detectGridAxis(frame, pixels, false);
         int rows = detectGridAxis(frame, pixels, true);
-        if (rows < 6 || cols < 6) return null;
-        float cellWidth = (pixels[2] - pixels[0]) / (float) cols;
-        float cellHeight = (pixels[3] - pixels[1]) / (float) rows;
-        if (Math.abs(cellWidth - cellHeight) > 2 * Math.max(1,
-                Math.min(frame.getWidth(), frame.getHeight()) / 160)) return null;
+        if(!squareGrid(frame,pixels,rows,cols)) {
+            // Large objects and empty areas dominate the average brightness.
+            // Their contents need not share a period, while repeated colour
+            // boundaries still provide independent horizontal/vertical evidence.
+            cols=detectGridAxis(frame,pixels,false,true);
+            rows=detectGridAxis(frame,pixels,true,true);
+        }
+        if(!squareGrid(frame,pixels,rows,cols))return null;
         return new BoardGeometry(frame.getWidth(), frame.getHeight(), pixels[0], pixels[1],
                 pixels[2], pixels[3], rows, cols);
+    }
+    private static boolean squareGrid(Bitmap frame,int[] pixels,int rows,int cols) {
+        if(rows<6 || cols<6)return false;
+        float cellWidth = (pixels[2] - pixels[0]) / (float) cols;
+        float cellHeight = (pixels[3] - pixels[1]) / (float) rows;
+        return Math.abs(cellWidth - cellHeight) <= 2 * Math.max(1,
+                Math.min(frame.getWidth(), frame.getHeight()) / 160);
     }
 
     private static int[] autoDetectPixels(Bitmap frame) {
@@ -829,11 +873,16 @@ final class Match3Sampler implements AutoCloseable {
     }
 
     private static int detectGridAxis(Bitmap frame, int[] box, boolean vertical) {
+        return detectGridAxis(frame,box,vertical,false);
+    }
+    private static int detectGridAxis(Bitmap frame,int[] box,boolean vertical,boolean edges) {
         int x0 = box[0], y0 = box[1], cw = box[2] - x0, ch = box[3] - y0;
         if (x0 < 0 || y0 < 0 || box[2] > frame.getWidth() || box[3] > frame.getHeight()
                 || cw < 60 || ch < 60) return -1;
         int length = vertical ? ch : cw, cross = vertical ? cw : ch;
-        int stride = Math.max(1, length / 240), n = length / stride;
+        // Narrow cell boundaries alias when a sparse board's edge signal is
+        // decimated. Keep their spatial samples; brightness keeps its old path.
+        int stride = edges?1:Math.max(1, length / 240), n = length / stride;
         if (n < 30) return -1;
         double[] profile = new double[n];
         int[] line = new int[length];
@@ -845,7 +894,11 @@ final class Match3Sampler implements AutoCloseable {
             samples++;
             for (int c = 0; c < n; c++) {
                 int rgb = line[c * stride];
-                profile[c] += Math.max(Color.red(rgb), Math.max(Color.green(rgb), Color.blue(rgb))) / 255.0;
+                if(edges) {
+                    int next=line[Math.min(length-1,c*stride+stride)];
+                    profile[c]+=(Math.abs(Color.red(rgb)-Color.red(next))+Math.abs(Color.green(rgb)-Color.green(next))
+                            +Math.abs(Color.blue(rgb)-Color.blue(next)))/765.0;
+                } else profile[c] += Math.max(Color.red(rgb), Math.max(Color.green(rgb), Color.blue(rgb))) / 255.0;
             }
         }
         double mean = 0, variance = 0;
@@ -862,7 +915,7 @@ final class Match3Sampler implements AutoCloseable {
             if (score > best) { best = score; bestD = d; }
         }
         int count = bestD < 0 ? -1 : (int) Math.round(n / (double) bestD);
-        return count >= 6 && count <= 9 ? count : -1;
+        return count >= 6 && count <= 9 && (!edges || best>0) ? count : -1;
     }
 
     /* ---------- 特殊棋子模板存取（app 私有目录 special_templates/） ---------- */

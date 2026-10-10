@@ -108,15 +108,19 @@ public final class Match3GoalReplayInstrumentedTest {
             assertEquals(0,changed.getJSONObject("goal_state").getJSONArray("targets").getJSONObject(1).getInt("remaining"));
             final long latestRevision=changed.getJSONObject("hint").getLong("revision");
             scenario.onActivity(a->show(a,unknown));
-            await("unknown next task has fresh basic guidance",20000,()->{
+            await("next task retires the old snow claim and has fresh guidance",20000,()->{
                 JSONObject s=state(),h=s.optJSONObject("hint"),g=s.optJSONObject("goal_state");
                 return s.optBoolean("highlight_visible") && h!=null && h.optLong("revision")>latestRevision
-                        && h.optString("reason").isEmpty() && g!=null && g.optBoolean("hud_verified")
-                        && g.optJSONArray("targets")!=null && g.getJSONArray("targets").length()==1;
+                        && g!=null && g.optBoolean("hud_verified") && g.optJSONArray("targets")!=null
+                        && g.getJSONArray("targets").length()==1
+                        && "COOKIE".equals(g.getJSONArray("targets").getJSONObject(0).getString("kind"));
             });
             JSONObject next=state();checkpoints.put(next);
-            assertEquals("UNKNOWN",next.getJSONObject("goal_state").getJSONArray("targets").getJSONObject(0).getString("kind"));
-            assertTrue(next.getJSONObject("hint").getString("ranking_scope").contains("goal_unread"));
+            assertEquals("COOKIE",next.getJSONObject("goal_state").getJSONArray("targets").getJSONObject(0).getString("kind"));
+            String nextReason=next.getJSONObject("hint").getString("reason");
+            assertTrue(nextReason.isEmpty() || "靠近饼干".equals(nextReason));
+            assertTrue(next.getJSONObject("hint").getString("ranking_scope").contains("direct_units=0"));
+            assertFalse(next.getJSONObject("goal_state").getJSONArray("targets").getJSONObject(0).getBoolean("rule_supported"));
             try(FileOutputStream out=new FileOutputStream(new File(directory,"goal-replay.json"))) {
                 out.write(new JSONObject().put("source","diagnostic_stills_actual_projection").put("player_action_evidence",false)
                         .put("acoustic_evidence",false).put("checkpoints",checkpoints).toString(2).getBytes(StandardCharsets.UTF_8));
