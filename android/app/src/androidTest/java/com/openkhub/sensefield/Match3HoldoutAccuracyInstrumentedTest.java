@@ -40,6 +40,11 @@ import java.nio.file.Files;
  */
 @RunWith(AndroidJUnit4.class)
 public final class Match3HoldoutAccuracyInstrumentedTest {
+    static String sha256(byte[] bytes) throws Exception {
+        byte[] hash=java.security.MessageDigest.getInstance("SHA-256").digest(bytes);
+        StringBuilder out=new StringBuilder();for(byte value:hash)out.append(String.format(java.util.Locale.ROOT,"%02x",value&255));
+        return out.toString();
+    }
 
     @Test public void realEngineLabelsHoldoutCellsForScoring() throws Exception {
         String hardware = android.os.Build.HARDWARE;
@@ -50,19 +55,34 @@ public final class Match3HoldoutAccuracyInstrumentedTest {
         File manifestFile = new File(dir, "manifest.json");
         Assume.assumeTrue("push a holdout manifest to " + dir, manifestFile.isFile());
 
-        JSONObject manifest = new JSONObject(new String(Files.readAllBytes(manifestFile.toPath()), StandardCharsets.UTF_8));
+        byte[] manifestBytes=Files.readAllBytes(manifestFile.toPath());
+        JSONObject manifest = new JSONObject(new String(manifestBytes, StandardCharsets.UTF_8));
         JSONArray frames = manifest.getJSONArray("frames");
         JSONArray samples = new JSONArray();
         JSONObject boards = new JSONObject();
         JSONObject goalCards = new JSONObject();
+        JSONArray goalSamples=new JSONArray(),objects=new JSONArray(),rankings=new JSONArray();
+        JSONArray frameResults=new JSONArray();
+        JSONObject frameHashes=new JSONObject();
         Match3HudReader hud = new Match3HudReader(context);
+        boolean strict=Boolean.parseBoolean(InstrumentationRegistry.getArguments().getString("match3Strict","false"));
         for (int f = 0; f < frames.length(); f++) {
             JSONObject entry = frames.getJSONObject(f);
             String name = entry.getString("file");
-            Bitmap frame = BitmapFactory.decodeFile(new File(dir, name).getAbsolutePath());
+            File input=new File(dir,name);
+            assertTrue("frame stays in holdout",input.getCanonicalPath().startsWith(dir.getCanonicalPath()+File.separator));
+            byte[] frameBytes=Files.readAllBytes(input.toPath());
+            String hash=sha256(frameBytes);frameHashes.put(name,hash);
+            if(entry.has("sha256"))assertEquals("frozen frame bytes: "+name,entry.getString("sha256"),hash);
+            Bitmap frame = BitmapFactory.decodeByteArray(frameBytes,0,frameBytes.length);
             assertNotNull("decodable frame " + name, frame);
             BoardGeometry geometry = geometryFor(entry, frame);
-            if (geometry == null) { frame.recycle(); continue; }
+            if (geometry == null) {
+                frameResults.put(new JSONObject().put("file",name).put("status","no_geometry"));
+                frame.recycle();assertFalse("expected board geometry: "+name,strict && !entry.optBoolean("no_board",false));continue;
+            }
+            assertFalse("non-board fixture was detected as a board",entry.optBoolean("no_board",false));
+            frameResults.put(new JSONObject().put("file",name).put("status","board").put("rows",geometry.rows).put("cols",geometry.cols));
             try (Match3Sampler sampler = new Match3Sampler(context, geometry)) {
                 Match3Position board = sampler.samplePosition(frame);
                 // Export the board's pixel geometry so clear, full-resolution cell
@@ -73,7 +93,18 @@ public final class Match3HoldoutAccuracyInstrumentedTest {
                         .put("rows", board.rows).put("cols", board.cols));
                 // Diagnostic: export each HUD goal-card icon patch so a goal-icon
                 // template (e.g. ice-flower / honey) can be captured and labeled.
-                hud.read(frame, geometry, 0L);
+                Match3Goals goals=hud.read(frame, geometry, 0L);
+                for(Match3Goals.Target target:goals.targets)goalSamples.put(new JSONObject()
+                        .put("id",name+":goal"+target.slot).put("kind",target.kind.name())
+                        .put("remaining",target.remaining).put("completed",target.completed));
+                JSONArray candidates=new JSONArray();
+                java.util.List<Match3MoveValue> moves=Match3MoveRanker.rankedMoves(board,goals);
+                for(Match3MoveValue move:moves)candidates.put(new JSONObject()
+                        .put("from_row",move.swap.fromRow).put("from_col",move.swap.fromCol)
+                        .put("to_row",move.swap.toRow).put("to_col",move.swap.toCol)
+                        .put("reason",move.reason).put("direct_units",move.directUnits));
+                rankings.put(new JSONObject().put("id",name).put("candidates",candidates)
+                        .put("hud_verified",goals.hudVerified).put("steps",goals.steps));
                 int[][] gp = hud.diagnosticGoalPatches();
                 if (gp != null) {
                     String[] gk = hud.diagnosticGoalKinds();
@@ -95,7 +126,7 @@ public final class Match3HoldoutAccuracyInstrumentedTest {
                             .put("kind", cell.kind.name())
                             .put("color", cell.color == '\0' ? "" : String.valueOf(cell.color))
                             .put("swap_permission", cell.swapPermission.name())
-                            .put("ice", cell.iceLayers > 0 ? 1 : 0);
+                            .put("ice", cell.iceLayers).put("object_id",cell.objectId);
                     int[] envelope = sampler.elementEnvelope(r, c);
                     if (envelope != null) {
                         JSONArray pixels = new JSONArray();
@@ -112,13 +143,37 @@ public final class Match3HoldoutAccuracyInstrumentedTest {
                     }
                     samples.put(sample);
                 }
+                // Export every 2x2 envelope, not only recognized cookies. Human
+                // review supplies object identity; inference is never the truth.
+                for(int r=0;r+1<board.rows;r++)for(int c=0;c+1<board.cols;c++) {
+                    boolean eligible=true;
+                    for(int rr=r;rr<=r+1;rr++)for(int cc=c;cc<=c+1;cc++) {
+                        Match3Position.Kind kind=board.cell(rr,cc).kind;
+                        if(kind!=Match3Position.Kind.UNKNOWN && kind!=Match3Position.Kind.SURFACE && kind!=Match3Position.Kind.COOKIE)eligible=false;
+                    }
+                    if(!eligible)continue;
+                    JSONArray patch=new JSONArray();
+                    for(int y=0;y<16;y++)for(int x=0;x<16;x++)patch.put(
+                            sampler.elementEnvelope(r+y/8,c+x/8)[(2*(y%8)+1)*16+2*(x%8)+1]);
+                    objects.put(new JSONObject().put("id",name+":object:r"+r+"c"+c)
+                            .put("frame",name).put("row",r).put("col",c).put("pixels",patch));
+                }
             } finally {
                 frame.recycle();
             }
         }
 
+        hud.close();Match3VisualCatalog catalog=Match3VisualCatalog.get(context);
         JSONObject out = new JSONObject()
-                .put("catalog_id", Match3VisualCatalog.get(context).id)
+                .put("manifest_sha256",sha256(manifestBytes)).put("frame_sha256",frameHashes)
+                .put("independent",manifest.optBoolean("independent",false)).put("frozen",manifest.optBoolean("frozen",false))
+                .put("source_groups",manifest.optJSONArray("source_groups")!=null?manifest.getJSONArray("source_groups"):
+                        new JSONArray().put(manifest.optString("session_id","")))
+                .put("catalog_id", catalog.id).put("gallery_id",catalog.galleryId)
+                .put("gallery_sha256",catalog.gallerySha256).put("gallery_status",catalog.galleryStatus)
+                .put("gallery_goals_pending_review",catalog.galleryGoalsPendingReview)
+                .put("frame_results",frameResults).put("goal_samples",goalSamples)
+                .put("large_objects",objects).put("rankings",rankings)
                 .put("boards", boards)
                 .put("goal_cards", goalCards)
                 .put("samples", samples);

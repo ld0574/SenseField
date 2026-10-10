@@ -73,8 +73,14 @@ public final class Match3ElementEvidenceInstrumentedTest {
             }
         } finally {frame.recycle();}
     }
-    @Test public void fixedIdentityAndPlainEnvelopeAreSeparateAndUncertainCoversCannotSeedReferences() {
-        Match3VisualCatalog catalog=Match3VisualCatalog.get(context());int verified=0;
+    @Test public void fixedIdentityAndPlainEnvelopeAreSeparateAndUncertainCoversCannotSeedReferences() throws Exception {
+        // This invariant's truth is the reviewed fixed catalog. Experimental
+        // sidecar labels are evaluated against human truth by the holdout gate.
+        Match3VisualCatalog catalog;
+        try(InputStream in=context().getAssets().open("match3-fixed-ui-v1.json")) {
+            catalog=Match3VisualCatalog.withGallery(new JSONObject(new String(in.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8)),null);
+        }
+        int verified=0;
         for(Match3VisualCatalog.Pattern pattern:catalog.animals) {
             Match3VisualCatalog.CellCache plain=new Match3VisualCatalog.CellCache();plain.patch=pattern.pixels.clone();plain.envelope=pattern.pixels.clone();
             Match3Position.Cell animal=catalog.animal(plain);

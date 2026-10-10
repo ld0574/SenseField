@@ -1,5 +1,7 @@
 import importlib.util
+import json
 from pathlib import Path
+import tempfile
 import unittest
 
 path = Path(__file__).resolve().parents[1] / "scripts/verify_match3_regression.py"
@@ -33,6 +35,22 @@ class Match3GateTests(unittest.TestCase):
             with self.subTest(serial=serial), self.assertRaises(ValueError):
                 gate.assert_emulator(serial)
         gate.assert_emulator("emulator-5554")
+
+    def test_release_gate_cannot_skip_hud_truth_or_use_unreviewed_labels(self):
+        with tempfile.TemporaryDirectory() as directory:
+            holdout=Path(directory)/"holdout";holdout.mkdir()
+            (holdout/"manifest.json").write_text(json.dumps({"independent":True,"frozen":True,
+                "gates":{"min_coverage":.9},"session_id":"independent-session","frames":[{"file":"a.png"}]}))
+            cell={"id":"a.png:r0c0","kind":"COIN","swappable":False,"reviewed":True}
+            cases=[({"samples":[cell]},"explicit human HUD truth"),
+                   ({"samples":[{**cell,"reviewed":False}],"goal_samples":[]},"explicit human review"),
+                   ({"samples":[cell],"goal_samples":[{"id":"a.png:goal0","kind":"COIN","reviewed":True}]},"remaining count and completion state")]
+            for i,(truth,reason) in enumerate(cases):
+                (holdout/"labels.json").write_text(json.dumps(truth));output=Path(directory)/str(i)
+                self.assertEqual(1,gate.main(["--mode","full","--holdout",str(holdout),"--output",str(output)]))
+                report=json.loads((output/"report.json").read_text())
+                self.assertFalse(report["passed"]);self.assertIn(reason,report["error"])
+                self.assertEqual([],report["steps"])
 
 
 if __name__ == "__main__":

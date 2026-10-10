@@ -6,24 +6,46 @@ import java.util.List;
 
 /** Bounded diagnostic families. Their prototypes never enter the recognition/rule catalog. */
 final class Match3UnknownElements {
+    private final boolean allAppearances;
+    Match3UnknownElements() { this(false); }
+    Match3UnknownElements(boolean allAppearances) { this.allAppearances=allAppearances; }
     static final int MAX_FAMILIES=24, MAX_SAMPLES_PER_FAMILY=2, STABLE_SAMPLES=3;
     static final long SAMPLE_GAP_MS=10000, FRESH_MS=2400;
     static final class Observation {
         final Match3Position.Cell cell;
         final int[] patch;
         final Match3AnimalAppearance.Body body;
+        private Boolean detailed;
         Observation(Match3Position.Cell cell,int[] patch) {
             this.cell=cell;this.patch=patch.clone();body=new Match3AnimalAppearance.Body(patch);
         }
+        Observation(Match3Position.Cell cell,int[] patch,Match3AnimalAppearance.Body body) {
+            this.cell=cell;this.patch=patch.clone();this.body=body;
+        }
         boolean sameRuleState(Observation other) { return cell.equals(other.cell); }
+        boolean detailed() {
+            if(detailed==null)detailed=new Match3AnimalAppearance.Face('.',patch).detailed;
+            return detailed;
+        }
     }
     static final class Sample {
+        private final Family family;
+        private final int previousSamples,previousDetail;
+        private final long previousAt;
         final String familyId;
         final int sampleNumber,row,col;
         final long at;
         final Observation observation;
-        Sample(Family family,int row,int col,long at,Observation observation) {
+        Sample(Family family,int row,int col,long at,Observation observation,int detail) {
+            this.family=family;previousSamples=family.samples;previousDetail=family.detail;previousAt=family.sampledAt;
+            family.samples++;family.detail=detail;family.sampledAt=at;
             familyId=family.id;sampleNumber=family.samples;this.row=row;this.col=col;this.at=at;this.observation=observation;
+        }
+        /** Roll back only this reservation, so a busy writer can retry on a fresh frame. */
+        void rejected() {
+            if(family.samples==sampleNumber && family.sampledAt==at) {
+                family.samples=previousSamples;family.detail=previousDetail;family.sampledAt=previousAt;
+            }
         }
         String filename() { return familyId+"-"+sampleNumber+".png"; }
         String reason() { return observation.cell.kind==Match3Position.Kind.ANIMAL?"cover_unverified":"identity_or_rule_unverified"; }
@@ -78,14 +100,14 @@ final class Match3UnknownElements {
         List<Sample> samples=new ArrayList<>();
         for(int r=0;r<rows;r++)for(int c=0;c<cols;c++) {
             Observation current=observations[r][c],anchor=anchors[r][c];
-            if(current==null || !needsReview(current.cell)) {
+            if(current==null || !allAppearances && !needsReview(current.cell)) {
                 anchors[r][c]=null;counts[r][c]=0;assigned[r][c]=null;assignedObservation[r][c]=null;continue;
             }
             if(anchor==null || !current.sameRuleState(anchor) || current.body.difference(anchor.body)>Match3AnimalAppearance.MAXIMUM) {
                 anchors[r][c]=current;counts[r][c]=1;assigned[r][c]=null;assignedObservation[r][c]=null;continue;
             }
             counts[r][c]=Math.min(STABLE_SAMPLES,counts[r][c]+1);
-            if(counts[r][c]<STABLE_SAMPLES || !new Match3AnimalAppearance.Face('.',current.patch).detailed)continue;
+            if(counts[r][c]<STABLE_SAMPLES || !current.detailed())continue;
             Family family=assigned[r][c];Observation cached=assignedObservation[r][c];
             // A fixed catalog and exactly unchanged pixels have the same result.
             // New families, new rule states, movement and changed pixels all recheck.
@@ -98,8 +120,7 @@ final class Match3UnknownElements {
             int detail=current.body.detail();
             if(family.samples==0 || family.samples<MAX_SAMPLES_PER_FAMILY
                     && at-family.sampledAt>=SAMPLE_GAP_MS && detail>family.detail) {
-                family.samples++;family.detail=detail;family.sampledAt=at;
-                samples.add(new Sample(family,r,c,at,current));
+                samples.add(new Sample(family,r,c,at,current,detail));
             }
         }
         return samples;

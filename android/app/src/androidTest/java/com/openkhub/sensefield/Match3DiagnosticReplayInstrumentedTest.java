@@ -135,14 +135,14 @@ public final class Match3DiagnosticReplayInstrumentedTest {
             assertTrue("obstacles are explicitly excluded", first.getInt("excluded_cells") > 0);
             assertTrue("actual window is attached", first.getBoolean("highlight_visible"));
             JSONObject hint = first.getJSONObject("hint");
-            // Independently read from the screenshot: purple/red at (3,7)/(4,7)
-            // makes row 4 columns 5..7 purple, two cells above the cookie area.
-            // The previous upper-left yellow run was a valid basic exchange,
-            // but the now-read COOKIE24 task favours this preparation instead.
+            // Visible red/purple at (3,6)/(3,7) makes column 7 rows 3..5
+            // red, directly above the cookie at (6,7). Gallery evidence admits
+            // this ordinary red appearance; it is closer than the earlier
+            // purple row-4 run from (3,7)/(4,7). Removal remains unverified.
             assertEquals("COOKIE",first.getJSONObject("goal_state").getJSONArray("targets").getJSONObject(0).getString("kind"));
             assertEquals(24,first.getJSONObject("goal_state").getJSONArray("targets").getJSONObject(0).getInt("remaining"));
-            assertEquals(first.toString(),3, hint.getInt("from_row")); assertEquals(7, hint.getInt("from_col"));
-            assertEquals(4, hint.getInt("to_row")); assertEquals(7, hint.getInt("to_col"));
+            assertEquals(first.toString(),3, hint.getInt("from_row")); assertEquals(6, hint.getInt("from_col"));
+            assertEquals(3, hint.getInt("to_row")); assertEquals(7, hint.getInt("to_col"));
             assertEquals("靠近饼干",hint.getString("reason"));
             assertTrue(hint.getString("ranking_scope").contains("direct_units=0"));
             File events = new File(DiagnosticRecorder.current.directory, "events.jsonl");

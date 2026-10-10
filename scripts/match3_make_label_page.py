@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate a self-contained HTML labeling page for Match3 cell families.
 
-Two dropdowns per element: identity (what it looks like) and mechanic archetype
+Three independent controls per element: identity, mechanic archetype, and swap permission.
 (what clearing does). Identity scales by data (gallery); the archetype is one of a
 small fixed set the engine hand-codes once. Archetype auto-defaults from identity.
 Renders crops at full source resolution. Exports {"labels":{...},"archetypes":{...}}.
@@ -24,7 +24,7 @@ PATCH = 16
 OPTIONS = [
     ("O", "棕熊 O"), ("R", "狐狸 R"), ("B", "河马 B"), ("Y", "小鸡 Y"), ("G", "青蛙 G"), ("P", "紫猫 P"),
     ("coin", "银币"), ("cookie", "饼干"), ("snow", "雪块"), ("iceflower", "冰花(消完变雪)"),
-    ("ice", "透明冰(动物压上)"), ("honey", "蜜罐"), ("egg", "蛋/鸡窝"), ("empty", "空/背景/天空"),
+    ("ice", "裸冰单层背景(不含动物)"), ("honey", "蜜罐"), ("egg", "蛋/鸡窝"), ("empty", "空/背景/天空"),
     ("special", "特殊(彩虹等)"), ("unknown", "不认识/障碍"),
 ]
 # The bounded set of clearing mechanics; each is hand-coded once in the engine.
@@ -89,7 +89,7 @@ button{font-size:15px;padding:8px 14px;margin-right:8px;cursor:pointer}
 .meta{font-size:12px;color:#888;margin:4px 0} select{font-size:13px;width:100%;padding:4px;margin-top:3px}
 .lab{font-size:11px;color:#666;text-align:left;margin-top:4px} #out{width:100%;height:90px;margin-top:8px;font-family:monospace;display:none}
 </style></head><body>
-<h1>消消乐元素标注 — 每个元素选①长相 ②机制（机制已按长相自动预填，改错的即可）</h1>
+<h1>消消乐元素标注 — 核对长相、交换权限和机制，然后勾选已审阅</h1>
 <div class="bar">
 <button onclick="exportLabels()">导出标注 JSON（下载 cell-labels.json）</button>
 <button onclick="document.getElementById('out').style.display='block'">显示 JSON 以便复制</button>
@@ -105,15 +105,27 @@ FAMILIES.forEach(f=>{
   const arch=f.archetype||DEFAULT_ARCH[f.draft]||'unknown';
   card.innerHTML=`<img src="${f.img}"><div class="meta">${f.family} · ${f.count}格<br>引擎:${f.engine}</div>`+
     `<div class="lab">①长相</div><select class="id" data-family="${f.family}">${opts(OPTIONS,f.draft)}</select>`+
-    `<div class="lab">②机制</div><select class="arch" data-family="${f.family}">${opts(ARCHETYPES,arch)}</select>`;
+    `<div class="lab">②机制</div><select class="arch" data-family="${f.family}">${opts(ARCHETYPES,arch)}</select>`+
+    `<div class="lab">③普通动物交换权限</div><select class="swap" data-family="${f.family}">${opts([['unknown','未确认'],['yes','允许'],['no','禁止']],f.swappable===true?'yes':f.swappable===false?'no':'unknown')}</select>`+
+    `<label><input type="checkbox" class="reviewed" data-family="${f.family}" ${f.reviewed?'checked':''}>已逐项审阅</label>`;
   const idSel=card.querySelector('.id'), archSel=card.querySelector('.arch');
-  idSel.addEventListener('change',()=>{ if(DEFAULT_ARCH[idSel.value]) archSel.value=DEFAULT_ARCH[idSel.value]; });
+  idSel.addEventListener('change',()=>{ if(DEFAULT_ARCH[idSel.value]) archSel.value=DEFAULT_ARCH[idSel.value]; card.querySelector('.swap').value='unknown'; });
+  card.querySelectorAll('select').forEach(s=>s.addEventListener('change',()=>card.querySelector('.reviewed').checked=false));
   grid.appendChild(card);
+  if(f.members){
+    const details=document.createElement('details'),summary=document.createElement('summary');
+    summary.textContent='核对全部成员 / 复制拆簇 source 键';details.appendChild(summary);
+    f.members.forEach(m=>{const member=document.createElement('div'),img=document.createElement('img'),source=document.createElement('code');
+      img.src=m.img;source.textContent=m.source;source.style.cssText='display:block;overflow-wrap:anywhere;font-size:11px';
+      member.append(img,source);details.appendChild(member);});card.appendChild(details);
+  }
 });
-function collect(){const labels={},arch={};
+function collect(){const labels={},arch={},swap={},reviewed={};
   document.querySelectorAll('select.id').forEach(s=>labels[s.dataset.family]=s.value);
   document.querySelectorAll('select.arch').forEach(s=>arch[s.dataset.family]=s.value);
-  return {labels:labels,archetypes:arch};}
+  document.querySelectorAll('select.swap').forEach(s=>swap[s.dataset.family]=s.value==='unknown'?null:s.value==='yes');
+  document.querySelectorAll('input.reviewed').forEach(s=>reviewed[s.dataset.family]=s.checked);
+  return {labels:labels,archetypes:arch,swappable:swap,reviewed:reviewed};}
 function exportLabels(){
   const data=JSON.stringify(collect(),null,2);
   document.getElementById('out').value=data;
@@ -145,7 +157,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     envelopes = {s["id"]: s["envelope"] for s in data["samples"] if "envelope" in s}
     cropper = Cropper(args.frames_dir, data.get("boards", {}))
     families = json.loads(args.families.read_text(encoding="utf-8"))["families"]
-    draft = json.loads(args.draft.read_text(encoding="utf-8")).get("labels", {}) if args.draft else {}
+    review = json.loads(args.draft.read_text(encoding="utf-8")) if args.draft else {}
+    draft = review.get("labels", {})
     cards = []
     for family in families:
         image = None
@@ -160,7 +173,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             image = _envelope_image(envelopes[rep]).resize((args.tile, args.tile), Image.NEAREST)
         engine = f"{family['engine_kind']}{family['engine_color']}/{family['engine_swap_permission']}"
         cards.append({"family": family["family"], "count": family["members"], "engine": engine,
-                      "img": _png_data_uri(image), "draft": draft.get(family["family"], "unknown")})
+                      "img": _png_data_uri(image), "draft": draft.get(family["family"], "unknown"),
+                      "archetype": review.get("archetypes", {}).get(family["family"]),
+                      "swappable": review.get("swappable", {}).get(family["family"]),
+                      "reviewed": review.get("reviewed", {}).get(family["family"], False)})
     args.out.write_text(render(cards), encoding="utf-8")
     print(f"wrote {args.out} ({len(cards)} families, full-res crops: {args.frames_dir is not None})")
     return 0

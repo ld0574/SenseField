@@ -25,7 +25,31 @@ OBSTACLES = {
 }
 
 
-def record(code: str) -> dict:
+DEFAULT_ARCH = {**{code: "ordinary" for code in ANIMALS}, "coin": "single", "snow": "single",
+                "honey": "single", "iceflower": "multistage", "cookie": "large", "ice": "cover",
+                "egg": "spawner", "empty": "none", "special": "special", "unknown": "unknown"}
+
+
+def record(code: str, archetype: str = "unknown", swappable: Optional[bool] = None) -> dict:
+    if code not in DEFAULT_ARCH:
+        raise ValueError(f"unknown label code: {code}")
+    if archetype not in {DEFAULT_ARCH[code], "unknown"}:
+        raise ValueError(f"unsupported identity/mechanic combination: {code}/{archetype}")
+    if swappable is not None and type(swappable) is not bool:
+        raise ValueError("swappable must be true, false or null")
+    if swappable is True and (code not in ANIMALS or archetype != "ordinary"):
+        raise ValueError("exchange permission needs a reviewed ordinary animal rule")
+    result = _identity(code)
+    result["archetype"] = archetype
+    result["swappable"] = swappable
+    if archetype == "unknown":
+        result["rule"] = "unverified"
+    if code == "ice" and archetype == "cover" and swappable is False:
+        result["bare_ice"] = True
+    return result
+
+
+def _identity(code: str) -> dict:
     if code in ANIMALS:
         return {"family": f"ANIMAL:{code}", "kind": "ANIMAL", "color": code, "swappable": True, "rule": "ordinary_animal"}
     if code in OBSTACLES:
@@ -53,17 +77,20 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--out", required=True, type=Path, help="per-cell labels.json")
     args = parser.parse_args(argv)
 
-    families = {f["family"]: f for f in json.loads(args.families.read_text(encoding="utf-8"))["families"]}
-    codes: Dict[str, str] = json.loads(args.codes.read_text(encoding="utf-8"))["labels"]
+    families = {f.get("family", f.get("global_family")): f for f in json.loads(args.families.read_text(encoding="utf-8"))["families"]}
+    review = json.loads(args.codes.read_text(encoding="utf-8"))
+    codes: Dict[str, str] = review["labels"]
     samples = []
     missing = []
     for family_id, family in families.items():
         if family_id not in codes:
             missing.append(family_id)
             continue
-        base = record(codes[family_id])
-        for cell_id in family["cells"]:
-            samples.append({"id": cell_id, "source": f"family:{family_id}", **base})
+        base = record(codes[family_id], review.get("archetypes", {}).get(family_id, "unknown"),
+                      review.get("swappable", {}).get(family_id))
+        for cell_id in family.get("cells", []):
+            samples.append({"id": cell_id, "source": f"family:{family_id}", "family_id": family_id,
+                            "reviewed": review.get("reviewed", {}).get(family_id) is True, **base})
     args.out.write_text(json.dumps({"samples": samples}, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"{len(samples)} labeled cells from {len(codes)} families -> {args.out}")
     if missing:

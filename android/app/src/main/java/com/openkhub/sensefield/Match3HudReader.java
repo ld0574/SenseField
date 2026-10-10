@@ -33,8 +33,10 @@ final class Match3HudReader {
     String[] diagnosticGoalKinds() { return diagnosticGoalKinds; }
     float[] diagnosticGoalAspects() { return diagnosticGoalAspects; }
     Match3HudReader(Context context) { catalog = Match3VisualCatalog.get(context); }
+    Match3HudReader(Match3VisualCatalog catalog) { this.catalog=catalog; }
     String status() { return status; }
-    void clear() { previous = null; cached = null; previousHeight = 0; status = "unread";identities.clear(); }
+    private void clearDiagnosticGoals() { diagnosticGoalPatches=null;diagnosticGoalKinds=null;diagnosticGoalAspects=null; }
+    void clear() { previous = null; cached = null; previousHeight = 0; status = "unread";identities.clear();clearDiagnosticGoals(); }
     void close() { clear(); if(headerBitmap!=null)headerBitmap.recycle();headerBitmap=null;headerCanvas=null;working=null; }
 
     private static final class Box {
@@ -68,10 +70,11 @@ final class Match3HudReader {
     }
     Match3Goals read(Bitmap frame,BoardGeometry geometry,long at) {
         if (!catalog.available || geometry==null || frame.getHeight()<=frame.getWidth()) {
+            clearDiagnosticGoals();
             status="unsupported_layout"; return Match3Goals.unknown(at);
         }
         int sourceHeight=Math.min(geometry.top,MAX_HEIGHT*frame.getWidth()/WIDTH);
-        if (sourceHeight<=0) { status="no_header"; return Match3Goals.unknown(at); }
+        if (sourceHeight<=0) { clearDiagnosticGoals();status="no_header"; return Match3Goals.unknown(at); }
         int height=Math.max(1,(int)Math.ceil(sourceHeight*WIDTH/(double)frame.getWidth()));
         if(headerBitmap==null || headerBitmap.getHeight()!=height) {
             if(headerBitmap!=null)headerBitmap.recycle();

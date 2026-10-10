@@ -106,6 +106,11 @@ final class Match3Sampler implements AutoCloseable {
         templates = loadTemplates(context);
     }
 
+    /** Isolated same-engine cost comparison; does not mutate the process catalog. */
+    Match3Sampler(android.content.Context context, BoardGeometry geometry,Match3VisualCatalog catalog) {
+        this(context,geometry);observations=catalog;
+    }
+
     private BoardGeometry geometryFor(Bitmap frame) {
         if (geometry != null) {
             if (geometry.frameWidth != frame.getWidth() || geometry.frameHeight != frame.getHeight())
@@ -246,10 +251,18 @@ final class Match3Sampler implements AutoCloseable {
     int[] elementPatch(int row,int col) { return observationCache[row][col].patch; }
     int[] elementEnvelope(int row,int col) { return observationCache[row][col].envelope; }
     Match3UnknownElements.Observation[][] reviewElements(Match3Position position) {
+        return reviewElements(position,false);
+    }
+    Match3UnknownElements.Observation[][] reviewElements(Match3Position position,boolean all) {
         Match3UnknownElements.Observation[][] out=new Match3UnknownElements.Observation[rows][cols];
-        for(int r=0;r<rows;r++)for(int c=0;c<cols;c++)if(Match3UnknownElements.needsReview(position.cell(r,c))
-                && observationCache[r][c].patch!=null)
-            out[r][c]=new Match3UnknownElements.Observation(position.cell(r,c),observationCache[r][c].envelope);
+        for(int r=0;r<rows;r++)for(int c=0;c<cols;c++)if((all || Match3UnknownElements.needsReview(position.cell(r,c)))
+                && observationCache[r][c].patch!=null) {
+            Match3VisualCatalog.CellCache cache=observationCache[r][c];
+            Match3AnimalAppearance.Body body=Match3VisualCatalog.body(cache);
+            if(cache.reviewObservation==null || cache.reviewObservation.body!=body || !cache.reviewObservation.cell.equals(position.cell(r,c)))
+                cache.reviewObservation=new Match3UnknownElements.Observation(position.cell(r,c),cache.envelope,body);
+            out[r][c]=cache.reviewObservation;
+        }
         return out;
     }
 

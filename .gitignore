@@ -114,11 +114,13 @@ docs/**
 !docs/development/android-adb-diagnostics.md
 !docs/development/match3-regression.md
 !docs/development/match3-element-evidence.md
+!docs/development/match3-flywheel.md
 !docs/development/assistant-android-transport-test.md
 !docs/development/assistant-gateway-test-deployment.md
 !docs/plans/黑客松方案收敛与实施路线.md
 !docs/plans/符合度改造方案.md
 !docs/plans/消消乐目标价值排序.md
+!docs/plans/消消乐规则驱动最大价值改造.md
 !docs/plans/消消乐新元素可信识别.md
 !docs/references/README.md
 !docs/requirements/README.md
@@ -128,6 +130,7 @@ docs/**
 !docs/requirements/符合度评估书03_听野_项目6_符合度53.0pct.pdf
 !docs/requirements/罕见无界黑客松赛手手册.md
 !docs/research/游戏无障碍案例与需求验证.md
+!docs/research/开心消消乐元素规则参考.md
 !docs/releases/0.3.0-alpha.1/CHECKLIST.md
 !docs/releases/0.3.0-alpha.1/RELEASE_NOTES.md
 !docs/releases/0.3.1/RELEASE_NOTES.md

@@ -30,7 +30,7 @@ def _resolved(sample: dict) -> bool:
     if kind in ABSTAINED_KINDS:
         return False
     # A recognized face without a confirmed cover/permission is still unplayable.
-    if kind == "ANIMAL" and sample.get("swap_permission") == "UNKNOWN":
+    if kind == "ANIMAL" and sample.get("swap_permission", "UNKNOWN") == "UNKNOWN":
         return False
     return True
 
@@ -86,7 +86,9 @@ def label_free(predictions: Dict[str, dict]) -> dict:
 
 def _truth_swappable(label: dict) -> Optional[bool]:
     value = label.get("swappable")
-    return None if value is None else bool(value)
+    if value is not None and type(value) is not bool:
+        raise ValueError("swappable must be true, false or null")
+    return value
 
 
 def labeled(predictions: Dict[str, dict], labels: Dict[str, dict]) -> dict:
@@ -114,7 +116,8 @@ def labeled(predictions: Dict[str, dict], labels: Dict[str, dict]) -> dict:
                 stats["correct"] += 1
         swap_truth = _truth_swappable(label)
         pred_swap = pred.get("swap_permission") == "YES"
-        if swap_truth is False and pred_swap:
+        # An unknown rule never supplies evidence for ordinary-animal permission.
+        if swap_truth is not True and pred_swap:
             stats["false_swap"] += 1
         elif swap_truth is True and not pred_swap:
             stats["swap_miss"] += 1
@@ -123,11 +126,57 @@ def labeled(predictions: Dict[str, dict], labels: Dict[str, dict]) -> dict:
     for stats in families.values():
         for key in overall:
             overall[key] += stats[key]
+    ice = {"n": 0, "correct": 0, "miss": 0, "misclassify": 0}
+    for sample_id, label in labels.items():
+        truth = label.get("ice")
+        if truth is None or truth == -1:
+            continue
+        if type(truth) is not int or truth not in (0, 1, 2, 3):
+            raise ValueError("ice truth must be an integer layer count or null")
+        ice["n"] += 1
+        observed = predictions.get(sample_id, {}).get("ice", -1)
+        if observed is None or observed == -1:
+            ice["miss"] += 1
+        elif observed == truth:
+            ice["correct"] += 1
+        else:
+            ice["misclassify"] += 1
+    for stats in families.values():
+        stats["coverage"] = (stats["correct"] + stats["misclassify"]) / stats["n"] if stats["n"] else 0.0
     return {
         "overall": overall,
         "per_family": dict(sorted(families.items())),
         "labels_without_prediction": missing_prediction,
+        "predictions_without_label": len(predictions.keys() - labels.keys()),
+        "unreviewed_labels": sum("reviewed" in label and label["reviewed"] is not True for label in labels.values()),
+        "ice": ice,
     }
+
+
+def goal_accuracy(predictions: list[dict], labels: list[dict]) -> dict:
+    def index(items):
+        out = {}
+        for item in items:
+            if not item.get("id") or item["id"] in out:
+                raise ValueError("goal samples need unique ids")
+            out[item["id"]] = item
+        return out
+    predicted, expected = index(predictions), index(labels)
+    stats = {"n": len(expected), "identity_wrong": 0, "count_wrong": 0, "missing": 0,
+             "unlabeled": len(predicted.keys() - expected.keys()),
+             "unreviewed": sum("reviewed" in item and item["reviewed"] is not True for item in expected.values())}
+    for sample_id, truth in expected.items():
+        observed = predicted.get(sample_id)
+        if observed is None:
+            stats["missing"] += 1
+            continue
+        if observed.get("kind") != truth.get("kind"):
+            stats["identity_wrong"] += 1
+        if truth.get("remaining") is not None and observed.get("remaining") != truth["remaining"]:
+            stats["count_wrong"] += 1
+        if truth.get("completed") is not None and observed.get("completed") != truth["completed"]:
+            stats["count_wrong"] += 1
+    return stats
 
 
 def render(report: dict) -> str:
@@ -156,6 +205,10 @@ def render(report: dict) -> str:
                          f"{s['misclassify']} {s['false_swap']} {s['swap_miss']}")
     else:
         lines.append("== 带标签准确率: 未提供 labels.json（仅记录覆盖基线）==")
+    if lab:
+        lines.append(f"  冰层: {lab['ice']}")
+    if "goals" in report:
+        lines.append(f"  任务栏: {report['goals']}")
     return "\n".join(lines)
 
 
@@ -167,6 +220,11 @@ def evaluate(predictions_path: Path, labels_path: Optional[Path]) -> dict:
     report = {"label_free": label_free(predictions)}
     if labels:
         report["labeled"] = labeled(predictions, labels)
+    if labels_path is not None:
+        truth = json.loads(labels_path.read_text(encoding="utf-8"))
+        if "goal_samples" in truth:
+            observed = json.loads(predictions_path.read_text(encoding="utf-8"))
+            report["goals"] = goal_accuracy(observed.get("goal_samples", []), truth["goal_samples"])
     return report
 
 
@@ -179,14 +237,36 @@ def main(argv: Optional[List[str]] = None) -> int:
                         help="fail if 误放 exceeds this (off by default; Phase 0 only records)")
     parser.add_argument("--min-coverage", type=float, default=None,
                         help="fail if coverage falls below this (off by default)")
+    parser.add_argument("--max-misclassify", type=int, default=None)
+    parser.add_argument("--strict", action="store_true", help="require complete truth/prediction pairing; fail on ice/HUD errors")
     args = parser.parse_args(argv)
 
+    strict = args.strict or args.max_false_swap is not None or args.max_misclassify is not None
+    if args.strict:
+        if args.max_false_swap is None: args.max_false_swap = 0
+        if args.max_misclassify is None: args.max_misclassify = 0
+    if strict and args.labels is None:
+        parser.error("accuracy gates require --labels")
     report = evaluate(args.predictions, args.labels)
     print(render(report))
     if args.json:
         args.json.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     failed = False
+    if strict:
+        lab = report.get("labeled")
+        if not lab or lab["labels_without_prediction"] or lab["predictions_without_label"]:
+            print("GATE FAIL: labels and predictions must cover exactly the same cells")
+            failed = True
+        if lab and lab["unreviewed_labels"]:
+            print("GATE FAIL: cell truth contains explicitly unreviewed labels")
+            failed = True
+        if lab and (lab["ice"]["miss"] or lab["ice"]["misclassify"]):
+            print("GATE FAIL: ice layer evidence differs from truth")
+            failed = True
+        if "goals" in report and any(report["goals"][key] for key in ("identity_wrong", "count_wrong", "missing", "unlabeled", "unreviewed")):
+            print("GATE FAIL: HUD identity/count evidence differs from truth")
+            failed = True
     if args.min_coverage is not None and report["label_free"]["coverage"] < args.min_coverage:
         print(f"GATE FAIL: coverage {report['label_free']['coverage']:.3f} < {args.min_coverage}")
         failed = True
@@ -194,6 +274,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         false_swap = report["labeled"]["overall"]["false_swap"]
         if false_swap > args.max_false_swap:
             print(f"GATE FAIL: false_swap {false_swap} > {args.max_false_swap}")
+            failed = True
+    if args.max_misclassify is not None and report.get("labeled"):
+        if report["labeled"]["overall"]["misclassify"] > args.max_misclassify:
+            print("GATE FAIL: identity misclassifications exceed the limit")
             failed = True
     return 1 if failed else 0
 

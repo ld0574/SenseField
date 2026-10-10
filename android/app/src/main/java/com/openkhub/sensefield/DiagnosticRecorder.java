@@ -200,6 +200,12 @@ final class DiagnosticRecorder {
             PackageInfo info = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
             metadata.put("version_name", info.versionName);
             metadata.put("version_code", info.getLongVersionCode());
+            if(game==DiagnosticGame.MATCH3) {
+                Match3VisualCatalog catalog=Match3VisualCatalog.get(context);
+                metadata.put("match3_catalog_id",catalog.id).put("match3_gallery_id",catalog.galleryId)
+                        .put("match3_gallery_sha256",catalog.gallerySha256).put("match3_gallery_status",catalog.galleryStatus)
+                        .put("match3_gallery_goals_pending_review",catalog.galleryGoalsPendingReview);
+            }
         } catch (Exception ignored) { /* Diagnostics must not prevent capture. */ }
         IO.execute(() -> {
             try { archive = new DiagnosticArchive(root(context), directory.getName(), metadata.toString(2)); }
@@ -256,6 +262,26 @@ final class DiagnosticRecorder {
     void audit(String message) {
         if (message.contains("sessionId=") && !message.contains("sessionId=" + sessionId)) return;
         record("audit", object("message", message));
+    }
+
+    boolean harvestEnabled() { return imagesEnabled && !imageLimit && !finished && failure.isEmpty(); }
+    /** Pixel descriptors obey the same image preference, cancellation generation and shared IO budget. */
+    boolean flywheelSample(JSONObject sample) {
+        synchronized(imageStateLock) {
+            if(!harvestEnabled())return false;
+            String line=object("type","Match3FlywheelSample","at_ms",SystemClock.elapsedRealtime(),"data",sample).toString();
+            long bytes=line.length()*2L;
+            if(!imageBudget.tryAcquire(bytes)) { imageDrops.incrementAndGet();return false; }
+            long generation=imageGeneration;
+            try {
+                IO.execute(()-> {
+                    try { if(archive!=null && imageRequestValid(generation))archive.append(line); }
+                    catch(Exception error) { failed(error); }
+                    finally { imageBudget.release(bytes); }
+                });
+            } catch(RuntimeException error) { imageBudget.release(bytes);throw error; }
+            return true;
+        }
     }
 
     /** Small representative crops from the existing processed frame; encoding stays on shared IO. */

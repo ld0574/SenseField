@@ -24,6 +24,7 @@ final class Match3VisualCatalog {
         long inferredRevision;
         boolean iceChecked;
         int iceLayers;
+        Match3UnknownElements.Observation reviewObservation;
     }
     static final class Pattern {
         final String kind;
@@ -33,18 +34,36 @@ final class Match3VisualCatalog {
         final int[] pixels;
         final boolean[] mask;
         final int supported;
+        final String maskKey;
+        final int[] channelTotals=new int[3];
+        final int[] blockTotals=new int[48];
+        final Match3AnimalAppearance.Face identityShape;
+        final Match3AnimalAppearance.Face goalShape;
         Pattern(JSONObject json) throws Exception {
             kind = json.getString("kind");
             rule = json.optString("rule", "unverified");
             aspect=(float)json.optDouble("aspect",0);
             neutralBackground=json.optBoolean("neutral_background",false);
-            JSONArray p = json.getJSONArray("pixels"), m = json.getJSONArray("mask");
-            if (p.length() != PATCH * PATCH || m.length() != p.length()) throw new IllegalArgumentException("Template shape");
-            pixels = new int[p.length()]; mask = new boolean[p.length()];
-            int count = 0;
-            for (int i = 0; i < p.length(); i++) { pixels[i] = p.getInt(i); mask[i] = m.getBoolean(i); if (mask[i]) count++; }
+            pixels = readPixels(json); mask = new boolean[pixels.length];
+            JSONArray m = json.optJSONArray("mask"); String bits=json.optString("mask_bits", "");
+            if(m!=null?m.length()!=pixels.length:!bits.matches("[01]{256}"))throw new IllegalArgumentException("Template mask");
+            int count = 0;StringBuilder maskText=new StringBuilder(256);
+            for (int i = 0; i < pixels.length; i++) {
+                mask[i] = m!=null?m.getBoolean(i):bits.charAt(i)=='1';maskText.append(mask[i]?'1':'0');
+                if (mask[i]) {
+                    count++;int block=((i>>6)*4+((i&15)>>2))*3;
+                    for(int k=0;k<3;k++) { int value=pixels[i]>>(16-8*k)&255;channelTotals[k]+=value;blockTotals[block+k]+=value; }
+                }
+            }
+            // Masks come from a bounded, loaded-once catalog. Share equal keys
+            // so the per-observation group lookup does not scan 256 bits per template.
+            maskKey=maskText.toString().intern();
             if (count < 24) throw new IllegalArgumentException("Empty template");
             supported=count;
+            identityShape="iceflower".equals(kind) || "honey".equals(kind)
+                    ?new Match3AnimalAppearance.Face('.',pixels):null;
+            goalShape="reviewed_goal_icon".equals(rule) || "iceflower_goal_icon".equals(rule) || "user_confirmed_goal_icon".equals(rule)
+                    ?new Match3AnimalAppearance.Face('.',goalShapePatch(pixels)):null;
         }
         float difference(int[] observed) {
             return difference(observed,Float.POSITIVE_INFINITY);
@@ -79,6 +98,8 @@ final class Match3VisualCatalog {
     private static volatile Match3VisualCatalog loaded;
     final boolean available;
     final String id;
+    String galleryId="", gallerySha256="", galleryStatus="absent";
+    int galleryGoalsPendingReview;
     final List<Pattern> steps, goals, cells, animals, largeObjects, iceSurfaces, iceBackgrounds;
     final List<Match3AnimalAppearance.Face> animalFaces;
     final List<Match3AnimalAppearance.Body> animalBodies;
@@ -125,8 +146,7 @@ final class Match3VisualCatalog {
             JSONObject item=envelopes.getJSONObject(i);
             if(!"ordinary_uncovered_animal".equals(item.optString("rule")))continue;
             char color=item.getString("color").charAt(0);if(!Match3Sampler.isMovable(color))throw new IllegalArgumentException("Animal envelope");
-            JSONArray values=item.getJSONArray("pixels");if(values.length()!=256)throw new IllegalArgumentException("Envelope shape");
-            int[] patch=new int[256];for(int p=0;p<256;p++)patch[p]=values.getInt(p);
+            int[] patch=readPixels(item);
             bodies.add(new Match3AnimalAppearance.Body(patch));colors.add(color);
         }
         animalBodies=Collections.unmodifiableList(bodies);bodyColors=Collections.unmodifiableList(colors);
@@ -153,8 +173,15 @@ final class Match3VisualCatalog {
                 java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream(); byte[] buffer = new byte[4096]; int n;
                 while ((n = input.read(buffer)) > 0) { if (output.size() + n > 327680) throw new IllegalArgumentException("Catalog size"); output.write(buffer,0,n); }
                 JSONObject json = new JSONObject(new String(output.toByteArray(), StandardCharsets.UTF_8));
-                mergeGallery(context, json);
-                loaded = new Match3VisualCatalog(json);
+                byte[] gallery=null;
+                try(java.io.InputStream extra=context.getAssets().open("match3-gallery-v1.json")) {
+                    java.io.ByteArrayOutputStream data=new java.io.ByteArrayOutputStream();
+                    int count;while((count=extra.read(buffer))>0) {
+                        data.write(buffer,0,count);if(data.size()>1048576)break;
+                    }
+                    gallery=data.toByteArray();
+                } catch(java.io.IOException absent) { }
+                loaded = withGallery(json,gallery);
             } catch (Exception ignored) { loaded = new Match3VisualCatalog(); }
             return loaded;
         }
@@ -165,17 +192,85 @@ final class Match3VisualCatalog {
      *  ordinary_envelopes before construction; any failure leaves the catalog
      *  unchanged. Identity/rule semantics are unchanged — only more plain-body
      *  exemplars, so a face-confirmed animal is less likely to abstain on swap. */
-    private static void mergeGallery(Context context, JSONObject json) {
-        try (java.io.InputStream input = context.getAssets().open("match3-gallery-v1.json")) {
-            java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream(); byte[] buffer = new byte[4096]; int n;
-            while ((n = input.read(buffer)) > 0) { if (output.size() + n > 1048576) throw new IllegalArgumentException("Gallery size"); output.write(buffer,0,n); }
-            JSONObject gallery = new JSONObject(new String(output.toByteArray(), StandardCharsets.UTF_8));
-            if (!"match3-gallery-v1".equals(gallery.optString("format"))) return;
-            appendAll(gallery.optJSONArray("ordinary_envelopes"), json.getJSONArray("ordinary_envelopes"));
-            appendAll(gallery.optJSONArray("cells"), json.getJSONArray("cells"));
-            appendAll(gallery.optJSONArray("goals"), json.getJSONArray("goals"));
-            appendAll(gallery.optJSONArray("large_objects"), json.optJSONArray("large_objects"));
-        } catch (Exception ignored) { }
+    static Match3VisualCatalog withGallery(JSONObject base, byte[] bytes) throws Exception {
+        Match3VisualCatalog fallback=new Match3VisualCatalog(base);
+        if(bytes==null)return fallback;
+        try {
+            if(bytes.length>1048576)throw new IllegalArgumentException("Gallery size");
+            JSONObject gallery=new JSONObject(new String(bytes,StandardCharsets.UTF_8));
+            if(!"match3-gallery-v1".equals(gallery.getString("format")))throw new IllegalArgumentException("Gallery format");
+            JSONObject merged=new JSONObject(base.toString());int total=0;
+            int pendingGoals=0;
+            java.util.Map<String,java.util.Set<String>> sources=new java.util.HashMap<>();
+            for(String key:new String[]{"ordinary_envelopes","cells","goals","large_objects","ice_surfaces"}) {
+                JSONArray extra=gallery.optJSONArray(key);if(extra==null)continue;
+                total+=extra.length();if(total>3072)throw new IllegalArgumentException("Gallery entry budget");
+                for(int i=0;i<extra.length();i++) {
+                    JSONObject item=extra.getJSONObject(i);
+                    String rule=item.optString("rule","unverified"),kind=item.optString("kind","");
+                    if("unverified".equals(rule) || rule.isEmpty())throw new IllegalArgumentException("Unreviewed gallery rule");
+                    if("cells".equals(key) && !validCellRule(kind,rule))throw new IllegalArgumentException("Unsupported cell rule");
+                    if("ordinary_envelopes".equals(key) && (!"ordinary_uncovered_animal".equals(rule)
+                            || !item.optString("color","").matches("[ROYGBP]")))throw new IllegalArgumentException("Unsupported animal rule");
+                    if("large_objects".equals(key) && (!"cookie".equals(kind) || !"identity_only_2x2".equals(rule)))
+                        throw new IllegalArgumentException("Unsupported object rule");
+                    if("ice_surfaces".equals(key) && (!"ice1".equals(kind) || !"stationary_single_layer_ice".equals(rule)
+                            || !item.optBoolean("neutral_background",false)))throw new IllegalArgumentException("Unsupported ice rule");
+                    if("goals".equals(key) && (!"reviewed_goal_icon".equals(rule) && !"user_confirmed_goal_icon".equals(rule) && !"iceflower_goal_icon".equals(rule)
+                            || !kind.matches("RED|BEAR|CHICK|FROG|HIPPO|CAT|COIN|SNOW|ICEFLOWER|HONEY|EGG|COOKIE|ICE")))
+                        throw new IllegalArgumentException("Unsupported goal rule");
+                    if(gallery.has("metadata")) {
+                        if(!item.optBoolean("reviewed",false))throw new IllegalArgumentException("Unreviewed exemplar");
+                        String family=item.getString("family_id"),source=item.getString("source");
+                        sources.computeIfAbsent(family,k->new java.util.HashSet<>()).add(source);
+                        if(sources.size()>64 || sources.get(family).size()>24)throw new IllegalArgumentException("Family budget");
+                    }
+                }
+                if(!merged.has(key))merged.put(key,new JSONArray());
+                if("goals".equals(key)) {
+                    for(int i=0;i<extra.length();i++) {
+                        JSONObject item=extra.getJSONObject(i);
+                        // Legacy experiment icons lack independent review. They
+                        // may confound an already verified task; retain the
+                        // asset for review, but never grant a target rule here.
+                        if(!item.optBoolean("reviewed",false)) { pendingGoals++;continue; }
+                        merged.getJSONArray(key).put(item);
+                    }
+                } else appendAll(extra,merged.getJSONArray(key));
+            }
+            Match3VisualCatalog result=new Match3VisualCatalog(merged);
+            result.galleryId=gallery.getString("id");
+            byte[] hash=java.security.MessageDigest.getInstance("SHA-256").digest(bytes);
+            StringBuilder hex=new StringBuilder();for(byte value:hash)hex.append(String.format(java.util.Locale.ROOT,"%02x",value&255));
+            result.gallerySha256=hex.toString();result.galleryStatus="loaded";result.galleryGoalsPendingReview=pendingGoals;return result;
+        } catch(Exception invalid) {
+            fallback.galleryStatus="rejected:"+invalid.getClass().getSimpleName();return fallback;
+        }
+    }
+
+    private static boolean validCellRule(String kind,String rule) {
+        if(kind.startsWith("animal_"))return kind.matches("animal_[ROYGBP]") && "ordinary_uncovered_animal".equals(rule);
+        switch(kind) {
+            case "coin": return "coin".equals(rule);
+            case "snow1": return "snow".equals(rule);
+            case "iceflower": return "multistage_iceflower".equals(rule) || "user_confirmed_adjacent_clear".equals(rule);
+            case "honey": return "single_clear_honey".equals(rule) || "user_confirmed_adjacent_clear".equals(rule);
+            case "egg": return "egg".equals(rule);
+            default: return false;
+        }
+    }
+
+    private static int[] readPixels(JSONObject item) throws Exception {
+        int[] pixels=new int[256];JSONArray array=item.optJSONArray("pixels");
+        if(array!=null) {
+            if(array.length()!=256)throw new IllegalArgumentException("Pixel shape");
+            for(int i=0;i<256;i++)pixels[i]=array.getInt(i);
+        } else {
+            String rgb=item.getString("pixels_rgb");
+            if(!rgb.matches("[0-9a-f]{1536}"))throw new IllegalArgumentException("RGB descriptor");
+            for(int i=0;i<256;i++)pixels[i]=0xff000000|Integer.parseInt(rgb.substring(i*6,i*6+6),16);
+        }
+        return pixels;
     }
 
     private static void appendAll(JSONArray extra, JSONArray base) throws org.json.JSONException {
@@ -193,17 +288,44 @@ final class Match3VisualCatalog {
     }
     static String recognize(List<Pattern> patterns, int[] patch, float maximum, float margin) {
         String best = null; float error = Float.POSITIVE_INFINITY, second = Float.POSITIVE_INFINITY;
+        java.util.Map<String,int[]> totals=new java.util.HashMap<>();
+        Match3AnimalAppearance.Face goalShape=null;
         for (Pattern pattern : patterns) {
+            int[] observed=totals.get(pattern.maskKey);
+            if(observed==null) {
+                observed=new int[51];
+                for(int i=0;i<256;i++)if(pattern.mask[i]) {
+                    int block=3+((i>>6)*4+((i&15)>>2))*3;
+                    for(int k=0;k<3;k++) { int value=patch[i]>>(16-8*k)&255;observed[k]+=value;observed[block+k]+=value; }
+                }
+                totals.put(pattern.maskKey,observed);
+            }
+            long lower=0;for(int k=0;k<3;k++)lower+=Math.abs(observed[k]-pattern.channelTotals[k]);
+            double budget=(double)Math.nextUp(maximum+margin)*pattern.supported*765;
+            if(lower>budget)continue;
+            // Summed block means are another Manhattan lower bound. The mask
+            // partitions every supported pixel exactly once; no contender is lost.
+            lower=0;for(int k=0;k<48 && lower<=budget;k++)lower+=Math.abs(observed[k+3]-pattern.blockTotals[k]);
+            if(lower>budget)continue;
             // A partial sum above maximum+margin cannot win or make an
             // accepted winner ambiguous. Stop only those comparisons; retain
             // the exact scores and original thresholds for every contender.
             float candidate = pattern.difference(patch,maximum+margin);
+            if(pattern.goalShape!=null && candidate<=maximum+margin) {
+                if(goalShape==null)goalShape=new Match3AnimalAppearance.Face('.',goalShapePatch(patch));
+                candidate=Math.max(candidate,goalShape.difference(pattern.goalShape));
+            }
             if (candidate < error) {
                 if (!pattern.kind.equals(best)) second = error;
                 best = pattern.kind; error = candidate;
             } else if (!pattern.kind.equals(best)) second = Math.min(second,candidate);
         }
         return error <= maximum && second-error >= margin ? best : null;
+    }
+    /** Upper icon only: the changing counter cannot supply identity evidence. */
+    private static int[] goalShapePatch(int[] pixels) {
+        int[] out=new int[256];for(int y=0;y<16;y++)for(int x=0;x<16;x++)out[y*16+x]=pixels[(y/2)*16+x];
+        return out;
     }
     int digit(String bits, float ratio) {
         float[] errors = new float[10]; java.util.Arrays.fill(errors, Float.POSITIVE_INFINITY);
@@ -297,6 +419,7 @@ final class Match3VisualCatalog {
     }
     private Match3Position.Cell classifyObstacle(int[] observed) {
         String kind = recognize(cells,observed,.12f,.025f);
+        if(("iceflower".equals(kind) || "honey".equals(kind)) && !obstacleIdentity(cells,kind,observed))return null;
         if ("snow1".equals(kind)) return Match3Position.Cell.obstacle(Match3Position.Kind.SNOW,1);
         if ("coin".equals(kind)) return Match3Position.Cell.obstacle(Match3Position.Kind.COIN,1);
         if ("iceflower".equals(kind)) return Match3Position.Cell.obstacle(Match3Position.Kind.ICEFLOWER,1);
@@ -313,5 +436,13 @@ final class Match3VisualCatalog {
             if(green>=6)return Match3Position.Cell.obstacle(Match3Position.Kind.EGG,-1);
         }
         return null;
+    }
+    /** A cyan field or animal must not acquire an obstacle identity from colour proximity alone. */
+    static boolean obstacleIdentity(List<Pattern> patterns,String kind,int[] observed) {
+        Match3AnimalAppearance.Face shape=new Match3AnimalAppearance.Face('.',observed);
+        if(!shape.detailed)return false;
+        for(Pattern pattern:patterns)if(kind.equals(pattern.kind) && pattern.identityShape!=null
+                && pattern.difference(observed,.145f)<=.12f && shape.difference(pattern.identityShape)<=.12f)return true;
+        return false;
     }
 }
