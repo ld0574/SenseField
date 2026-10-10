@@ -34,6 +34,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.Assume;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -41,6 +42,14 @@ import org.junit.runner.RunWith;
 @RunWith(AndroidJUnit4.class)
 public final class Match3HintInstrumentedTest {
     private static Context context() { return ApplicationProvider.getApplicationContext(); }
+    @Before public void isolateProjectionFromThePreviousTest() throws Exception {
+        assertTrue("isolated emulator only",android.os.Build.HARDWARE.contains("ranchu")
+                || android.os.Build.HARDWARE.contains("goldfish"));
+        context().stopService(new Intent(context(),Match3LiveService.class));
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+        await("The previous projection has stopped",5000,()->!Match3LiveService.isRunning());
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+    }
     private static Object get(Object target, String name) throws Exception {
         Field f = target.getClass().getDeclaredField(name); f.setAccessible(true); return f.get(target);
     }
@@ -602,13 +611,17 @@ public final class Match3HintInstrumentedTest {
             Object s = startProjection(scenario, game);
             long startedFrames = (long) get(s, "processedFrames");
             Match3Hint firstHint = (Match3Hint) get(s, "currentHint");
+            java.io.File directory=context().getExternalFilesDir("match3-release-capture");
+            assertNotNull(directory);directory.mkdirs();
+            java.nio.file.Files.write(new java.io.File(directory,"overlay-retention-first.json").toPath(),
+                    DiagnosticRecorder.current.stateForDiagnostics().getBytes(java.nio.charset.StandardCharsets.UTF_8));
             // Ten 800ms samples plus emulator scheduling; this is a correctness
             // check, not a production latency benchmark. The frame count is unchanged.
             await("Capture keeps producing frames under the persistent window", 20000,
                     () -> (long) get(s, "processedFrames") >= startedFrames + 10);
             await("The unchanged board remains valid", 3500, () -> (boolean) get(s, "boardValid"));
             assertNotNull(get(s, "currentHint"));
-            assertSame("Our drawing must not create another board revision", firstHint, get(s, "currentHint"));
+            assertSame("Our drawing must not create another board revision; "+DiagnosticRecorder.current.stateForDiagnostics(), firstHint, get(s, "currentHint"));
             assertFalse("Continuous visuals are required, rather than voice-only fallback", (boolean) get(s, "visualSuppressed"));
             Match3HintOverlay overlay = (Match3HintOverlay) get(s, "overlay");
             assertNotNull("Capture retains the hint window", overlay.renderedHint());
@@ -617,7 +630,19 @@ public final class Match3HintInstrumentedTest {
             java.io.File record = new java.io.File(context().getExternalFilesDir(null), "match3-0.4.5-capture-mode.txt");
             String mode = "non-secure hint stayed visible for 10 capture samples; current-frame overlay removal preserved recognition\n";
             java.nio.file.Files.write(record.toPath(), mode.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        } finally { context().stopService(new Intent(context(), Match3LiveService.class)); }
+        } finally {
+            DiagnosticRecorder recorder=DiagnosticRecorder.current;
+            if(recorder!=null) {
+                recorder.IO.submit(()->{}).get(5,TimeUnit.SECONDS);
+                java.io.File directory=context().getExternalFilesDir("match3-release-capture");
+                assertNotNull(directory);directory.mkdirs();
+                java.nio.file.Files.copy(new java.io.File(recorder.directory,"events.jsonl").toPath(),
+                        new java.io.File(directory,"overlay-retention-events.jsonl").toPath(),java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                java.nio.file.Files.write(new java.io.File(directory,"overlay-retention-last.json").toPath(),
+                        recorder.stateForDiagnostics().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            context().stopService(new Intent(context(), Match3LiveService.class));
+        }
     }
 
     @Test public void windowPixelsAreRemovedWithoutReplacingCurrentGamePixels() {

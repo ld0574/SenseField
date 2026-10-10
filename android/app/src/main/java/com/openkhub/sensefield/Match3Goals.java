@@ -16,8 +16,15 @@ final class Match3Goals {
         final String name;
         Kind(char color, String name) { this.color = color; this.name = name; }
         static Kind animal(char color) {
-            for (Kind kind : values()) if (color != '\0' && kind.color == color) return kind;
-            return UNKNOWN;
+            switch (color) {
+                case 'R': return RED;
+                case 'O': return BEAR;
+                case 'Y': return CHICK;
+                case 'G': return FROG;
+                case 'B': return HIPPO;
+                case 'P': return CAT;
+                default: return UNKNOWN;
+            }
         }
     }
 

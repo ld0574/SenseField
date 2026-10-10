@@ -756,7 +756,7 @@ final class Match3Sampler implements AutoCloseable {
                 }
             }
         }
-        int[] box = connectedBounds(mask);
+        int[] box = connectedBoardBounds(mask);
         if (box == null) return null;
         int l = box[0] * step, t = box[1] * step;
         int r = Math.min(frame.getWidth(), box[2] * step);
@@ -792,11 +792,22 @@ final class Match3Sampler implements AutoCloseable {
 
     /** Components keep disconnected letterbox strips out of the board rectangle. */
     static int[] connectedBounds(boolean[][] mask) {
+        return componentBounds(mask, false);
+    }
+
+    /** Bright layers split the dark border; overlapping component envelopes
+     * remain one candidate, with original dark support and independent grid checks. */
+    static int[] connectedBoardBounds(boolean[][] mask) {
+        return componentBounds(mask, true);
+    }
+
+    private static int[] componentBounds(boolean[][] mask, boolean joinEnvelopes) {
         int height = mask.length, width = mask[0].length;
         boolean[][] seen = new boolean[height][width];
         int[] queue = new int[height * width];
         int bestArea = 0;
         int[] best = null;
+        List<int[]> components = new ArrayList<>();
         for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) {
             if (!mask[y][x] || seen[y][x]) continue;
             int head = 0, tail = 1, left = x, top = y, right = x, bottom = y;
@@ -819,7 +830,22 @@ final class Match3Sampler implements AutoCloseable {
                     seen[r + 1][c] = true; queue[tail++] = p + width;
                 }
             }
-            int bw = right - left + 1, bh = bottom - top + 1;
+            int[] component = {left, top, right + 1, bottom + 1, tail};
+            if (joinEnvelopes) for (int i = 0; i < components.size();) {
+                int[] other = components.get(i);
+                if (component[0] < other[2] && other[0] < component[2]
+                        && component[1] < other[3] && other[1] < component[3]) {
+                    component[0] = Math.min(component[0], other[0]);
+                    component[1] = Math.min(component[1], other[1]);
+                    component[2] = Math.max(component[2], other[2]);
+                    component[3] = Math.max(component[3], other[3]);
+                    component[4] += other[4]; components.remove(i); i = 0;
+                } else i++;
+            }
+            components.add(component);
+        }
+        for (int[] component : components) {
+            int bw = component[2] - component[0], bh = component[3] - component[1];
             int shortSide = Math.min(bw, bh), longSide = Math.max(bw, bh);
             // Reuse the existing 30% minimum extent and 5% dark-pixel support.
             // Supported 6..9 rectangular grids bound the legal aspect ratio.
@@ -827,8 +853,10 @@ final class Match3Sampler implements AutoCloseable {
             // the aspect screen to that interval; refined pixel bounds and the
             // independent axis checks still enforce square individual cells.
             if (shortSide * 10 < Math.min(width, height) * 3 || (shortSide + 1) * 9 < (longSide - 1) * 6
-                    || tail * 20L < (long) bw * bh) continue;
-            if (tail > bestArea) { bestArea = tail; best = new int[]{left, top, right + 1, bottom + 1}; }
+                    || component[4] * 20L < (long) bw * bh) continue;
+            if (component[4] > bestArea) {
+                bestArea = component[4]; best = new int[]{component[0], component[1], component[2], component[3]};
+            }
         }
         return best;
     }

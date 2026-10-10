@@ -4,6 +4,18 @@ import static org.junit.Assert.*;
 import org.junit.Test;
 
 public final class Match3GeometryTest {
+    @Test public void overlappingDisconnectedBorderEnvelopesFormOneCandidateWithoutJoiningLetterboxes() {
+        boolean[][] mask=new boolean[300][160];
+        for(int y=0;y<300;y++) {mask[y][2]=true;mask[y][157]=true;}
+        // Two disconnected L shapes. Their envelopes overlap, their dark pixels do not.
+        for(int y=100;y<220;y++)for(int x=20;x<66;x++)if(y<160 || x<25)mask[y][x]=true;
+        for(int y=100;y<220;y++)for(int x=58;x<140;x++)if(y>=200 || x>=135)mask[y][x]=true;
+        int original=0;for(boolean[] row:mask)for(boolean pixel:row)if(pixel)original++;
+        assertArrayEquals(new int[]{58,100,140,220},Match3Sampler.connectedBounds(mask));
+        assertArrayEquals(new int[]{20,100,140,220},Match3Sampler.connectedBoardBounds(mask));
+        int after=0;for(boolean[] row:mask)for(boolean pixel:row)if(pixel)after++;
+        assertEquals("The candidate never fills or invents dark pixels",original,after);
+    }
     private static BoardGeometry geometry(int rows, int cols) {
         return new BoardGeometry(1260, 2800, 140, 900, 1120, 1880, rows, cols);
     }

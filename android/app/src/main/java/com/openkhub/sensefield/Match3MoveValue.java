@@ -8,20 +8,25 @@ import java.util.Collections;
 
 /** Lower-bound direct task contribution; excludes random falls, blasts and unverified obstacle rules. */
 final class Match3MoveValue {
+    private static final Match3Goals.Kind[] KINDS = Match3Goals.Kind.values();
     final Match3Board.Swap swap;
     final int completedTargets, progressMilli, directUnits, relevantHits, potentialSpecials;
+    final int targetDistance;
     final boolean allTargetsFinish;
     final String reason;
     final boolean grounded;
     private final int[] collected, hits;
 
-    private Match3MoveValue(Match3Board.Swap swap, Match3Goals goals, int[] collected, int[] hits, int specials) {
-        this.swap = swap; this.collected = collected.clone(); this.hits = hits.clone(); potentialSpecials = specials;
+    private Match3MoveValue(Match3Board.Swap swap, Match3Goals goals, int[] collected, int[] hits, int specials,
+                           Match3TargetFrontier frontier) {
+        // evaluate transfers fresh owned arrays; no external caller can mutate them.
+        this.swap = swap; this.collected = collected; this.hits = hits; potentialSpecials = specials;
+        targetDistance = frontier.distance;
         int complete = 0, progress = 0, units = 0, relevant = 0, positive = 0;
         boolean all = goals.fullyKnown() && !goals.finished();
         Match3Goals.Kind spoken = null;
         Match3Goals.Kind related = null;
-        for (Match3Goals.Kind kind : Match3Goals.Kind.values()) {
+        for (Match3Goals.Kind kind : KINDS) {
             if(!goals.active(kind))continue;
             int remaining = goals.remaining(kind);
             int gain = remaining>0?Math.min(remaining, collected[kind.ordinal()]):0;
@@ -38,7 +43,7 @@ final class Match3MoveValue {
         if (goals.active(Match3Goals.Kind.CHICK)) relevant += hits[Match3Goals.Kind.EGG.ordinal()];
         completedTargets = complete; progressMilli = progress; directUnits = units;
         boolean known=false;
-        for(Match3Goals.Kind kind:Match3Goals.Kind.values())if(goals.active(kind))known=true;
+        for(Match3Goals.Kind kind:KINDS)if(goals.active(kind))known=true;
         grounded=known;
         relevantHits = relevant; allTargetsFinish = all;
         if (positive > 1) reason = "兼顾任务";
@@ -50,7 +55,7 @@ final class Match3MoveValue {
                 :goals.active(Match3Goals.Kind.COOKIE) && hits[Match3Goals.Kind.COOKIE.ordinal()]>0?"靠近饼干"
                 :related!=null && related.color!='\0'?"优先"+related.name
                 :related==Match3Goals.Kind.ICE?"优先消冰":"清理障碍";
-        else reason = "";
+        else reason = frontier.reason();
     }
 
     int collected(Match3Goals.Kind kind) { return collected[kind.ordinal()]; }
@@ -59,6 +64,9 @@ final class Match3MoveValue {
         return other != null && java.util.Arrays.equals(collected,other.collected)
                 && java.util.Arrays.equals(hits,other.hits) && potentialSpecials == other.potentialSpecials
                 && reason.equals(other.reason) && grounded == other.grounded
+                // Distance sorts candidates, but is not a claimed removal or
+                // exact spoken distance. Unrelated target visibility must not
+                // cut off an unchanged, still-supported preparation sentence.
                 && swap.matchedPositions().equals(other.swap.matchedPositions())
                 && swap.adjacentIce == other.swap.adjacentIce && swap.longestRun == other.swap.longestRun;
     }
@@ -72,7 +80,11 @@ final class Match3MoveValue {
         return evaluate(board,goals,swap,Collections.emptySet());
     }
     static Match3MoveValue evaluate(Match3Position board, Match3Goals goals, Match3Board.Swap swap,Set<Match3Goals.Kind> abstained) {
-        int[] counts = new int[Match3Goals.Kind.values().length], hits = new int[counts.length];
+        return evaluate(board, goals, swap, abstained, Match3TargetFrontier.prepare(board, goals, abstained));
+    }
+    static Match3MoveValue evaluate(Match3Position board, Match3Goals goals, Match3Board.Swap swap,
+                                   Set<Match3Goals.Kind> abstained, Match3TargetFrontier.Field frontier) {
+        int[] counts = new int[KINDS.length], hits = new int[counts.length];
         BitSet matched = swap.matchedPositions();
         List<BitSet> components = specialComponents(swap, board.cols);
         for (int p = matched.nextSetBit(0); p >= 0; p = matched.nextSetBit(p + 1)) {
@@ -121,7 +133,8 @@ final class Match3MoveValue {
                 counts[kind.ordinal()]++;
         }
         for(Match3Goals.Kind kind:abstained) { counts[kind.ordinal()]=0;hits[kind.ordinal()]=0; }
-        return new Match3MoveValue(swap, goals, counts, hits, components.size());
+        return new Match3MoveValue(swap, goals, counts, hits, components.size(),
+                frontier.at(matched));
     }
 
     private static boolean guaranteedNeighbour(Match3Position board, BitSet matched,
@@ -171,6 +184,8 @@ final class Match3MoveValue {
     String evidence() {
         return "scope="+(grounded?"observed_goal_one_move_lower_bound":"basic_one_move_goal_unread")+" complete=" + completedTargets + " progress_milli="
                 + progressMilli + " direct_units=" + directUnits + " relevant_hits=" + relevantHits
-                + " potential_specials=" + potentialSpecials + " random_falls=excluded";
+                + " potential_specials=" + potentialSpecials + " target_distance="
+                + (targetDistance == Match3TargetFrontier.UNAVAILABLE ? -1 : targetDistance)
+                + " target_distance_scope=spatial_only random_falls=excluded";
     }
 }

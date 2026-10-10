@@ -19,12 +19,12 @@ RUNNER = PACKAGE + ".test/androidx.test.runner.AndroidJUnitRunner"
 DEBUG_CLASSES = ("Match3HintInstrumentedTest", "Match3AuditInstrumentedTest", "Match3UiInstrumentedTest",
                  "Match3MergeInstrumentedTest", "Match3Level43InstrumentedTest", "Match3DiagnosticReplayInstrumentedTest",
                  "Match3GoalVisionInstrumentedTest", "Match3GoalReplayInstrumentedTest",
-                 "Match3LiveFeedbackInstrumentedTest", "Match3CrossLevelVisionInstrumentedTest", "Match3ElementEvidenceInstrumentedTest", "Match3TaskFeedbackInstrumentedTest", "Match3IceTaskInstrumentedTest")
+                 "Match3LiveFeedbackInstrumentedTest", "Match3CrossLevelVisionInstrumentedTest", "Match3ElementEvidenceInstrumentedTest", "Match3TaskFeedbackInstrumentedTest", "Match3IceTaskInstrumentedTest", "Match3SparseTaskInstrumentedTest")
 RELEASE_CLASSES = ("Match3ReleaseCaptureInstrumentedTest", "BundledAudioInstrumentedTest",
                    "DetectorReuseInstrumentedTest", "DiagnosticWorkInstrumentedTest", "ReleaseRuntimeInstrumentedTest",
                    "Match3UiInstrumentedTest", "DiagnosticContextInstrumentedTest", "Match3DiagnosticReplayInstrumentedTest",
                    "Match3GoalReplayInstrumentedTest", "Match3LiveFeedbackInstrumentedTest",
-                   "Match3CrossLevelVisionInstrumentedTest", "Match3ElementEvidenceInstrumentedTest", "Match3TaskFeedbackInstrumentedTest", "Match3IceTaskInstrumentedTest")
+                   "Match3CrossLevelVisionInstrumentedTest", "Match3ElementEvidenceInstrumentedTest", "Match3TaskFeedbackInstrumentedTest", "Match3IceTaskInstrumentedTest", "Match3SparseTaskInstrumentedTest")
 
 
 def instrumentation_summary(output: str) -> dict:

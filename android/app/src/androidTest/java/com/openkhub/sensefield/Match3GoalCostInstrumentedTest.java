@@ -37,6 +37,9 @@ public final class Match3GoalCostInstrumentedTest {
     @Test public void reportStationaryIceFamilyCostAgainstTheSameLegacyPixelPath() throws Exception {
         measure(new String[]{"screen-49-2331120934.jpg","screen-100-2331163518.jpg","screen-139-2331195074.jpg"},"ice-cost.json");
     }
+    @Test public void reportLocatedLastTargetPreparationCostAgainstTheSameLegacyPixelPath() throws Exception {
+        measure(new String[]{"screen-202-2334797160.jpg","screen-331-2334901990.jpg","screen-500-2335039006.jpg"},"sparse-cost.json");
+    }
     private void measure(String[] names,String filename) throws Exception {
         assertTrue(android.os.Build.HARDWARE.contains("ranchu") || android.os.Build.HARDWARE.contains("goldfish"));
         Context context=InstrumentationRegistry.getInstrumentation().getTargetContext();
@@ -85,7 +88,7 @@ public final class Match3GoalCostInstrumentedTest {
                     .put("goal_cell_confirmation_p95_ms",percentile(goalStages[1],.95))
                     .put("goal_hud_p95_ms",percentile(goalStages[2],.95))
                     .put("goal_ranking_p95_ms",percentile(goalStages[3],.95))
-                    .put("scope","pixel_sampling; unknown_element_grouping; per_cell_confirmation; HUD; full_raw_board_ranking_every_sample; excludes_TTS_projection_overlay_and_bounded_diagnostic_PNG_IO")
+                    .put("scope","current_geometry_detection_in_both_paths; pixel_sampling; unknown_element_grouping; per_cell_confirmation; HUD; full_raw_board_ranking_every_sample; excludes_TTS_projection_overlay_and_bounded_diagnostic_PNG_IO")
                     .put("p95_change_percent",100*(percentile(wall[1],.95)/percentile(wall[0],.95)-1))
                     .put("physical_thermal_gate_passed",false).put("patient_trial_gate_passed",false);
             File dir=context.getExternalFilesDir("match3-release-capture");assertNotNull(dir);dir.mkdirs();

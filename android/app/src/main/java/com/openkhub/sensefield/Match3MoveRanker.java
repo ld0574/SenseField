@@ -17,7 +17,9 @@ final class Match3MoveRanker {
     static List<Match3MoveValue> rankedMoves(Match3Position board, Match3Goals goals,Set<Match3Goals.Kind> abstained) {
         List<Match3MoveValue> moves = new ArrayList<>();
         if (board == null || goals == null || goals.hudVerified && (goals.steps == 0 || goals.finished())) return moves;
-        for (Match3Board.Swap swap : Match3Board.findSwaps(board)) moves.add(Match3MoveValue.evaluate(board, goals, swap,abstained));
+        Match3TargetFrontier.Field frontier = Match3TargetFrontier.prepare(board, goals, abstained);
+        for (Match3Board.Swap swap : Match3Board.findSwaps(board))
+            moves.add(Match3MoveValue.evaluate(board, goals, swap, abstained, frontier));
         boolean knownTarget=false;
         for(Match3Goals.Kind kind:Match3Goals.Kind.values())if(goals.active(kind))knownTarget=true;
         final boolean hasTarget=knownTarget;
@@ -27,6 +29,9 @@ final class Match3MoveRanker {
             if (order == 0) order = Integer.compare(b.progressMilli, a.progressMilli);
             if (order == 0) order = Integer.compare(b.directUnits, a.directUnits);
             if (order == 0) order = Integer.compare(b.relevantHits, a.relevantHits);
+            // Equal immediate evidence: work near a currently observed unfinished
+            // target before creating an unrelated special across the board.
+            if (order == 0 && hasTarget) order = Integer.compare(a.targetDistance, b.targetDistance);
             // In the final step, creating a future special offers no guaranteed extra turn.
             if (order == 0 && hasTarget && goals.steps != 1) order = Integer.compare(b.potentialSpecials, a.potentialSpecials);
             if (order == 0) order = Integer.compare(b.swap.adjacentIce, a.swap.adjacentIce);
