@@ -1,6 +1,20 @@
 # 听野 Gitee 下载分发与后续发布
 
-更新日期：2026-10-08。面向负责打包、上传和发包的队友。本次交付版本为 `0.4.4 / versionCode 21`，由负责人上传后生效；助手服务部署另见 [README](README.md)。
+更新日期：2026-10-10。面向负责打包、上传和发包的队友。当前交付版本为 `0.4.5 / versionCode 22`，由负责人手动上传后生效；助手服务部署另见 [README](README.md)。下方保留 0.4.4 的完整操作示例，当前发布使用本节的 0.4.5 文件与地址。
+
+## 当前 0.4.5 上传文件
+
+消消乐代码已完整合入 GitHub `main`，应用代码与已验证的 0.4.5 正式包一致。Gitee 是现有镜像仓库；创建发行版前先将代码同步到最新 `main`，再创建 `0.4.5` 发行版，上传下列唯一 APK：
+
+```text
+output/releases/0.4.5/
+├── gitee-upload/sensefieldv0.4.5.apk
+└── cdn-upload/latest.json
+```
+
+APK 为 24,364,276 bytes，SHA-256 `00c3b31434d26d105eb0b96f6cad30506756f3d7d550fa752074a5ac2e86c4e4`；永久地址为 [sensefieldv0.4.5.apk](https://gitee.com/leda/SenseField/releases/download/0.4.5/sensefieldv0.4.5.apk)。先上传 APK 并按后面的下载校验流程核对，再覆盖固定网站的 `/apk/latest.json`。模型分片仍复用 0.4.1，不重新上传。公开更新摘要直接使用 [UPDATE_SUMMARY.txt](../../docs/releases/0.4.5/UPDATE_SUMMARY.txt)，保持三行、100 字以内。
+
+消消乐仍为体验版，最近实际测试的播报与建议效果未通过玩家验收。工程回归通过不等于实际通关收益、完整声音或受控温升通过；详见[合并反馈记录](../../validation/match3/MATCH3_TASK_FEEDBACK_0_4_5_2026-10-10.md)。本次由负责人发布，代码合入和本地制品交付不代表 Gitee 附件或公网清单已经更新。
 
 ## 下载地址怎么分工
 
@@ -9,7 +23,7 @@
 | 内容 | 公开地址 | 后续如何维护 |
 | --- | --- | --- |
 | 版本清单 | [https://888413.xyz/apk/latest.json](https://888413.xyz/apk/latest.json) | 每次发布最后覆盖，文件由最终 APK 自动生成 |
-| 当前 APK | [sensefieldv0.4.4.apk](https://gitee.com/leda/SenseField/releases/download/0.4.4/sensefieldv0.4.4.apk) | 本次新建 0.4.4 Release，上传这一份 APK |
+| 当前 APK | [sensefieldv0.4.5.apk](https://gitee.com/leda/SenseField/releases/download/0.4.5/sensefieldv0.4.5.apk) | 本次新建 0.4.5 Release，上传上述唯一 APK |
 | 语音模型第一片 | [sensevoice-int8-v1.zip.part01](https://gitee.com/leda/SenseField/releases/download/0.4.1/sensevoice-int8-v1.zip.part01) | 上传一次，后续 APK 继续复用 |
 | 语音模型第二片 | [sensevoice-int8-v1.zip.part02](https://gitee.com/leda/SenseField/releases/download/0.4.1/sensevoice-int8-v1.zip.part02) | 上传一次，后续 APK 继续复用 |
 
@@ -17,7 +31,7 @@
 
 清单和模型配置只填写上述永久 Release 链接。浏览器下载时可能跳转到 `foruda.gitee.com` 临时签名地址，APP 已适配本项目的跳转；不要把临时地址复制进配置或清单。不要把清单移到固定的 0.4.1 Release，否则旧 APP 无法通过固定入口发现后续版本。
 
-## 本次 0.4.4 上传什么
+## 0.4.4 上传示例（历史）
 
 唯一交付位置相对于仓库根目录：
 

@@ -162,3 +162,13 @@
 - 原手机 mDNS 在线，安装前后辅助服务均已停止。同签名覆盖保留数据，手机及模拟器回读的实际安装 APK 均与交付摘要一致；安装收据在本批私有 `remediation/phone-final-install/receipt.json`。本轮没有启动游戏或新的采集会话。
 
 代码及合并文档推送当前消消乐分支，未合并 main、上传 CDN 或发布 Release。新包的独立准确率、通关收益、所选引擎外部实声与受控温升仍待测；复杂物体机制、多步规划及全关卡支持仍未完成，不提前修改评分或患者门禁。
+
+## 最新修订真实试用与 main 合入
+
+上述同签名修订包已在手机核对后再试用，用户仍反馈「还是拉胯」。本局后台监听、热采样及自动导出均已结束，没有要求手动下载。最新会话 `26bf7c80-556b-46c1-a0db-4f391339c5ff` 位于私有 `validation/private/match3-phone-20261010T055838Z/`，ZIP SHA-256 `e505ff61574da6edd42f572e94f3276b74f573eade4065a88ae007ec2eb79045`。共 389 帧、31 张周期图、321.064 秒、36 次排序；另外两个导出包属于历史会话，不能混算。
+
+13 条 STARTED 中，7 条 CANCELLED_GOAL_CHANGED、1 条 CANCELLED_VISUAL_MOTION、2 条 CANCELLED_HINT_EVIDENCE_CHANGED、2 条 CANCELLED_BOARD_MOTION、1 条 CANCELLED_CASCADE，未见 COMPLETED。这些是软件回调，不能单独证明实际声音的完整性或归因于 TTS；玩家效果继续记录为未通过。热监控 15 个样本，电池首末约 38.8→39.0°C，起始 APP 元数据有供电标志；非受控短局不能当作温降或热门禁。
+
+负责人先要求合入 main，再安排伙伴测试，并随后明确由自己发布。已将 `feature/jev-l2-judgment` 的 17 个后续提交快进合入原 `main`，应用代码与已测 `0fefaef8e031d02e0a3533063e81404de29a011f` 完全相同；不改版本、重新构建或换包。继续交付上述 24,364,276-byte 0.4.5／code22 APK 与匹配 `latest.json`；发布步骤更新到 [CDN 发布说明](../../deploy/assistant/CDN发布.md)。本轮只提交合入与交付文档、推送 main，Gitee 发行版、镜像同步和公网清单由负责人操作，不将准备完成写成已发布。
+
+真实任务识别、策略收益、完整语音和复杂机制仍需整改；伙伴测试用于收集新证据，不表示患者验收已通过。评分、`verified`／`release_ready` 以及独立声音／温升门禁保持原状态。
