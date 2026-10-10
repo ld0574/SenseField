@@ -4,7 +4,7 @@ import java.util.Objects;
 
 /** Piece identity, swap permission and the stationary covering layer are independent. */
 final class Match3Position {
-    enum Kind { ANIMAL, COIN, SNOW, EGG, COOKIE, SPECIAL, EMPTY, SURFACE, UNKNOWN }
+    enum Kind { ANIMAL, COIN, SNOW, ICEFLOWER, HONEY, EGG, COOKIE, SPECIAL, EMPTY, SURFACE, UNKNOWN }
     enum SwapPermission { YES, NO, UNKNOWN }
     static final class Cell {
         final Kind kind;

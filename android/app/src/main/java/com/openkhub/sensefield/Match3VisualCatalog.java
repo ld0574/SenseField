@@ -152,10 +152,35 @@ final class Match3VisualCatalog {
             if (loaded == null) try (java.io.InputStream input = context.getAssets().open("match3-fixed-ui-v1.json")) {
                 java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream(); byte[] buffer = new byte[4096]; int n;
                 while ((n = input.read(buffer)) > 0) { if (output.size() + n > 327680) throw new IllegalArgumentException("Catalog size"); output.write(buffer,0,n); }
-                loaded = new Match3VisualCatalog(new JSONObject(new String(output.toByteArray(), StandardCharsets.UTF_8)));
+                JSONObject json = new JSONObject(new String(output.toByteArray(), StandardCharsets.UTF_8));
+                mergeGallery(context, json);
+                loaded = new Match3VisualCatalog(json);
             } catch (Exception ignored) { loaded = new Match3VisualCatalog(); }
             return loaded;
         }
+    }
+
+    /** Optional sidecar gallery of extra ordinary-animal body references, loaded
+     *  separately so it is not bound by the fixed catalog's size cap. Appends to
+     *  ordinary_envelopes before construction; any failure leaves the catalog
+     *  unchanged. Identity/rule semantics are unchanged — only more plain-body
+     *  exemplars, so a face-confirmed animal is less likely to abstain on swap. */
+    private static void mergeGallery(Context context, JSONObject json) {
+        try (java.io.InputStream input = context.getAssets().open("match3-gallery-v1.json")) {
+            java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream(); byte[] buffer = new byte[4096]; int n;
+            while ((n = input.read(buffer)) > 0) { if (output.size() + n > 1048576) throw new IllegalArgumentException("Gallery size"); output.write(buffer,0,n); }
+            JSONObject gallery = new JSONObject(new String(output.toByteArray(), StandardCharsets.UTF_8));
+            if (!"match3-gallery-v1".equals(gallery.optString("format"))) return;
+            appendAll(gallery.optJSONArray("ordinary_envelopes"), json.getJSONArray("ordinary_envelopes"));
+            appendAll(gallery.optJSONArray("cells"), json.getJSONArray("cells"));
+            appendAll(gallery.optJSONArray("goals"), json.getJSONArray("goals"));
+            appendAll(gallery.optJSONArray("large_objects"), json.optJSONArray("large_objects"));
+        } catch (Exception ignored) { }
+    }
+
+    private static void appendAll(JSONArray extra, JSONArray base) throws org.json.JSONException {
+        if (extra == null || base == null) return;
+        for (int i = 0; i < extra.length(); i++) base.put(extra.getJSONObject(i));
     }
     static int[] patch(int[] pixels, int width, int left, int top, int right, int bottom) {
         int[] patch = new int[PATCH * PATCH];
@@ -274,6 +299,8 @@ final class Match3VisualCatalog {
         String kind = recognize(cells,observed,.12f,.025f);
         if ("snow1".equals(kind)) return Match3Position.Cell.obstacle(Match3Position.Kind.SNOW,1);
         if ("coin".equals(kind)) return Match3Position.Cell.obstacle(Match3Position.Kind.COIN,1);
+        if ("iceflower".equals(kind)) return Match3Position.Cell.obstacle(Match3Position.Kind.ICEFLOWER,1);
+        if ("honey".equals(kind)) return Match3Position.Cell.obstacle(Match3Position.Kind.HONEY,1);
         if ("unknown_surface".equals(kind)) return Match3Position.Cell.obstacle(Match3Position.Kind.SURFACE,-1);
         if ("egg".equals(kind)) {
             int green=0;

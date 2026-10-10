@@ -1,0 +1,13 @@
+{
+  "note": "Synthetic demo so scripts/evaluate_match3_accuracy.py runs end-to-end without a device or private data. Real predictions come from Match3HoldoutAccuracyInstrumentedTest.",
+  "catalog_sha256": "synthetic",
+  "board": {"rows": 1, "cols": 6},
+  "samples": [
+    {"id": "demo:r0c0", "row": 0, "col": 0, "kind": "ANIMAL", "color": "R", "swap_permission": "YES", "ice": 0},
+    {"id": "demo:r0c1", "row": 0, "col": 1, "kind": "COIN", "color": "", "swap_permission": "NO", "ice": 0},
+    {"id": "demo:r0c2", "row": 0, "col": 2, "kind": "UNKNOWN", "color": "", "swap_permission": "UNKNOWN", "ice": 0},
+    {"id": "demo:r0c3", "row": 0, "col": 3, "kind": "ANIMAL", "color": "R", "swap_permission": "YES", "ice": 0},
+    {"id": "demo:r0c4", "row": 0, "col": 4, "kind": "ANIMAL", "color": "Y", "swap_permission": "YES", "ice": 0},
+    {"id": "demo:r0c5", "row": 0, "col": 5, "kind": "ANIMAL", "color": "O", "swap_permission": "NO", "ice": 0}
+  ]
+}

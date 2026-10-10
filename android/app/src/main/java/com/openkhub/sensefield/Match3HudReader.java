@@ -23,6 +23,15 @@ final class Match3HudReader {
     private final boolean[] visited = new boolean[WIDTH*MAX_HEIGHT];
     private final int[] queue = new int[WIDTH*MAX_HEIGHT];
     private String status = "unread";
+    // Diagnostic only: the per-card icon patches, their recognized kind and aspect
+    // from the last read, so a goal-icon template can be captured in the exact
+    // format recognize() consumes. Never affects reading.
+    private int[][] diagnosticGoalPatches;
+    private String[] diagnosticGoalKinds;
+    private float[] diagnosticGoalAspects;
+    int[][] diagnosticGoalPatches() { return diagnosticGoalPatches; }
+    String[] diagnosticGoalKinds() { return diagnosticGoalKinds; }
+    float[] diagnosticGoalAspects() { return diagnosticGoalAspects; }
     Match3HudReader(Context context) { catalog = Match3VisualCatalog.get(context); }
     String status() { return status; }
     void clear() { previous = null; cached = null; previousHeight = 0; status = "unread";identities.clear(); }
@@ -82,6 +91,7 @@ final class Match3HudReader {
         return cached;
     }
     private Match3Goals readPixels(int[] pixels,int height,long at) {
+        diagnosticGoalPatches=null;diagnosticGoalKinds=null;diagnosticGoalAspects=null;
         if (height<80) { status="header_short"; return Match3Goals.unknown(at); }
         boolean[] mask=new boolean[WIDTH*height];
         for (int y=20;y<height;y++) for (int x=0;x<WIDTH;x++) mask[y*WIDTH+x]=orange(pixels[y*WIDTH+x]);
@@ -148,9 +158,11 @@ final class Match3HudReader {
             status="missing_goal_card";return Match3Goals.unknown(at);
         }
         List<Match3Goals.Target> targets=new ArrayList<>();
+        diagnosticGoalPatches=new int[boxes.size()][];diagnosticGoalKinds=new String[boxes.size()];diagnosticGoalAspects=new float[boxes.size()];
         for (int i=0;i<boxes.size();i++) {
             Box b=boxes.get(i);int[] patch=Match3VisualCatalog.patch(pixels,WIDTH,b.left,b.top,b.right,b.bottom);
             String identity=Match3VisualCatalog.recognize(catalog.goals,patch,.14f,.025f);
+            diagnosticGoalPatches[i]=patch;diagnosticGoalKinds[i]=identity;diagnosticGoalAspects[i]=b.width()/(float)b.height();
             Match3Goals.Kind kind=Match3Goals.Kind.UNKNOWN;
             if (identity!=null) try { kind=Match3Goals.Kind.valueOf(identity); } catch (IllegalArgumentException ignored) { }
             // Keep the numeral's antialias fringe inside the sampled field.

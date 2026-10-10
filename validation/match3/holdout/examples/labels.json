@@ -1,0 +1,11 @@
+{
+  "note": "Synthetic ground truth paired with examples/predictions.json. Family labels are the human O(family) step; swappable null means 'unknown/not an ordinary animal'.",
+  "samples": [
+    {"id": "demo:r0c0", "family": "ANIMAL:R", "kind": "ANIMAL", "color": "R", "swappable": true, "rule": "ordinary_animal", "source": "synthetic"},
+    {"id": "demo:r0c1", "family": "COIN", "kind": "COIN", "color": "", "swappable": false, "rule": "coin", "source": "synthetic"},
+    {"id": "demo:r0c2", "family": "ANIMAL:B", "kind": "ANIMAL", "color": "B", "swappable": true, "rule": "ordinary_animal", "source": "synthetic"},
+    {"id": "demo:r0c3", "family": "ANIMAL:G", "kind": "ANIMAL", "color": "G", "swappable": true, "rule": "ordinary_animal", "source": "synthetic"},
+    {"id": "demo:r0c4", "family": "COOKIE", "kind": "COOKIE", "color": "", "swappable": false, "rule": "identity_only_2x2", "source": "synthetic"},
+    {"id": "demo:r0c5", "family": "ANIMAL:O", "kind": "ANIMAL", "color": "O", "swappable": true, "rule": "ordinary_animal", "source": "synthetic"}
+  ]
+}

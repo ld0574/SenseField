@@ -11,6 +11,7 @@ final class Match3Goals {
         RED('R', "红狐狸"), BEAR('O', "棕熊"), CHICK('Y', "小鸡"),
         FROG('G', "青蛙"), HIPPO('B', "河马"), CAT('P', "紫猫"),
         COIN('\0', "银币"), SNOW('\0', "白色方块"), ICE('\0', "冰层"),
+        ICEFLOWER('\0', "冰花"), HONEY('\0', "蜜罐"),
         EGG('\0', "鸡蛋"), COOKIE('\0', "饼干"), UNKNOWN('\0', "未确认目标");
         final char color;
         final String name;

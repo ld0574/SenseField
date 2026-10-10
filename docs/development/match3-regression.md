@@ -85,3 +85,9 @@ python3 scripts/verify_match3_regression.py --mode full --serial emulator-5554 \
 `Match3TargetFrontierTest` 手工孤立盘验证近目标三连优于远处无关四连，同时不制造确定收集量；覆盖未知数量不新增空间准备、最后一步、未知／弃权目标、冷色天空与身份已知但交换权限未知的冰面动物。无关位置变清楚不能取消仍成立的交换与短理由，位置全部失证仍取消。位置证据和交换规则分开；几何用例不填暗像素、不合并分离暗条。最后目标准备是空间距离启发式，不是多步规划或保证通关。
 
 软件成本增加 `sparse-cost.json`，同样为各 30 个交错样本。三组测量的两条路径均包含当前几何检测，报告该范围；不是改动前后的引擎，也不包含手机录屏／TTS／浮层。新故障图是开发反证和回归材料，不能当独立留出准确率。
+
+## 消消乐识别准确率（阶段 0）
+
+把「准确率不行／识别不到」变成可复算的数，不再逐关录屏调试。真实引擎的逐格判定由模拟器上的 `Match3HoldoutAccuracyInstrumentedTest` 跑 `samplePosition` 产出 `predictions.json`，`scripts/evaluate_match3_accuracy.py` 只做评分（coverage 覆盖、漏认、认错、误放、漏换），不复刻识别逻辑。合成样例 `validation/match3/holdout/examples/` 由 `tests/test_match3_accuracy_eval.py` 离线自测。
+
+producer 无 manifest 时 `Assume` 跳过，暂未并入上面的门禁类表，待阶段 1 带语料并入。真机帧与结果放忽略的 `validation/private/`，不外传。口径、数据流与复现命令见[识别飞轮改造方案](../plans/消消乐识别飞轮改造.md)与 `validation/match3/holdout/README.md`。真实基线（10 盘 743 格，人工网页标注确认）：coverage 0.837；misclassify 0、false_swap 0、miss 104（空/背景 46、雪花变体 15、动物过保守 37、银币 6）、真正新/未知仅 17 格。第 11 张 `feedback-ice-live` 为通关结算弹窗、无棋盘（非几何 bug）。统一根因是固定目录样例太少且近 327KB 上限；历史评分、`verified`、`release_ready` 不变。

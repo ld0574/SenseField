@@ -77,6 +77,8 @@ final class Match3TargetFrontier {
         switch (target) {
             case COIN: return cell.kind == Match3Position.Kind.COIN;
             case SNOW: return cell.kind == Match3Position.Kind.SNOW;
+            case ICEFLOWER: return cell.kind == Match3Position.Kind.ICEFLOWER;
+            case HONEY: return cell.kind == Match3Position.Kind.HONEY;
             case COOKIE: return cell.kind == Match3Position.Kind.COOKIE;
             case EGG: return cell.kind == Match3Position.Kind.EGG;
             case ICE:
@@ -94,6 +96,8 @@ final class Match3TargetFrontier {
     String reason() {
         if (kind == Match3Goals.Kind.UNKNOWN) return "";
         if (kind == Match3Goals.Kind.ICE) return "准备消冰";
+        if (kind == Match3Goals.Kind.ICEFLOWER) return "靠近冰花";
+        if (kind == Match3Goals.Kind.HONEY) return "靠近蜜罐";
         if (kind == Match3Goals.Kind.COIN) return distance <= 2 ? "靠近银币" : "准备收集银币";
         if (kind == Match3Goals.Kind.COOKIE) return "靠近饼干";
         if (kind == Match3Goals.Kind.EGG) return "靠近鸡蛋";

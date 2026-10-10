@@ -49,7 +49,9 @@ final class Match3MoveValue {
         if (positive > 1) reason = "兼顾任务";
         else if (positive == 1) reason = spoken.color != '\0' ? "收集" + spoken.name
                 : spoken == Match3Goals.Kind.COIN ? "收集银币"
-                : spoken == Match3Goals.Kind.ICE ? "消除冰层" : "清除障碍";
+                : spoken == Match3Goals.Kind.ICE ? "消除冰层"
+                : spoken == Match3Goals.Kind.ICEFLOWER ? "消除冰花"
+                : spoken == Match3Goals.Kind.HONEY ? "消除蜜罐" : "清除障碍";
         else if (relevant > 0) reason = goals.active(Match3Goals.Kind.CHICK)
                 && hits[Match3Goals.Kind.EGG.ordinal()] > 0 ? "靠近鸡蛋"
                 :goals.active(Match3Goals.Kind.COOKIE) && hits[Match3Goals.Kind.COOKIE.ordinal()]>0?"靠近饼干"
@@ -119,6 +121,8 @@ final class Match3MoveValue {
             Match3Position.Cell cell = board.cell(r, c);
             Match3Goals.Kind kind = cell.kind == Match3Position.Kind.SNOW ? Match3Goals.Kind.SNOW
                     : cell.kind == Match3Position.Kind.COIN ? Match3Goals.Kind.COIN
+                    : cell.kind == Match3Position.Kind.ICEFLOWER ? Match3Goals.Kind.ICEFLOWER
+                    : cell.kind == Match3Position.Kind.HONEY ? Match3Goals.Kind.HONEY
                     : cell.kind == Match3Position.Kind.EGG ? Match3Goals.Kind.EGG
                     : cell.kind == Match3Position.Kind.COOKIE ? Match3Goals.Kind.COOKIE : Match3Goals.Kind.UNKNOWN;
             if (kind == Match3Goals.Kind.UNKNOWN)continue;
@@ -129,7 +133,9 @@ final class Match3MoveValue {
             // never four predicted removals or an unverified number of layers.
             if(kind==Match3Goals.Kind.COOKIE && !cookieObjects.add(cell.objectId>=0?cell.objectId:p))continue;
             hits[kind.ordinal()]++;
-            if ((kind == Match3Goals.Kind.SNOW || kind == Match3Goals.Kind.COIN) && cell.layers == 1)
+            // Ice-flower and honey clear on an adjacent match, same single-layer rule as snow/coin.
+            if ((kind == Match3Goals.Kind.SNOW || kind == Match3Goals.Kind.COIN
+                    || kind == Match3Goals.Kind.ICEFLOWER || kind == Match3Goals.Kind.HONEY) && cell.layers == 1)
                 counts[kind.ordinal()]++;
         }
         for(Match3Goals.Kind kind:abstained) { counts[kind.ordinal()]=0;hits[kind.ordinal()]=0; }
