@@ -8,10 +8,10 @@
 | --- | --- |
 | 主线本地交付 | 0.4.5／code22，消消乐分支完整合入 `main`；同签名、非 Debug、minified Release，最终包在模拟器验证；手机已覆盖并回读一致，最新玩家体验仍不满意 |
 | 安装包摘要 | 24,364,276 bytes；SHA-256 `00c3b31434d26d105eb0b96f6cad30506756f3d7d550fa752074a5ac2e86c4e4` |
-| 已记录的公开分发 | 0.4.5／code22，2026-10-10 只读核对负责人上传的 Gitee APK 与本地已测包一致，线上清单匹配；此前 GitHub 主线发布为 0.4.4／code21 |
-| 分发材料 | APK 在 `output/releases/0.4.5/gitee-upload/`，匹配清单在 `cdn-upload/latest.json`；后续仍由负责人手动上传 |
+| 已记录的公开分发 | 0.4.5／code22，2026-10-10 GitHub 普通 Release、Latest；三个附件与本地核对一致，公开 APK 可下载。此前负责人上传的 Gitee APK 与线上清单核对记录保留 |
+| 分发材料 | GitHub 附件在 `output/releases/0.4.5/github-upload/`；相同 APK 在 `gitee-upload/`，匹配清单在 `cdn-upload/latest.json`；Gitee 与网站继续由负责人维护 |
 
-制品和安装范围见[0.4.5 当前修订记录](match3/MATCH3_TASK_FEEDBACK_0_4_5_2026-10-10.md)、[0.4.5 使用说明](../docs/releases/0.4.5/RELEASE_NOTES.md)与[0.4.4 发布记录](releases/GITHUB_RELEASE_0_4_4_2026-10-08.md)。前批三局任务反馈、第 61／62 关 ICE 漏认以及第 63～66 关整盘／最后目标反证分别保留。最新修订的约五分钟试用仍收到负面反馈，13 条 STARTED 均取消、无 COMPLETED；当前不能记患者声音或通关价值通过。按负责人要求合入 main 后，公开下载核对通过，不代表体验验收通过。
+制品和安装范围见[0.4.5 当前修订记录](match3/MATCH3_TASK_FEEDBACK_0_4_5_2026-10-10.md)、[0.4.5 使用说明](../docs/releases/0.4.5/RELEASE_NOTES.md)与[0.4.5 发布记录](releases/GITHUB_RELEASE_0_4_5_2026-10-10.md)。前批三局任务反馈、第 61／62 关 ICE 漏认以及第 63～66 关整盘／最后目标反证分别保留。最新修订的约五分钟试用仍收到负面反馈，13 条 STARTED 均取消、无 COMPLETED；当前不能记患者声音或通关价值通过。按负责人要求合入 main 后，公开下载核对通过，不代表体验验收通过。
 
 ## 功能与证据
 

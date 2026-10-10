@@ -4,7 +4,7 @@
 
 [验证总索引](../README.md) · [当前状态](../STATUS.md)
 
-优先查看：[GitHub 0.4.4 发布记录](GITHUB_RELEASE_0_4_4_2026-10-08.md)。
+优先查看：[GitHub 0.4.5 发布记录](GITHUB_RELEASE_0_4_5_2026-10-10.md)。
 
 ## 记录索引
 
@@ -12,6 +12,7 @@
 
 | 日期 | 记录 |
 | --- | --- |
+| 2026-10-10 | [GitHub 0.4.5 发布记录](GITHUB_RELEASE_0_4_5_2026-10-10.md) |
 | 2026-10-08 | [GitHub 0.4.4 发布记录](GITHUB_RELEASE_0_4_4_2026-10-08.md) |
 | 2026-10-06 | [0.4.1 Gitee附件分发迁移](GITEE_DISTRIBUTION_2026-10-06.md) |
 | 2026-10-06 | [0.4.1 检查更新失败：Gitee附件与清单错配](APP_UPDATE_GITEE_MIGRATION_2026-10-06.md) |
