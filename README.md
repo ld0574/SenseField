@@ -27,7 +27,7 @@
 
 **当前版本：0.4.5／code22 · Android 10 及以上 · arm64 · APK 约 24.36 MB**
 
-[下载安卓安装包](https://gitee.com/leda/SenseField/releases/download/0.4.5/sensefieldv0.4.5.apk) · [Gitee 发行版](https://gitee.com/leda/SenseField/releases/tag/0.4.5) · [安装与使用说明](docs/releases/0.4.5/RELEASE_NOTES.md) · [历史版本](docs/releases/README.md)
+[下载安卓安装包](https://github.com/ld0574/SenseField/releases/download/v0.4.5/sensefieldv0.4.5.apk) · [GitHub Release](https://github.com/ld0574/SenseField/releases/tag/v0.4.5) · [安装与使用说明](docs/releases/0.4.5/RELEASE_NOTES.md) · [历史版本](docs/releases/README.md)
 
 AI 助手默认关闭，消消乐仍为体验版。功能验证进度与已知问题见[当前验证状态](validation/STATUS.md)。
 

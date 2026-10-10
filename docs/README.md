@@ -9,7 +9,7 @@
 | 需要做什么 | 从这里开始 |
 | --- | --- |
 | 了解玩家问题与产品边界 | [赛题背景](design/赛题背景.md) |
-| 安装已公开版本 | [Gitee 0.4.5](https://gitee.com/leda/SenseField/releases/tag/0.4.5) · [安装与使用说明](releases/0.4.5/RELEASE_NOTES.md) |
+| 安装当前版本 | [GitHub 0.4.5](https://github.com/ld0574/SenseField/releases/tag/v0.4.5) · [安装与使用说明](releases/0.4.5/RELEASE_NOTES.md) |
 | 查看最新版本变化 | [版本与交付索引](releases/README.md) |
 | 查看当前主线与验证边界 | [0.4.5 说明](releases/0.4.5/RELEASE_NOTES.md) · [当前验证状态](../validation/STATUS.md) |
 | 查找测试与排查记录 | [按主题查找验证记录](../validation/README.md) |
@@ -52,7 +52,7 @@
 
 ## 发布记录 · `releases/`
 
-[发布索引](releases/README.md)汇总 0.4.5 主线与 Gitee 公开安装包、此前 GitHub 发布及历史交付，并提供[版本命名规范](releases/版本命名规范.md)和[GitHub 发布检查清单](releases/GITHUB发布检查清单.md)。公开分发与实际体验验收分别记录；消消乐仍为体验版。
+[发布索引](releases/README.md)汇总当前主线的发布与使用说明、此前版本及历史交付，并提供[版本命名规范](releases/版本命名规范.md)和[GitHub 发布检查清单](releases/GITHUB发布检查清单.md)。公开分发与实际体验验收分别记录；消消乐仍为体验版。
 
 ## 需求与赛事资料 · `requirements/`
 
