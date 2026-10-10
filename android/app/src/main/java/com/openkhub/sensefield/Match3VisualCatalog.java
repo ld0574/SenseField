@@ -22,11 +22,14 @@ final class Match3VisualCatalog {
         boolean animalChecked;
         boolean inferredChecked;
         long inferredRevision;
+        boolean iceChecked;
+        int iceLayers;
     }
     static final class Pattern {
         final String kind;
         final String rule;
         final float aspect;
+        final boolean neutralBackground;
         final int[] pixels;
         final boolean[] mask;
         final int supported;
@@ -34,6 +37,7 @@ final class Match3VisualCatalog {
             kind = json.getString("kind");
             rule = json.optString("rule", "unverified");
             aspect=(float)json.optDouble("aspect",0);
+            neutralBackground=json.optBoolean("neutral_background",false);
             JSONArray p = json.getJSONArray("pixels"), m = json.getJSONArray("mask");
             if (p.length() != PATCH * PATCH || m.length() != p.length()) throw new IllegalArgumentException("Template shape");
             pixels = new int[p.length()]; mask = new boolean[p.length()];
@@ -75,14 +79,14 @@ final class Match3VisualCatalog {
     private static volatile Match3VisualCatalog loaded;
     final boolean available;
     final String id;
-    final List<Pattern> steps, goals, cells, animals, largeObjects;
+    final List<Pattern> steps, goals, cells, animals, largeObjects, iceSurfaces, iceBackgrounds;
     final List<Match3AnimalAppearance.Face> animalFaces;
     final List<Match3AnimalAppearance.Body> animalBodies;
     final List<Character> bodyColors;
     final List<Glyph> glyphs, checkmarks, levelSuffixes;
     private Match3VisualCatalog() {
         available = false; id = "unavailable";
-        steps = goals = cells = animals = largeObjects = Collections.emptyList(); glyphs = checkmarks = levelSuffixes = Collections.emptyList();
+        steps = goals = cells = animals = largeObjects = iceSurfaces = iceBackgrounds = Collections.emptyList(); glyphs = checkmarks = levelSuffixes = Collections.emptyList();
         animalFaces=Collections.emptyList();
         animalBodies=Collections.emptyList();
         bodyColors=Collections.emptyList();
@@ -95,6 +99,15 @@ final class Match3VisualCatalog {
         if(json.has("large_objects"))for(Pattern p:patterns(json.getJSONArray("large_objects")))
             if("cookie".equals(p.kind) && "identity_only_2x2".equals(p.rule))large.add(p);
         largeObjects=Collections.unmodifiableList(large);
+        List<Pattern> surfaces=new ArrayList<>(),backgrounds=new ArrayList<>();
+        if(json.has("ice_surfaces"))for(Pattern p:patterns(json.getJSONArray("ice_surfaces"))) {
+            if("ice1".equals(p.kind) && "stationary_single_layer_ice".equals(p.rule)
+                    || "ordinary0".equals(p.kind) && "ordinary_board_background".equals(p.rule)) {
+                surfaces.add(p);
+                if("ice1".equals(p.kind) && p.neutralBackground)backgrounds.add(p);
+            }
+        }
+        iceSurfaces=Collections.unmodifiableList(surfaces);iceBackgrounds=Collections.unmodifiableList(backgrounds);
         List<Pattern> objects=new ArrayList<>(), faces=new ArrayList<>();
         List<Match3AnimalAppearance.Face> descriptors=new ArrayList<>();
         for(Pattern pattern:patterns(json.getJSONArray("cells"))) {
@@ -194,7 +207,7 @@ final class Match3VisualCatalog {
         int[] envelope=patch(pixels,width,0,0,width,height);
         if(java.util.Arrays.equals(cache.patch,observed) && java.util.Arrays.equals(cache.envelope,envelope))return cache.result;
         cache.patch=observed;cache.envelope=envelope;cache.result=classifyObstacle(observed);cache.animalChecked=false;cache.animal=null;cache.face=null;cache.body=null;
-        cache.inferredChecked=false;cache.inferred=null;
+        cache.inferredChecked=false;cache.inferred=null;cache.iceChecked=false;
         return cache.result;
     }
     /** A positive animal face can survive a decorated lane or an idle outline; hue alone cannot. */
@@ -212,16 +225,32 @@ final class Match3VisualCatalog {
                 }
                 if(Match3Sampler.isMovable(color)) {
                     boolean plain=false;
+                    int ice=iceLayers(cache);
                     for(int i=0;i<animalBodies.size();i++)if(bodyColors.get(i)==color
-                            && body(cache).difference(animalBodies.get(i))<=Match3AnimalAppearance.MAXIMUM) {
+                            && (ice==1?matchesIceBody(cache,animalBodies.get(i))
+                            :body(cache).difference(animalBodies.get(i))<=Match3AnimalAppearance.MAXIMUM)) {
                         plain=true;break;
                     }
-                    cache.animal=plain?Match3Position.Cell.animal(color):Match3Position.Cell.animalIdentity(color);
+                    cache.animal=plain?ice==1?Match3Position.Cell.animalOnIce(color):Match3Position.Cell.animal(color)
+                            :Match3Position.Cell.animalIdentity(color);
                 }
             }
             cache.animalChecked=true;
         }
         return cache.animal;
+    }
+    int iceLayers(CellCache cache) {
+        if(!cache.iceChecked) {
+            cache.iceLayers=cache.envelope!=null && "ice1".equals(recognize(iceSurfaces,cache.envelope,
+                    Match3AnimalAppearance.MAXIMUM,Match3AnimalAppearance.MARGIN))?1:0;
+            cache.iceChecked=true;
+        }
+        return cache.iceLayers;
+    }
+    private boolean matchesIceBody(CellCache cache,Match3AnimalAppearance.Body ordinary) {
+        for(Pattern background:iceBackgrounds)
+            if(body(cache).differenceOnIce(ordinary,background.pixels)<=Match3AnimalAppearance.MAXIMUM)return true;
+        return false;
     }
     static Match3AnimalAppearance.Body body(CellCache cache) {
         if(cache.body==null && cache.envelope!=null)cache.body=new Match3AnimalAppearance.Body(cache.envelope);
@@ -230,7 +259,7 @@ final class Match3VisualCatalog {
     }
     Match3AnimalAppearance.Reference trustedReference(CellCache cache) {
         Match3Position.Cell animal=animal(cache);
-        return animal!=null && animal.swappable
+        return animal!=null && animal.swappable && animal.iceLayers==0
                 ?new Match3AnimalAppearance.Reference(face(cache,animal.color),body(cache)):null;
     }
     static Match3AnimalAppearance.Face face(CellCache cache) {

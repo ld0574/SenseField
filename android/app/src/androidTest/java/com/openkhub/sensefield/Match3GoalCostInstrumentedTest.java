@@ -32,9 +32,15 @@ public final class Match3GoalCostInstrumentedTest {
         long[] sorted=values.clone();Arrays.sort(sorted);return sorted[(int)Math.ceil(percentile*sorted.length)-1]/1000000d;
     }
     @Test public void reportTheAddedLocalGoalReadAndRankingCostAgainstTheExistingPixelPath() throws Exception {
+        measure(new String[]{"screen-73-2252754942.jpg","screen-203-2252860078.jpg","screen-229-2252881089.jpg"},"goal-cost.json");
+    }
+    @Test public void reportStationaryIceFamilyCostAgainstTheSameLegacyPixelPath() throws Exception {
+        measure(new String[]{"screen-49-2331120934.jpg","screen-100-2331163518.jpg","screen-139-2331195074.jpg"},"ice-cost.json");
+    }
+    private void measure(String[] names,String filename) throws Exception {
         assertTrue(android.os.Build.HARDWARE.contains("ranchu") || android.os.Build.HARDWARE.contains("goldfish"));
         Context context=InstrumentationRegistry.getInstrumentation().getTargetContext();
-        Bitmap[] frames={load("screen-73-2252754942.jpg"),load("screen-203-2252860078.jpg"),load("screen-229-2252881089.jpg")};
+        Bitmap[] frames={load(names[0]),load(names[1]),load(names[2])};
         Match3Sampler[] samplers=new Match3Sampler[frames.length];Match3HudReader reader=new Match3HudReader(context);
         Match3CellConfirmation[] confirmations=new Match3CellConfirmation[frames.length];
         Match3UnknownElements[] groups=new Match3UnknownElements[frames.length];
@@ -69,6 +75,8 @@ public final class Match3GoalCostInstrumentedTest {
                 if(iteration>=0) { wall[variant][iteration]=cost;cpu[variant][iteration]=cpuCost; }
             }
             JSONObject report=new JSONObject().put("source","isolated_emulator_same_inputs_interleaved_paths")
+                    .put("inputs",new org.json.JSONArray(java.util.Arrays.asList(names)))
+                    .put("comparison","current structured engine versus legacy colour-only pixel path; not a before/after engine comparison")
                     .put("samples_per_path",30).put("input_width",1220).put("input_height",2712)
                     .put("baseline_wall_p50_ms",percentile(wall[0],.5)).put("baseline_wall_p95_ms",percentile(wall[0],.95))
                     .put("goal_wall_p50_ms",percentile(wall[1],.5)).put("goal_wall_p95_ms",percentile(wall[1],.95))
@@ -81,7 +89,7 @@ public final class Match3GoalCostInstrumentedTest {
                     .put("p95_change_percent",100*(percentile(wall[1],.95)/percentile(wall[0],.95)-1))
                     .put("physical_thermal_gate_passed",false).put("patient_trial_gate_passed",false);
             File dir=context.getExternalFilesDir("match3-release-capture");assertNotNull(dir);dir.mkdirs();
-            try(FileOutputStream out=new FileOutputStream(new File(dir,"goal-cost.json"))) { out.write(report.toString(2).getBytes(StandardCharsets.UTF_8)); }
+            try(FileOutputStream out=new FileOutputStream(new File(dir,filename))) { out.write(report.toString(2).getBytes(StandardCharsets.UTF_8)); }
             android.util.Log.i("Match3GoalCost",report.toString());
         } finally { for(Match3Sampler s:samplers)if(s!=null)s.close();reader.close();for(Bitmap f:frames)if(f!=null)f.recycle(); }
     }

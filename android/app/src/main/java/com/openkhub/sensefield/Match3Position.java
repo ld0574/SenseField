@@ -32,11 +32,15 @@ final class Match3Position {
         }
         /** Explicit ordinary-animal rule, for verified sprites or abstract rule fixtures. */
         static Cell animal(char c) { return new Cell(Kind.ANIMAL, c, SwapPermission.YES, 0, 0); }
+        /** Reviewed stationary single-layer ice leaves the ordinary animal exchangeable. */
+        static Cell animalOnIce(char c) { return new Cell(Kind.ANIMAL,c,SwapPermission.YES,0,1); }
         /** Recognizing a face does not establish the covering state or exchange mechanics. */
         static Cell animalIdentity(char c) { return new Cell(Kind.ANIMAL,c,SwapPermission.UNKNOWN,-1,-1); }
         static Cell obstacle(Kind kind, int layers) { return new Cell(kind, '\0', false, layers, 0); }
         /** Reviewed whole-object identity; no invented layer count or removal rule. */
         static Cell cookie(int anchor) { return new Cell(Kind.COOKIE,'\0',SwapPermission.NO,-1,0,anchor); }
+        /** A known underlay does not establish the foreground's exchange/removal rules. */
+        Cell withIce(int ice) { return new Cell(kind,color,swapPermission,layers,ice,objectId); }
         char code() {
             // An unverified covering cannot complete a match or lend it a certain task gain.
             if (kind == Kind.ANIMAL) return swapPermission==SwapPermission.UNKNOWN?'#':color;

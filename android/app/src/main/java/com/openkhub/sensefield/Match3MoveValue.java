@@ -43,11 +43,13 @@ final class Match3MoveValue {
         relevantHits = relevant; allTargetsFinish = all;
         if (positive > 1) reason = "兼顾任务";
         else if (positive == 1) reason = spoken.color != '\0' ? "收集" + spoken.name
-                : spoken == Match3Goals.Kind.COIN ? "收集银币" : "清除障碍";
+                : spoken == Match3Goals.Kind.COIN ? "收集银币"
+                : spoken == Match3Goals.Kind.ICE ? "消除冰层" : "清除障碍";
         else if (relevant > 0) reason = goals.active(Match3Goals.Kind.CHICK)
                 && hits[Match3Goals.Kind.EGG.ordinal()] > 0 ? "靠近鸡蛋"
                 :goals.active(Match3Goals.Kind.COOKIE) && hits[Match3Goals.Kind.COOKIE.ordinal()]>0?"靠近饼干"
-                :related!=null && related.color!='\0'?"优先"+related.name:"清理障碍";
+                :related!=null && related.color!='\0'?"优先"+related.name
+                :related==Match3Goals.Kind.ICE?"优先消冰":"清理障碍";
         else reason = "";
     }
 

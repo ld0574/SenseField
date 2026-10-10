@@ -166,7 +166,8 @@ final class Match3Sampler implements AutoCloseable {
                         ?Match3Position.Cell.obstacle(Match3Position.Kind.EMPTY,0)
                         :Match3Position.Cell.obstacle(legacy==UNKNOWN?Match3Position.Kind.UNKNOWN:Match3Position.Kind.SURFACE,-1);
             }
-            comparable[r][c]=known==null && cells[r][c].kind!=Match3Position.Kind.EMPTY;
+            comparable[r][c]=known==null && cells[r][c].kind!=Match3Position.Kind.EMPTY
+                    && observations.iceLayers(observationCache[r][c])!=1;
             if(cells[r][c].kind==Match3Position.Kind.ANIMAL && cells[r][c].swappable
                     && observationCache[r][c].patch!=null) {
                 Match3AnimalAppearance.Reference reference=observations.trustedReference(observationCache[r][c]);
@@ -196,6 +197,8 @@ final class Match3Sampler implements AutoCloseable {
             }
         Match3AnimalAppearance.Face[][] faces=new Match3AnimalAppearance.Face[g.rows][g.cols];
         for(int r=0;r<g.rows;r++)for(int c=0;c<g.cols;c++) {
+            if(observations.iceLayers(observationCache[r][c])==1 && cells[r][c].iceLayers!=1)
+                cells[r][c]=cells[r][c].withIce(1);
             if(observationCache[r][c].patch!=null)faces[r][c]=Match3VisualCatalog.face(observationCache[r][c]);
             if(cells[r][c].kind==Match3Position.Kind.ANIMAL && !cells[r][c].swappable)uncertainAnimals++;
             else if(cells[r][c].kind==Match3Position.Kind.UNKNOWN || cells[r][c].kind==Match3Position.Kind.SURFACE)unfamiliarCells++;

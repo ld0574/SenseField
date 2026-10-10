@@ -8,6 +8,57 @@ import java.util.List;
 import java.util.Random;
 
 public final class Match3ElementEvidenceTest {
+    @Test public void concurrentIceChecksSeeCompleteBackgroundEvidence() throws Exception {
+        int[] ordinary=face(),ice=new int[256],observed=ordinary.clone();Arrays.fill(ice,0xff508fc0);
+        for(int i=0;i<256;i++)if(ordinary[i]==0xff203050)observed[i]=ice[i];
+        java.util.concurrent.ExecutorService workers=java.util.concurrent.Executors.newFixedThreadPool(4);
+        try {
+            for(int round=0;round<40;round++) {
+                Match3AnimalAppearance.Body reference=new Match3AnimalAppearance.Body(ordinary);
+                java.util.concurrent.CountDownLatch start=new java.util.concurrent.CountDownLatch(1);
+                List<java.util.concurrent.Future<Float>> results=new java.util.ArrayList<>();
+                for(int i=0;i<4;i++)results.add(workers.submit(()->{
+                    start.await();return new Match3AnimalAppearance.Body(observed).differenceOnIce(reference,ice);
+                }));
+                start.countDown();
+                for(java.util.concurrent.Future<Float> result:results)
+                    assertEquals("Both consumers must see the full edge-connected mask",0f,
+                            result.get(2,java.util.concurrent.TimeUnit.SECONDS),0f);
+            }
+        } finally { workers.shutdownNow(); }
+    }
+    @Test public void stationaryIceNormalizationPreservesForegroundAndRejectsUnfamiliarCovers() {
+        int[] ordinary=face(),ice=new int[256],observed=ordinary.clone();Arrays.fill(ice,0xff508fc0);
+        for(int i=0;i<256;i++)if(ordinary[i]==0xff203050)observed[i]=ice[i];
+        Match3AnimalAppearance.Body reference=new Match3AnimalAppearance.Body(ordinary);
+        assertEquals(0f,new Match3AnimalAppearance.Body(observed).differenceOnIce(reference,ice),0f);
+        int[] before=observed.clone();
+        for(int y=4;y<12;y++)for(int x=4;x<12;x++)observed[y*16+x]=0xfffafaff;
+        assertTrue(new Match3AnimalAppearance.Body(observed).differenceOnIce(reference,ice)>Match3AnimalAppearance.MAXIMUM);
+        assertArrayEquals("Normalization never edits the original reference",face(),ordinary);
+        assertEquals(0xff508fc0,before[0]);
+        int[] strange=before.clone();
+        for(int i=0;i<256;i++)if(ordinary[i]==0xff203050)strange[i]=0xfffafaff;
+        assertTrue("An unfamiliar background cannot be normalized",new Match3AnimalAppearance.Body(strange)
+                .differenceOnIce(reference,ice)>Match3AnimalAppearance.MAXIMUM);
+    }
+    @Test public void knownUnderlayPreservesUnknownForegroundPermissionsAndStationaryCoordinates() {
+        Match3Position.Cell uncertain=Match3Position.Cell.animalIdentity('R').withIce(1);
+        assertFalse(uncertain.swappable);assertEquals('#',uncertain.code());assertEquals(1,uncertain.iceLayers);
+        Match3Position.Cell empty=Match3Position.Cell.obstacle(Match3Position.Kind.EMPTY,0).withIce(1);
+        assertFalse(empty.swappable);assertEquals('H',empty.code());
+        Match3Position.Cell known=Match3Position.Cell.animalOnIce('R');
+        assertTrue(known.swappable);assertEquals('R',known.code());assertEquals(1,known.iceLayers);
+    }
+    @Test public void iceNormalizationCannotEraseEnclosedDarkForegroundAsIfItWereABackdrop() {
+        int[] ordinary=face(),ice=new int[256],observed;
+        Arrays.fill(ice,0xff508fc0);
+        // An enclosed dark-blue eye shares the board colour but is foreground.
+        ordinary[6*16+6]=0xff203050;observed=ordinary.clone();
+        for(int i=0;i<256;i++)if(ordinary[i]==0xff203050)observed[i]=ice[i];
+        assertTrue("Changed enclosed eye pixels must remain in the error",new Match3AnimalAppearance.Body(observed)
+                .differenceOnIce(new Match3AnimalAppearance.Body(ordinary),ice)>0f);
+    }
     @Test public void chromaRejectionPreservesFullFaceAdmissionAndMotionDecisions() {
         Random random=new Random(7391);int[] original=face();
         for(int variant=0;variant<160;variant++) {

@@ -103,6 +103,7 @@
     <init>(int,int,int,int,int,int,int,int);
     int frameWidth; int frameHeight; int left; int top; int right; int bottom; int rows; int cols;
     boolean sameGrid(com.openkhub.sensefield.BoardGeometry);
+    float cellLeft(int); float cellTop(int);
 }
 -keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3Position {
     com.openkhub.sensefield.Match3Position$Cell cell(int,int);
@@ -112,6 +113,7 @@
 -keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3Position$Cell {
     com.openkhub.sensefield.Match3Position$Kind kind;
     char color; boolean swappable;
+    int iceLayers;
     com.openkhub.sensefield.Match3Position$SwapPermission swapPermission;
     char code();
 }

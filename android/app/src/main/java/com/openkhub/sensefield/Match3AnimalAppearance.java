@@ -11,6 +11,7 @@ final class Match3AnimalAppearance {
     static final class Body {
         private final int[] patch;
         private final boolean[] background = new boolean[256];
+        private volatile boolean[] exterior;
         Body(int[] patch) {
             if(patch==null || patch.length!=256)throw new IllegalArgumentException("Body patch");
             this.patch=patch.clone();
@@ -22,6 +23,41 @@ final class Match3AnimalAppearance {
             if(best<=MAXIMUM)return best;
             for(int dy=-2;dy<=2;dy++)for(int dx=-2;dx<=2;dx++)if(dx!=0||dy!=0)best=Math.min(best,aligned(other,dx,dy));
             return best;
+        }
+        /** Replace only positively observed stationary ice behind a certified
+         * animal. Foreground/unknown covers still receive the full-body and
+         * quadrant checks; an animal face alone never grants swap permission. */
+        float differenceOnIce(Body ordinary,int[] iceBackground) {
+            int[] normalized=patch.clone();int support=0;
+            boolean[] behind=ordinary.exteriorBackground();
+            for(int i=0;i<256;i++)if(behind[i]) {
+                int a=patch[i],b=iceBackground[i];
+                int error=Math.abs((a>>16&255)-(b>>16&255))+Math.abs((a>>8&255)-(b>>8&255))
+                        +Math.abs((a&255)-(b&255));
+                if(error/(float)765<=MAXIMUM) { normalized[i]=ordinary.patch[i];support++; }
+            }
+            return support==0?Float.POSITIVE_INFINITY:new Body(normalized).difference(ordinary);
+        }
+        private boolean[] exteriorBackground() {
+            boolean[] cached=exterior;
+            if(cached!=null)return cached;
+            boolean[] result=new boolean[256];int[] queue=new int[256];int head=0,tail=0;
+            // A dark-blue eye/mouth is foreground even when its colour matches
+            // the lane. Only backdrop connected to the tile edge may change.
+            for(int y=0;y<16;y++)for(int x=0;x<16;x++)if(x==0 || y==0 || x==15 || y==15) {
+                int at=y*16+x;if(background[at]) { result[at]=true;queue[tail++]=at; }
+            }
+            while(head<tail) {
+                int at=queue[head++],x=at%16,y=at/16;
+                if(x>0 && background[at-1] && !result[at-1]) { result[at-1]=true;queue[tail++]=at-1; }
+                if(x<15 && background[at+1] && !result[at+1]) { result[at+1]=true;queue[tail++]=at+1; }
+                if(y>0 && background[at-16] && !result[at-16]) { result[at-16]=true;queue[tail++]=at-16; }
+                if(y<15 && background[at+16] && !result[at+16]) { result[at+16]=true;queue[tail++]=at+16; }
+            }
+            // Catalog bodies are shared by live and screenshot samplers. Publish
+            // only the complete immutable mask; concurrent construction is safe.
+            exterior=result;
+            return result;
         }
         private float aligned(Body other,int dx,int dy) {
             // Registration may discard only visible board background, never an unknown cover or sprite detail.

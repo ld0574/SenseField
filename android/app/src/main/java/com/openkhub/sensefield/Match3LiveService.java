@@ -110,7 +110,7 @@ public class Match3LiveService extends Service {
         volatile long frameAt;
         long processedFrames;
         String recommendationGate = "starting";
-        int unknownCells, excludedCells, visibleRuns, unconfirmedCells;
+        int unknownCells, excludedCells, visibleRuns, unconfirmedCells, iceCells, iceSwappableCells;
         long geometryWaitingFrames, boardChangingFrames, cascadeWaitingFrames;
         long lastProcessedAt = -CAPTURE_INTERVAL_MS;
         List<Match3Board.Swap> lastSwaps;
@@ -369,6 +369,7 @@ public class Match3LiveService extends Service {
                     "animal_direct_catalog", s.sampler==null?0:s.sampler.directAnimals,
                     "animal_current_frame", s.sampler==null?0:s.sampler.inferredAnimals,
                     "animal_cover_unverified", s.sampler==null?0:s.sampler.uncertainAnimals,
+                    "stationary_ice_cells", s.iceCells, "stationary_ice_swappable_cells", s.iceSwappableCells,
                     "element_review_families", s.unknownElements.familyCount(),
                     "element_review_saturated", s.unknownElements.saturatedObservations,
                     "element_review_ambiguous", s.unknownElements.ambiguousObservations,
@@ -511,6 +512,10 @@ public class Match3LiveService extends Service {
                     +" level="+s.goals.level+" steps="+s.goals.steps+" key="+s.goals.key());
         }
         Match3Position position=s.sampler.samplePosition(frame,s.frameAt);
+        s.iceCells=s.iceSwappableCells=0;
+        for(int r=0;r<position.rows;r++)for(int c=0;c<position.cols;c++)if(position.cell(r,c).iceLayers==1) {
+            s.iceCells++;if(position.cell(r,c).swappable)s.iceSwappableCells++;
+        }
         s.outcomes.observeFrame(position,observedGoals,s.frameAt);
         s.outcomes.confirmed(s.goals,s.frameAt);
         boolean goalsConfirming=observedGoals.hudVerified && !s.goals.hudVerified;
@@ -588,6 +593,7 @@ public class Match3LiveService extends Service {
             }
             s.diagnostics.record("Match3Ranking",DiagnosticRecorder.object("board_revision",s.boardRevision,
                     "goal_key",s.goals.key(),"goal_read_status",s.hudReader.status(),"admitted_moves",s.rankedMoves.size(),
+                    "stationary_ice",iceState(position),
                     "top_candidates",candidates,"coordinates","top_left_zero_based",
                     "scope","direct_one_move_and_object_proximity; random_cascades_and_unknown_layers_excluded"));
         }
@@ -644,6 +650,17 @@ public class Match3LiveService extends Service {
                 "remaining",target.remaining,"completed",target.completed));
         return DiagnosticRecorder.object("hud_verified",goals.hudVerified,"level",goals.level,"steps",goals.steps,
                 "observed_at_ms",goals.observedAtMs,"targets",targets,"unknown_count_value",-1);
+    }
+    private static org.json.JSONObject iceState(Match3Position position) {
+        org.json.JSONArray rows=new org.json.JSONArray();
+        for(int r=0;r<position.rows;r++) {
+            StringBuilder row=new StringBuilder();
+            for(int c=0;c<position.cols;c++)row.append(position.cell(r,c).iceLayers==1?'1'
+                    :position.cell(r,c).iceLayers<0?'?':'0');
+            rows.put(row.toString());
+        }
+        return DiagnosticRecorder.object("grid",rows,"coordinates","top_left_zero_based",
+                "scope","reviewed_stationary_single_layer; foreground_permission_independent");
     }
     private static org.json.JSONObject goalMap(java.util.Map<Match3Goals.Kind,Integer> values) {
         org.json.JSONObject result=new org.json.JSONObject();
@@ -733,6 +750,7 @@ public class Match3LiveService extends Service {
         s.sampler = null; s.geometry = null; s.geometryConfirmation.reset();
         s.lastStableMatrix = null; s.lastSwaps = null;
         s.lastStablePosition=null;s.rankedMoves=null;s.rankedGoalKey="unread";
+        s.iceCells=s.iceSwappableCells=0;
         s.goalConfirmation.clear();s.goals=Match3Goals.unknown(SystemClock.elapsedRealtime());
         if(s.hudReader!=null)s.hudReader.clear();
         if(s.outcomes!=null)s.outcomes.cancel(reason);

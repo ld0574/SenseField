@@ -237,7 +237,8 @@ final class Match3HudReader {
             // Discarding it would turn 47 into 4 (or 17 into 1). A substantial
             // unrecognized glyph invalidates the whole number instead.
             if(b.height()>=7 && b.width()>=Math.max(3,b.height()*.25f)
-                    && (b.right>=box.right || b.bottom>=box.bottom || step && (b.left<=box.left || b.top<=box.top))) return -1;
+                    && (b.right>=box.right || b.bottom>=box.bottom
+                    || b.left<=box.left && (step || b.top>box.top) || step && b.top<=box.top)) return -1;
             if(b.left<=box.left || b.top<=box.top || b.right>=box.right || b.bottom>=box.bottom
                     || b.height()<7 || b.area<5) continue;
             if(b.width()>b.height()*.85f)return -1;
