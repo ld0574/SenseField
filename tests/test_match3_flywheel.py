@@ -152,6 +152,24 @@ class RegistryTests(unittest.TestCase):
             flywheel.harvest({"samples": [{"id": "a.png:r0c0", "envelope": [0xffffff] * 256}]},
                              {"session_id": "train-session", "frames": [{"file": "a.png"}]}, registry)
 
+    def test_typed_identity_only_uses_train_patch_without_mechanism_or_move_binding(self):
+        truth = labels.record("flower", "state", None)
+        registry = {"families": [{"family": "flower", "role": "cell",
+            "review": {**truth, "identity": "flower", "reviewed": True},
+            "samples": [{"group": group, "source": group, "pixels": [0x123456] * 256,
+                         "patch": [patch] * 256} for group, patch in (("train", 0x654321), ("test", 0xffffff))]}]}
+        gallery = flywheel.build_gallery(registry, {"groups": {"train": "train", "test": "test"}})
+        self.assertEqual(1, len(gallery["cells"]))
+        item = gallery["cells"][0]
+        self.assertEqual("identity_FLOWER", item["kind"])
+        self.assertEqual("reviewed_identity_only", item["rule"])
+        self.assertEqual("654321" * 256, item["pixels_rgb"])
+        self.assertNotIn("rule_binding", item)
+        self.assertEqual([], gallery["ordinary_envelopes"])
+        registry["families"][0]["review"]["archetype"] = "unknown"
+        with self.assertRaises(ValueError):
+            flywheel.build_gallery(registry, {"groups": {"train": "train", "test": "test"}})
+
     def test_mixed_goal_split_invalidates_both_reviews_and_masks_counters(self):
         first, second = [0x123456] * 256, [0x123456] * 128 + [0xffffff] * 128
         registry = flywheel.harvest({"goal_cards": {"a": [{"pixels": first}, {"pixels": second}]}},

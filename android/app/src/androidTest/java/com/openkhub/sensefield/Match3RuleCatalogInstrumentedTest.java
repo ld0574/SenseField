@@ -53,6 +53,29 @@ public final class Match3RuleCatalogInstrumentedTest {
         Match3Goals.Target target=Match3Goals.Target.observed(0,Match3Goals.Kind.CHICK,8,false,"");
         assertEquals(Match3Goals.Mode.UNKNOWN,target.mode);
     }
+    @Test public void reviewedTypedAppearanceKeepsAllUnobservedMechanicsUnknown() throws Exception {
+        JSONObject base=new JSONObject(new String(asset("match3-fixed-ui-v1.json"),StandardCharsets.UTF_8));
+        base.put("cells",new JSONArray());
+        StringBuilder pixels=new StringBuilder();for(int i=0;i<256;i++)pixels.append(i%16<8?"4488bb":"8866aa");
+        JSONObject item=new JSONObject().put("kind","identity_FLOWER").put("rule","reviewed_identity_only")
+                .put("rule_version",1).put("reviewed",true).put("source","synthetic/train/flower")
+                .put("family_id","flower").put("pixels_rgb",pixels).put("mask_bits","1".repeat(256));
+        JSONObject gallery=new JSONObject().put("format","match3-gallery-v1").put("id","flower-fixture")
+                .put("cells",new JSONArray().put(item));
+        Match3VisualCatalog catalog=Match3VisualCatalog.withGallery(base,gallery.toString().getBytes(StandardCharsets.UTF_8));
+        assertEquals("loaded",catalog.galleryStatus);
+        Match3Position.Cell cell=catalog.classifyObstacle(catalog.cells.get(0).pixels);
+        assertNotNull(cell);assertEquals(Match3Position.Kind.FLOWER,cell.kind);assertEquals("flower_cluster",cell.ruleId);
+        assertFalse(cell.swappable);assertEquals(-1,cell.layers);assertEquals(-1,cell.iceLayers);
+        assertEquals(Match3Position.Cover.UNKNOWN,cell.cover);assertEquals(Match3Position.Gate.UNKNOWN,cell.gate);
+        assertEquals(-1,cell.charge);assertEquals(-1,cell.capacity);
+        assertEquals(Match3Position.SwapPermission.UNKNOWN,cell.adjacentDamagePermission);
+        assertEquals(Match3Position.SwapPermission.UNKNOWN,cell.specialDamagePermission);
+        item.put("reviewed",false);
+        assertTrue(Match3VisualCatalog.withGallery(base,gallery.toString().getBytes(StandardCharsets.UTF_8)).galleryStatus.startsWith("rejected:"));
+        item.put("reviewed",true).put("kind","identity_ANIMAL");
+        assertTrue(Match3VisualCatalog.withGallery(base,gallery.toString().getBytes(StandardCharsets.UTF_8)).galleryStatus.startsWith("rejected:"));
+    }
     @Test public void reviewedGoalModeNeedsSeparateEvidenceAndAbstainsOnConflictingTemplates() throws Exception {
         StringBuilder pixels=new StringBuilder();for(int i=0;i<256;i++)pixels.append(i%2==0?"779933":"335577");
         JSONObject item=new JSONObject().put("kind","CHICK").put("rule","reviewed_goal_icon").put("reviewed",true)

@@ -408,6 +408,10 @@ final class Match3VisualCatalog {
                     }
                     String rule=item.optString("rule","unverified"),kind=item.optString("kind","");
                     if("unverified".equals(rule) || rule.isEmpty())throw new IllegalArgumentException("Unreviewed gallery rule");
+                    if(kind.startsWith("identity_") && (!item.optBoolean("reviewed",false)
+                            || item.optInt("rule_version",0)!=1 || item.optString("source","").isEmpty()
+                            || item.optString("family_id","").isEmpty()))
+                        throw new IllegalArgumentException("Unreviewed typed identity");
                     if("cells".equals(key) && !validCellRule(kind,rule)) {
                         if(!"reviewed_state".equals(rule) || !kind.matches("bound_[0-9a-f]{20}")
                                 || !Match3Rules.CATALOG_ID.equals(gallery.getJSONObject("metadata").optString("rule_catalog_id")))
@@ -462,6 +466,13 @@ final class Match3VisualCatalog {
     }
 
     private static boolean validCellRule(String kind,String rule) {
+        if(kind.startsWith("identity_")) {
+            if(!"reviewed_identity_only".equals(rule))return false;
+            try {
+                Match3Position.Kind typed=Match3Position.Kind.valueOf(kind.substring(9));
+                return typed!=Match3Position.Kind.ANIMAL && !"unknown".equals(Match3Rules.ruleForKind(typed));
+            } catch(IllegalArgumentException invalid) { return false; }
+        }
         if(kind.startsWith("animal_"))return kind.matches("animal_[ROYGBP]") && "ordinary_uncovered_animal".equals(rule);
         switch(kind) {
             case "coin": return "coin".equals(rule);
@@ -667,6 +678,12 @@ final class Match3VisualCatalog {
     /** Same typed pixel admission used by the bitmap sampler and frozen development patches. */
     Match3Position.Cell classifyObstacle(int[] observed) {
         String kind = recognize(cells,observed,.12f,.025f);
+        if(kind!=null && kind.startsWith("identity_")) {
+            Match3Position.Kind typed=Match3Position.Kind.valueOf(kind.substring(9));
+            return Match3Position.Cell.observed(typed,Match3Rules.ruleForKind(typed),-1,-1)
+                    .withIce(-1).withCover(Match3Position.Cover.UNKNOWN,-1)
+                    .withAccess(Match3Position.Gate.UNKNOWN,false);
+        }
         if(kind!=null && kind.startsWith("bound_")) {
             Match3Position.Cell state=null;
             for(Pattern p:cells)if(kind.equals(p.kind)) {

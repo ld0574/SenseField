@@ -323,6 +323,12 @@ def build_gallery(registry, splits, max_per_family=24, max_families=64, max_byte
                 # Only explicitly reviewed bare stationary ice may supply a background reference.
                 if truth.get("bare_ice") is True:
                     catalog["ice_surfaces"].append({**pattern(sample["pixels"], "ice1", "stationary_single_layer_ice"), "neutral_background": True})
+            elif role == "cell" and truth["archetype"] == "state" and truth["kind"] in rules.KIND_RULE:
+                if "patch" not in sample:
+                    raise ValueError("typed identity needs the real engine inset patch")
+                # A named appearance does not prove layers, access or effects.
+                catalog["cells"].append(pattern(sample["patch"], "identity_" + truth["kind"],
+                                                 "reviewed_identity_only"))
             elif role == "cell" and identity in ("coin", "snow", "iceflower", "honey", "egg"):
                 if "patch" not in sample:
                     raise ValueError("obstacle sample is missing the real engine inset patch")
