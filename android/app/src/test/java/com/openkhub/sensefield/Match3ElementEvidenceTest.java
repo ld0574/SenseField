@@ -247,7 +247,18 @@ public final class Match3ElementEvidenceTest {
                 captures++;assertFalse(sample.observation.cell.swappable);assertEquals("identity_or_rule_unverified",sample.reason());
             }
         }
-        assertEquals(Match3UnknownElements.MAX_FAMILIES,groups.familyCount());assertEquals(24,captures);assertTrue(groups.saturatedObservations>0);
+        assertEquals(Match3UnknownElements.MAX_FAMILIES-Match3UnknownElements.COVER_RESERVED_FAMILIES,groups.familyCount());
+        assertEquals(18,captures);assertTrue(groups.saturatedObservations>0);
+        // New covered animal appearances still arrive after the general quota
+        // saturates, including across a stability reset between game boards.
+        groups.resetStability();
+        for(char color:new char[]{'R','O','Y','G','B','P'}) {
+            Match3UnknownElements.Observation[][] late={{new Match3UnknownElements.Observation(Match3Position.Cell.animalIdentity(color),face())}};
+            List<Match3UnknownElements.Sample> samples=Collections.emptyList();
+            for(int frame=0;frame<3;frame++)samples=groups.observe(late,100000+800L*(3*captures+frame));
+            assertEquals(1,samples.size());assertEquals("cover_unverified",samples.get(0).reason());captures++;
+        }
+        assertEquals(24,groups.familyCount());assertEquals(24,captures);
     }
     @Test public void knownAnimalsAndLowDetailPatchesDoNotGenerateUnknownSampleSpam() {
         Match3UnknownElements groups=new Match3UnknownElements();int[] flat=new int[256];Arrays.fill(flat,0xffaa7040);

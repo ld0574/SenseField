@@ -37,6 +37,8 @@ final class Match3Board {
         final int matchedCells;
         final int longestRun;
         final int adjacentIce;
+        final Match3Action.Type actionType;
+        final String ruleId;
         private final BitSet positions;
         private final List<Run> formedRuns;
 
@@ -51,6 +53,11 @@ final class Match3Board {
         }
         Swap(int fromRow, int fromCol, int toRow, int toCol, int runsFormed,
                 int matchedCells, int longestRun, int adjacentIce, BitSet positions, List<Run> formedRuns) {
+            this(fromRow,fromCol,toRow,toCol,runsFormed,matchedCells,longestRun,adjacentIce,positions,formedRuns,
+                    Match3Action.Type.SWAP,"ordinary_uncovered_animal");
+        }
+        Swap(int fromRow,int fromCol,int toRow,int toCol,int runsFormed,int matchedCells,int longestRun,
+             int adjacentIce,BitSet positions,List<Run> formedRuns,Match3Action.Type type,String rule) {
             this.fromRow = fromRow;
             this.fromCol = fromCol;
             this.toRow = toRow;
@@ -59,6 +66,7 @@ final class Match3Board {
             this.matchedCells = matchedCells;
             this.longestRun = longestRun;
             this.adjacentIce = adjacentIce;
+            actionType=type;ruleId=rule;
             this.positions = (BitSet) positions.clone();
             this.formedRuns = Collections.unmodifiableList(new ArrayList<>(formedRuns));
         }
@@ -195,6 +203,9 @@ final class Match3Board {
 
     /** 一条可消除走法的播报文案（行/列从 1 数起，与语音习惯一致）。 */
     static String swapSpeech(Swap s) {
+        if(s.actionType==Match3Action.Type.ACTIVATE)
+            return "点击第 "+(s.fromRow+1)+" 行，第 "+(s.fromCol+1)+" 列的"
+                    +("line_horizontal".equals(s.ruleId)?"横向":"纵向")+"直线特效";
         if (s.fromRow == s.toRow) {
             return "第 " + (s.fromRow + 1) + " 行，第 " + (s.fromCol + 1) + " 列和第 "
                     + (s.toCol + 1) + " 列交换";

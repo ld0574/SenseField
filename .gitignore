@@ -115,6 +115,8 @@ docs/**
 !docs/development/match3-regression.md
 !docs/development/match3-element-evidence.md
 !docs/development/match3-flywheel.md
+!docs/development/match3-rules.md
+!docs/development/match3-rules-validation.md
 !docs/development/assistant-android-transport-test.md
 !docs/development/assistant-gateway-test-deployment.md
 !docs/plans/黑客松方案收敛与实施路线.md

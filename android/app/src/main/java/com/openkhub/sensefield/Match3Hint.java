@@ -22,7 +22,8 @@ final class Match3Hint {
         if (swap.fromRow < 0 || swap.toRow >= geometry.rows || swap.fromCol < 0
                 || swap.toCol >= geometry.cols || swap.toRow < 0 || swap.toCol < 0
                 || swap.fromRow >= geometry.rows || swap.fromCol >= geometry.cols
-                || Math.abs(swap.fromRow - swap.toRow) + Math.abs(swap.fromCol - swap.toCol) != 1)
+                || Math.abs(swap.fromRow - swap.toRow) + Math.abs(swap.fromCol - swap.toCol)
+                != (swap.actionType==Match3Action.Type.ACTIVATE?0:1))
             throw new IllegalArgumentException("Invalid swap");
         this.sessionId = sessionId; this.revision = revision; this.frameAtMs = frameAtMs;
         this.geometry = geometry; this.swap = swap;

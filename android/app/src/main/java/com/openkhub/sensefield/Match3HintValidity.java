@@ -19,6 +19,7 @@ final class Match3HintValidity {
     }
 
     static boolean sameExchange(Match3Board.Swap a, Match3Board.Swap b) {
-        return a.fromRow == b.fromRow && a.fromCol == b.fromCol && a.toRow == b.toRow && a.toCol == b.toCol;
+        return a.fromRow == b.fromRow && a.fromCol == b.fromCol && a.toRow == b.toRow && a.toCol == b.toCol
+                && a.actionType==b.actionType && a.ruleId.equals(b.ruleId);
     }
 }

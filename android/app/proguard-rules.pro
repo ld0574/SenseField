@@ -119,7 +119,20 @@
 }
 -keep enum com.openkhub.sensefield.Match3Position$Kind { *; }
 -keep enum com.openkhub.sensefield.Match3Position$SwapPermission { *; }
+# These enums are compared by the separate rule/state tests. Enum unboxing is
+# valid inside the app, but cannot cross the independently compiled test APK.
+-keep enum com.openkhub.sensefield.Match3Position$Cover { *; }
+-keep enum com.openkhub.sensefield.Match3Position$Effect { *; }
+-keep enum com.openkhub.sensefield.Match3Position$Gate { *; }
 -keep enum com.openkhub.sensefield.Match3Goals$Kind { *; }
+-keep enum com.openkhub.sensefield.Match3Goals$Mode { *; }
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3Position$Cell {
+    com.openkhub.sensefield.Match3Position$Cover cover;
+    int coverLayers;
+    com.openkhub.sensefield.Match3Position$SwapPermission matchPermission;
+    java.lang.String coverRuleId;
+    int layers; int objectId;
+}
 -keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3Goals {
     boolean hudVerified; int steps; java.util.List targets;
     int remaining(com.openkhub.sensefield.Match3Goals$Kind);
@@ -129,10 +142,17 @@
 -keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3Goals$Target {
     com.openkhub.sensefield.Match3Goals$Kind kind; int remaining;
 }
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3Goals$Target {
+    static com.openkhub.sensefield.Match3Goals$Target observed(int,com.openkhub.sensefield.Match3Goals$Kind,int,boolean,java.lang.String);
+    com.openkhub.sensefield.Match3Goals$Mode mode;
+}
 -keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3HudReader {
     <init>(android.content.Context);
     com.openkhub.sensefield.Match3Goals read(android.graphics.Bitmap,com.openkhub.sensefield.BoardGeometry,long);
     java.lang.String status();
+    int[][] diagnosticGoalPatches();
+    java.lang.String[] diagnosticGoalKinds();
+    float[] diagnosticGoalAspects();
     public void close();
 }
 -keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3Hint {
@@ -140,6 +160,20 @@
 }
 -keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3Board$Swap {
     <init>(int,int,int,int,int);
+}
+# The frozen legacy ranker in the paired benchmark consumes the shared board
+# API from its own APK. Preserve the returned data and exact entry descriptors.
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3Board {
+    static java.util.List findSwaps(com.openkhub.sensefield.Match3Position);
+}
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3Board$Swap {
+    int fromRow; int fromCol; int toRow; int toCol;
+    int runsFormed; int matchedCells; int longestRun; int adjacentIce;
+    java.util.BitSet matchedPositions();
+    java.util.List formedRuns();
+}
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3Board$Run {
+    int row; int col; boolean horizontal; int length;
 }
 -keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3HintOverlay$HintView {
     <init>(android.content.Context);
@@ -173,11 +207,18 @@
     static java.lang.String recognize(java.util.List,int[],float,float);
     static int[] patch(int[],int,int,int,int,int);
 }
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3VisualCatalog {
+    static com.openkhub.sensefield.Match3Goals$Target goalTarget(java.util.List,int[],com.openkhub.sensefield.Match3Goals$Target);
+    java.lang.String coverCatalogId; java.lang.String coverCatalogSha256; java.lang.String coverCatalogStatus;
+}
 -keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3VisualCatalog$CellCache {
     <init>(); int[] patch; int[] envelope;
 }
 -keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3VisualCatalog$Pattern {
     java.lang.String kind; int[] pixels;
+}
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3VisualCatalog$Pattern {
+    float difference(int[]);
 }
 -keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3CellConfirmation {
     <init>();
@@ -193,6 +234,24 @@
     com.openkhub.sensefield.Match3Board$Swap swap;
     int directUnits; int relevantHits; java.lang.String reason;
     int collected(com.openkhub.sensefield.Match3Goals$Kind);
+}
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3MoveValue {
+    int hit(com.openkhub.sensefield.Match3Goals$Kind);
+}
+# The fixed-input paired benchmark shares these observation/harvest entry
+# points with the app. Retain their exact descriptors, not the whole engine.
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3Sampler {
+    <init>(android.content.Context,com.openkhub.sensefield.BoardGeometry,com.openkhub.sensefield.Match3VisualCatalog);
+    com.openkhub.sensefield.Match3UnknownElements$Observation[][] reviewElements(com.openkhub.sensefield.Match3Position);
+}
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3HudReader {
+    <init>(com.openkhub.sensefield.Match3VisualCatalog);
+    void clear();
+}
+-keep,allowobfuscation class com.openkhub.sensefield.Match3FlywheelHarvest {
+    <init>();
+    void collect(com.openkhub.sensefield.Match3Sampler,com.openkhub.sensefield.Match3Position,com.openkhub.sensefield.Match3HudReader,long,java.util.function.Predicate);
+    void resetStability();
 }
 -keepclassmembers,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3HintValidity {
     static boolean valid(com.openkhub.sensefield.Match3Position,com.openkhub.sensefield.Match3Position,com.openkhub.sensefield.Match3MoveValue,java.util.List);
@@ -216,6 +275,8 @@
     static *** start(android.content.Context, java.lang.String, long, boolean);
     static *** start(android.content.Context, java.lang.String, long, com.openkhub.sensefield.DiagnosticGame);
     void setImagesEnabled(boolean);
+    boolean harvestEnabled();
+    boolean flywheelSample(org.json.JSONObject);
     void elementSample(android.graphics.Bitmap,com.openkhub.sensefield.BoardGeometry,com.openkhub.sensefield.Match3UnknownElements$Sample);
     static java.io.File root(android.content.Context);
     static org.json.JSONObject object(java.lang.Object[]);
@@ -244,3 +305,37 @@
 }
 # Activities/services and FileProvider entry points are retained by the manifest/default rules.
 # No whole-application keep rule: behavior tests must also exercise the minified artifact.
+
+# Frozen development replay and vine fixtures cross the separate test APK.
+# Preserve only their observation/export contracts; rule evaluation internals
+# and the event/search implementations remain shrinkable.
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3RuleDiagnostics {
+    static org.json.JSONObject action(com.openkhub.sensefield.Match3MoveValue);
+}
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3Action {
+    static java.util.List enumerate(com.openkhub.sensefield.Match3Position);
+    static java.util.Set omittedReasons(com.openkhub.sensefield.Match3Position);
+    com.openkhub.sensefield.Match3Board$Swap geometry;
+}
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3Goals {
+    com.openkhub.sensefield.Match3Goals$Mode mode(com.openkhub.sensefield.Match3Goals$Kind);
+    boolean hasTarget(com.openkhub.sensefield.Match3Goals$Kind);
+    java.lang.String key();
+}
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3Goals$Target {
+    int slot; boolean completed; java.lang.String modeEvidence;
+}
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3Position$Cell {
+    int coverLayers; int absentTurns; int charge; int capacity; int direction; int ruleVersion;
+    com.openkhub.sensefield.Match3Position$SwapPermission activationPermission;
+    com.openkhub.sensefield.Match3Position$SwapPermission adjacentDamagePermission;
+    com.openkhub.sensefield.Match3Position$SwapPermission specialDamagePermission;
+    com.openkhub.sensefield.Match3Position$Effect effect;
+    com.openkhub.sensefield.Match3Position$Gate gate;
+    boolean timedGate; java.lang.String ruleId; java.lang.String floorRuleId;
+}
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3VisualCatalog {
+    java.lang.String id; java.lang.String galleryId; java.lang.String gallerySha256; java.lang.String galleryStatus;
+    int galleryGoalsPendingReview;
+    static com.openkhub.sensefield.Match3VisualCatalog withGallery(org.json.JSONObject,byte[]);
+}

@@ -28,6 +28,8 @@ RELEASE_CLASSES = ("Match3ReleaseCaptureInstrumentedTest", "BundledAudioInstrume
 
 DEBUG_CLASSES += ("Match3FlywheelInstrumentedTest",)
 RELEASE_CLASSES += ("Match3FlywheelInstrumentedTest",)
+DEBUG_CLASSES += ("Match3RuleCatalogInstrumentedTest",)
+RELEASE_CLASSES += ("Match3RuleCatalogInstrumentedTest",)
 
 
 def instrumentation_summary(output: str) -> dict:
@@ -56,6 +58,12 @@ def source_digest() -> str:
     gallery = ROOT / "android/app/src/main/assets/match3-gallery-v1.json"
     # Include absence as well: adding/deleting the asset changes the path set.
     if gallery.is_file(): paths.append(gallery)
+    covers=ROOT / "android/app/src/main/assets/match3-vine-v1.json"
+    if covers.is_file():paths.append(covers)
+    rules=ROOT / "android/app/src/main/assets/match3-rules-v1.json"
+    if rules.is_file():paths.append(rules)
+    reference=ROOT / "docs/research/开心消消乐元素规则参考.md"
+    if reference.is_file():paths.append(reference)
     paths += sorted((ROOT / "scripts").glob("*match3*.py"))
     paths = sorted(set(paths))
     for path in paths:
@@ -83,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fixtures", type=Path, help="Optional, explicitly supplied diagnostic JPEG directory (test APK only)")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--holdout", type=Path, help="Explicit frozen manifest.json + labels.json + frame directory")
+    parser.add_argument("--cost-kind",choices=("flywheel","rules"),default="flywheel")
     args = parser.parse_args(argv)
     now = dt.datetime.now(dt.timezone.utc)
     output = args.output or ROOT / "validation/private" / ("match3-regression-" + now.strftime("%Y%m%d-%H%M%S"))
@@ -175,7 +184,8 @@ def main(argv: list[str] | None = None) -> int:
         run(variant+"-holdout-clear",[str(adb),"-s",args.serial,"shell","rm","-rf",target])
         run(variant+"-holdout-push",[str(adb),"-s",args.serial,"push",str(args.holdout.resolve()),target])
         stdout=run(variant+"-accuracy-engine",[str(adb),"-s",args.serial,"shell","am","instrument","-w","-r",
-                   "-e","match3Strict","true","-e","class",PACKAGE+".Match3HoldoutAccuracyInstrumentedTest",RUNNER])
+                   "-e","match3Strict","true","-e","match3SourceSha256",report['source_sha256'],
+                   "-e","class",PACKAGE+".Match3HoldoutAccuracyInstrumentedTest",RUNNER])
         if instrumentation_summary(stdout)!={"executed":1,"skipped":0}:
             raise RuntimeError("Accuracy producer did not run without skips")
         predictions=output/(variant+"-predictions.json")
@@ -196,6 +206,9 @@ def main(argv: list[str] | None = None) -> int:
             raise RuntimeError("Tested engine did not load the candidate gallery bytes")
         if args.mode=="full" and observed.get("gallery_goals_pending_review",0):
             raise RuntimeError("Release gallery still has goal icons pending explicit review")
+        if observed.get('rule_catalog_sha256')!=hashlib.sha256((ROOT/'android/app/src/main/assets/match3-rules-v1.json').read_bytes()).hexdigest() \
+                or observed.get('source_sha256')!=report['source_sha256']:
+            raise RuntimeError('Typed replay rule/source provenance differs from the built candidate')
         scored=output/(variant+"-accuracy.json")
         run(variant+"-accuracy-score",[sys.executable,str(ROOT/"scripts/evaluate_match3_accuracy.py"),
                 "--predictions",str(predictions),"--labels",str(args.holdout.resolve()/"labels.json"),"--strict",
@@ -208,10 +221,12 @@ def main(argv: list[str] | None = None) -> int:
         run("cost-input-clear",[str(adb),"-s",args.serial,"shell","rm","-rf",target])
         run("cost-input-push",[str(adb),"-s",args.serial,"push",str(args.holdout.resolve()),target])
         error=None
-        try: report["cost_instrumentation"]=instrument("cost-instrumentation",("Match3FlywheelCostInstrumentedTest",))
+        cost_class="Match3RulesCostInstrumentedTest" if args.cost_kind=="rules" else "Match3FlywheelCostInstrumentedTest"
+        try: report["cost_instrumentation"]=instrument("cost-instrumentation",(cost_class,))
         except RuntimeError as failure: error=failure
-        artifact=output/"flywheel-cost.json"
-        run("cost-pull",[str(adb),"-s",args.serial,"pull",target+"/flywheel-cost.json",str(artifact)])
+        cost_file=args.cost_kind+"-cost.json"
+        artifact=output/cost_file
+        run("cost-pull",[str(adb),"-s",args.serial,"pull",target+"/"+cost_file,str(artifact)])
         measured=json.loads(artifact.read_text());report["software_cost"]=measured
         if measured.get("manifest_sha256")!=hashlib.sha256((args.holdout/"manifest.json").read_bytes()).hexdigest():
             raise RuntimeError("Cost inputs do not match replay")
@@ -221,6 +236,9 @@ def main(argv: list[str] | None = None) -> int:
         gallery=ROOT/"android/app/src/main/assets/match3-gallery-v1.json"
         if measured.get("gallery_sha256")!=hashlib.sha256(gallery.read_bytes()).hexdigest():
             raise RuntimeError("Cost test loaded another gallery")
+        if args.cost_kind=="rules" and measured.get("rule_catalog_sha256")!=hashlib.sha256(
+                (ROOT/"android/app/src/main/assets/match3-rules-v1.json").read_bytes()).hexdigest():
+            raise RuntimeError("Cost test loaded another rule catalog")
         report["debug_apk_sha256"]=hashlib.sha256((ROOT/"android/app/build/outputs/apk/debug/app-debug.apk").read_bytes()).hexdigest()
         if error is not None: raise error
         if measured.get("passed") is not True: raise RuntimeError("Paired software P95 gate failed")
@@ -238,6 +256,7 @@ def main(argv: list[str] | None = None) -> int:
             services = run("emulator-preflight", [str(adb), "-s", args.serial, "shell", "dumpsys", "activity", "services", PACKAGE])
             if re.search(r"ServiceRecord.*(?:Match3LiveService|CaptureService|AssistantVoiceService)", services):
                 raise RuntimeError("An assistance session is running; finish it before automated instrumentation")
+        run("rule-catalog-audit",[sys.executable,str(ROOT/"scripts/match3_rules.py"),"--json",str(output/"rule-catalog.json")])
         gradle("jvm", [":app:testDebugUnitTest"])
         report["jvm"] = jvm_summary()
         if args.mode != "jvm":

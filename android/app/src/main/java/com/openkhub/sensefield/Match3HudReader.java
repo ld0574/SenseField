@@ -171,15 +171,21 @@ final class Match3HudReader {
             // Keep the numeral's antialias fringe inside the sampled field.
             // The golden frame is not white; discarding three border pixels
             // clipped valid bottom/right strokes after projection scaling.
-            Box counter=new Box((int)(b.left+b.width()*.53f),(int)(b.top+b.height()*.49f),b.right-1,b.bottom-1,0);
-            boolean complete=kind!=Match3Goals.Kind.UNKNOWN && checkmark(pixels,counter);
+            // Three/four-digit counters extend left of the card midpoint.
+            // Read the complete lower numeral band; icon strokes touching its
+            // top are excluded by integer(), and any clipped glyph abstains.
+            Box counter=new Box(b.left+1,(int)(b.top+b.height()*.49f),b.right-1,b.bottom-1,0);
+            // Completion marks occupy the original right-hand field; the
+            // green vine artwork itself must not become a completion tick.
+            Box completion=new Box((int)(b.left+b.width()*.53f),counter.top,counter.right,counter.bottom,0);
+            boolean complete=kind!=Match3Goals.Kind.UNKNOWN && checkmark(pixels,completion);
             int count=complete?0:integer(pixels,counter,false);
             // Only the icon's upper area is compared: changing counter digits are
             // not a new type, and different unknown mission artwork is not one kind.
             String visualId=kind==Match3Goals.Kind.UNKNOWN?identities.identify(i,
                     Match3VisualCatalog.patch(pixels,WIDTH,b.left+3,b.top+2,b.right-3,
                             b.top+Math.max(3,(int)(b.height()*.49f)))):"";
-            targets.add(new Match3Goals.Target(i,kind,count,complete,visualId));
+            targets.add(catalog.goalTarget(i,kind,count,complete,visualId,patch));
         }
         int remaining=integer(pixels,stepNumber(step),true);
         status=remaining>=0?"observed":"steps_unread";

@@ -36,7 +36,7 @@ def engine_draft(events: Optional[Path]) -> Dict[str, str]:
             continue
         fam, kind = data.get("family_id"), data.get("kind")
         if fam and fam not in draft:
-            draft[fam] = {"COIN": "coin", "SNOW": "snow", "COOKIE": "cookie", "EGG": "egg"}.get(kind, "unknown")
+            draft[fam] = {"COIN": "coin", "SNOW": "snow", "COOKIE": "cookie", "EGG": "egg", "LOCK":"lock"}.get(kind, "unknown")
     return draft
 
 

@@ -7,7 +7,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-/** One-move task preference from confirmed observations; no predicted cascades or special activation. */
+/** Runtime, screenshot tools and replay share legal actions and typed rule settlement. */
 final class Match3MoveRanker {
     private Match3MoveRanker() { }
 
@@ -18,22 +18,29 @@ final class Match3MoveRanker {
         List<Match3MoveValue> moves = new ArrayList<>();
         if (board == null || goals == null || goals.hudVerified && (goals.steps == 0 || goals.finished())) return moves;
         Match3TargetFrontier.Field frontier = Match3TargetFrontier.prepare(board, goals, abstained);
-        for (Match3Board.Swap swap : Match3Board.findSwaps(board))
-            moves.add(Match3MoveValue.evaluate(board, goals, swap, abstained, frontier));
+        for (Match3Action action : Match3Action.enumerate(board))
+            moves.add(Match3MoveValue.evaluate(board,goals,action,abstained,frontier));
+        moves=Match3Search.apply(moves,goals,abstained);
         boolean knownTarget=false;
         for(Match3Goals.Kind kind:Match3Goals.Kind.values())if(goals.active(kind))knownTarget=true;
         final boolean hasTarget=knownTarget;
         moves.sort((a, b) -> {
             int order = Boolean.compare(b.allTargetsFinish, a.allTargetsFinish);
+            if(order==0 && goals.steps>1)order=Match3Search.compare(a.search,b.search);
             if (order == 0) order = Integer.compare(b.completedTargets, a.completedTargets);
             if (order == 0) order = Integer.compare(b.progressMilli, a.progressMilli);
             if (order == 0) order = Integer.compare(b.directUnits, a.directUnits);
-            if (order == 0) order = Integer.compare(b.relevantHits, a.relevantHits);
+            if (order == 0 && goals.steps!=1) order = Integer.compare(b.relevantHits, a.relevantHits);
             // Equal immediate evidence: work near a currently observed unfinished
             // target before creating an unrelated special across the board.
             if (order == 0 && hasTarget) order = Integer.compare(a.targetDistance, b.targetDistance);
+            // Equal task progress: removing a confirmed poison source is useful before another turn.
+            // Unknown spread directions/amounts are never converted to projected units.
+            if (order == 0 && hasTarget && goals.steps!=1) order = Integer.compare(b.poisonRemoved,a.poisonRemoved);
             // In the final step, creating a future special offers no guaranteed extra turn.
             if (order == 0 && hasTarget && goals.steps != 1) order = Integer.compare(b.potentialSpecials, a.potentialSpecials);
+            // Special actions have no ordinary-run metadata; compare their actual settled lower bound.
+            if (order == 0 && (!hasTarget || goals.steps==1)) order = Integer.compare(b.physicalClears,a.physicalClears);
             if (order == 0) order = Integer.compare(b.swap.adjacentIce, a.swap.adjacentIce);
             if (order == 0) order = Integer.compare(b.swap.longestRun, a.swap.longestRun);
             if (order == 0) order = Integer.compare(b.swap.matchedCells, a.swap.matchedCells);

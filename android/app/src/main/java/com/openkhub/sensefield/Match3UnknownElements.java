@@ -10,6 +10,7 @@ final class Match3UnknownElements {
     Match3UnknownElements() { this(false); }
     Match3UnknownElements(boolean allAppearances) { this.allAppearances=allAppearances; }
     static final int MAX_FAMILIES=24, MAX_SAMPLES_PER_FAMILY=2, STABLE_SAMPLES=3;
+    static final int COVER_RESERVED_FAMILIES=6;
     static final long SAMPLE_GAP_MS=10000, FRESH_MS=2400;
     static final class Observation {
         final Match3Position.Cell cell;
@@ -136,7 +137,14 @@ final class Match3UnknownElements {
             if(second-first<Match3AnimalAppearance.MARGIN) { ambiguousObservations++;return null; }
             return best;
         }
-        if(families.size()>=MAX_FAMILIES) { saturatedObservations++;return null; }
+        boolean uncertainCover=observation.cell.kind==Match3Position.Kind.ANIMAL && needsReview(observation.cell);
+        int general=0;for(Family existing:families)
+            if(existing.anchor.cell.kind!=Match3Position.Kind.ANIMAL || !needsReview(existing.anchor.cell))general++;
+        // Keep the session's 24-family/two-image cap. Early ordinary or opaque
+        // appearances cannot consume the six slots reserved for later covers.
+        if(families.size()>=MAX_FAMILIES || !uncertainCover && general>=MAX_FAMILIES-COVER_RESERVED_FAMILIES) {
+            saturatedObservations++;return null;
+        }
         Family family=new Family("u"+(families.size()+1),observation);families.add(family);return family;
     }
 }

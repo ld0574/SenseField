@@ -96,14 +96,13 @@ public final class Match3HoldoutAccuracyInstrumentedTest {
                 Match3Goals goals=hud.read(frame, geometry, 0L);
                 for(Match3Goals.Target target:goals.targets)goalSamples.put(new JSONObject()
                         .put("id",name+":goal"+target.slot).put("kind",target.kind.name())
-                        .put("remaining",target.remaining).put("completed",target.completed));
+                        .put("remaining",target.remaining).put("completed",target.completed)
+                        .put("event_mode",target.mode.name()).put("mode_evidence",target.modeEvidence));
                 JSONArray candidates=new JSONArray();
                 java.util.List<Match3MoveValue> moves=Match3MoveRanker.rankedMoves(board,goals);
-                for(Match3MoveValue move:moves)candidates.put(new JSONObject()
-                        .put("from_row",move.swap.fromRow).put("from_col",move.swap.fromCol)
-                        .put("to_row",move.swap.toRow).put("to_col",move.swap.toCol)
-                        .put("reason",move.reason).put("direct_units",move.directUnits));
+                for(Match3MoveValue move:moves)candidates.put(Match3RuleDiagnostics.action(move));
                 rankings.put(new JSONObject().put("id",name).put("candidates",candidates)
+                        .put("omitted_action_reasons",new JSONArray(Match3Action.omittedReasons(board)))
                         .put("hud_verified",goals.hudVerified).put("steps",goals.steps));
                 int[][] gp = hud.diagnosticGoalPatches();
                 if (gp != null) {
@@ -126,7 +125,16 @@ public final class Match3HoldoutAccuracyInstrumentedTest {
                             .put("kind", cell.kind.name())
                             .put("color", cell.color == '\0' ? "" : String.valueOf(cell.color))
                             .put("swap_permission", cell.swapPermission.name())
-                            .put("ice", cell.iceLayers).put("object_id",cell.objectId);
+                            .put("ice", cell.iceLayers).put("object_id",cell.objectId)
+                            .put("layers",cell.layers).put("absent_turns",cell.absentTurns)
+                            .put("match_permission",cell.matchPermission.name()).put("activation_permission",cell.activationPermission.name())
+                            .put("cover",cell.cover.name()).put("cover_layers",cell.coverLayers).put("effect",cell.effect.name())
+                            .put("charge",cell.charge).put("capacity",cell.capacity).put("direction",cell.direction).put("gate",cell.gate.name())
+                            .put("rule_id",cell.ruleId).put("rule_version",cell.ruleVersion).put("cover_rule_id",cell.coverRuleId)
+                            .put("floor_rule_id",cell.floorRuleId);
+                    sample.put("gate_rule_id",cell.timedGate?"stone_gate":"")
+                            .put("adjacent_damage_permission",cell.adjacentDamagePermission.name())
+                            .put("special_damage_permission",cell.specialDamagePermission.name());
                     int[] envelope = sampler.elementEnvelope(r, c);
                     if (envelope != null) {
                         JSONArray pixels = new JSONArray();
@@ -165,12 +173,17 @@ public final class Match3HoldoutAccuracyInstrumentedTest {
 
         hud.close();Match3VisualCatalog catalog=Match3VisualCatalog.get(context);
         JSONObject out = new JSONObject()
+                .put("format","match3-actions-replay-v1")
+                .put("source_sha256",InstrumentationRegistry.getArguments().getString("match3SourceSha256",""))
                 .put("manifest_sha256",sha256(manifestBytes)).put("frame_sha256",frameHashes)
                 .put("independent",manifest.optBoolean("independent",false)).put("frozen",manifest.optBoolean("frozen",false))
                 .put("source_groups",manifest.optJSONArray("source_groups")!=null?manifest.getJSONArray("source_groups"):
                         new JSONArray().put(manifest.optString("session_id","")))
                 .put("catalog_id", catalog.id).put("gallery_id",catalog.galleryId)
                 .put("gallery_sha256",catalog.gallerySha256).put("gallery_status",catalog.galleryStatus)
+                .put("cover_catalog_id",catalog.coverCatalogId).put("cover_catalog_sha256",catalog.coverCatalogSha256)
+                .put("cover_catalog_status",catalog.coverCatalogStatus)
+                .put("rule_catalog_id",Match3Rules.CATALOG_ID).put("rule_catalog_sha256",Match3RuleCatalog.get(context).sha256)
                 .put("gallery_goals_pending_review",catalog.galleryGoalsPendingReview)
                 .put("frame_results",frameResults).put("goal_samples",goalSamples)
                 .put("large_objects",objects).put("rankings",rankings)

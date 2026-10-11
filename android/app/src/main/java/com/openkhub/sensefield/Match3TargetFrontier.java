@@ -45,7 +45,7 @@ final class Match3TargetFrontier {
         for (int r = 0; r < board.rows; r++) for (int c = 0; c < board.cols; c++) {
             Match3Position.Cell cell = board.cell(r, c);
             for (Match3Goals.Kind target : active) {
-                if (!isTarget(cell, target)) continue;
+                if(goals.mode(target)==Match3Goals.Mode.DELIVER || !isTarget(cell,target,goals.mode(target)))continue;
                 int p = r * board.cols + c;
                 field.distance[p] = 0; field.kind[p] = target; queue[tail++] = p;
                 break;
@@ -71,7 +71,8 @@ final class Match3TargetFrontier {
         return tail;
     }
 
-    private static boolean isTarget(Match3Position.Cell cell, Match3Goals.Kind target) {
+    private static boolean isTarget(Match3Position.Cell cell,Match3Goals.Kind target,Match3Goals.Mode mode) {
+        if(target==Match3Goals.Kind.CHICK && mode!=Match3Goals.Mode.CLEAR)return cell.kind==Match3Position.Kind.EGG;
         if (target.color != '\0') return cell.kind == Match3Position.Kind.ANIMAL
                 && cell.swappable && cell.color == target.color;
         switch (target) {
@@ -81,15 +82,16 @@ final class Match3TargetFrontier {
             case HONEY: return cell.kind == Match3Position.Kind.HONEY;
             case COOKIE: return cell.kind == Match3Position.Kind.COOKIE;
             case EGG: return cell.kind == Match3Position.Kind.EGG;
+            case LOCK: return cell.cover==Match3Position.Cover.LOCK;
             case ICE:
                 // Known ice and known foreground identity establish a location,
                 // even when the animal's exchange permission is unknown. This
                 // field never grants a swap or a direct removal. Cold sky and
                 // unidentified foregrounds still cannot establish a destination.
-                return cell.iceLayers > 0 && (cell.kind == Match3Position.Kind.ANIMAL
+                return cell.cover==Match3Position.Cover.FROZEN_ICE || cell.iceLayers > 0 && (cell.kind == Match3Position.Kind.ANIMAL
                         || cell.kind == Match3Position.Kind.SNOW || cell.kind == Match3Position.Kind.COIN
                         || cell.kind == Match3Position.Kind.EGG || cell.kind == Match3Position.Kind.COOKIE);
-            default: return false;
+            default: return cell.kind.name().equals(target.name());
         }
     }
 
@@ -101,6 +103,7 @@ final class Match3TargetFrontier {
         if (kind == Match3Goals.Kind.COIN) return distance <= 2 ? "靠近银币" : "准备收集银币";
         if (kind == Match3Goals.Kind.COOKIE) return "靠近饼干";
         if (kind == Match3Goals.Kind.EGG) return "靠近鸡蛋";
+        if (kind == Match3Goals.Kind.LOCK) return "靠近藤蔓";
         return "靠近目标";
     }
 }

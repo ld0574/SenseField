@@ -14,11 +14,11 @@ public class Match3PieceNameTest {
     @Test
     public void mapsBaseLettersToAnimalNames() {
         assertEquals("红狐狸", Match3Coach.pieceName('R'));
-        assertEquals("棕熊", Match3Coach.pieceName('O'));
+        assertEquals("棕色动物", Match3Coach.pieceName('O'));
         assertEquals("小鸡", Match3Coach.pieceName('Y'));
         assertEquals("青蛙", Match3Coach.pieceName('G'));
         assertEquals("河马", Match3Coach.pieceName('B'));
-        assertEquals("紫猫", Match3Coach.pieceName('P'));
+        assertEquals("紫猫头鹰", Match3Coach.pieceName('P'));
     }
 
     @Test
@@ -77,7 +77,7 @@ public class Match3PieceNameTest {
                 {'G', 'B', Match3Sampler.UNKNOWN},
         };
         List<String> lines = Match3Board.scanSpeech(board);
-        assertEquals("第 1 行：棕熊、小鸡、空", lines.get(0));
+        assertEquals("第 1 行：棕色动物、小鸡、空", lines.get(0));
         assertEquals("第 2 行：青蛙、河马、未识别", lines.get(1));
     }
 }

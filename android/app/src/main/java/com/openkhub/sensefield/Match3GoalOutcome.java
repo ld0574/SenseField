@@ -12,13 +12,15 @@ final class Match3GoalOutcome {
     static final class Result {
         final long hintRevision;
         final String outcome, actionEvidence;
+        final String actionKey, ruleCatalog, goalModes;
         final int stepsSpent;
         final Map<Match3Goals.Kind,Integer> deltas, expected;
         Result(long revision,String outcome,String action,int steps,Map<Match3Goals.Kind,Integer> deltas,
-               Map<Match3Goals.Kind,Integer> expected) {
+               Map<Match3Goals.Kind,Integer> expected,String actionKey,String goalModes) {
             hintRevision=revision;this.outcome=outcome;actionEvidence=action;stepsSpent=steps;
             this.deltas=Collections.unmodifiableMap(new EnumMap<>(deltas));
             this.expected=Collections.unmodifiableMap(new EnumMap<>(expected));
+            this.actionKey=actionKey;ruleCatalog=Match3Rules.CATALOG_ID;this.goalModes=goalModes;
         }
     }
     private final Listener listener;
@@ -47,14 +49,15 @@ final class Match3GoalOutcome {
         if(board.rows!=before.rows || board.cols!=before.cols) { cancel("geometry_changed");return; }
         if(goals.hudVerified && !baseline.sameIdentity(goals)) { cancel("mission_changed");return; }
         Match3Board.Swap s=value.swap;
+        // An unchanged frame after a tap cannot establish that the player activated the effect.
+        if(value.action.type==Match3Action.Type.ACTIVATE)return;
+        if(before.cell(s.fromRow,s.fromCol).equals(before.cell(s.toRow,s.toCol)))return;
         boolean exact=true;
         for(int r=0;r<board.rows;r++)for(int c=0;c<board.cols;c++) {
-            char expected=before.cell(r,c).color;
-            if(r==s.fromRow && c==s.fromCol)expected=before.cell(s.toRow,s.toCol).color;
-            if(r==s.toRow && c==s.toCol)expected=before.cell(s.fromRow,s.fromCol).color;
-            if(board.cell(r,c).color!=expected || board.cell(r,c).kind!=before.cell(r,c).kind
-                    || board.cell(r,c).layers!=before.cell(r,c).layers || board.cell(r,c).iceLayers!=before.cell(r,c).iceLayers
-                    || board.cell(r,c).swapPermission!=before.cell(r,c).swapPermission)exact=false;
+            Match3Position.Cell expected=before.cell(r,c);
+            if(r==s.fromRow && c==s.fromCol)expected=before.cell(s.toRow,s.toCol).withFloorOf(expected);
+            if(r==s.toRow && c==s.toCol)expected=before.cell(s.fromRow,s.fromCol).withFloorOf(expected);
+            if(!board.cell(r,c).equals(expected))exact=false;
         }
         if(exact)visuallyMatched=true;
     }
@@ -90,7 +93,8 @@ final class Match3GoalOutcome {
         if(value!=null)emit(reason,-1,new EnumMap<>(Match3Goals.Kind.class),new EnumMap<>(Match3Goals.Kind.class));
     }
     private void emit(String reason,int steps,EnumMap<Match3Goals.Kind,Integer> delta,EnumMap<Match3Goals.Kind,Integer> expected) {
-        Result result=new Result(revision,reason,visuallyMatched?"exact_visual_exchange_only":"not_observed",steps,delta,expected);
+        Result result=new Result(revision,reason,visuallyMatched?"exact_visual_exchange_only":"not_observed",steps,delta,expected,
+                value.action.key(),baseline.key());
         value=null;baseline=null;before=null;visuallyMatched=false;
         if(listener!=null)listener.record(result);
     }

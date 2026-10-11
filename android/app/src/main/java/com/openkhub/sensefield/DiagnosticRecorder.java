@@ -180,6 +180,7 @@ final class DiagnosticRecorder {
                 "screen_height_px", display.heightPixels, "density_dpi", display.densityDpi,
                 "images_enabled", imagesEnabled, "portrait_images_allowed", allowPortrait, "image_period_ms", IMAGE_PERIOD_MS,
                 "match3_element_family_limit", Match3UnknownElements.MAX_FAMILIES,
+                "match3_element_cover_reserved_families", Match3UnknownElements.COVER_RESERVED_FAMILIES,
                 "match3_element_samples_per_family", Match3UnknownElements.MAX_SAMPLES_PER_FAMILY,
                 "match3_element_thumbnail_px", 64, "match3_element_scope", "local_diagnostics_only_not_rule_admission",
                 "context_sample_period_ms", DiagnosticImageWindow.SAMPLE_PERIOD_MS,
@@ -204,6 +205,8 @@ final class DiagnosticRecorder {
                 Match3VisualCatalog catalog=Match3VisualCatalog.get(context);
                 metadata.put("match3_catalog_id",catalog.id).put("match3_gallery_id",catalog.galleryId)
                         .put("match3_gallery_sha256",catalog.gallerySha256).put("match3_gallery_status",catalog.galleryStatus)
+                        .put("match3_cover_catalog_id",catalog.coverCatalogId).put("match3_cover_catalog_sha256",catalog.coverCatalogSha256)
+                        .put("match3_cover_catalog_status",catalog.coverCatalogStatus)
                         .put("match3_gallery_goals_pending_review",catalog.galleryGoalsPendingReview);
             }
         } catch (Exception ignored) { /* Diagnostics must not prevent capture. */ }

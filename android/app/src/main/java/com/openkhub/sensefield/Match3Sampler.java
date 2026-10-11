@@ -561,8 +561,8 @@ final class Match3Sampler implements AutoCloseable {
             case "小鸡": case "黄小鸡": case "小鸡黄": case "黄": case "黄色": return 'Y';
             case "青蛙": case "绿青蛙": case "青蛙绿": case "绿": case "绿色": return 'G';
             case "河马": case "蓝河马": case "河马蓝": case "蓝": case "蓝色": return 'B';
-            case "棕熊": case "熊": case "棕熊棕": case "棕": case "棕色": return 'O';
-            case "紫猫": case "紫猫紫": case "紫": case "紫色": return 'P';
+            case "棕色动物": case "棕色小动物": case "棕熊": case "熊": case "棕熊棕": case "棕": case "棕色": return 'O';
+            case "紫猫头鹰": case "紫色猫头鹰": case "猫头鹰": case "紫猫": case "紫猫紫": case "紫": case "紫色": return 'P';
             default: return UNKNOWN;
         }
     }

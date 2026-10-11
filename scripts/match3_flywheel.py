@@ -186,6 +186,8 @@ def export_labels(registry, splits, partition):
         if review.get("reviewed") is not True:
             raise ValueError("every family in the evaluation registry needs review")
         truth = {key: review[key] for key in ("family", "kind", "color", "swappable", "rule", "archetype")}
+        for key in ('rule_binding','rule_id','rule_version'):
+            if key in review:truth[key]=review[key]
         for sample in family["samples"]:
             if groups.get(sample["group"]) != partition:
                 continue
@@ -197,10 +199,11 @@ def export_labels(registry, splits, partition):
                     raise ValueError("colliding cell ids across sessions; use unique frame names")
                 samples[sample["id"]] = item
             elif family["role"] == "goal":
-                kind = {"coin": "COIN", "snow": "SNOW", "honey": "HONEY", "iceflower": "ICEFLOWER",
-                        "cookie": "COOKIE", "ice": "ICE", "egg": "EGG", "R": "RED", "O": "BEAR",
-                        "Y": "CHICK", "G": "FROG", "B": "HIPPO", "P": "CAT"}.get(review["identity"], "UNKNOWN")
+                kind = sibling('match3_rules').GOAL_KINDS.get(review['identity'],'UNKNOWN')
                 item = {"id": sample["id"], "kind": kind, "source": sample["source"], "reviewed": True}
+                if review.get('goal_binding'):
+                    binding=sibling('match3_rules').validate_goal_binding(review['goal_binding'],kind)
+                    item.update(event_mode=binding['event_mode'],mode_evidence=binding['evidence'])
                 if sample["id"] in goals and goals[sample["id"]] != item:
                     raise ValueError("colliding goal ids across sessions; use unique frame names")
                 goals[sample["id"]] = item
@@ -236,7 +239,17 @@ def apply_review(registry, review):
         if review.get("reviewed", {}).get(family_id) is not True:
             continue
         truth = labels.record(review["labels"][family_id], review["archetypes"][family_id],
-                              review["swappable"][family_id])
+                              review["swappable"][family_id],review.get("bindings",{}).get(family_id))
+        if review['labels'][family_id] in {'honey_cover','lock'} and family['role']!='goal':
+            raise ValueError('cover cell state requires a separately reviewed covered foreground')
+        if family['role']=='goal' and truth.get('rule_binding') is not None:
+            raise ValueError('cell-specific bindings cannot define a HUD goal mode')
+        goal_binding=review.get('goal_bindings',{}).get(family_id)
+        if goal_binding is not None:
+            if family['role']!='goal':raise ValueError('goal modes require a goal-icon family')
+            rules=sibling('match3_rules')
+            rules.validate_goal_binding(goal_binding,rules.GOAL_KINDS.get(review['labels'][family_id],'UNKNOWN'))
+            truth['goal_binding']=goal_binding
         family["review"] = {**truth, "identity": review["labels"][family_id], "reviewed": True,
                             "registry_sha256": review["registry_sha256"]}
     return registry
@@ -254,6 +267,10 @@ def build_gallery(registry, splits, max_per_family=24, max_families=64, max_byte
                "large_objects": [], "ice_surfaces": [], "metadata": {"registry_sha256": digest(registry),
                "split_sha256": digest(splits), "max_per_family": max_per_family, "max_families": max_families,
                "max_bytes": max_bytes, "evaluation": "pending", "training_groups": sorted(k for k, v in groups.items() if v == "train")}}
+    rules=sibling("match3_rules")
+    labels=sibling("match3_apply_cell_labels")
+    catalog['metadata'].update(rule_catalog_id=read(rules.CATALOG)['id'],
+                               rule_catalog_sha256=hashlib.sha256(rules.CATALOG.read_bytes()).hexdigest())
     admitted = 0
     for family in registry["families"]:
         truth = family.get("review", {})
@@ -276,18 +293,25 @@ def build_gallery(registry, splits, max_per_family=24, max_families=64, max_byte
                 break
             kept.append(sample)
             entry = {"family_id": family["family"], "source": sample["source"], "reviewed": True,
-                     "archetype": truth["archetype"]}
+                     "archetype": truth["archetype"],"rule_version":1}
             def pattern(values, kind, rule, mask=None):
                 return {**entry, "kind": kind, "rule": rule,
                         "pixels_rgb": "".join(f"{pixel:06x}" for pixel in pixels(values)),
                         "mask_bits": mask or "1" * 256}
-            if role == "goal":
-                kind = {"coin": "COIN", "snow": "SNOW", "iceflower": "ICEFLOWER", "honey": "HONEY",
-                        "cookie": "COOKIE", "ice": "ICE", "egg": "EGG"}.get(identity)
-                if identity in "ROYGBP" and len(identity) == 1:
-                    kind = {"R": "RED", "O": "BEAR", "Y": "CHICK", "G": "FROG", "B": "HIPPO", "P": "CAT"}[identity]
+            if role=='cell' and truth.get('rule_binding') is not None:
+                rules.validate_binding(truth['rule_binding'],truth['kind'],truth['color'])
+                if 'patch' not in sample:
+                    raise ValueError('bound state needs a real engine patch')
+                item=pattern(sample['patch'],'bound_'+digest(rules.state_identity(truth['rule_binding']))[:20],'reviewed_state')
+                item['rule_binding']=truth['rule_binding']
+                catalog['cells'].append(item)
+            elif role == "goal":
+                kind = rules.GOAL_KINDS.get(identity)
                 if kind:
-                    catalog["goals"].append({**pattern(sample["pixels"], kind, "reviewed_goal_icon", "1" * 128 + "0" * 128), "aspect": sample.get("aspect", 1.0)})
+                    item={**pattern(sample["pixels"], kind, "reviewed_goal_icon", "1" * 128 + "0" * 128), "aspect": sample.get("aspect", 1.0)}
+                    if truth.get('goal_binding') is not None:
+                        rules.validate_goal_binding(truth['goal_binding'],kind);item['goal_binding']=truth['goal_binding']
+                    catalog['goals'].append(item)
             elif role == "object" and identity == "cookie":
                 catalog["large_objects"].append(pattern(sample["pixels"], "cookie", "identity_only_2x2"))
             elif role == "cell" and truth["kind"] == "ANIMAL" and truth["swappable"] is True:
@@ -329,10 +353,11 @@ def review_page(registry, out):
                       "img": page._png_data_uri(montage), "draft": truth.get("identity", "unknown"),
                       "archetype": truth.get("archetype", "unknown"), "swappable": truth.get("swappable"),
                       "reviewed": truth.get("reviewed", False),
+                      "binding":truth.get("rule_binding"),"role":family['role'],"goalBinding":truth.get('goal_binding'),
                       "members": [{"source": sample["source"], "img": page._png_data_uri(page._envelope_image(sample["pixels"]))}
                                   for sample in family["samples"]]})
-    html = page.render(cards).replace("return {labels:labels,archetypes:arch,swappable:swap,reviewed:reviewed};",
-        "return {labels:labels,archetypes:arch,swappable:swap,reviewed:reviewed,registry_sha256:'" + digest(registry) + "'};")
+    html = page.render(cards).replace("return {labels:labels,archetypes:arch,swappable:swap,reviewed:reviewed,bindings:bindings,goal_bindings:goalBindings};",
+        "return {labels:labels,archetypes:arch,swappable:swap,reviewed:reviewed,bindings:bindings,goal_bindings:goalBindings,registry_sha256:'" + digest(registry) + "'};")
     Path(out).write_text(html, encoding="utf-8")
 
 

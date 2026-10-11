@@ -83,7 +83,10 @@ public final class Match3GoalReplayInstrumentedTest {
             assertEquals("清除障碍",hint.getString("reason"));
             assertEquals(6,hint.getInt("from_row"));assertEquals(7,hint.getInt("from_col"));
             assertEquals(7,hint.getInt("to_row"));assertEquals(7,hint.getInt("to_col"));
-            assertTrue(hint.getString("ranking_scope").contains("observed_goal_one_move_lower_bound"));
+            String scope=hint.getString("ranking_scope");
+            assertTrue(scope.contains("observed_goal_rule_lower_bound"));
+            assertTrue(scope.contains("rule_catalog="+Match3Rules.CATALOG_ID));
+            assertTrue(scope.contains("rule_version="+Match3Rules.VERSION));
             assertEquals(9,first.getInt("rows"));assertEquals(9,first.getInt("cols"));
             File directory=context.getExternalFilesDir("match3-release-capture");assertNotNull(directory);directory.mkdirs();
             Bitmap screenshot=InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();assertNotNull(screenshot);

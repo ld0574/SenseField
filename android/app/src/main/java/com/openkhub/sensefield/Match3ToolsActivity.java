@@ -362,7 +362,7 @@ public final class Match3ToolsActivity extends UiActivity {
             for(Match3Goals.Target target:goals.targets)sb.append(target.kind.name).append("：")
                     .append(target.completed?"已完成":target.remaining>=0?"剩余 "+target.remaining:"数量未看清").append("\n");
         } else sb.append("这张截图没有确认目标，先提供基础交换。\n");
-        sb.append("\n可消除交换：").append(moves.size()).append(" 处\n");
+        sb.append("\n可用动作：").append(moves.size()).append(" 处\n");
         int spoken = 0;
         for (Match3MoveValue value : moves) {
             Match3Board.Swap s=value.swap;

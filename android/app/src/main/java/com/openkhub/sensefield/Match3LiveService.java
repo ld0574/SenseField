@@ -503,6 +503,7 @@ public class Match3LiveService extends Service {
         if(s.outcomes == null)s.outcomes = new Match3GoalOutcome(result -> s.diagnostics.record("Match3GoalOutcome",
                 DiagnosticRecorder.object("hint_revision",result.hintRevision,"outcome",result.outcome,
                         "action_evidence",result.actionEvidence,"steps_spent",result.stepsSpent,
+                        "action_key",result.actionKey,"rule_catalog",result.ruleCatalog,"goal_modes",result.goalModes,
                         "goal_deltas",goalMap(result.deltas),"expected_lower_bounds",goalMap(result.expected),
                         "scope","software_visual_observation; human_action_and_acoustic_evidence_unverified")));
         Match3Goals observedGoals=s.hudReader.read(frame,s.geometry,s.frameAt);
@@ -594,15 +595,17 @@ public class Match3LiveService extends Service {
                 for(Match3Goals.Kind kind:Match3Goals.Kind.values())if(s.goals.active(kind))try {
                     gains.put(kind.name(),value.collected(kind));contacts.put(kind.name(),value.hit(kind));
                 } catch(org.json.JSONException ignored) { }
-                candidates.put(DiagnosticRecorder.object("rank",i+1,"from_row",value.swap.fromRow,
-                        "from_col",value.swap.fromCol,"to_row",value.swap.toRow,"to_col",value.swap.toCol,
-                        "value",value.evidence(),"reason",value.reason,"physical_lower_bounds",gains,"contacts",contacts));
+                org.json.JSONObject actionEvidence=Match3RuleDiagnostics.action(value);
+                try { actionEvidence.put("rank",i+1).put("physical_lower_bounds",gains).put("contacts",contacts); }
+                catch(org.json.JSONException ignored) { }
+                candidates.put(actionEvidence);
             }
             s.diagnostics.record("Match3Ranking",DiagnosticRecorder.object("board_revision",s.boardRevision,
                     "goal_key",s.goals.key(),"goal_read_status",s.hudReader.status(),"admitted_moves",s.rankedMoves.size(),
                     "stationary_ice",iceState(position),
+                    "omitted_action_reasons",new org.json.JSONArray(Match3Action.omittedReasons(position)),
                     "top_candidates",candidates,"coordinates","top_left_zero_based",
-                    "scope","direct_one_move_and_object_proximity; random_cascades_and_unknown_layers_excluded"));
+                    "scope","typed_rule_lower_bounds_and_declared_known_successor_search; random_refill_colors_excluded"));
         }
         // An unread HUD may not lend old goal values to a new hint. A still-valid
         // existing hint can finish through a brief unread/confirmation frame.
@@ -652,7 +655,9 @@ public class Match3LiveService extends Service {
         for(Match3Goals.Target target:goals.targets)targets.put(DiagnosticRecorder.object("slot",target.slot,
                 "kind",target.kind.name(),"visual_id",target.visualId,
                 "identity_supported",target.kind!=Match3Goals.Kind.UNKNOWN,
-                "rule_supported",target.kind!=Match3Goals.Kind.UNKNOWN && target.kind!=Match3Goals.Kind.COOKIE,
+                "rule_supported",target.kind!=Match3Goals.Kind.UNKNOWN && target.kind!=Match3Goals.Kind.COOKIE
+                        && target.mode!=Match3Goals.Mode.UNKNOWN,
+                "event_mode",target.mode.name(),"mode_evidence",target.modeEvidence,
                 "effect_scope",target.kind==Match3Goals.Kind.COOKIE?"object_proximity_only; layers_and_removal_unverified":"observed_type",
                 "remaining",target.remaining,"completed",target.completed));
         return DiagnosticRecorder.object("hud_verified",goals.hudVerified,"level",goals.level,"steps",goals.steps,

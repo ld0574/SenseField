@@ -100,4 +100,22 @@ public final class Match3GalleryTest {
             assertTrue(found);
         }
     }
+    @Test public void coverSupplementPinsRulesAndCannotPartiallyChangeTheLegacyGallery() throws Exception {
+        Path assets=Path.of("src/main/assets");if(!Files.isDirectory(assets))assets=Path.of("app/src/main/assets");
+        byte[] old=Files.readAllBytes(assets.resolve("match3-gallery-v1.json"));
+        byte[] extra=Files.readAllBytes(assets.resolve("match3-vine-v1.json"));
+        StringBuilder sha=new StringBuilder();for(byte b:java.security.MessageDigest.getInstance("SHA-256").digest(
+                Files.readAllBytes(assets.resolve("match3-rules-v1.json"))))sha.append(String.format(java.util.Locale.ROOT,"%02x",b&255));
+        JSONObject base=base();String before=base.toString();byte[] preserved=old.clone();
+        Match3VisualCatalog original=Match3VisualCatalog.withGallery(base,old);
+        Match3VisualCatalog admitted=Match3VisualCatalog.withReviewedSupplement(base,old,extra,sha.toString());
+        assertEquals("loaded",admitted.galleryStatus);assertTrue(admitted.cells.size()>original.cells.size());
+        assertTrue(admitted.goals.size()>original.goals.size());assertEquals(original.galleryGoalsPendingReview,admitted.galleryGoalsPendingReview);
+        assertEquals(original.gallerySha256,admitted.gallerySha256);assertEquals("loaded",admitted.coverCatalogStatus);
+        assertEquals(64,admitted.coverCatalogSha256.length());
+        Match3VisualCatalog rejected=Match3VisualCatalog.withReviewedSupplement(base,old,extra,"0".repeat(64));
+        assertTrue(rejected.coverCatalogStatus.startsWith("rejected:"));assertEquals(original.cells.size(),rejected.cells.size());
+        assertEquals(original.goals.size(),rejected.goals.size());assertEquals(original.gallerySha256,rejected.gallerySha256);
+        assertArrayEquals(preserved,old);assertEquals(before,base.toString());
+    }
 }

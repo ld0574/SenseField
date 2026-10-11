@@ -41,7 +41,7 @@ public class Match3MergeInstrumentedTest {
             assertEquals('I', Match3Sampler.classifyPoint(frame, 20, 20));
             frame.eraseColor(Color.rgb(40, 56, 88));
             assertEquals(Match3Sampler.GAP_CELL, Match3Sampler.classifyPoint(frame, 20, 20));
-            assertEquals("冰块", Match3Coach.pieceName('I'));
+            assertEquals("雪块", Match3Coach.pieceName('I'));
             assertEquals("空位", Match3Coach.pieceName(Match3Sampler.GAP_CELL));
             assertTrue(Match3Board.findRuns(new char[][]{{'I', 'I', 'I'}, {'H', 'H', 'H'}}).isEmpty());
             char[][] board = {{'R', 'R', 'I'}, {'G', 'H', 'R'}, {'Y', 'O', 'B'}};

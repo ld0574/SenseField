@@ -36,6 +36,7 @@
 | [符合度复核与迭代证据](plans/符合度改造方案.md) | 历史评估、逐批实现／验证边界及当前待验证项目 |
 | [消消乐通关价值排序](plans/消消乐目标价值排序.md) | 本地任务读取、独立棋子状态、一步收益排序与独立验收边界 |
 | [消消乐新元素可信识别 Goal](plans/消消乐新元素可信识别.md) | 外观身份、交换权限、目标效果分别核验；陌生家族自动归集与验收边界 |
+| [消消乐规则驱动最大价值 Goal](plans/消消乐规则驱动最大价值改造.md) | 规则目录、合法动作、任务事件、已知拓扑结算与有界搜索 |
 | [0.4.0 目标、接口与验收记录](../validation/assistant/GOAL_0.4.0_2026-10-03.md) | 开发中的语音与画面助手目标、接口和待验证条件 |
 
 ## 开发与数据 · `development/`
@@ -46,6 +47,7 @@
 | [外部数据引入与预训练](development/外部数据引入与预训练.md) | 来源审计、导入要求与训练顺序 |
 | [消消乐自动回归](development/match3-regression.md) | JVM、原生故障序列、投影、最终 Release 与门禁复现 |
 | [消消乐元素证据与扩展](development/match3-element-evidence.md) | 不凭颜色猜规则，按家族补一次证据，诊断图片与缓存的边界 |
+| [消消乐规则引擎](development/match3-rules.md) · [工程验收记录](development/match3-rules-validation.md) | 全量规则覆盖、未知参数、复现命令及工程／实局验收边界 |
 | [Android 真实助手传输测试](development/assistant-android-transport-test.md) | 合成输入、临时证书、真实 GLM/CPU ASR 与正式客户端联调 |
 | [Linux 测试网关部署](development/assistant-gateway-test-deployment.md) | 隔离测试部署、CPU 依赖、HTTPS/WSS 与未覆盖门禁 |
 | [Android 自动更新](development/app-update.md) | 0.4.1/code18：固定网站清单与 Gitee APK 下载、同版本 SHA 修订及校验规则；历史同源 CDN 结果单独保留。实际发包见[Gitee发布步骤](../deploy/assistant/CDN发布.md) |
@@ -61,6 +63,8 @@
 ## 公开调研摘要 · `research/`
 
 [游戏无障碍案例与需求验证](research/游戏无障碍案例与需求验证.md)整理可追溯的公开项目案例、社区维护经验与听野待验证的问题。原始检索稿保留在 `references/research/`。
+
+[开心消消乐元素规则参考](research/开心消消乐元素规则参考.md)是规则驱动最大价值改造的输入，保留原始来源和待核实标记。
 
 ## 本地参考资料 · `references/`
 

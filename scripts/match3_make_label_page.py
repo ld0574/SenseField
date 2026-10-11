@@ -14,6 +14,7 @@ import base64
 import io
 import json
 import re
+import importlib.util
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -22,9 +23,9 @@ from PIL import Image
 
 PATCH = 16
 OPTIONS = [
-    ("O", "棕熊 O"), ("R", "狐狸 R"), ("B", "河马 B"), ("Y", "小鸡 Y"), ("G", "青蛙 G"), ("P", "紫猫 P"),
+    ("O", "棕色动物 O"), ("R", "狐狸 R"), ("B", "河马 B"), ("Y", "小鸡 Y"), ("G", "青蛙 G"), ("P", "紫猫头鹰 P"),
     ("coin", "银币"), ("cookie", "饼干"), ("snow", "雪块"), ("iceflower", "冰花(消完变雪)"),
-    ("ice", "裸冰单层背景(不含动物)"), ("honey", "蜜罐"), ("egg", "蛋/鸡窝"), ("empty", "空/背景/天空"),
+    ("ice", "裸冰单层背景(不含动物)"), ("honey", "蜜罐"), ("honey_cover","蜂蜜覆盖目标图标"), ("lock","藤蔓任务图标"), ("egg", "鸡蛋"), ("empty", "空/背景/天空"),
     ("special", "特殊(彩虹等)"), ("unknown", "不认识/障碍"),
 ]
 # The bounded set of clearing mechanics; each is hand-coded once in the engine.
@@ -36,9 +37,17 @@ ARCHETYPES = [
 # Today's confirmed identity -> archetype mapping (auto-prefilled, user can override).
 DEFAULT_ARCH = {
     "O": "ordinary", "R": "ordinary", "B": "ordinary", "Y": "ordinary", "G": "ordinary", "P": "ordinary",
-    "coin": "single", "snow": "single", "honey": "single", "iceflower": "multistage", "ice": "cover",
+    "coin": "single", "snow": "single", "honey": "single", "honey_cover":"cover", "lock":"cover", "iceflower": "multistage", "ice": "cover",
     "cookie": "large", "egg": "spawner", "special": "special", "empty": "none", "unknown": "unknown",
 }
+_spec=importlib.util.spec_from_file_location('state_labels',Path(__file__).with_name('match3_apply_cell_labels.py'))
+_state_labels=importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_state_labels)
+OPTIONS += [(code,kind) for code,kind in _state_labels.TYPED.items()]
+ARCHETYPES += [('frozen','包裹冰·禁移动配对'),('locked','锁链·禁移动可配对'),
+               ('line_horizontal','横向直线'),('line_vertical','纵向直线'),('blast','爆炸·参数待核实'),
+               ('honey_cover','多层蜂蜜覆盖'),('cage','牢笼'),('state','已知身份·独立状态')]
+DEFAULT_ARCH.update({code:'state' for code in _state_labels.TYPED})
 
 
 def _png_data_uri(image: Image.Image) -> str:
@@ -106,11 +115,21 @@ FAMILIES.forEach(f=>{
   card.innerHTML=`<img src="${f.img}"><div class="meta">${f.family} · ${f.count}格<br>引擎:${f.engine}</div>`+
     `<div class="lab">①长相</div><select class="id" data-family="${f.family}">${opts(OPTIONS,f.draft)}</select>`+
     `<div class="lab">②机制</div><select class="arch" data-family="${f.family}">${opts(ARCHETYPES,arch)}</select>`+
-    `<div class="lab">③普通动物交换权限</div><select class="swap" data-family="${f.family}">${opts([['unknown','未确认'],['yes','允许'],['no','禁止']],f.swappable===true?'yes':f.swappable===false?'no':'unknown')}</select>`+
+    `<div class="lab">③交换权限</div><select class="swap" data-family="${f.family}">${opts([['unknown','未确认'],['yes','允许'],['no','禁止']],f.swappable===true?'yes':f.swappable===false?'no':'unknown')}</select>`+
     `<label><input type="checkbox" class="reviewed" data-family="${f.family}" ${f.reviewed?'checked':''}>已逐项审阅</label>`;
   const idSel=card.querySelector('.id'), archSel=card.querySelector('.arch');
   idSel.addEventListener('change',()=>{ if(DEFAULT_ARCH[idSel.value]) archSel.value=DEFAULT_ARCH[idSel.value]; card.querySelector('.swap').value='unknown'; });
   card.querySelectorAll('select').forEach(s=>s.addEventListener('change',()=>card.querySelector('.reviewed').checked=false));
+  const binding=document.createElement('textarea');binding.className='binding';binding.dataset.family=f.family;
+  binding.placeholder='可选：经人工审阅的规则版本与状态 JSON；缺少证据请留空';
+  binding.value=f.binding?JSON.stringify(f.binding,null,2):'';
+  binding.addEventListener('input',()=>card.querySelector('.reviewed').checked=false);card.appendChild(binding);
+  if(f.role==='goal'){
+    const goal=document.createElement('textarea');goal.className='goalBinding';goal.dataset.family=f.family;
+    goal.placeholder='可选：任务模式 JSON（reviewed、event_mode、evidence），须另有任务证据';
+    goal.value=f.goalBinding?JSON.stringify(f.goalBinding,null,2):'';
+    goal.addEventListener('input',()=>card.querySelector('.reviewed').checked=false);card.appendChild(goal);
+  }
   grid.appendChild(card);
   if(f.members){
     const details=document.createElement('details'),summary=document.createElement('summary');
@@ -120,12 +139,14 @@ FAMILIES.forEach(f=>{
       member.append(img,source);details.appendChild(member);});card.appendChild(details);
   }
 });
-function collect(){const labels={},arch={},swap={},reviewed={};
+function collect(){const labels={},arch={},swap={},reviewed={},bindings={},goalBindings={};
   document.querySelectorAll('select.id').forEach(s=>labels[s.dataset.family]=s.value);
   document.querySelectorAll('select.arch').forEach(s=>arch[s.dataset.family]=s.value);
   document.querySelectorAll('select.swap').forEach(s=>swap[s.dataset.family]=s.value==='unknown'?null:s.value==='yes');
   document.querySelectorAll('input.reviewed').forEach(s=>reviewed[s.dataset.family]=s.checked);
-  return {labels:labels,archetypes:arch,swappable:swap,reviewed:reviewed};}
+  document.querySelectorAll('textarea.binding').forEach(s=>{if(s.value.trim())bindings[s.dataset.family]=JSON.parse(s.value);});
+  document.querySelectorAll('textarea.goalBinding').forEach(s=>{if(s.value.trim())goalBindings[s.dataset.family]=JSON.parse(s.value);});
+  return {labels:labels,archetypes:arch,swappable:swap,reviewed:reviewed,bindings:bindings,goal_bindings:goalBindings};}
 function exportLabels(){
   const data=JSON.stringify(collect(),null,2);
   document.getElementById('out').value=data;

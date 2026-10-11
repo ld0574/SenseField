@@ -66,7 +66,9 @@ public final class Match3GoalValueTest {
     }
     @Test public void eggHitsNeverPretendToCollectRandomChicks() {
         Match3Position p = board("HERHHH", "RGRHHH", "HRHHHH");
-        Match3MoveValue value = at(p, goals(3, Match3Goals.Kind.CHICK, 2), 1, 1, 2, 1);
+        Match3Goals hatch=new Match3Goals(42,3,java.util.Collections.singletonList(new Match3Goals.Target(0,
+                Match3Goals.Kind.CHICK,2,false,"",Match3Goals.Mode.HATCH,"reference_chick_hatch_goal")),true,100);
+        Match3MoveValue value = at(p,hatch,1,1,2,1);
         assertEquals(0, value.collected(Match3Goals.Kind.CHICK)); assertEquals(0, value.directUnits);
         assertEquals(1, value.hit(Match3Goals.Kind.EGG)); assertEquals("靠近鸡蛋", value.reason);
     }

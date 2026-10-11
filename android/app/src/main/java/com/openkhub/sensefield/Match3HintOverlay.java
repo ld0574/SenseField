@@ -124,7 +124,13 @@ final class Match3HintOverlay implements AutoCloseable {
                 paint.setColor(pass == 0 ? 0xff172129 : 0xffffe600);
                 paint.setStyle(Paint.Style.STROKE); paint.setStrokeJoin(Paint.Join.ROUND);
                 paint.setStrokeWidth((pass == 0 ? 7 : 3) * density);
-                drawCell(canvas, g, s.fromRow, s.fromCol); drawCell(canvas, g, s.toRow, s.toCol);
+                drawCell(canvas,g,s.fromRow,s.fromCol);
+                if(s.actionType==Match3Action.Type.ACTIVATE) {
+                    canvas.drawCircle((g.centerX(s.fromCol)-g.left)*sx,(g.centerY(s.fromRow)-g.top)*sy,
+                            Math.min(g.cellWidth()*sx,g.cellHeight()*sy)*.16f,paint);
+                    continue;
+                }
+                drawCell(canvas,g,s.toRow,s.toCol);
                 float x1, y1, x2, y2;
                 if (s.fromRow == s.toRow) {
                     x1 = (g.centerX(s.fromCol) + g.cellWidth() * .25f - g.left) * sx;
