@@ -284,3 +284,11 @@ LOCK 目标只接 UNLOCK。单层邻接受击和锁住动物参与三消各按�
 原始数据与逐次失败在私有 `validation/private/match3-hud-cv-fix/`。关键回执为 `before-fix/receipt.json`、`baseline-export/receipt.json`、`cause-and-scores.json`、`debug-full/receipt.json`、`idle-probe/receipt.json`、`debug-idle-repaired/receipt.json`、`release-build-final/receipt.json`、`release-full/receipt.json`、`release-final-targeted/receipt.json`、`replay-parity-final.json`、`release-hud-cost/receipt.json`、`phone-final/receipt.json`、`engineering-summary.json`。首次 JVM 文件 API 编译错误、零测试发现命令、旧 HUD 全等断言失败也保留；分别改用兼容 API、正确测试目录及明确记录唯一有真值的改善，没有删除失败证据。
 
 下一局需要实际采集新的有界提示前后窗口，核对连续动画中的藤蔓／鸟权限、真实交换及收益。旧会话四次动作仍 `not_observed`，不会由本轮回放升级为已采纳；独立人工留出集、受控实体手机成本／端到端 P95／3×15 分钟温升／外部实声、正式签名与公开发布继续待条件。本轮没有新实局录像或公网发布。
+
+## 0.4.6 第 84～85 关实局 CV 补充（2026-10-11）
+
+后续已安装并核验 0.4.6／code23，主 APK SHA `b06c0638ed8d58775826abd2a1176a9da6d510fd048a344f1555b339bc15ac0b`，沿用本地原证书。新实局正常结束，328 帧／96 张图片／20 条提示及撤销；20 条提示坐标、完整说明和目标键匹配对应排序首项，13 个准入窗口均有前后图。实时 LOCK／UNLOCK 读到 16→8→2→0；19 条 outcome 仍全部 `action_evidence:not_observed`。
+
+相同冻结双包、真实 producer、自动 9×9 几何复核 8 张保存 JPEG，执行 1 项通过、无跳过。初始清晰图为 14／16 LOCK，两格红色藤蔓仍覆盖／交换／配对 UNKNOWN；稍后 8／8。两张图全部预期藤蔓格均未作为交换端点，选定图能识别魔力鸟并枚举 `BIRD_COLOR`。这是助手开发审阅的固定输入证据，不是整局 false_swap 或独立准确率；低清上下文图只识别 3 格初始藤蔓，HUD 数量弃权，素材对动作重建的可用性仍需验证。COOKIE 模式 UNKNOWN 也继续单列。
+
+完整绑定、首次私有分析器关联修正、原图／实时分辨率区别、实际动作边界及后续优先项见 [本局记录](../../validation/match3/MATCH3_LIVE_CV_0_4_6_2026-10-11.md)。原始证据仅保留在私有目录；本次无生产、模板、阈值或 APK 变更，不重复计入旧套件通过数。此前手机成本超限、strict 标签分歧、独立验收及发布状态保持。

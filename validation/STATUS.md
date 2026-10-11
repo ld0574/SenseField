@@ -11,17 +11,17 @@
 | 已记录的公开版本 | 0.4.5／code22，2026-10-10 GitHub Latest；2026-10-11 网站清单与 GitHub 附件元数据一致，本轮未重下载公开字节 |
 | 分发材料 | 新 APK 在 `output/releases/0.4.6/gitee-upload/`，自动生成的配套清单在 `cdn-upload/latest.json`；未公开发布，旧0.4.5材料保留 |
 
-本版本构建、清单与手机覆盖安装范围见[0.4.6核对记录](releases/ANDROID_CANDIDATE_0_4_6_2026-10-11.md)和[使用说明](../docs/releases/0.4.6/RELEASE_NOTES.md)。33项Python、11项JVM更新检查和21项手机规则／CV固定输入检查通过；lint Error0／Warning33。签名为原Android debug证书，本地init指定，不代表具备正式发布凭据。此前0.4.5规则／CV、任务与ICE反证、连续提示首次失败及修复回执保留原版本与SHA，详见[工程记录](../docs/development/match3-rules-validation.md)。本轮版本递增没有启动新游戏／采集会话。
+本版本构建、清单与手机覆盖安装范围见[0.4.6核对记录](releases/ANDROID_CANDIDATE_0_4_6_2026-10-11.md)和[使用说明](../docs/releases/0.4.6/RELEASE_NOTES.md)。33项Python、11项JVM更新检查和21项手机规则／CV固定输入检查通过；lint Error0／Warning33。签名为原Android debug证书，本地init指定，不代表具备正式发布凭据。此前0.4.5规则／CV、任务与ICE反证、连续提示首次失败及修复回执保留原版本与SHA，详见[工程记录](../docs/development/match3-rules-validation.md)。版本递增阶段没有新采集；随后[第84～85关实局](match3/MATCH3_LIVE_CV_0_4_6_2026-10-11.md)已正常收齐，328帧／96张图片，导出后双包SHA未变化。
 
 ## 功能与证据
 
 | 方向 | 最近已取得的证据 | 仍待验证 |
 | --- | --- | --- |
-| 消消乐提醒与高亮 | 规则权限、藤蔓／小鸟CV及有界HUD字形补充有固定输入证据；修复小字ICE72误读为22，游戏提示框覆盖未知端点必须撤销交换。前批Python39／JVM561、完整Release72及最终手机21通过，首次Debug90中1项测试前提失败保留；本次0.4.6另21项手机检查通过。[工程记录](../docs/development/match3-rules-validation.md) | 独立新局准确率、连续动画与实际提示采纳、所选引擎外部实声与受控温升；开发故障图和静态回放不替代患者验收 |
-| 消消乐通关价值 | 根据元素规则、可靠目标与确认的一步收益排序，身份与位置证据不单独授予交换权限；未知覆盖和规则继续弃权。旧会话四次动作仍为`not_observed`，静态反例不能补成真实采纳。[规则范围](../docs/development/match3-rules.md) · [工程记录](../docs/development/match3-rules-validation.md) | 独立目标识别、连续实局中的交换和实际任务收益、复杂组合与多步策略；过关不自动证明算法通过 |
+| 消消乐提醒与高亮 | 原规则／CV工程回执保留；0.4.6另21项手机检查通过。新实局20条提示坐标／完整说明匹配排序首项，13个准入窗口有前后图、结束高亮false；固定初始藤蔓14／16、稍后8／8，未知格不放行交换。[本局记录](match3/MATCH3_LIVE_CV_0_4_6_2026-10-11.md) · [工程记录](../docs/development/match3-rules-validation.md) | 两格红色藤蔓变体、低清窗口可用性、独立新局准确率、连续动画与实际提示采纳、外部实声与受控温升 |
+| 消消乐通关价值 | 根据可靠目标与确认的一步收益排序，未知覆盖／规则继续弃权。新实局LOCK／UNLOCK读到16→8→2→0，但19条动作仍`not_observed`；COOKIE模式UNKNOWN。旧会话四次动作证据保持。[本局记录](match3/MATCH3_LIVE_CV_0_4_6_2026-10-11.md) · [规则范围](../docs/development/match3-rules.md) | 目标事件模式、连续实局中的交换和实际任务收益、复杂组合与多步策略；过关不自动证明算法通过 |
 | 王者近区提醒 | 再出现、频率和范围修订有记录及既有日志回放。[频率修订](honor/NEAR_ZONE_FREQUENCY_REPAIR_2026-10-06.md) | 独立半径标定、漏报／误报真值、实际发声和严格持续运行门禁；回放提示减少不等于真机准确率提高 |
 | 语音与呈现 | 0.4.4 固定提示离线双音色、连续试听与缓存有工程记录；游戏向导女声曾取得“语音还可以，略微发烫”的一局反馈。[素材与正式包](audio/FISH_GAME_GUIDE_0_4_4_2026-10-08.md) · [真机记录](audio/GAME_GUIDE_LIVE_0_4_4_2026-10-08.md) | 消消乐动态语音的完整性、患者理解、混音、外部实际声音与打断测量 |
-| 发热与性能 | 前批HUD字形补充的12盘成对模拟器成本，cached wall／CPU P95为−0.02%／+0.23%；cold基线尾部异常，不宣称提速。旧手机cold wall P95 +10.29%超10%上限，失败保留。本次0.4.6版本递增未新增成本或温升测试。[工程范围](../docs/development/match3-rules-validation.md) | 受控最终Release手机处理P95、匹配条件的3×15分钟温升及外部端到端／实声；模拟器处理线程时间不证明手机降温 |
+| 发热与性能 | 前批HUD字形补充的12盘成对模拟器成本，cached wall／CPU P95为−0.02%／+0.23%；cold基线尾部异常，不宣称提速。旧手机cold wall P95 +10.29%超10%上限，失败保留。0.4.6新会话电池42.0→43.7℃、未充电，仅作未受控观察。[工程范围](../docs/development/match3-rules-validation.md) · [本局范围](match3/MATCH3_LIVE_CV_0_4_6_2026-10-11.md) | 受控最终Release手机处理P95、匹配条件的3×15分钟温升及外部端到端／实声；观察不证明温升门禁通过 |
 | 界面与反馈 | 大字、首次说明、分组帮助及游戏对应反馈有各批次检查。[0.4.3 界面](android/ANDROID_UI_0_4_3_2026-10-07.md) · [0.4.5 反馈](match3/MATCH3_DIAGNOSTIC_CONTEXT_0_4_5_2026-10-09.md) | 各结果只对应当批制品；真实 TalkBack、患者操作与跨设备体验继续独立验证 |
 | AI 助手 | 默认关闭，设置可手动开启；保留模型、ASR、时效、取消与部署的历史工程记录。[关闭策略](assistant/ASSISTANT_DEFAULT_OFF_2026-10-06.md) · [主题记录](assistant/README.md) | 对话延迟、回答质量、实际可听性及生产容量；默认关闭不代表这些问题已修复 |
 | 模型与独立准确率 | 原开发10盘743格状态字段保持、false_swap0；HUD一项有真值的−1→17改善已单独记录，strict仍因原两条R／O分歧失败。用户暂无独立人工留出；开发资料只用于工程。[消消乐记录](../docs/development/match3-rules-validation.md) · [模型核心记录](MODEL_PIPELINE.md) | 独立人工留出、实体机实声与严格最终门禁；开发数据和合成画面不能代替独立验收 |
