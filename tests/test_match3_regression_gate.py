@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 path = Path(__file__).resolve().parents[1] / "scripts/verify_match3_regression.py"
 spec = importlib.util.spec_from_file_location("match3_regression", path)
@@ -11,6 +12,19 @@ spec.loader.exec_module(gate)
 
 
 class Match3GateTests(unittest.TestCase):
+    def test_exact_native_math_and_build_settings_are_bound_to_source_receipts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            names=['android/app/src/main/java/Sampler.java','android/app/src/main/cpp/math.cpp',
+                   'android/app/src/main/cpp/CMakeLists.txt','android/app/build.gradle',
+                   'android/app/proguard-rules.pro','scripts/verify_match3_regression.py']
+            for name in names:
+                path=root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(name)
+            with mock.patch.object(gate,'ROOT',root),mock.patch.object(gate,'__file__',str(root/names[-1])):
+                previous=gate.source_digest()
+                for name in names[1:3]:
+                    (root/name).write_text('changed native implementation')
+                    current=gate.source_digest();self.assertNotEqual(previous,current);previous=current
     def test_adb_zero_exit_does_not_make_a_failed_or_crashed_suite_pass(self):
         for output in ("INSTRUMENTATION_CODE: 0", "OK (0 tests)", "FAILURES!!!\nTests run: 14, Failures: 1",
                        "INSTRUMENTATION_RESULT: shortMsg=Process crashed.", "OK (14 tests)\nINSTRUMENTATION_FAILED"):

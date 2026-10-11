@@ -265,23 +265,44 @@ final class Match3HudReader {
             if(b.width()>b.height()*.85f)return -1;
             glyphs.add(b);tallest=Math.max(tallest,b.height());
         }
+        boolean smallFragment=false;
+        for(Box b:glyphs)if(b.height()<tallest*.72f)smallFragment=true;
+        if(!step && smallFragment) {
+            // A detached icon highlight can enter the broad counter crop.
+            // First require a positively recognized full-height numeral; only
+            // a smaller fragment entirely above its midpoint and starting
+            // above its top can be artwork. Same-baseline/large/clipped unknown
+            // glyphs still invalidate the complete count.
+            int numeralTop=Integer.MAX_VALUE;float upperHalf=Float.POSITIVE_INFINITY;
+            for(Box b:glyphs)if(b.height()>=tallest*.72f
+                    && catalog.digit(glyphBits(mask,box,b),b.width()/(float)b.height())>=0) {
+                numeralTop=Math.min(numeralTop,b.top);upperHalf=Math.min(upperHalf,(b.top+b.bottom)/2f);
+            }
+            if(numeralTop!=Integer.MAX_VALUE)for(int i=glyphs.size()-1;i>=0;i--) {
+                Box b=glyphs.get(i);
+                if(b.height()<tallest*.72f && b.top<numeralTop && b.bottom<=upperHalf)glyphs.remove(i);
+            }
+        }
         for(Box b:glyphs)if(b.height()<tallest*.72f)return -1;
         glyphs.sort(Comparator.comparingInt(b->b.left));
         if(glyphs.isEmpty() || glyphs.size()>(step?3:4)) return -1;
         int result=0,lastRight=-1;
         for(Box b:glyphs) {
             if(lastRight>=0 && b.left-lastRight>b.height())return -1;
-            StringBuilder bits=new StringBuilder(160);
-            for(int y=0;y<16;y++)for(int x=0;x<10;x++) {
-                int xx=b.left+Math.min(b.width()-1,(2*x+1)*b.width()/20)-box.left;
-                int yy=b.top+Math.min(b.height()-1,(2*y+1)*b.height()/32)-box.top;
-                bits.append(mask[yy*box.width()+xx]?'1':'0');
-            }
-            int digit=catalog.digit(bits.toString(),b.width()/(float)b.height());
+            int digit=catalog.digit(glyphBits(mask,box,b),b.width()/(float)b.height());
             if(digit<0 || result==0 && digit==0 && glyphs.size()>1)return -1;
             result=result*10+digit;lastRight=b.right;
         }
         return result;
+    }
+    private static String glyphBits(boolean[] mask,Box box,Box glyph) {
+        StringBuilder bits=new StringBuilder(160);
+        for(int y=0;y<16;y++)for(int x=0;x<10;x++) {
+            int xx=glyph.left+Math.min(glyph.width()-1,(2*x+1)*glyph.width()/20)-box.left;
+            int yy=glyph.top+Math.min(glyph.height()-1,(2*y+1)*glyph.height()/32)-box.top;
+            bits.append(mask[yy*box.width()+xx]?'1':'0');
+        }
+        return bits.toString();
     }
     /** The Chinese suffix has disconnected strokes; whole-column character bounds keep it out of the numeral. */
     private int level(int[] pixels,Box box) {

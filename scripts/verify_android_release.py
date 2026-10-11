@@ -17,7 +17,7 @@ from build_app_update_manifest import read_apk_metadata
 from prepare_bundled_speech import catalog, expected
 
 CERT = "5a42a53a8f06850e89c46ea193931e9853e3ce7cff99551b42e8b414a1eaaf68"
-REQUIRED_LIBRARIES = {"libmapassist.so", "libmapassist_jni.so", "libondevice_asr_jni.so",
+REQUIRED_LIBRARIES = {"libmapassist.so", "libmapassist_jni.so", "libmatch3_math_jni.so", "libondevice_asr_jni.so",
                       "libonnxruntime.so", "libpresentation_audio_jni.so", "libsherpa-onnx-c-api.so"}
 
 

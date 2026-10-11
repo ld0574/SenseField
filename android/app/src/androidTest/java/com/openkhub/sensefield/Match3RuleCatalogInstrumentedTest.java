@@ -9,6 +9,66 @@ import java.nio.charset.StandardCharsets;
 
 /** Native JSON/binding contract. Synthetic templates prove plumbing, not game visual accuracy. */
 public final class Match3RuleCatalogInstrumentedTest {
+    @Test public void nativeBatchPreservesFullFamilyCompetitionAndMaskDecisions() {
+        assertTrue(Match3NativeMath.AVAILABLE);
+        Match3VisualCatalog catalog=Match3VisualCatalog.get(InstrumentationRegistry.getInstrumentation().getTargetContext());
+        java.util.Random random=new java.util.Random(293168);
+        for(java.util.List<Match3VisualCatalog.Pattern> patterns:java.util.Arrays.asList(catalog.cells,catalog.animals,catalog.goals,catalog.iceSurfaces,catalog.largeObjects)) {
+            java.util.List<Match3VisualCatalog.Pattern> individual=new java.util.ArrayList<>(patterns);
+            for(Match3VisualCatalog.Pattern pattern:patterns)for(int noise:new int[]{0,8,32}) {
+                int[] patch=pattern.pixels.clone();
+                for(int i=0;i<noise;i++)patch[random.nextInt(256)]=0xff000000|random.nextInt(1<<24);
+                assertEquals(Match3VisualCatalog.recognize(individual,patch,.12f,.025f),Match3VisualCatalog.recognize(patterns,patch,.12f,.025f));
+            }
+        }
+        assertNull(Match3NativeMath.patternDifferences(new int[256],java.nio.ByteBuffer.allocate(1544),1,.145f));
+        assertNull(Match3NativeMath.patternDifferences(new int[256],java.nio.ByteBuffer.allocateDirect(1543),1,.145f));
+    }
+    @Test public void nativeBodiesKeepJavaAdmissionScoresAndUnknownCoverRejection() {
+        assertTrue("The candidate must package the exact accelerator",Match3NativeMath.AVAILABLE);
+        java.util.Random random=new java.util.Random(471692);
+        for(int fixture=0;fixture<12;fixture++) {
+            int[] reference=new int[256];java.util.Arrays.fill(reference,0xff203050);
+            for(int y=3;y<13;y++)for(int x=3;x<13;x++)reference[y*16+x]=0xff000000|random.nextInt(1<<24);
+            Match3AnimalAppearance.Body anchor=new Match3AnimalAppearance.Body(reference);
+            for(int dy=-2;dy<=2;dy++)for(int dx=-2;dx<=2;dx++)for(int noise:new int[]{0,6,48}) {
+                int[] observed=new int[256];java.util.Arrays.fill(observed,0xff203050);
+                for(int y=0;y<16;y++)for(int x=0;x<16;x++)if(x+dx>=0 && x+dx<16 && y+dy>=0 && y+dy<16)
+                    observed[(y+dy)*16+x+dx]=reference[y*16+x];
+                for(int i=0;i<noise;i++)observed[random.nextInt(256)]=0xfffaffff;
+                Match3AnimalAppearance.Body body=new Match3AnimalAppearance.Body(observed);
+                assertEquals(body.differenceJava(anchor),body.difference(anchor),0f);
+                assertEquals(body.differenceJava(anchor),Match3NativeMath.bodyDifference(observed,reference,null),0f);
+            }
+        }
+        assertEquals(Float.POSITIVE_INFINITY,Match3NativeMath.bodyDifference(new int[255],new int[256],null),0f);
+    }
+    @Test public void registeredCoverPruningKeepsFullScoresAndMarginContenders() throws Exception {
+        Match3VisualCatalog catalog=Match3VisualCatalog.get(InstrumentationRegistry.getInstrumentation().getTargetContext());
+        java.util.Random random=new java.util.Random(914592);
+        for(Match3VisualCatalog.Pattern pattern:catalog.cells) {
+            if(pattern.coverEvidence==null)continue;
+            for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++)for(int noise:new int[]{0,16,48}) {
+                int[] observed=pattern.pixels.clone();
+                for(int y=0;y<16;y++)for(int x=0;x<16;x++)if(x+dx>=0 && x+dx<16 && y+dy>=0 && y+dy<16)
+                    observed[(y+dy)*16+x+dx]=pattern.pixels[y*16+x];
+                for(int i=0;i<noise;i++)observed[random.nextInt(256)]=0xff000000|random.nextInt(1<<24);
+                float full=Float.POSITIVE_INFINITY;
+                for(int yy=-1;yy<=1;yy++)for(int xx=-1;xx<=1;xx++) {
+                    long whole=0,cover=0;int count=0,support=0;
+                    for(int y=Math.max(0,-yy);y<Math.min(16,16-yy);y++)for(int x=Math.max(0,-xx);x<Math.min(16,16-xx);x++) {
+                        int at=y*16+x,a=pattern.pixels[at],b=observed[(y+yy)*16+x+xx],delta=0;
+                        for(int shift:new int[]{16,8,0})delta+=Math.abs((a>>shift&255)-(b>>shift&255));
+                        whole+=delta;count++;if(pattern.coverEvidence[at]) { cover+=delta;support++; }
+                    }
+                    if(support>=24)full=Math.min(full,Math.max(whole/(count*765f),cover/(support*765f)));
+                }
+                float bounded=pattern.difference(observed,.145f);
+                if(full<=.145f)assertEquals("All admissible scores stay exact",full,bounded,0f);
+                else assertTrue(bounded>.145f);
+            }
+        }
+    }
     private byte[] asset(String name) throws Exception {
         try(java.io.InputStream in=InstrumentationRegistry.getInstrumentation().getTargetContext().getAssets().open(name)) { return in.readAllBytes(); }
     }

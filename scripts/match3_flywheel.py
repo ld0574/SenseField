@@ -11,6 +11,7 @@ import hashlib
 import importlib.util
 import json
 import math
+import re
 from pathlib import Path
 
 
@@ -39,6 +40,10 @@ def sibling(name):
 
 
 def pixels(value):
+    if isinstance(value, str):
+        if not re.fullmatch(r"[0-9a-f]{1536}", value):
+            raise ValueError("a compact descriptor needs exactly 256 RGB24 pixels")
+        return [int(value[i:i+6], 16) for i in range(0, len(value), 6)]
     if not isinstance(value, list) or len(value) != 256 or any(type(v) is not int for v in value):
         raise ValueError("a descriptor needs exactly 256 integer pixels")
     return [v & 0xffffff for v in value]
@@ -149,6 +154,10 @@ def event_predictions(path):
         if event.get("type") != "Match3FlywheelSample":
             continue
         sample = event["data"]
+        if "descriptor_encoding" in sample:
+            if sample["descriptor_encoding"] != "rgb24_hex":
+                raise ValueError("unsupported descriptor encoding")
+            sample = {**sample, **{key: pixels(sample[key]) for key in ("pixels", "patch", "envelope") if key in sample}}
         frames.add(sample["frame"])
         if sample["role"] == "cell":
             predictions["samples"].append(sample)

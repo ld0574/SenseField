@@ -232,6 +232,16 @@
 }
 -keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3VisualCatalog$Pattern {
     float difference(int[]);
+    float difference(int[],float);
+    boolean[] coverEvidence;
+}
+
+-keep class com.openkhub.sensefield.Match3NativeMath { static boolean AVAILABLE; native <methods>; }
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3AnimalAppearance$Body {
+    float differenceJava(com.openkhub.sensefield.Match3AnimalAppearance$Body);
+}
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3Sampler {
+    static com.openkhub.sensefield.BoardGeometry verifiedGeometry(android.graphics.Bitmap,int[]);
 }
 -keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3CellConfirmation {
     <init>();

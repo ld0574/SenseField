@@ -67,7 +67,8 @@ public final class Match3FlywheelInstrumentedTest {
                     assertTrue("no speculative serialization beyond the shared queue capacity",saved.size()-before<=DiagnosticRecorder.MAX_IMAGE_JOBS);
                 }
                 int objects=0;for(JSONObject data:saved)if(data.getString("role").equals("object")) {
-                    objects++;assertEquals(256,data.getJSONArray("pixels").length());assertFalse(data.getBoolean("rule_supported"));
+                    objects++;assertEquals("rgb24_hex",data.getString("descriptor_encoding"));
+                    assertTrue(data.getString("pixels").matches("[0-9a-f]{1536}"));assertFalse(data.getBoolean("rule_supported"));
                     assertTrue(data.getInt("row")>=0);assertTrue(data.getInt("col")>=0);
                 }
                 assertTrue("real cookie envelopes survived rejected writes",objects>0);

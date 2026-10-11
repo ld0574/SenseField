@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(mapassist_android LANGUAGES C CXX)
 
+# Exact bounded Match3 patch arithmetic; no image/model dependencies or state.
+add_library(match3_math_jni SHARED match3_math_jni.cpp)
+target_compile_features(match3_math_jni PRIVATE cxx_std_17)
+target_compile_options(match3_math_jni PRIVATE -O2 -fno-fast-math)
+
 # Pin the Android inference runtime so Android Studio and command-line builds
 # use the same ABI and operators as the model parity check. The archive is
 # cached inside the ignored native build directory after the first build.

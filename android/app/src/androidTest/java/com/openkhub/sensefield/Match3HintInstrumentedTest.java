@@ -192,7 +192,7 @@ public final class Match3HintInstrumentedTest {
             engine.progress.onDone(oldId);
             assertEquals(0, engine.stops); assertEquals(1, next.ended.getCount());
             engine.progress.onError(engine.id);
-            assertEquals("ENGINE_ERROR", next.reason);
+            assertEquals("ENGINE_ERROR:" + TextToSpeech.ERROR, next.reason);
         } finally { p.close(); }
     }
 

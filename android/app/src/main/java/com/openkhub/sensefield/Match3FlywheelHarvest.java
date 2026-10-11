@@ -1,6 +1,5 @@
 package com.openkhub.sensefield;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -18,14 +17,20 @@ final class Match3FlywheelHarvest {
     private long lastGoalAt=-1;
     void resetStability() { cells.resetStability();objects.resetStability();previousGoals=null;goalFrames=null;lastGoalAt=-1; }
     int saturated() { return cells.saturatedObservations+objects.saturatedObservations; }
-    static JSONArray pixels(int[] patch) { JSONArray out=new JSONArray();for(int value:patch)out.put(value);return out; }
+    /** The descriptor is RGB throughout the catalog. Encode those exact bytes
+     * without 256 boxed JSON numbers; collection/admission budgets are unchanged. */
+    static String pixels(int[] patch) {
+        char[] out=new char[patch.length*6];String hex="0123456789abcdef";
+        for(int i=0;i<patch.length;i++)for(int k=0;k<6;k++)out[i*6+k]=hex.charAt(patch[i]>>(20-k*4)&15);
+        return new String(out);
+    }
     void collect(Match3Sampler sampler,Match3Position position,Match3HudReader hud,long at,Predicate<JSONObject> writer) {
         String frame="live-"+at+".png";
         int[] attempts={0};
         for(Match3UnknownElements.Sample sample:cells.observe(sampler.reviewElements(position,true),at)) {
             if(attempts[0]>=DiagnosticRecorder.MAX_IMAGE_JOBS) { sample.rejected();continue; }
             attempts[0]++;
-            JSONObject data=DiagnosticRecorder.object("role","cell","id",frame+":r"+sample.row+"c"+sample.col,
+            JSONObject data=DiagnosticRecorder.object("role","cell","descriptor_encoding","rgb24_hex","id",frame+":r"+sample.row+"c"+sample.col,
                     "frame",frame,"row",sample.row,"col",sample.col,"observed_at_ms",at,
                     "envelope",pixels(sample.observation.patch),"patch",pixels(sampler.elementPatch(sample.row,sample.col)),
                     "kind",sample.observation.cell.kind.name(),"color",String.valueOf(sample.observation.cell.color),
@@ -53,7 +58,7 @@ final class Match3FlywheelHarvest {
             for(Match3UnknownElements.Sample sample:objects.observe(envelopes,at)) {
                 if(attempts[0]>=DiagnosticRecorder.MAX_IMAGE_JOBS) { sample.rejected();continue; }
                 attempts[0]++;
-                JSONObject data=DiagnosticRecorder.object("role","object","id",frame+":object:r"+sample.row+"c"+sample.col,
+                JSONObject data=DiagnosticRecorder.object("role","object","descriptor_encoding","rgb24_hex","id",frame+":object:r"+sample.row+"c"+sample.col,
                         "frame",frame,"row",sample.row,"col",sample.col,"observed_at_ms",at,
                         "pixels",pixels(sample.observation.patch),"rule_supported",false);
                 if(!writer.test(data))sample.rejected();
@@ -86,7 +91,7 @@ final class Match3FlywheelHarvest {
             for(Match3AnimalAppearance.Body anchor:goalAnchors)if(observed.difference(anchor)<=.12f) { known=true;break; }
             if(known)continue;
             attempts[0]++;
-            JSONObject data=DiagnosticRecorder.object("role","goal","id",frame+":goal"+i,"frame",frame,
+            JSONObject data=DiagnosticRecorder.object("role","goal","descriptor_encoding","rgb24_hex","id",frame+":goal"+i,"frame",frame,
                     "observed_at_ms",at,"pixels",pixels(current[i]),"aspect",aspects[i],
                     "kind",kinds[i],"rule_supported",false);
             if(writer.test(data))goalAnchors.add(observed);

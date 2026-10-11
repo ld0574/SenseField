@@ -41,6 +41,7 @@ final class Match3VisualCatalog {
         final boolean[] coverEvidence;
         private final int[] registeredCoverSupport=new int[9];
         final int registrationPixels;
+        private final Match3PatchSums registrationSums;
         final int[] channelTotals=new int[3];
         final int[] blockTotals=new int[48];
         final Match3AnimalAppearance.Face identityShape;
@@ -96,6 +97,7 @@ final class Match3VisualCatalog {
                     registeredCoverSupport[(dy+1)*3+dx+1]=countAtOffset;
                 }
             } else coverEvidence=null;
+            registrationSums=coverEvidence==null?null:new Match3PatchSums(pixels);
             identityShape="iceflower".equals(kind) || "honey".equals(kind)
                     ?new Match3AnimalAppearance.Face('.',pixels):null;
             goalShape="reviewed_goal_icon".equals(rule) || "iceflower_goal_icon".equals(rule) || "user_confirmed_goal_icon".equals(rule)
@@ -105,13 +107,18 @@ final class Match3VisualCatalog {
             return difference(observed,Float.POSITIVE_INFINITY);
         }
         float difference(int[] observed,float ceiling) {
+            return difference(observed,ceiling,null);
+        }
+        float difference(int[] observed,float ceiling,Match3PatchSums observedSums) {
             if(coverEvidence!=null) {
-                float best=registeredCoverDifference(observed,0,0,ceiling);
+                if(Match3NativeMath.AVAILABLE)return Match3NativeMath.coverDifference(pixels,observed,coverEvidence,ceiling);
+                if(observedSums==null)observedSums=new Match3PatchSums(observed);
+                float best=registeredCoverDifference(observed,observedSums,0,0,ceiling);
                 // One patch pixel accommodates projection rounding and idle
                 // pose. The animal and positive strands move together; neither
                 // a matching face nor generic green pixels grants a cover.
                 if(best>0)for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++)
-                    if(dx!=0 || dy!=0)best=Math.min(best,registeredCoverDifference(observed,dx,dy,ceiling));
+                    if(dx!=0 || dy!=0)best=Math.min(best,registeredCoverDifference(observed,observedSums,dx,dy,ceiling));
                 return best;
             }
             long error = 0;
@@ -124,13 +131,14 @@ final class Match3VisualCatalog {
             }
             return error / (supported * 765f);
         }
-        private float registeredCoverDifference(int[] observed,int dx,int dy,float ceiling) {
+        private float registeredCoverDifference(int[] observed,Match3PatchSums observedSums,int dx,int dy,float ceiling) {
             long whole=0,cover=0;
             int allCount=(16-Math.abs(dx))*(16-Math.abs(dy));
             int coverCount=registeredCoverSupport[(dy+1)*3+dx+1];
             if(coverCount<24)return Float.POSITIVE_INFINITY;
             double wholeBudget=(double)Math.nextUp(ceiling)*allCount*765;
             double coverBudget=(double)Math.nextUp(ceiling)*coverCount*765;
+            if(registrationSums.lowerBound(observedSums,dx,dy,wholeBudget)>wholeBudget)return Float.POSITIVE_INFINITY;
             for(int y=Math.max(0,-dy);y<Math.min(16,16-dy);y++)for(int x=Math.max(0,-dx);x<Math.min(16,16-dx);x++) {
                 int i=y*16+x,a=pixels[i],b=observed[(y+dy)*16+x+dx];
                 int delta=Math.abs((a>>16&255)-(b>>16&255))+Math.abs((a>>8&255)-(b>>8&255))+Math.abs((a&255)-(b&255));
@@ -174,6 +182,30 @@ final class Match3VisualCatalog {
     final List<Character> bodyColors;
     List<Glyph> glyphs;
     final List<Glyph> checkmarks, levelSuffixes;
+    /** One immutable buffer per bounded catalog; no native handles or per-cell
+     * reference copies. All scores still compete by their original family. */
+    private static final class PatternList extends java.util.AbstractList<Pattern> {
+        private final List<Pattern> patterns;
+        private final java.nio.ByteBuffer table;
+        PatternList(List<Pattern> source) {
+            patterns=Collections.unmodifiableList(new ArrayList<>(source));
+            if(!Match3NativeMath.AVAILABLE || source.isEmpty()) { table=null;return; }
+            java.nio.ByteBuffer packed=java.nio.ByteBuffer.allocateDirect(Math.multiplyExact(source.size(),7352)).order(java.nio.ByteOrder.nativeOrder());
+            for(Pattern p:source) {
+                packed.putInt(p.registrationPixels).putInt(p.supported);
+                for(int pixel:p.pixels)packed.putInt(pixel);
+                for(boolean bit:p.mask)packed.put((byte)(bit?1:0));
+                for(int i=0;i<256;i++)packed.put((byte)(p.coverEvidence!=null && p.coverEvidence[i]?1:0));
+                packed.position(packed.position()+5808); // RGB sums, nine cover counts and pixel orders
+            }
+            packed.flip();table=Match3NativeMath.preparePatternTable(packed,size())?packed:null;
+        }
+        @Override public Pattern get(int index) { return patterns.get(index); }
+        @Override public int size() { return patterns.size(); }
+        float[] differences(int[] observed,float ceiling) {
+            return table==null?null:Match3NativeMath.patternDifferences(observed,table,size(),ceiling);
+        }
+    }
     private Match3VisualCatalog() {
         available = false; id = "unavailable";
         hasBoundGoalModes=false;
@@ -190,7 +222,7 @@ final class Match3VisualCatalog {
         List<Pattern> large=new ArrayList<>();
         if(json.has("large_objects"))for(Pattern p:patterns(json.getJSONArray("large_objects")))
             if("cookie".equals(p.kind) && "identity_only_2x2".equals(p.rule))large.add(p);
-        largeObjects=Collections.unmodifiableList(large);
+        largeObjects=new PatternList(large);
         List<Pattern> surfaces=new ArrayList<>(),backgrounds=new ArrayList<>();
         if(json.has("ice_surfaces"))for(Pattern p:patterns(json.getJSONArray("ice_surfaces"))) {
             if("ice1".equals(p.kind) && "stationary_single_layer_ice".equals(p.rule)
@@ -199,7 +231,7 @@ final class Match3VisualCatalog {
                 if("ice1".equals(p.kind) && p.neutralBackground)backgrounds.add(p);
             }
         }
-        iceSurfaces=Collections.unmodifiableList(surfaces);iceBackgrounds=Collections.unmodifiableList(backgrounds);
+        iceSurfaces=new PatternList(surfaces);iceBackgrounds=Collections.unmodifiableList(backgrounds);
         List<Pattern> objects=new ArrayList<>(), faces=new ArrayList<>();
         List<Match3AnimalAppearance.Face> descriptors=new ArrayList<>();
         for(Pattern pattern:patterns(json.getJSONArray("cells"))) {
@@ -209,7 +241,7 @@ final class Match3VisualCatalog {
                 if(face.detailed) { faces.add(pattern);descriptors.add(face); }
             } else if(!pattern.kind.startsWith("animal_"))objects.add(pattern);
         }
-        cells=Collections.unmodifiableList(objects);animals=Collections.unmodifiableList(faces);
+        cells=new PatternList(objects);animals=new PatternList(faces);
         animalFaces=Collections.unmodifiableList(descriptors);
         List<Match3AnimalAppearance.Body> bodies=new ArrayList<>();List<Character> colors=new ArrayList<>();
         JSONArray envelopes=json.getJSONArray("ordinary_envelopes");
@@ -234,7 +266,7 @@ final class Match3VisualCatalog {
     private static List<Pattern> patterns(JSONArray array) throws Exception {
         List<Pattern> patterns = new ArrayList<>();
         for (int i = 0; i < array.length(); i++) patterns.add(new Pattern(array.getJSONObject(i)));
-        return Collections.unmodifiableList(patterns);
+        return new PatternList(patterns);
     }
     static Match3VisualCatalog get(Context context) {
         Match3VisualCatalog catalog = loaded;
@@ -522,7 +554,14 @@ final class Match3VisualCatalog {
         String best = null; float error = Float.POSITIVE_INFINITY, second = Float.POSITIVE_INFINITY;
         java.util.Map<String,int[]> totals=new java.util.HashMap<>();
         Match3AnimalAppearance.Face goalShape=null;
+        Match3PatchSums registrationSums=null;
+        float[] nativeScores=patterns instanceof PatternList?((PatternList)patterns).differences(patch,maximum+margin):null;
+        if(nativeScores!=null && nativeScores.length!=patterns.size())nativeScores=null;
+        int patternIndex=0;
         for (Pattern pattern : patterns) {
+            float candidate;
+            if(nativeScores!=null)candidate=nativeScores[patternIndex++];
+            else {
             int[] observed=totals.get(pattern.maskKey);
             if(observed==null) {
                 observed=new int[51];
@@ -542,7 +581,9 @@ final class Match3VisualCatalog {
             // A partial sum above maximum+margin cannot win or make an
             // accepted winner ambiguous. Stop only those comparisons; retain
             // the exact scores and original thresholds for every contender.
-            float candidate = pattern.difference(patch,maximum+margin);
+            if(!Match3NativeMath.AVAILABLE && pattern.registrationPixels!=0 && registrationSums==null)registrationSums=new Match3PatchSums(patch);
+            candidate = pattern.difference(patch,maximum+margin,registrationSums);
+            }
             if(pattern.goalShape!=null && candidate<=maximum+margin) {
                 if(goalShape==null)goalShape=new Match3AnimalAppearance.Face('.',goalShapePatch(patch));
                 candidate=Math.max(candidate,goalShape.difference(pattern.goalShape));

@@ -32,6 +32,8 @@ DEBUG_CLASSES += ("Match3RuleCatalogInstrumentedTest",)
 RELEASE_CLASSES += ("Match3RuleCatalogInstrumentedTest",)
 DEBUG_CLASSES += ("Match3AudioRecoveryInstrumentedTest",)
 RELEASE_CLASSES += ("Match3AudioRecoveryInstrumentedTest",)
+DEBUG_CLASSES += ("Match3GeometryInstrumentedTest",)
+RELEASE_CLASSES += ("Match3GeometryInstrumentedTest",)
 
 
 def instrumentation_summary(output: str) -> dict:
@@ -54,6 +56,8 @@ def assert_emulator(serial: str) -> None:
 def source_digest() -> str:
     digest = hashlib.sha256()
     paths = sorted((ROOT / "android/app/src").rglob("*.java"))
+    paths += sorted((ROOT / "android/app/src/main/cpp").glob("*.cpp"))
+    paths += [ROOT / "android/app/src/main/cpp/CMakeLists.txt"]
     paths += [ROOT / "android/app/build.gradle", ROOT / "android/app/proguard-rules.pro", Path(__file__)]
     catalog = ROOT / "android/app/src/main/assets/match3-fixed-ui-v1.json"
     if catalog.is_file(): paths.append(catalog)

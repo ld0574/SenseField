@@ -72,6 +72,23 @@ class SafetyTests(unittest.TestCase):
 
 
 class RegistryTests(unittest.TestCase):
+    def test_compact_events_decode_to_the_same_legacy_pixels_and_families(self):
+        patch=[(i*196613)&0xffffff for i in range(256)]
+        compact=''.join(f'{p:06x}' for p in patch)
+        self.assertEqual(patch,flywheel.pixels(compact))
+        for invalid in (compact[:-1],compact+'0',compact.upper(),'z'*1536):
+            with self.assertRaises(ValueError):flywheel.pixels(invalid)
+        event={'type':'Match3FlywheelSample','data':{'role':'cell','id':'a.png:r0c0','frame':'a.png',
+            'envelope':compact,'patch':compact,'descriptor_encoding':'rgb24_hex'}}
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'events.jsonl';path.write_text(json.dumps(event)+'\n')
+            decoded,frames=flywheel.event_predictions(path);self.assertEqual(['a.png'],frames)
+            self.assertEqual(patch,decoded['samples'][0]['envelope']);self.assertEqual(patch,decoded['samples'][0]['patch'])
+            manifest={'session_id':'development','frames':[{'file':'a.png'}]}
+            legacy={'samples':[{**event['data'],'envelope':patch,'patch':patch}]}
+            self.assertEqual(flywheel.harvest(legacy,manifest,{'families':[]}),flywheel.harvest(decoded,manifest,{'families':[]}))
+            event['data']['descriptor_encoding']='future';path.write_text(json.dumps(event)+'\n')
+            with self.assertRaises(ValueError):flywheel.event_predictions(path)
     def example(self, group="train-session", color=0xff123456):
         return flywheel.harvest({"samples": [{"id": "a.png:r0c0", "envelope": [color] * 256,
                                                "patch": [color] * 256}]},

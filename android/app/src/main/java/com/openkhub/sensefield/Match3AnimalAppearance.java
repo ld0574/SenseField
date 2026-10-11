@@ -12,6 +12,7 @@ final class Match3AnimalAppearance {
         private final int[] patch;
         private final boolean[] background = new boolean[256];
         private volatile boolean[] exterior;
+        private volatile Match3PatchSums sums;
         Body(int[] patch) {
             if(patch==null || patch.length!=256)throw new IllegalArgumentException("Body patch");
             this.patch=patch.clone();
@@ -19,6 +20,11 @@ final class Match3AnimalAppearance {
         }
         int[] copyPatch() { return patch.clone(); }
         float difference(Body other) {
+            if(this==other)return 0;
+            if(Match3NativeMath.AVAILABLE)return Match3NativeMath.bodyDifference(patch,other.patch,background);
+            return differenceJava(other);
+        }
+        float differenceJava(Body other) {
             float best=aligned(other,0,0);
             if(best<=MAXIMUM)return best;
             for(int dy=-2;dy<=2;dy++)for(int dx=-2;dx<=2;dx++)if(dx!=0||dy!=0)best=Math.min(best,aligned(other,dx,dy));
@@ -36,7 +42,9 @@ final class Match3AnimalAppearance {
                         +Math.abs((a&255)-(b&255));
                 if(error/(float)765<=MAXIMUM) { normalized[i]=ordinary.patch[i];support++; }
             }
-            return support==0?Float.POSITIVE_INFINITY:new Body(normalized).difference(ordinary);
+            if(support==0)return Float.POSITIVE_INFINITY;
+            return Match3NativeMath.AVAILABLE?Match3NativeMath.bodyDifference(normalized,ordinary.patch,null)
+                    :new Body(normalized).differenceJava(ordinary);
         }
         private boolean[] exteriorBackground() {
             boolean[] cached=exterior;
@@ -61,8 +69,14 @@ final class Match3AnimalAppearance {
         }
         private float aligned(Body other,int dx,int dy) {
             // Registration may discard only visible board background, never an unknown cover or sprite detail.
-            for(int y=0;y<16;y++)for(int x=0;x<16;x++)if(x-dx<0 || x-dx>=16 || y-dy<0 || y-dy>=16)
-                if(!background[y*16+x])return Float.POSITIVE_INFINITY;
+            for(int y=0;y<16;y++) {
+                for(int x=0;x<dx;x++)if(!background[y*16+x])return Float.POSITIVE_INFINITY;
+                for(int x=16+dx;x<16;x++)if(!background[y*16+x])return Float.POSITIVE_INFINITY;
+            }
+            for(int x=0;x<16;x++) {
+                for(int y=0;y<dy;y++)if(!background[y*16+x])return Float.POSITIVE_INFINITY;
+                for(int y=16+dy;y<16;y++)if(!background[y*16+x])return Float.POSITIVE_INFINITY;
+            }
             long total=0;
             long[] quarters=new long[4];
             int[] counts=new int[4];
@@ -70,6 +84,7 @@ final class Match3AnimalAppearance {
             // Scores above maximum+margin cannot admit a body or make a
             // valid family match ambiguous. Preserve exact contender scores.
             double budget=(double)Math.nextUp(MAXIMUM+MARGIN)*supported*765;
+            if(other.sums().lowerBound(sums(),dx,dy,budget)>budget)return Float.POSITIVE_INFINITY;
             for(int y=0;y<16;y++)for(int x=0;x<16;x++) {
                 int xx=x+dx,yy=y+dy;if(xx<0 || yy<0 || xx>=16 || yy>=16)continue;
                 int a=patch[yy*16+xx],b=other.patch[y*16+x];
@@ -82,6 +97,11 @@ final class Match3AnimalAppearance {
             // A small cover in one quadrant must not disappear in a whole-sprite average.
             for(int i=0;i<4;i++)if(quarters[i]/(counts[i]*765f)>MAXIMUM+MARGIN)return Float.POSITIVE_INFINITY;
             return distance;
+        }
+        private Match3PatchSums sums() {
+            Match3PatchSums cached=sums;
+            if(cached==null)sums=cached=new Match3PatchSums(patch);
+            return cached;
         }
         private static boolean backdrop(int pixel) {
             int r=pixel>>16&255,g=pixel>>8&255,b=pixel&255,max=Math.max(r,Math.max(g,b)),min=Math.min(r,Math.min(g,b));

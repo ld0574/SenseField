@@ -723,25 +723,103 @@ final class Match3Sampler implements AutoCloseable {
     }
 
     static BoardGeometry verifiedGeometry(Bitmap frame, int[] pixels) {
-        int cols = detectGridAxis(frame, pixels, false);
-        int rows = detectGridAxis(frame, pixels, true);
-        if(!squareGrid(frame,pixels,rows,cols)) {
-            // Large objects and empty areas dominate the average brightness.
-            // Their contents need not share a period, while repeated colour
-            // boundaries still provide independent horizontal/vertical evidence.
-            cols=detectGridAxis(frame,pixels,false,true);
-            rows=detectGridAxis(frame,pixels,true,true);
+        int[] axes=gridAxes(frame,pixels);
+        if(axes==null) {
+            // A foreground cover can hide part of one outer row/column. Use
+            // the independently observed opposite axis and intact edge only
+            // when repeated dark cell boundaries verify a unique phase.
+            int[] repaired=repairCoveredEdge(frame,pixels);
+            if(repaired!=null) { axes=gridAxes(frame,repaired);if(axes!=null)pixels=repaired; }
+            if(axes==null)axes=gridAxes(frame,pixels);
+            if(axes==null)return null;
         }
-        if(!squareGrid(frame,pixels,rows,cols))return null;
         return new BoardGeometry(frame.getWidth(), frame.getHeight(), pixels[0], pixels[1],
-                pixels[2], pixels[3], rows, cols);
+                pixels[2], pixels[3], axes[1], axes[0]);
+    }
+    private static int[] gridAxes(Bitmap frame,int[] pixels) {
+        int cols=detectGridAxis(frame,pixels,false),rows=detectGridAxis(frame,pixels,true);
+        if(squareGrid(frame,pixels,rows,cols))return new int[]{cols,rows};
+        // Large objects can obscure brightness on one axis while leaving its
+        // edge period and the other axis intact. Each axis needs current pixel
+        // support; competing square grids abstain.
+        int edgeCols=detectGridAxis(frame,pixels,false,true),edgeRows=detectGridAxis(frame,pixels,true,true);
+        int[] accepted=null;
+        for(int c:new int[]{cols,edgeCols})for(int r:new int[]{rows,edgeRows})if(squareGrid(frame,pixels,r,c)) {
+            if(accepted!=null && (accepted[0]!=c || accepted[1]!=r))return null;
+            accepted=new int[]{c,r};
+        }
+        return accepted;
     }
     private static boolean squareGrid(Bitmap frame,int[] pixels,int rows,int cols) {
         if(rows<6 || cols<6)return false;
         float cellWidth = (pixels[2] - pixels[0]) / (float) cols;
         float cellHeight = (pixels[3] - pixels[1]) / (float) rows;
-        return Math.abs(cellWidth - cellHeight) <= 2 * Math.max(1,
-                Math.min(frame.getWidth(), frame.getHeight()) / 160);
+        int step=Math.max(1,Math.min(frame.getWidth(),frame.getHeight())/160);
+        float difference=Math.abs(cellWidth-cellHeight);
+        if(difference>2*step)return false; // preserve the original aspect bound
+        // Some captured game surfaces have a small real axis stretch. Keep
+        // those only with both current boundary phases; a hidden row must not
+        // masquerade as compressed cells merely by rounding its period count.
+        return difference<=step/(float)cols+step/(float)rows
+                || boundaryPhaseSupported(frame,pixels,false,cols,step)
+                && boundaryPhaseSupported(frame,pixels,true,rows,step);
+    }
+
+    private static int[] repairCoveredEdge(Bitmap frame,int[] box) {
+        int step=Math.max(1,Math.min(frame.getWidth(),frame.getHeight())/160);
+        int[] accepted=null;
+        for(boolean vertical:new boolean[]{true,false}) {
+            int across=detectGridAxis(frame,box,!vertical);
+            if(across<6)continue;
+            float pitch=(vertical?box[2]-box[0]:box[3]-box[1])/(float)across;
+            int start=vertical?1:0,end=vertical?3:2;
+            int count=(int)Math.ceil((box[end]-box[start])/pitch);
+            if(count<6 || count>9)continue;
+            int extent=Math.round(count*pitch),missing=extent-(box[end]-box[start]);
+            if(missing<=2*step || missing>=pitch)continue;
+            for(boolean before:new boolean[]{true,false}) {
+                int[] candidate=box.clone();
+                if(before)candidate[start]-=missing;else candidate[end]+=missing;
+                if(candidate[0]<0 || candidate[1]<0 || candidate[2]>frame.getWidth() || candidate[3]>frame.getHeight())continue;
+                int actual=detectGridAxis(frame,candidate,vertical);
+                if(actual!=count && detectGridAxis(frame,candidate,vertical,true)!=count)continue;
+                if(!boundaryPhaseSupported(frame,candidate,vertical,count,step))continue;
+                if(accepted!=null)return null; // competing phases never select a touch origin
+                accepted=candidate;
+            }
+        }
+        return accepted;
+    }
+
+    private static boolean boundaryPhaseSupported(Bitmap frame,int[] box,boolean vertical,int count,int step) {
+        int length=vertical?box[3]-box[1]:box[2]-box[0];
+        int cross=vertical?box[2]-box[0]:box[3]-box[1];
+        double[] dark=new double[length];java.util.Arrays.fill(dark,Double.NaN);
+        int[] line=new int[cross];float[] hsv=new float[3];
+        int boundaries=0;
+        for(int i=1;i<count;i++) {
+            double edge=profileMaximum(frame,box,vertical,dark,line,hsv,Math.round(i*length/(float)count),step);
+            double neighbors=Math.max(profileMaximum(frame,box,vertical,dark,line,hsv,Math.round((i-.25f)*length/count),step),
+                    profileMaximum(frame,box,vertical,dark,line,hsv,Math.round((i+.25f)*length/count),step));
+            // Reuse the detector's 5% positive dark support, on at least three
+            // distinct internal boundaries. Texture/colour without a grid phase abstains.
+            if(edge-neighbors>=.05)boundaries++;
+        }
+        return boundaries>=3;
+    }
+    private static double profileMaximum(Bitmap frame,int[] box,boolean vertical,double[] values,int[] line,float[] hsv,int at,int radius) {
+        double maximum=0;
+        for(int i=Math.max(0,at-radius);i<Math.min(values.length,at+radius+1);i++) {
+            if(Double.isNaN(values[i])) {
+                if(vertical)frame.getPixels(line,0,line.length,box[0],box[1]+i,line.length,1);
+                else frame.getPixels(line,0,1,box[0]+i,box[1],1,line.length);
+                int supporting=0;
+                for(int pixel:line)if(boardBackground(pixel,hsv))supporting++;
+                values[i]=supporting/(double)line.length;
+            }
+            maximum=Math.max(maximum,values[i]);
+        }
+        return maximum;
     }
 
     private static int[] autoDetectPixels(Bitmap frame) {
@@ -920,6 +998,13 @@ final class Match3Sampler implements AutoCloseable {
         return detectGridAxis(frame,box,vertical,false);
     }
     private static int detectGridAxis(Bitmap frame,int[] box,boolean vertical,boolean edges) {
+        int period=detectGridPeriod(frame,box,vertical,edges);
+        if(period<0)return -1;
+        int length=vertical?box[3]-box[1]:box[2]-box[0],stride=edges?1:Math.max(1,length/240);
+        int count=(int)Math.round((length/stride)/(double)(period/stride));
+        return count>=6 && count<=9?count:-1;
+    }
+    private static int detectGridPeriod(Bitmap frame,int[] box,boolean vertical,boolean edges) {
         int x0 = box[0], y0 = box[1], cw = box[2] - x0, ch = box[3] - y0;
         if (x0 < 0 || y0 < 0 || box[2] > frame.getWidth() || box[3] > frame.getHeight()
                 || cw < 60 || ch < 60) return -1;
@@ -958,8 +1043,7 @@ final class Match3Sampler implements AutoCloseable {
             score /= (n - d) * variance;
             if (score > best) { best = score; bestD = d; }
         }
-        int count = bestD < 0 ? -1 : (int) Math.round(n / (double) bestD);
-        return count >= 6 && count <= 9 && (!edges || best>0) ? count : -1;
+        return bestD>=0 && (!edges || best>0)?bestD*stride:-1;
     }
 
     /* ---------- 特殊棋子模板存取（app 私有目录 special_templates/） ---------- */

@@ -6,6 +6,11 @@ import org.json.JSONObject;
 import org.junit.Test;
 
 public final class Match3FlywheelHarvestTest {
+    @Test public void compactPixelsKeepEveryRgbChannelWithoutBoxedNumberSerialization() {
+        int[] values=patch();for(int i=0;i<values.length;i++)values[i]^=i*196613;
+        String encoded=Match3FlywheelHarvest.pixels(values);assertEquals(1536,encoded.length());
+        for(int i=0;i<256;i++)assertEquals(values[i]&0xffffff,Integer.parseInt(encoded.substring(i*6,i*6+6),16));
+    }
     private int[] patch() {
         int[] out=new int[256];Arrays.fill(out,0xff203050);
         for(int y=2;y<14;y++)for(int x=2;x<14;x++)out[y*16+x]=0xffb07050;
