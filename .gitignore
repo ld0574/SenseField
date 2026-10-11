@@ -99,6 +99,7 @@ docs/**
 !docs/releases/0.4.3/
 !docs/releases/0.4.4/
 !docs/releases/0.4.5/
+!docs/releases/0.4.6/
 !docs/README.md
 !docs/公开文档范围.md
 !docs/design/技术方案.md
@@ -151,6 +152,8 @@ docs/**
 !docs/releases/0.4.4/UPDATE_SUMMARY.txt
 !docs/releases/0.4.5/RELEASE_NOTES.md
 !docs/releases/0.4.5/UPDATE_SUMMARY.txt
+!docs/releases/0.4.6/RELEASE_NOTES.md
+!docs/releases/0.4.6/UPDATE_SUMMARY.txt
 !docs/releases/GITHUB发布检查清单.md
 !docs/releases/README.md
 !docs/releases/版本命名规范.md

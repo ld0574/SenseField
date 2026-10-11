@@ -247,6 +247,8 @@ def workspace_candidates(root: Path) -> list[str]:
         "docs/releases/0.3.8/RELEASE_NOTES.md",
         "docs/releases/0.4.0/RELEASE_NOTES.md",
         "docs/releases/0.4.1/RELEASE_NOTES.md",
+        "docs/releases/0.4.6/RELEASE_NOTES.md",
+        "docs/releases/0.4.6/UPDATE_SUMMARY.txt",
         "docs/releases/GITHUB发布检查清单.md",
         "docs/releases/README.md",
         "docs/releases/版本命名规范.md",
