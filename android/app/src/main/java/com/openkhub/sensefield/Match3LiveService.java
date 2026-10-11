@@ -633,6 +633,7 @@ public class Match3LiveService extends Service {
                     + hint.swap.toRow + "," + hint.swap.toCol + " origin=top_left_zero_based "
                     + hint.value.evidence()+" goal_key="+hint.goalKey);
             s.outcomes.begin(hint.revision,position,s.goals,hint.value,s.frameAt);
+            s.diagnostics.match3HintContext(hint.revision,false);
             updateHintOverlay(s, hint);
         }
         if (changed && s.lastSwaps.isEmpty())
@@ -752,6 +753,8 @@ public class Match3LiveService extends Service {
         if (s.overlay != null) s.overlay.clear();
         if (s.overlayFilter != null) s.overlayFilter.clear();
         if (old != null) s.diagnostics.audit("Match3HintCleared revision=" + old.revision + " reason=" + reason);
+        if(old!=null && ("BOARD_MOTION".equals(reason) || "HINT_EVIDENCE_CHANGED".equals(reason)))
+            s.diagnostics.match3HintContext(old.revision,true);
     }
 
     private void invalidateBoard(Session s, String reason) {

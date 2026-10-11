@@ -59,4 +59,16 @@ public final class Match3FlywheelHarvestTest {
         List<JSONObject> saved=new ArrayList<>();collector.collectGoals(icon,kinds,aspects,4100,data->{saved.add(data);return true;});
         assertEquals(1,saved.size());
     }
+    @Test public void anAnimatingNeighborDoesNotSuppressAStableUnknownGoal() throws Exception {
+        Match3FlywheelHarvest collector=new Match3FlywheelHarvest();List<JSONObject> saved=new ArrayList<>();
+        int[] stable=patch(),moving=patch();String[] kinds={"UNKNOWN","UNKNOWN"};float[] aspects={1,1};
+        for(int i=0;i<3;i++) {
+            moving[30]^=0xabcdef;
+            collector.collectGoals(new int[][]{stable,moving},kinds,aspects,100+800*i,data->{saved.add(data);return true;});
+        }
+        assertEquals(1,saved.size());assertEquals("live-1700.png:goal0",saved.get(0).getString("id"));
+        collector.collectGoals(new int[][]{stable,moving},kinds,aspects,1700,data->{fail("repeated capture is not fresh");return true;});
+        collector.resetStability();
+        collector.collectGoals(new int[][]{stable,moving},kinds,aspects,2500,data->{fail("reset requires fresh support");return true;});
+    }
 }

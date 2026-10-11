@@ -219,3 +219,37 @@ LOCK 目标只接 UNLOCK。单层邻接受击和锁住动物参与三消各按�
 原始图、fixture／标签、模板重建输入、日志、双 APK、SHA、transcript、结果与完整源码绑定保存在私有 `validation/private/match3-vine-fix/`。关键回执是 `jvm-release-final/report.json`、`debug-vine-final/receipt.json`、`debug-full-repair1/receipt.json`、`release-full/receipt.json`、`release-paired-cost/receipt.json`、`replay-parity.json`、`phone-final-pair-core/receipt.json`、`phone-background-cost/receipt.json`。手机当前辅助包 SHA `71e754067c5254e4395893feafdbddda243afe8a80f81fcfb208dc013fb480ab`，其中包含私有、不占屏的成本 harness；Release 全套回执绑定辅助包 SHA `fe2460cd73bf237bdfa39a61d10d0ead53018fedbfbf0817872e687406865129`，二者主 APK 相同。
 
 独立人工准确率／实局转移与收益、真实特效身份接入、原颜色分歧／旧 HUD 复核、受控实体手机成本／温升／实声和正式公开发布仍待条件。规则目录的视觉／实局 pending、历史发布状态和公网 latest.json 不升级。
+
+## 修复后新包实局诊断（2026-10-11，第 82～83 关）
+
+用户授权再录后，新包主 APK／辅助包及源码摘要与上述藤蔓工程回执一致，新增覆盖目录状态 `loaded`。本次 160,353ms、193 帧、16 张周期性截图、4 条提示及 4 条撤销；诊断事件丢弃 0，图像请求丢弃计数 11。无线 ADB 一次重连有显式记录，完整 APP 内诊断已导出并核验 ZIP 字节数、SHA 和会话 ID。结束高亮 false、hint 为空，导出后本 APP 辅助服务全部退出，双包未变化。
+
+任务栏修复在本次有实际观测：第 82 关截图为雪块 35、藤蔓 7、蜜罐 19、剩余 22 步；藤蔓识别为 LOCK／UNLOCK，日志记录 7→1→0 完成勾，不再混成 COOKIE。后续截图同时显示雪块 1、藤蔓 1。蜜罐图标仍 UNKNOWN，初始数量 19 可读。第 83 关初始图为冰图标 72、27 步，结果图可见三颗星和 816180 分；关卡号由助手读图确认，引擎 `level` 仍 −1。
+
+棋盘覆盖尚未闭环：第 82 关初始截图右侧七格藤蔓底层为紫／紫／蓝／紫／蓝／紫／红。与同一截图输入绑定的第 5／7／8 行第 9 列三个飞轮样例均为 SURFACE、交换 UNKNOWN；另有蓝色覆盖动物弃权记录。早先 R／Y 开发帧通过不能外推这些新外观。此处只证明明确格子的弃权，未生成整盘准确率或 false_swap 真值。
+
+39 条排序、58 个记录候选全部是普通 SWAP，提示坐标全部匹配对应 top-1；116 个候选端点的已记录前提均为无覆盖动物、交换／配对 YES。两关截图均可见魔力鸟，第 82 关同帧魔力鸟原始样例 UNKNOWN，32 条排序明确特效身份／效果未知；真实特效动作验收仍待完成。35 次元素采样保存 33 张、2 次 `budget_busy`，终态 22 类、饱和 0；未将本次图像自动加入 gallery。
+
+4 条收益观察实际动作证据全部 `not_observed`。藤蔓 1→0 只记 `progress_unattributed`，不能归因于提示；十秒级截图和缺失的动作图像上下文不足以还原每次触摸。温度 38.2→39.5℃且全程充电，只作观察。独立准确率、实际动作前后转移／收益、受控性能／温升／实声和发布状态不升级。
+
+完整证据在私有 `validation/private/match3-new-release-live-20261011T042149Z/`；机器摘要、助手读图、逐图 SHA、提示／排序／收益关联、重连记录和导出后检查各自保存。后续优先固定输入复核紫／蓝藤蔓及蜜罐 HUD，再完成魔力鸟视觉状态和有界动作前后证据采集。
+
+## 第 82～83 关外观补齐与提示上下文（2026-10-11）
+
+已用固定原始输入补充开发审阅样例：紫／蓝／红藤蔓、两关魔力鸟、蜜罐 HUD 和鸟旁普通棕色动物。原 fixed UI、gallery、规则目录逐字节不变，旧补充库的 16 个覆盖样例及两个目标样例的像素／掩码／状态／来源均保留。新补充库为 62,361 字节，27 个 cell、3 个 goal、1 个普通 body；SHA `a2123c5a03c29b0e76eaa690cbedf643a4945061cd5d0b51ac332de49365064f`。通过无损 RGB 打包与共享状态绑定减少重复，大小上限仍为 65,536 字节，额外封顶 cell 32／goal 8／body 4；门限不变。
+
+13 个原始 patch 正例和 14 个普通动物负例通过。四个指定 JPEG 开发盘中，第 82 关训练／测试盘右侧七格藤蔓颜色及 LOCK／不可交换／可配对正确；两盘蜜罐目标为 HONEY 19／CLEAR，藤蔓为 LOCK 7／UNLOCK。两关训练／测试盘各识别一只鸟、各枚举两条 `BIRD_COLOR`，没有额外 LOCK／BIRD，LOCK 不作候选端点。第 82 关邻近普通棕色动物通过既有 face／body 路径，仍未知的邻格权限不放行。截图均使用明确审阅的 9×9 网格，不能写成自动几何验证；训练／测试来自同一会话，`independent:false`。
+
+提示与特定撤销原因接入原有前 3 秒／后 2 秒、单窗最长 5 秒、自动触发间隔 10 秒的有界图像窗口，共用原队列／字节预算。真实 recorder／IO 工程测试确认准入、限流以及前后图片输出，不产生 `user_marker`；窗口明确记录 `action_evidence:not_observed`。每个 HUD 槽分别要求三帧新鲜稳定采样，避免邻槽动画阻止稳定图标采集。该修复提供后续分析材料，不能把旧四条未知动作变成已采纳，或证明新窗口已经捕获真实玩家动作。
+
+候选源码 SHA `ef765bfcfdadf86baa8635a94c83fc3c9ea4bdf7dd74ca84dbb7310fadc0c545`，混淆 Release 主 APK SHA `8b6bd25fdb8e9973c0a30cfd5c82f0bd92ef0d18feadf883552ee08fb0bbb58a`，辅助包 SHA `bf63e542617b64021e6cd2afe027dcddbefb324c5d2aafe88b57c24db4700c68`。沿用本地原 Android debug 证书，不是生产 Release 凭据；构建／APK 完整性通过，lint Error 0、Warning 33。39 Python、557 JVM、Debug 专项 5 项、混淆 Release 新外观／窗口／成本 5 项均通过，无跳过。
+
+完整混淆 Release 67 项通过，包括原套件、真实 producer、新外观及提示窗口；成本另 1 项通过。10 盘、743 格所有导出状态字段和 HUD 与旧候选一致，同输入 SHA／样本集合一致，false_swap 仍 0；strict 评分继续 `passed:false`，仅保留两条已有颜色标签分歧。手机已用 `install -r` 更新同一双包，安装后拉回字节 SHA 与构建回执完全一致；手机静止输入／规则／新外观 15 项全过，无跳过。这些检查不执行玩家游戏动作、不测触摸采纳或手机受控性能。
+
+完整 Debug 的 80 项既有检查在延长 runner 等待后通过，加上前述 5 项专项均无跳过。关键回执为 `debug-full-final/receipt.json`、`debug-new-final/receipt.json`、`release-build-final/receipt.json`、`release-full/receipt.json`、`release-cost-final/receipt.json`、`replay-parity.json`、`phone-final/receipt.json`。测试 fixture 仅通过 `sensefieldCaptureScaleFixtureDir` 显式加入测试 APK；成本测试另需同输入 10 盘清单和冻结旧补充库资产 `live-elements-before-supplement.json`，不加入主 APK或版本控制。
+
+本次新增成对成本比较同一当前引擎／HUD／规则 ranker／逐槽采样下的旧补充库与新补充库，包含原 10 盘及两张新测试截图，共 12 盘、每盘三次观察、六轮预热、30 轮交替顺序。cold wall／CPU P95 为 257.79→272.69ms（+5.78%）／248.92→256.63ms（+3.10%）；cached 为 107.68→111.88ms（+3.90%）／105.12→109.09ms（+3.77%）。四项通过原 10% 上限；报告保留所有样本并先保存后断言。这是整批模拟器处理线程成本，排除库加载、异步提示图片 IO、手机端到端和温升；也不隔离旧采样代码的成本。此前手机 cold wall +10.29% 失败仍保留。
+
+保留本轮首次失败及修复过程：原始／压缩姿态弃权、掩码支持不足、生成脚本错误／超出资产大小、JVM 文件 API 不兼容、旧 APK 误用的来源纠正、整盘一处紫藤蔓弃权、第 82 关邻格权限未知导致鸟动作未准入，以及完整 Debug runner 240 秒超时。对应用正面审阅证据、无损去重、精确 API 和足够的 runner 等待解决，没有调整旧真值、规则／视觉阈值或成本门禁。私有完整重建／输入／双包／回执保存在 `validation/private/match3-live-elements-fix/`。
+
+另发现并保留新计数缺口：同一第 83 关初始低清 JPEG 显示 ICE 72，当前 HUD 读为 22；实时日志的 52 在另一时刻，不能替代同输入验证。本轮没有宣称修复此计数。独立人工准确率、真实动作前后转移／收益、受控手机成本／端到端 P95／3×15 温升／外部实声和正式发布继续 pending，历史发布状态与公网清单不变。

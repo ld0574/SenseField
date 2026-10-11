@@ -79,6 +79,8 @@ final class DiagnosticRecorder {
     private volatile long frameSequence;
     private volatile long imageCount;
     private boolean markerPending;
+    private String match3ContextReason;
+    private long match3ContextRevision;
     private long lastContextObservedAtMs = -1;
     private long lastImageObservedAtMs = -1;
     private volatile long contextCopiedFrames;
@@ -262,6 +264,16 @@ final class DiagnosticRecorder {
         }
     }
 
+    /** Automatic, bounded hint context. It never asserts a human touch or marks a user issue. */
+    void match3HintContext(long revision, boolean invalidated) {
+        synchronized (imageStateLock) {
+            if(game!=DiagnosticGame.MATCH3 || revision<=0 || finished || !failure.isEmpty()
+                    || !imagesEnabled || imageLimit)return;
+            match3ContextReason=invalidated?"match3_hint_invalidated":"match3_hint";
+            match3ContextRevision=revision;
+        }
+    }
+
     void audit(String message) {
         if (message.contains("sessionId=") && !message.contains("sessionId=" + sessionId)) return;
         record("audit", object("message", message));
@@ -411,12 +423,15 @@ final class DiagnosticRecorder {
             }
             boolean manual = markerPending;
             boolean event = f.relation.event == NearZoneRouting.EVENT_NEAR_ENTER;
+            String match3Reason=match3ContextReason;
+            long match3Revision=match3ContextRevision;
+            match3ContextReason=null;
             boolean periodic = completedAtMs >= nextImageAtMs;
             lastImageObservedAtMs = observedAtMs;
             boolean sampleDue = imageWindow.shouldSample(observedAtMs);
             try {
                 ImageSample contextSample = null;
-                if (sampleDue || event || manual) {
+                if (sampleDue || event || manual || match3Reason!=null) {
                     long copyStartedNs = System.nanoTime();
                     ImageSample sample = copyImageSample(f, pixels, width, height, rowStride,
                             sequence, observedAtMs, CONTEXT_SCREEN_EDGE, CONTEXT_MAP_EDGE);
@@ -436,22 +451,26 @@ final class DiagnosticRecorder {
                     }
                 }
 
-                DiagnosticImageWindow.TriggerResult<ImageSample> triggered = event || manual
+                DiagnosticImageWindow.TriggerResult<ImageSample> triggered = event || manual || match3Reason!=null
                         ? imageWindow.trigger(observedAtMs, manual) : null;
                 long currentWindowId = triggered == null
                         ? imageWindow.activeWindowId(observedAtMs) : triggered.id;
                 // Keep the original clear event/periodic image. Queue it before the pre-window
                 // so context cannot consume all admission slots ahead of the triggering frame.
-                if (periodic || event || manual) {
+                boolean match3Accepted=match3Reason!=null && triggered.status==DiagnosticImageWindow.TriggerStatus.ACCEPTED;
+                if (periodic || event || manual || match3Accepted) {
                     ImageSample clearFrame = copyImageSample(f, pixels, width, height, rowStride,
                             sequence, observedAtMs, 960, 768);
-                    enqueueImageLocked(clearFrame, event ? "near_enter" : manual ? "user_marker" : "periodic",
+                    enqueueImageLocked(clearFrame, event ? "near_enter" : manual ? "user_marker" : match3Accepted?match3Reason:"periodic",
                             currentWindowId);
                     nextImageAtMs = completedAtMs + IMAGE_PERIOD_MS;
                 }
-                if (event || manual) {
+                if (event || manual || match3Reason!=null) {
                     markerPending = false;
-                    exportWindowLocked(triggered, manual ? "user_marker_frame" : "near_enter", completedAtMs, false);
+                    exportWindowLocked(triggered, manual ? "user_marker_frame" : event?"near_enter":match3Reason, completedAtMs, false);
+                    if(match3Reason!=null)record("Match3HintImageContext",object("hint_revision",match3Revision,
+                            "window_id",triggered.id,"status",triggered.status.name(),"reason",match3Reason,
+                            "action_evidence","not_observed","scope","sampled_images_not_touch_tracking"));
                 } else if (sampleDue) {
                     if (currentWindowId != 0) {
                         // Use the owned sample without rereading a released ImageReader buffer.
@@ -581,6 +600,7 @@ final class DiagnosticRecorder {
         lastContextObservedAtMs = -1;
         lastImageObservedAtMs = -1;
         markerPending = false;
+        match3ContextReason=null;
     }
 
     private static final class ImageSample {

@@ -283,6 +283,7 @@
     void frame(com.openkhub.sensefield.NativeFrameResult, com.openkhub.sensefield.DiagnosticSnapshot, java.nio.ByteBuffer, int, int, int, long, long, long);
     long[] imageWorkStats();
     void audit(java.lang.String);
+    void match3HintContext(long,boolean);
     void finish(java.lang.String);
 }
 # Mixed-game archive tests cross the separate test-APK boundary. Preserve these
@@ -316,7 +317,9 @@
     static java.util.List enumerate(com.openkhub.sensefield.Match3Position);
     static java.util.Set omittedReasons(com.openkhub.sensefield.Match3Position);
     com.openkhub.sensefield.Match3Board$Swap geometry;
+    com.openkhub.sensefield.Match3Action$Type type;
 }
+-keep enum com.openkhub.sensefield.Match3Action$Type { *; }
 -keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3Goals {
     com.openkhub.sensefield.Match3Goals$Mode mode(com.openkhub.sensefield.Match3Goals$Kind);
     boolean hasTarget(com.openkhub.sensefield.Match3Goals$Kind);
@@ -338,4 +341,6 @@
     java.lang.String id; java.lang.String galleryId; java.lang.String gallerySha256; java.lang.String galleryStatus;
     int galleryGoalsPendingReview;
     static com.openkhub.sensefield.Match3VisualCatalog withGallery(org.json.JSONObject,byte[]);
+    static com.openkhub.sensefield.Match3VisualCatalog withReviewedSupplement(org.json.JSONObject,byte[],byte[],java.lang.String);
+    com.openkhub.sensefield.Match3Position$Cell classifyObstacle(int[]);
 }

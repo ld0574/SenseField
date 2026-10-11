@@ -29,6 +29,17 @@ public final class Match3GalleryTest {
         assertEquals(0,compact.difference(pixels),0);
         assertEquals(256,compact.supported);
     }
+    @Test public void packedDescriptorsPreserveEveryRgbByteAndRejectAmbiguousFormats() throws Exception {
+        JSONObject input=pattern("honey","single_clear_honey");byte[] rgb=new byte[768];
+        new java.util.Random(8283).nextBytes(rgb);input.remove("pixels_rgb");
+        input.put("pixels_base64",java.util.Base64.getEncoder().encodeToString(rgb));
+        Match3VisualCatalog.Pattern packed=new Match3VisualCatalog.Pattern(input);
+        for(int i=0;i<256;i++)assertEquals(0xff000000|(rgb[i*3]&255)<<16|(rgb[i*3+1]&255)<<8|(rgb[i*3+2]&255),packed.pixels[i]);
+        input.put("pixels_rgb","123456".repeat(256));
+        try {new Match3VisualCatalog.Pattern(input);fail("Ambiguous pixels admitted");}catch(IllegalArgumentException expected) { }
+        input.remove("pixels_rgb");input.put("pixels_base64","A".repeat(1023));
+        try {new Match3VisualCatalog.Pattern(input);fail("Truncated pixels admitted");}catch(IllegalArgumentException expected) { }
+    }
     @Test public void channelSumPruningPreservesFullMaskDistancesAndAmbiguity() throws Exception {
         java.util.Random random=new java.util.Random(16238);
         java.util.List<Match3VisualCatalog.Pattern> references=new java.util.ArrayList<>();
@@ -117,5 +128,33 @@ public final class Match3GalleryTest {
         assertTrue(rejected.coverCatalogStatus.startsWith("rejected:"));assertEquals(original.cells.size(),rejected.cells.size());
         assertEquals(original.goals.size(),rejected.goals.size());assertEquals(original.gallerySha256,rejected.gallerySha256);
         assertArrayEquals(preserved,old);assertEquals(before,base.toString());
+    }
+    @Test public void registeredCoverPruningRetainsEveryScoreInsideTheDecisionBudget() throws Exception {
+        Path path=Path.of("src/main/assets/match3-vine-v1.json");if(!Files.isRegularFile(path))path=Path.of("app/src/main/assets/match3-vine-v1.json");
+        JSONObject asset=new JSONObject(new String(Files.readAllBytes(path),StandardCharsets.UTF_8));JSONArray entries=asset.getJSONArray("cells");java.util.Random random=new java.util.Random(82983);
+        int checked=0;
+        for(int n=0;n<entries.length();n++) {
+            JSONObject entry=entries.getJSONObject(n);
+            if(entry.has("rule_binding_ref"))entry=new JSONObject(entry.toString()).put("rule_binding",asset.getJSONObject("state_bindings").getJSONObject(entry.getString("rule_binding_ref")));
+            Match3VisualCatalog.Pattern pattern=new Match3VisualCatalog.Pattern(entry);if(pattern.coverEvidence==null)continue;
+            for(int variant=0;variant<12;variant++) {
+                int[] observed=pattern.pixels.clone();for(int p=0;p<variant*8;p++)observed[random.nextInt(256)]=0xff000000|random.nextInt(1<<24);
+                float full=pattern.difference(observed),bounded=pattern.difference(observed,.145f);
+                if(full<=.145f)assertEquals(full,bounded,0);else assertTrue(Float.isInfinite(bounded));checked++;
+            }
+        }
+        assertTrue(checked>=240);
+    }
+    @Test public void unresolvedSharedBindingAtomicallyRejectsTheSupplement() throws Exception {
+        Path assets=Path.of("src/main/assets");if(!Files.isDirectory(assets))assets=Path.of("app/src/main/assets");
+        byte[] old=Files.readAllBytes(assets.resolve("match3-gallery-v1.json"));
+        JSONObject extra=new JSONObject(new String(Files.readAllBytes(assets.resolve("match3-vine-v1.json")),StandardCharsets.UTF_8));
+        String rules=extra.getJSONObject("metadata").getString("rule_catalog_sha256");
+        JSONObject cell=extra.getJSONArray("cells").getJSONObject(0);assertTrue(cell.has("rule_binding_ref"));
+        extra.getJSONObject("state_bindings").remove(cell.getString("rule_binding_ref"));
+        Match3VisualCatalog original=Match3VisualCatalog.withGallery(base(),old);
+        Match3VisualCatalog rejected=Match3VisualCatalog.withReviewedSupplement(base(),old,extra.toString().getBytes(StandardCharsets.UTF_8),rules);
+        assertTrue(rejected.coverCatalogStatus.startsWith("rejected:"));assertEquals(original.cells.size(),rejected.cells.size());
+        assertEquals(original.gallerySha256,rejected.gallerySha256);
     }
 }

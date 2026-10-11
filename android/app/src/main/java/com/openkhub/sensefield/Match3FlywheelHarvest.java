@@ -14,9 +14,9 @@ final class Match3FlywheelHarvest {
     private Match3UnknownElements.Observation[][] objectCache;
     private final List<Match3AnimalAppearance.Body> goalAnchors=new ArrayList<>();
     private int[][] previousGoals;
-    private int goalFrames;
+    private int[] goalFrames;
     private long lastGoalAt=-1;
-    void resetStability() { cells.resetStability();objects.resetStability();previousGoals=null;goalFrames=0;lastGoalAt=-1; }
+    void resetStability() { cells.resetStability();objects.resetStability();previousGoals=null;goalFrames=null;lastGoalAt=-1; }
     int saturated() { return cells.saturatedObservations+objects.saturatedObservations; }
     static JSONArray pixels(int[] patch) { JSONArray out=new JSONArray();for(int value:patch)out.put(value);return out; }
     void collect(Match3Sampler sampler,Match3Position position,Match3HudReader hud,long at,Predicate<JSONObject> writer) {
@@ -65,15 +65,21 @@ final class Match3FlywheelHarvest {
         collectGoals(current,kinds,aspects,at,writer,new int[]{0});
     }
     private void collectGoals(int[][] current,String[] kinds,float[] aspects,long at,Predicate<JSONObject> writer,int[] attempts) {
-        if(current==null || at<0) { previousGoals=null;goalFrames=0;lastGoalAt=-1;return; }
+        if(current==null || at<0) { previousGoals=null;goalFrames=null;lastGoalAt=-1;return; }
         if(at==lastGoalAt)return;
         int[][] normalized=new int[current.length][];
         for(int i=0;i<current.length;i++) { normalized[i]=current[i].clone();Arrays.fill(normalized[i],128,256,0xff1e2a58); }
-        boolean same=Arrays.deepEquals(previousGoals,normalized) && at>lastGoalAt && at-lastGoalAt<=2400;
-        goalFrames=same?Math.min(3,goalFrames+1):1;previousGoals=normalized;lastGoalAt=at;
-        if(goalFrames<3)return;
+        boolean fresh=previousGoals!=null && previousGoals.length==normalized.length
+                && at>lastGoalAt && at-lastGoalAt<=2400;
+        if(!fresh)goalFrames=new int[normalized.length];
+        // A glittering/completed neighboring icon must not reset another
+        // stable icon's three fresh observations or prevent its collection.
+        for(int i=0;i<normalized.length;i++)goalFrames[i]=fresh && Arrays.equals(previousGoals[i],normalized[i])
+                ?Math.min(3,goalFrames[i]+1):1;
+        previousGoals=normalized;lastGoalAt=at;
         String frame="live-"+at+".png";
         for(int i=0;i<current.length && goalAnchors.size()<24;i++) {
+            if(goalFrames[i]<3)continue;
             if(attempts[0]>=DiagnosticRecorder.MAX_IMAGE_JOBS)break;
             Match3AnimalAppearance.Body observed=new Match3AnimalAppearance.Body(normalized[i]);
             boolean known=false;
