@@ -66,3 +66,15 @@
 原始图、诊断、家族库、审阅、首次失败和回放回执均在忽略目录 `validation/private/match3-flower-live-20261011T091710Z/`。同会话开发回放、独立准确率、机制验证和正式发布分开；不更新公开 Release、标签或公网清单。
 
 最终回执：`cover-first-cost/report.json`、`cost-final-runtime-binding.json`、`final-debug-suite-repair/receipt.json`、`final-release-suite/receipt.json`、`final-release-decision-parity.json`、`phone-release-static-final/receipt.json`、`engineering-summary.json`。完整 Debug／Release 分别包含标准 92／67 项及 14 项关联 CV；私有旧 fixture 通过 `sensefieldCaptureScaleFixtureDir` 只注入 test APK，花团 9 图使用外部 `match3-flower-cv/manifest.json` 显式提供。公开仓库扫描 1653 个候选文件、`git diff --check` 及 30 个文档相对链接检查通过，公开源代码不含私有原图、标签或 APK。
+
+## 第 93、94 关自然实局短观察（22:11～22:13）
+
+用户完成两局后收回一份新辅助会话；保存画面可见第 93、94 关、各自成功动画及第 95 关入口，两局共用同一会话，没有把两份旧归档算作新局。时间为 2026-10-11 22:11:13.471～22:13:48.042（Asia/Shanghai），154.571 秒、186 帧、51 张全屏图、779 条事件。手机/本地 SHA 与 ZIP CRC 通过，原归档保留。0.4.6/code23 与上述 gallery SHA 一致；新归档 SHA-256 为 `7215c0ce3c9f2587481a096701364ae716c016e49b15c4db6ce31d78032a7d2b`。
+
+第 93 关自动确认为 8×9，第 94 关为 9×9；8 条提示的坐标、排序证据和目标键均与当时排序首项一致，含 2 次 `BIRD_COLOR`。这属于内部一致性检查，不能当独立识别准确率或 `false_swap=0`。7 次语音派发接受、7 次开始、0 次完成；目标变化／提示证据变化／连消／棋盘运动分别取消 4／1／1／1 次，未见引擎错误。另一条提示快速替换，没有语音派发。回调不能证明每条完整可听；8 条动作证据仍全部 `not_observed`，过关画面不能证明采用提示或推荐收益。
+
+记录正常结束，诊断错误为空、事件丢弃 0、图片请求丢弃汇总 5，结束时图片待写队列为 0。51 个图作业均保存单张全屏图；通用回执的 `partial` 表示未请求小地图，不能误报为文件损坏。7 个上下文窗口、2 次限流，5 次汇总丢弃没有完整逐条原因。采样得到 22 个待审家族、28 份元素图，399 次容量饱和、10 次歧义；保持原采集上限，没有直接晋升未知规则。第 94 关保留机关状态／周期和伤害守卫的未知项，饼干与小黄鸡 HUD 仍为身份已知、事件模式未知；后段部分提示直接目标收益下界为 0。本轮没有升级花团／藤蔓专项或机关规则验收状态。
+
+全会话帧处理时间中位数 152 ms、最近秩 P95 489 ms、最大 2,455 ms；包含地图、动画和弹窗，不是棋盘算法纯成本。5 帧超过 800 ms，位于开局地图或第 93 关结束动画；3 次 checkpoint 帧流为 `stale`，均几何不可用，没有对应的新提示。现存主包 UID 环形 logcat 未见错误，UID crash 缓冲为空，package 历史退出记录没有 CRASH／ANR；辅助导出测试在会话结束之后造成的 instrumentation FORCE STOP 单独保留，不算对局崩溃。现存环形日志不保证完整连续。
+
+16 份应用内设备读数显示电池传感器 31.9→33.0°C、系统 thermal_status 全为 NONE、电量 100%、未充电。没有 CPU／PSS 连续测量，也没有机身表面温度与受控对照；这份 154 秒自然实局观察不能代替 15 分钟压测或 3×15 分钟温升门禁。后台固定输入泡机尚未启动。私有回执、原图、机器摘要和逐条提示检查保存在忽略目录 `validation/private/match3-phone-soak-20261011/`；不修改生产候选或发布状态。
