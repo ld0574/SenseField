@@ -104,7 +104,7 @@ KIND_RULE = {
 
 GOAL_KINDS = {**dict(zip('ROYGBP',('RED','BEAR','CHICK','FROG','HIPPO','CAT'))),
               'coin':'COIN','snow':'SNOW','honey':'HONEY','honey_cover':'HONEY_COVER','iceflower':'ICEFLOWER',
-              'cookie':'COOKIE','ice':'ICE','egg':'EGG','lock':'LOCK',
+              'cookie':'COOKIE','ice':'ICE','egg':'EGG','lock':'LOCK','flower':'FLOWER',
               **{kind.lower():kind for kind in ('POISON','PENGUIN','SNOW_BEAR','GOLD_POD','KEY','FURBALL',
                   'DOLPHIN','SPRITE','GEM','STAR','STAR_BOTTLE','DYE_BABY','CANNON','MAGIC_STONE')}}
 GOAL_MODES = {**{kind:{'CLEAR'} for kind in ('RED','BEAR','CHICK','FROG','HIPPO','CAT','COIN','SNOW',

@@ -113,6 +113,32 @@ public final class Match3RuleEngineTest {
         assertEquals(0,Match3MoveRanker.rankedMoves(p,observed).get(0).directUnits);
         assertEquals(3,Match3MoveRanker.rankedMoves(p,goals(Match3Goals.Kind.CHICK,3,Match3Goals.Mode.CLEAR,3)).get(0).directUnits);
     }
+    @Test public void flowerGoalIdentityCannotAcquireAnUnverifiedEventMode() {
+        Match3Goals.Target observed=Match3Goals.Target.observed(0,Match3Goals.Kind.FLOWER,7,false,"");
+        assertTrue(observed.known());assertEquals(7,observed.remaining);
+        assertEquals(Match3Goals.Mode.UNKNOWN,observed.mode);
+        assertEquals(Match3Goals.Mode.UNKNOWN,new Match3Goals.Target(0,Match3Goals.Kind.FLOWER,7,false).mode);
+        for(Match3Goals.Mode mode:Match3Goals.Mode.values())if(mode!=Match3Goals.Mode.UNKNOWN) {
+            assertFalse(Match3Goals.supportsMode(Match3Goals.Kind.FLOWER,mode));
+            try {
+                new Match3Goals.Target(0,Match3Goals.Kind.FLOWER,7,false,"",mode,"unverified_flower_event");
+                fail("Flower acquired an unverified event mode");
+            } catch(IllegalArgumentException expected) { }
+        }
+    }
+    @Test public void adjacentFlowerDoesNotGainHitsRewardsOrProximityValue() {
+        Match3Position.Cell flower=Match3Position.Cell.observed(Match3Position.Kind.FLOWER,"flower_cluster",-1,-1);
+        Match3Position p=replace(board("HHH","RGR","HRH"),0,1,flower);
+        Match3Goals goals=goals(Match3Goals.Kind.FLOWER,7,Match3Goals.Mode.UNKNOWN,3);
+        Match3MoveValue move=Match3MoveRanker.rankedMoves(p,goals).get(0);
+        assertFalse(flower.swappable);assertEquals(flower,move.result.after.cell(0,1));
+        assertEquals(0,move.directUnits);assertEquals(0,move.relevantHits);
+        assertEquals(0,move.hit(Match3Goals.Kind.FLOWER));assertEquals(0,move.collected(Match3Goals.Kind.FLOWER));
+        assertEquals(Match3TargetFrontier.UNAVAILABLE,move.targetDistance);assertEquals("",move.reason);
+        assertEquals(3,move.physicalClears);
+        assertFalse(move.result.successorKnown);
+        assertTrue(move.result.unknowns.contains("flower_cluster_damage_or_trigger_unknown"));
+    }
     @Test public void eggTriggersAHatchOpportunityWithoutInventingSpawnedChicks() {
         Match3Position p=replace(board("HHH","RGR","HRH"),0,1,Match3Position.Cell.obstacle(Match3Position.Kind.EGG,-1));
         Match3MoveValue move=Match3MoveRanker.rankedMoves(p,goals(Match3Goals.Kind.CHICK,3,Match3Goals.Mode.HATCH,3)).get(0);

@@ -111,6 +111,30 @@ public final class Match3GalleryTest {
             assertTrue(found);
         }
     }
+    @Test public void flowerHudIdentityLoadsWithoutAcquiringIceFlowerOrTaskRules() throws Exception {
+        JSONObject icon=pattern("FLOWER","reviewed_goal_icon").put("reviewed",true);
+        StringBuilder rgb=new StringBuilder();
+        for(int y=0;y<16;y++)for(int x=0;x<16;x++)rgb.append(x<8?"334488":"88ccff");
+        icon.put("pixels_rgb",rgb.toString());
+        JSONObject gallery=new JSONObject().put("format","match3-gallery-v1").put("id","synthetic-flower-goal")
+                .put("goals",new JSONArray().put(icon));
+        Match3VisualCatalog loaded=Match3VisualCatalog.withGallery(base(),gallery.toString().getBytes(StandardCharsets.UTF_8));
+        assertEquals("loaded",loaded.galleryStatus);assertEquals(0,loaded.galleryGoalsPendingReview);
+        Match3VisualCatalog.Pattern flower=null;
+        for(Match3VisualCatalog.Pattern candidate:loaded.goals)if(candidate.kind.equals("FLOWER"))flower=candidate;
+        assertNotNull(flower);
+        Match3Goals.Target target=loaded.goalTarget(0,Match3Goals.Kind.FLOWER,7,false,"",flower.pixels);
+        assertEquals(Match3Goals.Kind.FLOWER,target.kind);assertEquals(7,target.remaining);
+        assertEquals(Match3Goals.Mode.UNKNOWN,target.mode);
+        assertEquals("FLOWER",Match3VisualCatalog.recognize(Collections.singletonList(flower),flower.pixels,.14f,.025f));
+        Match3VisualCatalog.Pattern uniform=new Match3VisualCatalog.Pattern(pattern("FLOWER","reviewed_goal_icon"));
+        assertNull(Match3VisualCatalog.recognize(Collections.singletonList(uniform),uniform.pixels,.14f,.025f));
+        for(String mode:new String[]{"CLEAR","TRIGGER","CHARGE"}) {
+            icon.put("goal_binding",new JSONObject().put("reviewed",true).put("event_mode",mode).put("evidence","unverified_flower_event"));
+            try { new Match3VisualCatalog.Pattern(icon);fail("Flower acquired an unverified goal mode"); }
+            catch(IllegalArgumentException expected) { }
+        }
+    }
     @Test public void coverSupplementPinsRulesAndCannotPartiallyChangeTheLegacyGallery() throws Exception {
         Path assets=Path.of("src/main/assets");if(!Files.isDirectory(assets))assets=Path.of("app/src/main/assets");
         byte[] old=Files.readAllBytes(assets.resolve("match3-gallery-v1.json"));

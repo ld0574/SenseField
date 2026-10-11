@@ -107,6 +107,25 @@ class RuleContractTests(unittest.TestCase):
         self.assertEqual('LOCK',gallery['goals'][0]['kind']);self.assertEqual(goal,gallery['goals'][0]['goal_binding'])
         registry['families'][0]['role']='cell';review['registry_sha256']=flywheel.digest(registry)
         with self.assertRaises(ValueError):flywheel.apply_review(registry,review)
+    def test_flower_goal_compiles_identity_only_without_inventing_a_task_mode(self):
+        family='flower-hud'
+        registry={'families':[{'family':family,'role':'goal','samples':[
+            {'id':'a:goal0','source':'train/a:goal0','group':'train','pixels':[0x445566]*256},
+            {'id':'b:goal0','source':'test/b:goal0','group':'test','pixels':[0x112233]*256}]}]}
+        review={'registry_sha256':flywheel.digest(registry),'labels':{family:'flower'},
+                'archetypes':{family:'state'},'swappable':{family:None},'reviewed':{family:True}}
+        flywheel.apply_review(registry,review)
+        gallery=flywheel.build_gallery(registry,{'groups':{'train':'train','test':'test'}})
+        self.assertEqual(1,len(gallery['goals']))
+        self.assertEqual('FLOWER',gallery['goals'][0]['kind'])
+        self.assertEqual('train/a:goal0',gallery['goals'][0]['source'])
+        self.assertNotIn('goal_binding',gallery['goals'][0])
+        self.assertEqual([],gallery['cells']);self.assertEqual([],gallery['ordinary_envelopes'])
+        binding={'reviewed':True,'event_mode':'UNKNOWN','evidence':'identity_only_no_goal_event_evidence'}
+        self.assertEqual(binding,rules.validate_goal_binding(binding,'FLOWER'))
+        for mode in ('CLEAR','TRIGGER','CHARGE','UNLOCK','HATCH','RESCUE','DELIVER'):
+            with self.assertRaises(ValueError):rules.validate_goal_binding({**binding,'event_mode':mode},'FLOWER')
+        with self.assertRaises(ValueError):labels.record('flower','state',True)
     def test_independent_typed_replay_requires_rule_gallery_source_and_legality_provenance(self):
         tap={'action_type':'ACTIVATE','from_row':0,'from_col':0,'to_row':0,'to_col':0,
              'rule_id':'line_horizontal','rule_version':1,'direct_units':1}

@@ -17,7 +17,8 @@ final class Match3Goals {
         GOLD_POD('\0', "金豆荚"), KEY('\0', "钥匙"), FURBALL('\0', "毛球"),
         CAGE('\0', "牢笼"), STAR_BOTTLE('\0', "星星瓶"), DYE_BABY('\0', "染色宝宝"),
         CANNON('\0', "魔法炮"), MAGIC_STONE('\0', "魔法石"),
-        DOLPHIN('\0', "海豚"), SPRITE('\0', "精灵"), GEM('\0', "宝石"), STAR('\0', "星星"), HONEY_COVER('\0',"蜂蜜覆盖"), LOCK('\0',"藤蔓");
+        DOLPHIN('\0', "海豚"), SPRITE('\0', "精灵"), GEM('\0', "宝石"), STAR('\0', "星星"), HONEY_COVER('\0',"蜂蜜覆盖"), LOCK('\0',"藤蔓"),
+        FLOWER('\0', "花团");
         final char color;
         final String name;
         Kind(char color, String name) { this.color = color; this.name = name; }
@@ -62,12 +63,14 @@ final class Match3Goals {
             this(slot,kind,remaining,completed,"");
         }
         Target(int slot, Kind kind, int remaining, boolean completed,String visualId) {
-            this(slot,kind,remaining,completed,visualId,kind==Kind.LOCK?Mode.UNLOCK:Mode.CLEAR,"explicit_legacy_task_model");
+            this(slot,kind,remaining,completed,visualId,kind==Kind.FLOWER?Mode.UNKNOWN:kind==Kind.LOCK?Mode.UNLOCK:Mode.CLEAR,
+                    kind==Kind.FLOWER?"icon_identity_only":"explicit_legacy_task_model");
         }
         Target(int slot,Kind kind,int remaining,boolean completed,String visualId,Mode mode,String evidence) {
             if (slot < 0 || slot > 7 || kind == null || remaining < -1 || remaining > 9999
                     || completed && remaining > 0 || visualId==null || visualId.length()>80
-                    || mode==null || evidence==null || evidence.length()>160 || mode!=Mode.UNKNOWN && evidence.isEmpty())
+                    || mode==null || evidence==null || evidence.length()>160 || mode!=Mode.UNKNOWN && evidence.isEmpty()
+                    || kind==Kind.FLOWER && mode!=Mode.UNKNOWN)
                 throw new IllegalArgumentException("Invalid target");
             this.slot = slot; this.kind = kind;
             this.remaining = completed ? 0 : remaining; this.completed = completed;

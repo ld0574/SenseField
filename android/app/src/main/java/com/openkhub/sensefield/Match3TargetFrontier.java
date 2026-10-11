@@ -76,6 +76,8 @@ final class Match3TargetFrontier {
         if (target.color != '\0') return cell.kind == Match3Position.Kind.ANIMAL
                 && cell.swappable && cell.color == target.color;
         switch (target) {
+            // Flower activation is unverified; nearby clears do not establish preparation value.
+            case FLOWER: return false;
             case COIN: return cell.kind == Match3Position.Kind.COIN;
             case SNOW: return cell.kind == Match3Position.Kind.SNOW;
             case ICEFLOWER: return cell.kind == Match3Position.Kind.ICEFLOWER;
