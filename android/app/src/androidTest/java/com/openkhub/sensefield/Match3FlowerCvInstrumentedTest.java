@@ -68,4 +68,30 @@ public final class Match3FlowerCvInstrumentedTest {
         }
         original.recycle();
     }
+
+    @Test public void coveredFlowerBoardsKeepTheirGridAcrossFilteredCaptureResizes() throws Exception {
+        JSONArray entries=inputs();assertEquals(9,entries.length());
+        for(int i=0;i<entries.length();i++) {
+            JSONObject entry=entries.getJSONObject(i),expected=entry.getJSONObject("expected_geometry");
+            Bitmap original=frame(entry);
+            try {
+                BoardGeometry nativeGrid=Match3Sampler.autoDetectGeometry(original);assertNotNull(nativeGrid);
+                int[] nativeEdges={nativeGrid.left,nativeGrid.top,nativeGrid.right,nativeGrid.bottom};
+                for(int longEdge:new int[]{1600,2400,2712,3200}) {
+                    float scale=longEdge/(float)Math.max(original.getWidth(),original.getHeight());
+                    Bitmap resized=Bitmap.createScaledBitmap(original,Math.round(original.getWidth()*scale),
+                            Math.round(original.getHeight()*scale),true);
+                    try {
+                        String message=entry.getString("file")+" longEdge="+longEdge;
+                        BoardGeometry g=Match3Sampler.autoDetectGeometry(resized);assertNotNull(message,g);
+                        assertEquals(message,expected.getInt("rows"),g.rows);assertEquals(message,expected.getInt("cols"),g.cols);
+                        int[] resizedEdges={g.left,g.top,g.right,g.bottom};
+                        for(int edge=0;edge<4;edge++) {
+                            assertTrue(message+" edge="+edge,Math.abs(nativeEdges[edge]*scale-resizedEdges[edge])<=4*scale);
+                        }
+                    } finally {if(resized!=original)resized.recycle();}
+                }
+            } finally {original.recycle();}
+        }
+    }
 }

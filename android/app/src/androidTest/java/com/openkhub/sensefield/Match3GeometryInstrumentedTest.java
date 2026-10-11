@@ -38,4 +38,27 @@ public final class Match3GeometryInstrumentedTest {
             } finally { frame.recycle(); }
         }
     }
+
+    @Test public void twoSupportedCoveredEdgePhasesCannotChooseATouchOrigin() {
+        Bitmap frame=Bitmap.createBitmap(432,960,Bitmap.Config.ARGB_8888);frame.eraseColor(0xff00ccee);
+        try {
+            for(int y=280;y<664;y++)for(int x=24;x<384;x++) {
+                int xx=(x-24)%40,yy=(y-280)%40;
+                frame.setPixel(x,y,xx<3 || yy<3 || yy>=24 && yy<27?0xff203050:0xffdd9944);
+            }
+            assertNull("Both top and bottom extensions have current dark boundaries",
+                    Match3Sampler.verifiedGeometry(frame,new int[]{24,304,384,640}));
+        } finally {frame.recycle();}
+    }
+
+    @Test public void flatDarkPanelsAndBrightPeriodicDecorAreNotAutomaticBoards() {
+        Bitmap frame=Bitmap.createBitmap(1220,2712,Bitmap.Config.ARGB_8888);frame.eraseColor(0xff00ccee);
+        try {
+            for(int y=900;y<1980;y++)for(int x=70;x<1150;x++)frame.setPixel(x,y,0xff203050);
+            assertNull("Dark support without a period is insufficient",Match3Sampler.autoDetectGeometry(frame));
+            for(int y=900;y<1980;y++)for(int x=70;x<1150;x++)
+                frame.setPixel(x,y,(x/120+y/120)%2==0?0xffdd9944:0xffffeeee);
+            assertNull("Periodic decoration without the board colour domain is insufficient",Match3Sampler.autoDetectGeometry(frame));
+        } finally {frame.recycle();}
+    }
 }

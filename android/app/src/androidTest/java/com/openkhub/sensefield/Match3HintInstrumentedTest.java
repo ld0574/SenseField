@@ -414,6 +414,10 @@ public final class Match3HintInstrumentedTest {
                         .getInstrumentation().getUiAutomation().getRootInActiveWindow());
                 return spoken.get() != null;
             });
+            // The production dispatcher can repeat the same still-valid hint
+            // after the first utterance finishes. Pin the utterance under test;
+            // the renderer's latest request may already belong to that repeat.
+            CueRequest initialSpoken = spoken.get();
             Object session = get(service, "active");
             Match3Hint hint = (Match3Hint) get(session, "currentHint"); assertNotNull(hint);
             long boardRevision = (long) get(session, "boardRevision");
@@ -439,6 +443,7 @@ public final class Match3HintInstrumentedTest {
             assertNotNull(((Match3HintOverlay) get(session, "overlay")).renderedHint());
             java.io.File directory = context().getExternalFilesDir("match3-release-capture");
             assertNotNull(directory); directory.mkdirs();
+            DiagnosticRecorder.IO.submit(() -> {}).get(5, TimeUnit.SECONDS);
             String events = new String(java.nio.file.Files.readAllBytes(
                     new java.io.File(DiagnosticRecorder.current.directory, "events.jsonl").toPath()),
                     java.nio.charset.StandardCharsets.UTF_8);
@@ -446,7 +451,7 @@ public final class Match3HintInstrumentedTest {
             for (String line : events.split("\n")) if (!line.isEmpty()) {
                 org.json.JSONObject event = new org.json.JSONObject(line), data = event.optJSONObject("data");
                 if ("CuePlayback".equals(event.optString("type")) && data != null
-                        && spoken.get().cueId.equals(data.optString("cue_id"))
+                        && initialSpoken.cueId.equals(data.optString("cue_id"))
                         && "COMPLETED".equals(data.optString("result"))) finished = true;
             }
             assertTrue("Production listener records normal completion", finished);

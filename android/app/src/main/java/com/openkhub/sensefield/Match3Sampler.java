@@ -728,11 +728,9 @@ final class Match3Sampler implements AutoCloseable {
             // A foreground cover can hide part of one outer row/column. Use
             // the independently observed opposite axis and intact edge only
             // when repeated dark cell boundaries verify a unique phase.
-            int[] repaired=repairCoveredEdge(frame,pixels);
-            if(repaired!=null) { axes=gridAxes(frame,repaired);if(axes!=null)pixels=repaired; }
-            if(axes==null)axes=gridAxes(frame,pixels);
-            if(axes==null)return null;
+            return repairCoveredEdge(frame,pixels);
         }
+        if(axes[0]==0)return null; // competing supported grids
         return new BoardGeometry(frame.getWidth(), frame.getHeight(), pixels[0], pixels[1],
                 pixels[2], pixels[3], axes[1], axes[0]);
     }
@@ -744,8 +742,30 @@ final class Match3Sampler implements AutoCloseable {
         // support; competing square grids abstain.
         int edgeCols=detectGridAxis(frame,pixels,false,true),edgeRows=detectGridAxis(frame,pixels,true,true);
         int[] accepted=null;
-        for(int c:new int[]{cols,edgeCols})for(int r:new int[]{rows,edgeRows})if(squareGrid(frame,pixels,r,c)) {
-            if(accepted!=null && (accepted[0]!=c || accepted[1]!=r))return null;
+        int[] columnCandidates=cols==edgeCols?new int[]{cols}:new int[]{cols,edgeCols};
+        int[] rowCandidates=rows==edgeRows?new int[]{rows}:new int[]{rows,edgeRows};
+        for(int c:columnCandidates)for(int r:rowCandidates) {
+            if(c==cols && r==rows)continue; // already checked above
+            if(!squareGrid(frame,pixels,r,c))continue;
+            if(accepted!=null && (accepted[0]!=c || accepted[1]!=r))return new int[]{0,0};
+            accepted=new int[]{c,r};
+        }
+        if(accepted!=null)return accepted;
+        // A texture peak can also obscure an axis on an intact square box.
+        // Infer only from a currently observed opposite period, with both
+        // dark phases. The existing aspect bound and conflict abstention stay.
+        int step=Math.max(1,Math.min(frame.getWidth(),frame.getHeight())/160);
+        for(boolean vertical:new boolean[]{true,false})for(int across:vertical?columnCandidates:rowCandidates) {
+            if(across<6)continue;
+            float pitch=(vertical?pixels[2]-pixels[0]:pixels[3]-pixels[1])/(float)across;
+            int count=Math.round((vertical?pixels[3]-pixels[1]:pixels[2]-pixels[0])/pitch);
+            if(count<6 || count>9)continue;
+            int c=vertical?across:count,r=vertical?count:across;
+            if(accepted!=null && accepted[0]==c && accepted[1]==r)continue;
+            if(Math.abs((pixels[2]-pixels[0])/(float)c-(pixels[3]-pixels[1])/(float)r)>2*step)continue;
+            if(!boundaryPhaseSupported(frame,pixels,false,c,step)
+                    || !boundaryPhaseSupported(frame,pixels,true,r,step))continue;
+            if(accepted!=null)return new int[]{0,0};
             accepted=new int[]{c,r};
         }
         return accepted;
@@ -765,9 +785,9 @@ final class Match3Sampler implements AutoCloseable {
                 && boundaryPhaseSupported(frame,pixels,true,rows,step);
     }
 
-    private static int[] repairCoveredEdge(Bitmap frame,int[] box) {
+    private static BoardGeometry repairCoveredEdge(Bitmap frame,int[] box) {
         int step=Math.max(1,Math.min(frame.getWidth(),frame.getHeight())/160);
-        int[] accepted=null;
+        BoardGeometry accepted=null;
         for(boolean vertical:new boolean[]{true,false}) {
             int across=detectGridAxis(frame,box,!vertical);
             if(across<6)continue;
@@ -781,11 +801,22 @@ final class Match3Sampler implements AutoCloseable {
                 int[] candidate=box.clone();
                 if(before)candidate[start]-=missing;else candidate[end]+=missing;
                 if(candidate[0]<0 || candidate[1]<0 || candidate[2]>frame.getWidth() || candidate[3]>frame.getHeight())continue;
-                int actual=detectGridAxis(frame,candidate,vertical);
-                if(actual!=count && detectGridAxis(frame,candidate,vertical,true)!=count)continue;
                 if(!boundaryPhaseSupported(frame,candidate,vertical,count,step))continue;
+                int cols=vertical?across:count,rows=vertical?count:across;
+                int[] axes=gridAxes(frame,candidate);
+                if(axes!=null) {
+                    if(axes[0]!=cols || axes[1]!=rows)continue;
+                } else {
+                    // Filtered capture resizing can make foreground texture's
+                    // strongest autocorrelation peak outrank the cell pitch.
+                    // The intact opposite axis fixes this square candidate;
+                    // require its current dark phase too, rather than accepting
+                    // a period guess or extrapolating from a stored grid.
+                    if(!boundaryPhaseSupported(frame,candidate,!vertical,across,step))continue;
+                }
                 if(accepted!=null)return null; // competing phases never select a touch origin
-                accepted=candidate;
+                accepted=new BoardGeometry(frame.getWidth(),frame.getHeight(),candidate[0],candidate[1],
+                        candidate[2],candidate[3],rows,cols);
             }
         }
         return accepted;
@@ -803,9 +834,9 @@ final class Match3Sampler implements AutoCloseable {
                     profileMaximum(frame,box,vertical,dark,line,hsv,Math.round((i+.25f)*length/count),step));
             // Reuse the detector's 5% positive dark support, on at least three
             // distinct internal boundaries. Texture/colour without a grid phase abstains.
-            if(edge-neighbors>=.05)boundaries++;
+            if(edge-neighbors>=.05 && ++boundaries>=3)return true;
         }
-        return boundaries>=3;
+        return false;
     }
     private static double profileMaximum(Bitmap frame,int[] box,boolean vertical,double[] values,int[] line,float[] hsv,int at,int radius) {
         double maximum=0;
