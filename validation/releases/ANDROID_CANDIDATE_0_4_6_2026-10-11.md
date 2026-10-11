@@ -2,6 +2,8 @@
 
 用户选择改用 0.4.6，避免继续修订已发布的 0.4.5。当前分支 `feature/jev-l2-judgment` 的应用版本、构建脚本、APK 验证器与语音隔离 fixture 同步为 0.4.6／code23；生产规则／CV Java 及识别资产未在本轮版本递增中修改。原 0.4.5 开发证据保留原制品版本和哈希。
 
+本页下表保留最初版本递增制品的绑定；后续红藤蔓修订候选见文末及[对应工程记录](../match3/MATCH3_RED_VINE_CV_0_4_6_2026-10-11.md)，不能用最新包替换下表旧测试的SHA。
+
 ## 公开版本核对
 
 只读检查 GitHub：[`v0.4.5`](https://github.com/ld0574/SenseField/releases/tag/v0.4.5) 发布于 2026-10-10 06:59:31 UTC，当前为 Latest。固定网站 `https://888413.xyz/apk/latest.json` 为 0.4.5／code22，指向 Gitee 0.4.5 永久链接。清单与 GitHub APK 附件元数据均记录 24,364,276 bytes、SHA `00c3b31434d26d105eb0b96f6cad30506756f3d7d550fa752074a5ac2e86c4e4`。本次没有重新下载公开 APK，不把元数据相同当作公开字节重新验收。
@@ -36,3 +38,9 @@
 本次只递增版本与核对包／更新／固定输入链路，没有启动游戏、执行交换或采集新实局。不重复计入此前完整 Debug／Release 门禁，旧回执不改名。[前批规则与 CV 工程结果](../../docs/development/match3-rules-validation.md)的首次 Debug 失败、strict 两条颜色分歧、手机 cold wall P95 +10.29% 失败、四次动作 `not_observed` 均保留。
 
 独立人工留出、连续实局稳定和真实任务收益、受控手机成本／端到端P95／3×15分钟温升／外部实声及正式发布继续待条件。0.4.6 未创建公开标签／Release、未上传 Gitee／CDN；公网仍为0.4.5。
+
+## 后续红藤蔓工程修订候选
+
+在最初0.4.6完成第84～85关实局后，补充两个开发审阅红藤蔓姿态，规则Java、fixed UI、原gallery和HUD字形不变；版本仍0.4.6／code23。修订主包24,526,914 bytes，SHA `0b82665369119ad22d94dfef02bc132cb602df7dce9e7b6ea8734c25b1a3598b`，源码SHA `20368e57acdb71fef2f88c248708a4d088d9c37be2c37e7bab6bdddd31b04b92`；本地原证书混淆Release及包完整性通过，lint Error0／Warning33。
+
+39项Python、561项JVM、新红藤蔓专项3项及完整混淆Release76项通过；手机覆盖安装后回读双包SHA一致，32项固定输入／规则检查通过、无跳过。详细资产、成本、旧回放对照及失败保留范围以[红藤蔓工程记录](../match3/MATCH3_RED_VINE_CV_0_4_6_2026-10-11.md)为准。最初候选的实局14／16记录不会改写成新候选实局已识别16／16。
