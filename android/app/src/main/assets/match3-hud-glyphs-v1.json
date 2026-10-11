@@ -1,0 +1,25 @@
+{
+  "format": "match3-hud-glyphs-v1",
+  "id": "match3-reviewed-hud-seven-20261011",
+  "metadata": {
+    "fixed_catalog_sha256": "98cd97fbcb0c99b81c2f5deac874f7a72ab10d0b31dd8ef0dd4181ed44ed2b2b",
+    "independent": false,
+    "review_scope": "developer_visual_review",
+    "sampling": "white_component_10x16_center"
+  },
+  "glyphs": [
+    {
+      "digit": 7,
+      "aspect": 0.7272727272727273,
+      "bits": "1111111111111111111111111111111111111111000001111000000111100000011110000011100000001110000000111000001111100000111110000011110000001111000000111100000011110000",
+      "reviewed": true,
+      "source_sha256": "c4005d734a93177edb6512fb0c3399ae41728faa436247d6aa03eb47a8f22210",
+      "source_box": [
+        229,
+        80,
+        237,
+        91
+      ]
+    }
+  ]
+}

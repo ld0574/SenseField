@@ -132,4 +132,42 @@ public final class Match3LiveElementsInstrumentedTest {
         }
         assertEquals(4,boards);
     }
+    @Test public void aLaterRealBoardDropsTheConsumedBirdAndKeepsTheRemainingBlueVineLocked() throws Exception {
+        JSONArray entries=input("live-elements-frames.json").getJSONArray("frames");JSONObject before=null,after=null;
+        for(int i=0;i<entries.length();i++) {
+            JSONObject entry=entries.getJSONObject(i);
+            if("82train".equals(entry.getString("id")))before=entry;
+            if("82later".equals(entry.getString("id")))after=entry;
+        }
+        assertNotNull(before);assertNotNull(after);Bitmap first=frame(before),later=frame(after);
+        Match3HudReader hud=new Match3HudReader(app());Match3CellConfirmation confirmation=new Match3CellConfirmation();
+        try(Match3Sampler sampler=new Match3Sampler(app(),grid(first,before))) {
+            Match3Position original=sampler.samplePosition(first);
+            assertEquals(Match3Position.Kind.BIRD,original.cell(6,6).kind);
+            // Test-generated observation timestamps exercise the confirmation
+            // gate; periodic JPEGs cannot prove continuous animation stability.
+            for(int i=0;i<3;i++)confirmation.accept(original,100+800L*i);
+            Match3Position observed=sampler.samplePosition(later);
+            int locks=0,birds=0;
+            for(int r=0;r<observed.rows;r++)for(int c=0;c<observed.cols;c++) {
+                if(observed.cell(r,c).cover==Match3Position.Cover.LOCK)locks++;
+                if(observed.cell(r,c).kind==Match3Position.Kind.BIRD)birds++;
+            }
+            assertEquals(1,locks);assertEquals(0,birds);
+            Match3Position.Cell vine=observed.cell(3,8);
+            assertEquals('B',vine.color);assertEquals(Match3Position.Cover.LOCK,vine.cover);
+            assertEquals(Match3Position.SwapPermission.NO,vine.swapPermission);assertEquals(Match3Position.SwapPermission.YES,vine.matchPermission);
+            Match3Position changed=confirmation.accept(observed,2500).position;
+            assertEquals("old bird identity cannot fill a changed cell",Match3Position.Kind.UNKNOWN,changed.cell(6,6).kind);
+            Match3Goals goals=hud.read(later,grid(later,after),2500);
+            assertEquals(1,goals.remaining(Match3Goals.Kind.LOCK));assertEquals(0,goals.remaining(Match3Goals.Kind.HONEY));
+            for(Match3Action action:Match3Action.enumerate(changed)) {
+                assertNotEquals(Match3Action.Type.BIRD_COLOR,action.type);
+                assertNotEquals(Match3Position.Cover.LOCK,changed.cell(action.geometry.fromRow,action.geometry.fromCol).cover);
+                assertNotEquals(Match3Position.Cover.LOCK,changed.cell(action.geometry.toRow,action.geometry.toCol).cover);
+            }
+            confirmation.accept(observed,3300);
+            assertNotEquals(Match3Position.Kind.BIRD,confirmation.accept(observed,4100).position.cell(6,6).kind);
+        } finally {hud.close();first.recycle();later.recycle();}
+    }
 }

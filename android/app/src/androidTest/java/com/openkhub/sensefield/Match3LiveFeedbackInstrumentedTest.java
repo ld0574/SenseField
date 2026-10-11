@@ -128,6 +128,24 @@ public final class Match3LiveFeedbackInstrumentedTest {
         }
         }
     }
+    @Test public void gameHintArtworkCannotRetainAnEarlierUncoveredExchange() throws Exception {
+        Bitmap first=load("screen-284-2285557292.jpg"),artwork=load("screen-310-2285578323.jpg");
+        BoardGeometry g=Match3Sampler.autoDetectGeometry(first);assertNotNull(g);
+        try(Match3Sampler sampler=new Match3Sampler(context(),g)) {
+            Match3Position source=sampler.samplePosition(first);
+            Match3MoveValue expected=null;
+            for(Match3MoveValue move:Match3MoveRanker.rankedMoves(source,Match3Goals.unknown(0)))
+                if(move.swap.fromRow==2 && move.swap.fromCol==5 && move.swap.toRow==2 && move.swap.toCol==6)expected=move;
+            assertNotNull("initial plain endpoints admit the real exchange",expected);
+            Match3Position current=sampler.samplePosition(artwork);
+            assertEquals('O',current.cell(2,5).color);assertEquals('R',current.cell(2,6).color);
+            assertEquals(Match3Position.Cover.UNKNOWN,current.cell(2,5).cover);
+            assertEquals(Match3Position.SwapPermission.UNKNOWN,current.cell(2,5).swapPermission);
+            assertEquals(Match3Position.SwapPermission.UNKNOWN,current.cell(2,6).swapPermission);
+            assertFalse("a known face under game artwork cannot borrow old swap permission",
+                    Match3HintValidity.valid(source,current,expected,Match3MoveRanker.rankedMoves(current,Match3Goals.unknown(0))));
+        } finally {first.recycle();artwork.recycle();}
+    }
     @Test public void newLevelsPreserveRectangularGridsAndExcludeTheirUnknownObjects() throws Exception {
         String[] names={"screen-24-2290398043.jpg","screen-128-2290482080.jpg","screen-258-2290586993.jpg"};
         int[][] dimensions={{8,9},{9,8},{9,9}};

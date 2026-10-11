@@ -29,6 +29,12 @@ public final class Match3SupplementCostInstrumentedTest {
         try(InputStream in=context.getAssets().open(name)) { return in.readAllBytes(); }
     }
     @Test public void compareFrozenAndAugmentedSupplementsOnTheSameObservedFrames() throws Exception {
+        compare(false);
+    }
+    @Test public void compareReviewedHudGlyphSupplementWithItsAbsenceOnTheSameObservedFrames() throws Exception {
+        compare(true);
+    }
+    private void compare(boolean hudGlyphs) throws Exception {
         String hardware=android.os.Build.HARDWARE;
         assertTrue("isolated emulator",hardware.contains("ranchu") || hardware.contains("goldfish"));
         Context context=InstrumentationRegistry.getInstrumentation().getTargetContext();
@@ -71,18 +77,24 @@ public final class Match3SupplementCostInstrumentedTest {
         byte[] baseBytes;JSONObject base;try(InputStream in=context.getAssets().open("match3-fixed-ui-v1.json")) {
             baseBytes=in.readAllBytes();base=new JSONObject(new String(baseBytes,StandardCharsets.UTF_8));
         }
-        byte[] frozen=asset(tests,"live-elements-before-supplement.json");
-        assertEquals("preserved old supplement","b4f7dab6797ebb1fa197ce29f5d9ae936dd007d53857085eccba2ce6a045cec1",Match3HoldoutAccuracyInstrumentedTest.sha256(frozen));
+        byte[] frozen=asset(hudGlyphs?context:tests,hudGlyphs?"match3-vine-v1.json":"live-elements-before-supplement.json");
+        if(!hudGlyphs)assertEquals("preserved old supplement","b4f7dab6797ebb1fa197ce29f5d9ae936dd007d53857085eccba2ce6a045cec1",Match3HoldoutAccuracyInstrumentedTest.sha256(frozen));
         byte[] originalGallery=asset(context,"match3-gallery-v1.json");
         Match3VisualCatalog[] catalogs={Match3VisualCatalog.withReviewedSupplement(base,originalGallery,frozen,Match3RuleCatalog.get(context).sha256),
                 Match3VisualCatalog.get(context)};
         assertEquals("loaded",catalogs[0].coverCatalogStatus);assertEquals("loaded",catalogs[1].coverCatalogStatus);
         assertEquals("loaded",catalogs[1].galleryStatus);
+        if(hudGlyphs) {
+            assertEquals(catalogs[0].coverCatalogSha256,catalogs[1].coverCatalogSha256);
+            assertEquals("absent",catalogs[0].hudGlyphCatalogStatus);assertEquals("loaded",catalogs[1].hudGlyphCatalogStatus);
+        }
         JSONObject report=new JSONObject().put("scope","emulator_processing_thread_including_descriptor_serialization; excludes_catalog_loading_async_hint_image_io_phone_end_to_end_and_thermal")
                 .put("baseline_supplement_sha256",Match3HoldoutAccuracyInstrumentedTest.sha256(frozen))
                 .put("candidate_supplement_sha256",catalogs[1].coverCatalogSha256)
                 .put("rule_catalog_sha256",Match3RuleCatalog.get(context).sha256)
-                .put("comparison","same_current_recognition_hud_rules_ranker_and_per_slot_harvest; frozen_vs_augmented_supplement; explicit_development_grids")
+                .put("comparison",hudGlyphs?"same_reader_engine_gallery_and_cover_supplement; reviewed_HUD_glyph_absent_vs_present; explicit_development_grids"
+                        :"same_current_recognition_hud_rules_ranker_and_per_slot_harvest; frozen_vs_augmented_supplement; explicit_development_grids")
+                .put("candidate_hud_glyph_catalog_sha256",catalogs[1].hudGlyphCatalogSha256)
                 .put("search_max_depth",Match3Search.MAX_DEPTH).put("search_max_nodes",Match3Search.MAX_NODES).put("search_time_budget_ns",Match3Search.MAX_NANOS)
                 .put("rounds",ROUNDS).put("boards",boards).put("manifest_sha256",Match3HoldoutAccuracyInstrumentedTest.sha256(manifestBytes))
                 .put("frame_sha256",hashes).put("gallery_sha256",catalogs[1].gallerySha256)
@@ -155,7 +167,7 @@ public final class Match3SupplementCostInstrumentedTest {
             }
         } finally { for(Bitmap frame:frames)if(frame!=null)frame.recycle(); }
         report.put("serialized_characters",serialized[0]).put("passed",passed);
-        Files.write(new File(dir,"supplement-cost.json").toPath(),report.toString(2).getBytes(StandardCharsets.UTF_8));
+        Files.write(new File(dir,hudGlyphs?"hud-glyph-cost.json":"supplement-cost.json").toPath(),report.toString(2).getBytes(StandardCharsets.UTF_8));
         assertTrue("collector actually ran",serialized[0]>0);
         assertTrue("same-engine P95 exceeded predeclared gate; keep supplement-cost.json",passed);
     }

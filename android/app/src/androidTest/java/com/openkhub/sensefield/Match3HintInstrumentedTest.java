@@ -403,7 +403,12 @@ public final class Match3HintInstrumentedTest {
                 finally { installed.countDown(); }
             });
             assertTrue(installed.await(5, TimeUnit.SECONDS)); assertNull(failure.get());
-            scenario.onActivity(a -> { replay[0] = new FeedbackPhoto(a, frames[0]); showFeedbackPhoto(a, replay[0]); });
+            // The third supplied photo has the game's yellow hint artwork on
+            // (2,5)/(2,6). Start there so the live ranker selects a positively
+            // supported exchange outside that artwork, then visit every pose.
+            // An exchange under unverified artwork must be cancelled instead;
+            // see gameHintArtworkCannotRetainAnEarlierUncoveredExchange().
+            scenario.onActivity(a -> { replay[0] = new FeedbackPhoto(a, frames[2]); showFeedbackPhoto(a, replay[0]); });
             await("Stable real board starts the controlled long hint", 20000, () -> {
                 Match3DiagnosticReplayInstrumentedTest.dismissFullscreenTutorial(InstrumentationRegistry
                         .getInstrumentation().getUiAutomation().getRootInActiveWindow());
@@ -415,7 +420,7 @@ public final class Match3HintInstrumentedTest {
             long observedRevision = boardRevision;
             long startedFrames = (long) get(session, "processedFrames");
             for (int i = 0; i < 5; i++) {
-                Bitmap frame = frames[(i + 1) % frames.length];
+                Bitmap frame = frames[i % frames.length];
                 // Keep the same real surface: changing setContentView would add
                 // layout/blank-frame transitions unrelated to sprite animation.
                 scenario.onActivity(a -> { replay[0].frame = frame; replay[0].invalidate(); });

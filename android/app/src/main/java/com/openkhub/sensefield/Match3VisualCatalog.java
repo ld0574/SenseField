@@ -151,7 +151,7 @@ final class Match3VisualCatalog {
         final String bits;
         Glyph(JSONObject json) throws Exception {
             digit = json.getInt("digit"); aspect = (float) json.getDouble("aspect"); bits = json.getString("bits");
-            if (digit < 0 || digit > 9 || aspect <= 0 || bits.length() != 160 || !bits.matches("[01]+"))
+            if (digit < 0 || digit > 9 || !Float.isFinite(aspect) || aspect <= 0 || bits.length() != 160 || !bits.matches("[01]+"))
                 throw new IllegalArgumentException("Invalid glyph");
         }
         float difference(String observed, float ratio) {
@@ -166,12 +166,14 @@ final class Match3VisualCatalog {
     String galleryId="", gallerySha256="", galleryStatus="absent";
     int galleryGoalsPendingReview;
     String coverCatalogId="", coverCatalogSha256="", coverCatalogStatus="absent";
+    String hudGlyphCatalogId="", hudGlyphCatalogSha256="", hudGlyphCatalogStatus="absent";
     private final boolean hasBoundGoalModes;
     final List<Pattern> steps, goals, cells, animals, largeObjects, iceSurfaces, iceBackgrounds;
     final List<Match3AnimalAppearance.Face> animalFaces;
     final List<Match3AnimalAppearance.Body> animalBodies;
     final List<Character> bodyColors;
-    final List<Glyph> glyphs, checkmarks, levelSuffixes;
+    List<Glyph> glyphs;
+    final List<Glyph> checkmarks, levelSuffixes;
     private Match3VisualCatalog() {
         available = false; id = "unavailable";
         hasBoundGoalModes=false;
@@ -241,7 +243,8 @@ final class Match3VisualCatalog {
             if (loaded == null) try (java.io.InputStream input = context.getAssets().open("match3-fixed-ui-v1.json")) {
                 java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream(); byte[] buffer = new byte[4096]; int n;
                 while ((n = input.read(buffer)) > 0) { if (output.size() + n > 327680) throw new IllegalArgumentException("Catalog size"); output.write(buffer,0,n); }
-                JSONObject json = new JSONObject(new String(output.toByteArray(), StandardCharsets.UTF_8));
+                byte[] fixedBytes=output.toByteArray();
+                JSONObject json = new JSONObject(new String(fixedBytes, StandardCharsets.UTF_8));
                 byte[] gallery=null;
                 try(java.io.InputStream extra=context.getAssets().open("match3-gallery-v1.json")) {
                     java.io.ByteArrayOutputStream data=new java.io.ByteArrayOutputStream();
@@ -267,10 +270,63 @@ final class Match3VisualCatalog {
                     }
                     supplement=data.toByteArray();
                 } catch(java.io.IOException absent) { }
-                loaded = withReviewedSupplement(json,gallery,supplement,rules.sha256);
+                Match3VisualCatalog candidate = withReviewedSupplement(json,gallery,supplement,rules.sha256);
+                byte[] hudGlyphs=null;
+                try(java.io.InputStream extra=context.getAssets().open("match3-hud-glyphs-v1.json")) {
+                    java.io.ByteArrayOutputStream data=new java.io.ByteArrayOutputStream();
+                    int count;while((count=extra.read(buffer))>0) {
+                        data.write(buffer,0,count);if(data.size()>4096)break;
+                    }
+                    hudGlyphs=data.toByteArray();
+                } catch(java.io.IOException absent) { }
+                loaded=withHudGlyphSupplement(candidate,hudGlyphs,sha256(fixedBytes));
             } catch (Exception ignored) { loaded = new Match3VisualCatalog(); }
             return loaded;
         }
+    }
+
+    /** Reviewed OCR exemplars only: no game-state bindings, threshold changes or
+     * count overrides. Validate the entire bounded sidecar before publishing it. */
+    static Match3VisualCatalog withHudGlyphSupplement(Match3VisualCatalog catalog,byte[] bytes,String fixedSha) {
+        if(bytes==null)return catalog;
+        try {
+            if(bytes.length>4096)throw new IllegalArgumentException("HUD glyph byte budget");
+            JSONObject extra=new JSONObject(new String(bytes,StandardCharsets.UTF_8));
+            JSONObject metadata=extra.getJSONObject("metadata");
+            String id=extra.getString("id");
+            if(!"match3-hud-glyphs-v1".equals(extra.getString("format")) || id.isEmpty() || id.length()>80
+                    || !fixedSha.matches("[0-9a-f]{64}") || !fixedSha.equals(metadata.getString("fixed_catalog_sha256"))
+                    || !"developer_visual_review".equals(metadata.getString("review_scope"))
+                    || !"white_component_10x16_center".equals(metadata.getString("sampling"))
+                    || !Boolean.FALSE.equals(metadata.get("independent")))
+                throw new IllegalArgumentException("HUD glyph provenance");
+            JSONArray glyphs=extra.getJSONArray("glyphs");
+            if(glyphs.length()<1 || glyphs.length()>8)throw new IllegalArgumentException("HUD glyph entry budget");
+            List<Glyph> admitted=new ArrayList<>(catalog.glyphs);
+            for(int i=0;i<glyphs.length();i++) {
+                JSONObject item=glyphs.getJSONObject(i);JSONArray box=item.getJSONArray("source_box");
+                if(!Boolean.TRUE.equals(item.get("reviewed")) || !(item.get("digit") instanceof Integer)
+                        || !item.getString("source_sha256").matches("[0-9a-f]{64}") || box.length()!=4)
+                    throw new IllegalArgumentException("Unreviewed HUD glyph");
+                for(int j=0;j<4;j++)if(!(box.get(j) instanceof Integer))throw new IllegalArgumentException("HUD glyph bounds");
+                int l=box.getInt(0),t=box.getInt(1),r=box.getInt(2),b=box.getInt(3);
+                Glyph glyph=new Glyph(item);
+                if(l<0 || t<0 || r>432 || b>200 || r<=l || b-t<7 || r-l>(b-t)*.85f
+                        || Math.abs(glyph.aspect-(r-l)/(float)(b-t))>.0001f)
+                    throw new IllegalArgumentException("HUD glyph geometry");
+                admitted.add(glyph);
+            }
+            String digest=sha256(bytes);
+            catalog.glyphs=Collections.unmodifiableList(admitted);
+            catalog.hudGlyphCatalogId=id;catalog.hudGlyphCatalogSha256=digest;catalog.hudGlyphCatalogStatus="loaded";
+        } catch(Exception invalid) { catalog.hudGlyphCatalogStatus="rejected:"+invalid.getClass().getSimpleName(); }
+        return catalog;
+    }
+    private static String sha256(byte[] bytes) throws Exception {
+        StringBuilder hex=new StringBuilder();
+        for(byte b:java.security.MessageDigest.getInstance("SHA-256").digest(bytes))
+            hex.append(String.format(java.util.Locale.ROOT,"%02x",b&255));
+        return hex.toString();
     }
 
     /** Optional sidecar gallery of extra ordinary-animal body references, loaded

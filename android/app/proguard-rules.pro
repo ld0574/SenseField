@@ -340,6 +340,7 @@
 -keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3VisualCatalog {
     java.lang.String id; java.lang.String galleryId; java.lang.String gallerySha256; java.lang.String galleryStatus;
     int galleryGoalsPendingReview;
+    java.lang.String hudGlyphCatalogId; java.lang.String hudGlyphCatalogSha256; java.lang.String hudGlyphCatalogStatus;
     static com.openkhub.sensefield.Match3VisualCatalog withGallery(org.json.JSONObject,byte[]);
     static com.openkhub.sensefield.Match3VisualCatalog withReviewedSupplement(org.json.JSONObject,byte[],byte[],java.lang.String);
     com.openkhub.sensefield.Match3Position$Cell classifyObstacle(int[]);

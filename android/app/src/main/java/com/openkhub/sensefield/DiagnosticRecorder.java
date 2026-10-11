@@ -209,6 +209,9 @@ final class DiagnosticRecorder {
                         .put("match3_gallery_sha256",catalog.gallerySha256).put("match3_gallery_status",catalog.galleryStatus)
                         .put("match3_cover_catalog_id",catalog.coverCatalogId).put("match3_cover_catalog_sha256",catalog.coverCatalogSha256)
                         .put("match3_cover_catalog_status",catalog.coverCatalogStatus)
+                        .put("match3_hud_glyph_catalog_id",catalog.hudGlyphCatalogId)
+                        .put("match3_hud_glyph_catalog_sha256",catalog.hudGlyphCatalogSha256)
+                        .put("match3_hud_glyph_catalog_status",catalog.hudGlyphCatalogStatus)
                         .put("match3_gallery_goals_pending_review",catalog.galleryGoalsPendingReview);
             }
         } catch (Exception ignored) { /* Diagnostics must not prevent capture. */ }

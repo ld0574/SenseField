@@ -60,6 +60,8 @@ def source_digest() -> str:
     if gallery.is_file(): paths.append(gallery)
     covers=ROOT / "android/app/src/main/assets/match3-vine-v1.json"
     if covers.is_file():paths.append(covers)
+    hud_glyphs=ROOT / "android/app/src/main/assets/match3-hud-glyphs-v1.json"
+    if hud_glyphs.is_file():paths.append(hud_glyphs)
     rules=ROOT / "android/app/src/main/assets/match3-rules-v1.json"
     if rules.is_file():paths.append(rules)
     reference=ROOT / "docs/research/开心消消乐元素规则参考.md"
