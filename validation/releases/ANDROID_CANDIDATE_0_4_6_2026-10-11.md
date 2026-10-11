@@ -44,3 +44,7 @@
 在最初0.4.6完成第84～85关实局后，补充两个开发审阅红藤蔓姿态，规则Java、fixed UI、原gallery和HUD字形不变；版本仍0.4.6／code23。修订主包24,526,914 bytes，SHA `0b82665369119ad22d94dfef02bc132cb602df7dce9e7b6ea8734c25b1a3598b`，源码SHA `20368e57acdb71fef2f88c248708a4d088d9c37be2c37e7bab6bdddd31b04b92`；本地原证书混淆Release及包完整性通过，lint Error0／Warning33。
 
 39项Python、561项JVM、新红藤蔓专项3项及完整混淆Release76项通过；手机覆盖安装后回读双包SHA一致，32项固定输入／规则检查通过、无跳过。详细资产、成本、旧回放对照及失败保留范围以[红藤蔓工程记录](../match3/MATCH3_RED_VINE_CV_0_4_6_2026-10-11.md)为准。最初候选的实局14／16记录不会改写成新候选实局已识别16／16。
+
+## 后续提示窗口清晰度候选
+
+版本仍0.4.6／code23，主包24,527,134 bytes、SHA `c3246a9e19cd8be48a1ed8c913b75e08ffce8f6a8dcb10442b30b23d9683a22f`，源码SHA `e000bd049869d93e46095f1feaa852bafa23de513d422bbd5c90266dbfa954e4`。窗口提升到预算内优先960长边；39项Python、562项JVM、完整Release79项和手机35项通过。双包回读匹配、UID保持，完整性通过、lint Error0／Warning33；旧10盘743格状态及HUD一致。首次测试／私有助手失败及本地原证书范围保留，详见[窗口记录](../match3/MATCH3_CONTEXT_QUALITY_0_4_6_2026-10-11.md)。本地交付目录已刷新，旧包和旧清单保留，未公开上传或发布。

@@ -35,6 +35,7 @@ final class DiagnosticRecorder {
     static final String PREF_IMAGES = "diagnostic_images";
     static final long IMAGE_PERIOD_MS = 10000;
     static final int CONTEXT_SCREEN_EDGE = 480;
+    private static final int MATCH3_CONTEXT_SCREEN_EDGE = 960;
     static final int CONTEXT_MAP_EDGE = 512;
     static final long CONTEXT_FRAME_BYTES = 2L * 1024 * 1024;
     static final int MAX_IMAGE_JOBS = 8;
@@ -192,7 +193,10 @@ final class DiagnosticRecorder {
                 "context_auto_gap_ms", DiagnosticImageWindow.AUTO_WINDOW_GAP_MS,
                 "context_max_frames", DiagnosticImageWindow.MAX_CACHED_FRAMES,
                 "context_frame_bytes_limit", CONTEXT_FRAME_BYTES,
-                "context_screen_edge", CONTEXT_SCREEN_EDGE, "context_map_edge", CONTEXT_MAP_EDGE,
+                "context_screen_edge", game == DiagnosticGame.MATCH3 ? MATCH3_CONTEXT_SCREEN_EDGE : CONTEXT_SCREEN_EDGE,
+                "context_map_edge", game == DiagnosticGame.MATCH3 ? 0 : CONTEXT_MAP_EDGE,
+                "context_resolution_policy", game == DiagnosticGame.MATCH3
+                        ? "full_screen_edge_bounded_by_argb_bytes_no_minimap_no_upscale" : "screen_and_minimap",
                 "image_jobs_limit", MAX_IMAGE_JOBS, "image_job_bytes_limit", MAX_IMAGE_JOB_BYTES,
                 "image_job_budget_scope", "shared across sessions in this app process; peak counters are process lifetime",
                 "image_duration_limit_ms", 1200000, "image_bytes_limit", DiagnosticArchive.IMAGE_LIMIT,
@@ -436,8 +440,13 @@ final class DiagnosticRecorder {
                 ImageSample contextSample = null;
                 if (sampleDue || event || manual || match3Reason!=null) {
                     long copyStartedNs = System.nanoTime();
+                    // Match3 has no minimap. Spend its existing per-frame budget on board detail;
+                    // square/wide captures shrink before allocation rather than dropping context.
+                    int screenEdge = game == DiagnosticGame.MATCH3
+                            ? DiagnosticPixels.boundedEdge(width, height, MATCH3_CONTEXT_SCREEN_EDGE, CONTEXT_FRAME_BYTES)
+                            : CONTEXT_SCREEN_EDGE;
                     ImageSample sample = copyImageSample(f, pixels, width, height, rowStride,
-                            sequence, observedAtMs, CONTEXT_SCREEN_EDGE, CONTEXT_MAP_EDGE);
+                            sequence, observedAtMs, screenEdge, game == DiagnosticGame.MATCH3 ? 0 : CONTEXT_MAP_EDGE);
                     long micros = (System.nanoTime() - copyStartedNs) / 1000;
                     contextCopyMicros += micros;
                     maxContextCopyMicros = Math.max(maxContextCopyMicros, micros);

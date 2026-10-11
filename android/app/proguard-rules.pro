@@ -284,6 +284,7 @@
     long[] imageWorkStats();
     void audit(java.lang.String);
     void match3HintContext(long,boolean);
+    void markIssue();
     void finish(java.lang.String);
 }
 # Mixed-game archive tests cross the separate test-APK boundary. Preserve these
