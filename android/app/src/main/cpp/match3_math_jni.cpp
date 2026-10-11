@@ -99,6 +99,12 @@ float coverScore(const jint* reference,const jint* observed,float ceiling,const 
         if(support<24)continue;
         double wholeBudget=static_cast<double>(std::nextafter(ceiling,infinity))*count*765;
         double coverBudget=static_cast<double>(std::nextafter(ceiling,infinity))*support*765;
+        // The channel-sum bound is constant work for this offset. Reject
+        // incompatible whole sprites before scanning the cover stencil; every
+        // surviving score still checks the independent positive cover evidence.
+        int l=std::max(0,-dx),t=std::max(0,-dy),r=std::min(16,16-dx),b=std::min(16,16-dy),lower=0;
+        for(int k=0;k<3;k++)lower+=std::abs(sum(referenceSums,k,l,t,r,b)-sum(observedSums,k,l+dx,t+dy,r+dx,b+dy));
+        if(lower>wholeBudget)continue;
         auto* order=indices+offset*256;int shift=dy*16+dx;
         int partial=0;bool rejected=false;
         for(int i=0;i<support;i++) {

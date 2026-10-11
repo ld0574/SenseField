@@ -99,6 +99,10 @@ final class Match3Goals {
     final boolean hudVerified;
     final long observedAtMs;
     final List<Target> targets;
+    private static final Kind[] KINDS=Kind.values();
+    private final int[] remainingByKind=new int[KINDS.length];
+    private final boolean[] activeByKind=new boolean[KINDS.length],presentByKind=new boolean[KINDS.length];
+    private final Mode[] modeByKind=new Mode[KINDS.length];
     Match3Goals(int level, int steps, List<Target> targets, boolean hudVerified, long observedAtMs) {
         if (level < -1 || level > 99999 || steps < -1 || steps > 999 || targets == null || targets.size() > 8)
             throw new IllegalArgumentException("Invalid HUD");
@@ -109,6 +113,15 @@ final class Match3Goals {
         }
         this.level = level; this.steps = steps; this.hudVerified = hudVerified; this.observedAtMs = observedAtMs;
         this.targets = Collections.unmodifiableList(new ArrayList<>(targets));
+        // Targets and their fields are immutable. Resolve duplicate counts and
+        // mode conflicts once for this observation, not again for every action.
+        for(Kind kind:KINDS) {
+            int index=kind.ordinal();
+            remainingByKind[index]=computeRemaining(kind);
+            activeByKind[index]=computeActive(kind);
+            modeByKind[index]=computeMode(kind);
+        }
+        for(Target target:targets)presentByKind[target.kind.ordinal()]=true;
     }
     static Match3Goals unknown(long at) { return new Match3Goals(-1, -1, Collections.emptyList(), false, at); }
     boolean fullyKnown() {
@@ -134,6 +147,9 @@ final class Match3Goals {
                 && targets.equals(other.targets);
     }
     int remaining(Kind kind) {
+        return kind==null?-1:remainingByKind[kind.ordinal()];
+    }
+    private int computeRemaining(Kind kind) {
         if (!hudVerified || kind == Kind.UNKNOWN) return -1;
         int count = -1; boolean found = false; Mode mode=null;
         for (Target target : targets) if (target.kind == kind) {
@@ -147,6 +163,9 @@ final class Match3Goals {
     }
     /** An unread numeral does not erase an explicitly observed, unfinished task kind. */
     boolean active(Kind kind) {
+        return kind!=null && activeByKind[kind.ordinal()];
+    }
+    private boolean computeActive(Kind kind) {
         if(!hudVerified || kind==Kind.UNKNOWN)return false;
         boolean unfinished=false,finished=false;
         int known=-1;Mode mode=null;
@@ -162,6 +181,9 @@ final class Match3Goals {
         return unfinished && !finished;
     }
     Mode mode(Kind kind) {
+        return kind==null?Mode.UNKNOWN:modeByKind[kind.ordinal()];
+    }
+    private Mode computeMode(Kind kind) {
         Mode found=null;
         for(Target target:targets)if(target.kind==kind) {
             if(found!=null && found!=target.mode)return Mode.UNKNOWN;found=target.mode;
@@ -169,7 +191,7 @@ final class Match3Goals {
         return found==null?Mode.UNKNOWN:found;
     }
     boolean hasTarget(Kind kind) {
-        for(Target target:targets)if(target.kind==kind)return true;return false;
+        return kind!=null && presentByKind[kind.ordinal()];
     }
     String key() {
         if (!hudVerified) return "unread";

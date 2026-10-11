@@ -8,6 +8,32 @@ import org.junit.Test;
 
 /** Hand-specified tasks and gains; expected choices do not come from the scoring implementation. */
 public final class Match3GoalValueTest {
+    @Test public void goalObservationKeepsUnreadConflictsAndModesIndependentOfSourceList() {
+        for(Match3Goals.Kind kind:Match3Goals.Kind.values()) {
+            List<Match3Goals.Target> input=new java.util.ArrayList<>();
+            input.add(new Match3Goals.Target(0,kind,3,false));
+            input.add(new Match3Goals.Target(1,kind,-1,false));
+            Match3Goals g=new Match3Goals(42,5,input,true,100);
+            input.clear();
+            assertTrue(g.hasTarget(kind));assertEquals(-1,g.remaining(kind));
+            assertEquals(kind!=Match3Goals.Kind.UNKNOWN,g.active(kind));
+            assertFalse(g.fullyKnown());assertFalse(g.finished());
+            Match3Goals untrusted=new Match3Goals(42,5,g.targets,false,101);
+            assertEquals(-1,untrusted.remaining(kind));assertFalse(untrusted.active(kind));
+            assertTrue(untrusted.hasTarget(kind));assertEquals(g.mode(kind),untrusted.mode(kind));
+        }
+        Match3Goals.Kind chick=Match3Goals.Kind.CHICK;
+        Match3Goals conflict=new Match3Goals(42,5,Arrays.asList(
+                new Match3Goals.Target(0,chick,3,false),
+                new Match3Goals.Target(1,chick,3,false,"",Match3Goals.Mode.HATCH,"confirmed_hatch")),true,100);
+        assertEquals(-1,conflict.remaining(chick));assertFalse(conflict.active(chick));
+        assertEquals(Match3Goals.Mode.UNKNOWN,conflict.mode(chick));
+        Match3Goals completed=new Match3Goals(42,5,Arrays.asList(
+                new Match3Goals.Target(0,chick,0,true),new Match3Goals.Target(1,chick,-1,false)),true,100);
+        assertFalse(completed.active(chick));assertFalse(completed.finished());
+        assertEquals(-1,completed.remaining(null));assertFalse(completed.active(null));
+        assertFalse(completed.hasTarget(null));assertEquals(Match3Goals.Mode.UNKNOWN,completed.mode(null));
+    }
     private static Match3Position board(String... rows) {
         Match3Position.Cell[][] cells = new Match3Position.Cell[rows.length][];
         for (int r = 0; r < rows.length; r++) {
