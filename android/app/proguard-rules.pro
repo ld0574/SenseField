@@ -37,6 +37,19 @@
     public void cancelPendingTone();
     void close();
 }
+# Terminal-callback injection verifies recovery in the minified app without
+# synthesizing audio or changing phone preferences. Retain only this boundary.
+-keepclassmembers class com.openkhub.sensefield.CuePlayer {
+    private android.speech.tts.TextToSpeech tts;
+    private volatile boolean ttsReady;
+    private volatile boolean offlineTtsReady;
+    private int activeVoiceEngineIndex;
+    private java.util.List voiceEngines;
+    private final java.util.Map speechCallbacks;
+    private final java.util.Map speechRequests;
+    private void failDynamicSpeech(java.lang.String,android.speech.tts.TextToSpeech,java.lang.String);
+    private void timeoutDynamicSpeech(java.lang.String,com.openkhub.sensefield.CueDispatcher$PlaybackCallback,android.speech.tts.TextToSpeech,java.lang.String);
+}
 -keep,allowobfuscation class com.openkhub.sensefield.CueRequest { <init>(...); }
 -keep enum com.openkhub.sensefield.CueRequest$Category { *; }
 -keep,allowobfuscation interface com.openkhub.sensefield.CueDispatcher$PlaybackCallback { *; }

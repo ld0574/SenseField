@@ -15,4 +15,10 @@ final class OfflineTtsPolicy {
         if (locale == null) return 3;
         return "CN".equals(locale.getCountry()) ? 0 : locale.getCountry().isEmpty() ? 1 : 2;
     }
+
+    static boolean recoverBoardFailure(String eventKey, String reason) {
+        return Match3SpeechText.isBoardCue(eventKey) && reason != null
+                && (reason.equals("START_TIMEOUT") || reason.equals("PLAYBACK_TIMEOUT")
+                || reason.equals("SUBMIT_REJECTED") || reason.startsWith("ENGINE_ERROR"));
+    }
 }

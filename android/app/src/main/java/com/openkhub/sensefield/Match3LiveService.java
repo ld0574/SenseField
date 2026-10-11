@@ -956,6 +956,21 @@ public class Match3LiveService extends Service {
     private void ensureDispatcher(Session s) {
             if (dispatcher == null) {
                 player = new CuePlayer(this);
+                player.setAudioAuditListener(message -> {
+                    if (active != s || s.diagnostics.finished) return;
+                    s.diagnostics.audit(message);
+                    if (message.startsWith("Match3Tts status=recovering")
+                            || message.startsWith("AlertTts status=unavailable")) {
+                        new Handler(getMainLooper()).post(() -> {
+                            if (active != s || s.projectionStopped) return;
+                            android.widget.Toast.makeText(this,
+                                    message.startsWith("Match3Tts status=recovering")
+                                            ? "语音引擎异常，正在尝试其他离线中文语音。"
+                                            : "离线中文语音暂不可用，请检查听野的语音设置。",
+                                    android.widget.Toast.LENGTH_LONG).show();
+                        });
+                    }
+                });
                 dispatcher = new CueDispatcher(player, new Match3LiveCuePolicy(new CueSettings(this)),
                         new CueDispatcher.Listener() {
                             @Override public void onDispatch(CueRequest request,
@@ -970,6 +985,18 @@ public class Match3LiveService extends Service {
                             @Override public void onPlaybackFailure(CueRequest request, long atMs, String reason) {
                                 auditCue(request, "Match3PlaybackFailure cue_id=" + request.cueId
                                         + " at_ms=" + atMs + " reason=" + reason);
+                                Handler worker = handler;
+                                if (worker != null) worker.post(() -> {
+                                    Session current = active;
+                                    if (!isCurrent(current) || current.projectionStopped
+                                            || current.currentHint == null
+                                            || !request.cueId.equals(current.hintCueId)) return;
+                                    current.hintCueId = null;
+                                    current.lastHintSpokenRevision = -1;
+                                    current.diagnostics.audit("Match3SpeechRetryPending revision="
+                                            + current.currentHint.revision + " attempts=" + current.hintAttempts);
+                                    // The existing 6 s gap, 3-attempt limit and current-board guard still apply.
+                                });
                             }
                             @Override public void onPlayback(CueRequest request, String channel,
                                     long atMs, String result) {

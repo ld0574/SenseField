@@ -30,6 +30,8 @@ DEBUG_CLASSES += ("Match3FlywheelInstrumentedTest",)
 RELEASE_CLASSES += ("Match3FlywheelInstrumentedTest",)
 DEBUG_CLASSES += ("Match3RuleCatalogInstrumentedTest",)
 RELEASE_CLASSES += ("Match3RuleCatalogInstrumentedTest",)
+DEBUG_CLASSES += ("Match3AudioRecoveryInstrumentedTest",)
+RELEASE_CLASSES += ("Match3AudioRecoveryInstrumentedTest",)
 
 
 def instrumentation_summary(output: str) -> dict:
