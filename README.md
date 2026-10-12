@@ -10,6 +10,8 @@
 
 <p align="center"><strong>把视野之外的战局，交给耳朵和手。</strong></p>
 
+<p align="center"><a href="https://ld0574.github.io/SenseField/"><strong>探索听野官网</strong></a> · <a href="https://ld0574.github.io/SenseField/#voices">用户心声与游戏适配反馈</a></p>
+
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-22C55E.svg" alt="Apache-2.0 License"></a>
   <img src="https://img.shields.io/badge/platform-Android%2010%2B-3DDC84.svg" alt="Android 10及以上，arm64">

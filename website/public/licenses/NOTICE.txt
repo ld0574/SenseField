@@ -1,0 +1,11 @@
+SenseField website / Third-party notices
+
+Three.js: MIT license (three-MIT.txt)
+Lucide: ISC license (lucide-ISC.txt)
+Manrope: SIL Open Font License 1.1 (manrope-OFL.txt)
+Instrument Serif: SIL Open Font License 1.1 (instrument-serif-OFL.txt)
+GSAP: Standard no-charge license https://gsap.com/standard-license/
+Editorial photo: Unsplash photo-1493711662062-fa541adb3fc8, https://unsplash.com/license
+SenseField brand and generated illustrations: project materials.
+
+Source and asset provenance: https://github.com/ld0574/SenseField/tree/main/website
