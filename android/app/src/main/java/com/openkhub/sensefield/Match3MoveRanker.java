@@ -31,6 +31,9 @@ final class Match3MoveRanker {
             if (order == 0) order = Integer.compare(b.progressMilli, a.progressMilli);
             if (order == 0) order = Integer.compare(b.directUnits, a.directUnits);
             if (order == 0 && goals.steps!=1) order = Integer.compare(b.relevantHits, a.relevantHits);
+            // Same known gain and same tray count: prefer clearing more of the observed
+            // tray perimeter before proximity or an unrelated future special.
+            if (order == 0) order = Integer.compare(b.cookieContactCells, a.cookieContactCells);
             // Equal immediate evidence: work near a currently observed unfinished
             // target before creating an unrelated special across the board.
             if (order == 0 && hasTarget) order = Integer.compare(a.targetDistance, b.targetDistance);

@@ -1,7 +1,9 @@
 package com.openkhub.sensefield;
 
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Set;
 
 /** Task value comes from typed settlement events; future preparation is reported separately. */
@@ -11,6 +13,7 @@ final class Match3MoveValue {
     final Match3Action action;
     final Match3RuleEngine.Result result;
     final int completedTargets,progressMilli,directUnits,relevantHits,potentialSpecials,targetDistance,physicalClears,poisonRemoved;
+    final int cookieContactCells;
     final boolean allTargetsFinish,grounded;
     final String reason;
     final Match3Search.Evidence search;
@@ -45,6 +48,9 @@ final class Match3MoveValue {
         if(hatch)relevant+=hits[Match3Goals.Kind.EGG.ordinal()];
         completedTargets=complete;progressMilli=progress;directUnits=units;grounded=known;
         relevantHits=relevant;allTargetsFinish=all;
+        cookieContactCells=hits[Match3Goals.Kind.COOKIE.ordinal()]>0 && goals.active(Match3Goals.Kind.COOKIE)
+                && goals.mode(Match3Goals.Kind.COOKIE)==Match3Goals.Mode.UNKNOWN && goals.steps!=1
+                ?cookieContacts(result):0;
         if(positive>1)reason="兼顾任务";
         else if(positive==1) {
             Match3Goals.Mode mode=goals.mode(spoken);
@@ -61,9 +67,38 @@ final class Match3MoveValue {
                 :goals.active(Match3Goals.Kind.PENGUIN) && hits[Match3Goals.Kind.PENGUIN.ordinal()]>0?"清理企鹅覆盖"
                 :goals.active(Match3Goals.Kind.SNOW_BEAR) && hits[Match3Goals.Kind.SNOW_BEAR.ordinal()]>0?"清理雪熊覆盖"
                 :hatch && hits[Match3Goals.Kind.EGG.ordinal()]>0?"靠近鸡蛋"
-                :goals.active(Match3Goals.Kind.COOKIE) && hits[Match3Goals.Kind.COOKIE.ordinal()]>0?"靠近饼干"
+                :goals.active(Match3Goals.Kind.COOKIE) && hits[Match3Goals.Kind.COOKIE.ordinal()]>0
+                ?action.type==Match3Action.Type.BIRD_COLOR || action.type==Match3Action.Type.BIRD_PAIR
+                ?"用魔力鸟清理饼干周边":"靠近饼干"
                 :related!=null && related.color!='\0'?"优先"+related.name:related==Match3Goals.Kind.ICE?"优先消冰":"清理障碍";
         else reason=poisonRemoved>0 && goals.steps!=1?"清理毒液":frontier.reason();
+    }
+    /** Distinct guaranteed first-round clears beside contacted trays, never cookie damage or units.
+     * Four quadrants still form one HIT. This spatial tie-break lets a bird's useful color
+     * outrank creating an unrelated special without claiming an unknown tray transition. */
+    private static int cookieContacts(Match3RuleEngine.Result result) {
+        BitSet trays=new BitSet(),sources=new BitSet();Set<Integer> objects=new HashSet<>();
+        for(Match3RuleEngine.Event event:result.events) {
+            if(event.round!=1)continue;
+            if(event.type==Match3RuleEngine.EventType.HIT && event.kind==Match3Goals.Kind.COOKIE) {
+                if(event.objectId>=0)objects.add(event.objectId);else if(event.cell>=0)trays.set(event.cell);
+            }
+            if(event.type==Match3RuleEngine.EventType.CLEAR && event.kind.color!='\0' && event.units>0 && event.cell>=0)
+                sources.set(event.cell);
+        }
+        Match3Position board=result.before;
+        for(int p=0;p<board.rows*board.cols;p++) {
+            Match3Position.Cell cell=board.cell(p);
+            if(cell.kind==Match3Position.Kind.COOKIE && objects.contains(cell.objectId)
+                    && cell.gate==Match3Position.Gate.OPEN && cell.cover==Match3Position.Cover.NONE)trays.set(p);
+        }
+        int contacts=0;
+        for(int p=sources.nextSetBit(0);p>=0;p=sources.nextSetBit(p+1))
+            if(p>=board.cols && trays.get(p-board.cols)
+                    || p+board.cols<board.rows*board.cols && trays.get(p+board.cols)
+                    || p%board.cols>0 && trays.get(p-1)
+                    || p%board.cols+1<board.cols && trays.get(p+1))contacts++;
+        return contacts;
     }
     private static int channelProgress(Match3RuleEngine.Result result,Match3Goals.Kind target) {
         Match3Position before=result.before;
@@ -89,7 +124,8 @@ final class Match3MoveValue {
     }
     boolean sameEvidence(Match3MoveValue other) {
         return other!=null && action.same(other.action) && Arrays.equals(collected,other.collected)
-                && Arrays.equals(hits,other.hits) && potentialSpecials==other.potentialSpecials && reason.equals(other.reason)
+                && Arrays.equals(hits,other.hits) && cookieContactCells==other.cookieContactCells
+                && potentialSpecials==other.potentialSpecials && reason.equals(other.reason)
                 && grounded==other.grounded && result.affectedPositions().equals(other.result.affectedPositions());
     }
     static Match3MoveValue evaluate(Match3Position board,Match3Goals goals,Match3Board.Swap swap) {
@@ -121,6 +157,7 @@ final class Match3MoveValue {
     String evidence() {
         return "scope="+(grounded?"observed_goal_rule_lower_bound":"basic_goal_unread")+" complete="+completedTargets
                 +" progress_milli="+progressMilli+" direct_units="+directUnits+" relevant_hits="+relevantHits
+                +" cookie_contact_cells="+cookieContactCells+" cookie_contact_scope=adjacent_clears_not_task_units"
                 +" physical_clear_lower_bound="+physicalClears
                 +" poison_sources_removed="+poisonRemoved
                 +" potential_specials="+potentialSpecials+" target_distance="+(targetDistance==Match3TargetFrontier.UNAVAILABLE?-1:targetDistance)

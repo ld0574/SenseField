@@ -25,6 +25,7 @@ final class Match3RuleDiagnostics {
         return DiagnosticRecorder.object("from_row",s.fromRow,"from_col",s.fromCol,"to_row",s.toRow,"to_col",s.toCol,
                 "action_type",move.action.type.name(),"rule_id",move.action.ruleId,"rule_version",move.action.version,
                 "rule_catalog",Match3Rules.CATALOG_ID,"reason",move.reason,"direct_units",move.directUnits,
+                "cookie_contact_cells",move.cookieContactCells,"cookie_contact_scope","adjacent_clears_not_task_units",
                 "physical_clear_lower_bound",move.physicalClears,"preconditions",conditions,"events",events,
                 "unknown_reasons",new JSONArray(move.result.unknowns),"successor_known",move.result.successorKnown,
                 "search",DiagnosticRecorder.object("depth",search.depth,"nodes",search.nodes,"stop",search.stopped,

@@ -57,4 +57,10 @@
 
 后续花团、冷路径和分离棋盘工程记录分别保留原候选绑定；第97～98关自然两局使用`fa66c03b…`候选。当前已安装0.4.6／code23，源码SHA `47cc25253fc0b2fc5dea835c569f96e55cf7d99831f7fba680639fa47a73209b`，主APK SHA `f28db40ab86895ad653931116160d691bc51849d4dabee1463f9e35dbb449dac`，标准辅助APK SHA `2ef619b83d4842275ce6996478fdf10327e54803d25df54e4298402be0ab3aae`。原证书、混淆／非debuggable及包完整性通过，lint Error0／Warning33；569 JVM、完整Debug111／Release86和手机6项定位／RGB穷举通过。安装前后238个原诊断成员及棋盘／语音偏好保持，实际双包SHA匹配。
 
-55图4,050格完整输出与原候选一致；本次只降低等价背景颜色计算成本，手机新实局和完整持续运行仍待本候选自己的证据，不能借原900秒通过。当前冻结双包保存在忽略目录`validation/private/match3-background-cost-20261012/release-standard/`，旧`output/releases/0.4.6/`分发材料没有刷新，本页此前各项回执仍对应原字节。没有公开上传或修改公网清单；完整范围见[定位成本记录](../match3/MATCH3_GEOMETRY_COST_0_4_6_2026-10-12.md)。
+55图4,050格完整输出与原候选一致；本次只降低等价背景颜色计算成本，手机新实局和完整持续运行仍待本候选自己的证据，不能借原900秒通过。当前冻结双包保存在忽略目录`validation/private/match3-background-cost-20261012/release-standard/`；本次工程修订结束时旧`output/releases/0.4.6/`分发材料没有刷新，本页此前各项回执仍对应原字节。没有公开上传或修改公网清单；完整范围见[定位成本记录](../match3/MATCH3_GEOMETRY_COST_0_4_6_2026-10-12.md)。
+
+## 队友体验交付刷新（2026-10-12）
+
+用户选择先生成文件、自己上传 Gitee 给队友测试。直接复制冻结且已装手机的`f28db40a…`主APK，保持24,540,215 bytes和原签名，不重新构建或签名；从其实际字节生成0.4.6／code23新清单，重新执行包完整性检查。`output/releases/0.4.6/`交付包括唯一主APK及校验文件、Gitee发布正文、上传说明与队友复测说明；旧`aa4da1d5…`整套交付归档到`output/releases/history/`，旧0.4.5材料保持。源码摘要仍为`47cc2525…`，原工程回执不改写为新测试。
+
+本次仅文件交付，没有上传 Gitee、创建tag或修改公网清单，没有发送消息给队友。配套`cdn-upload/latest.json`生成备用，本轮不发布公网自动更新。发布说明明确原证书本地混淆Release、非debuggable及各项未完成验收；不能因此提高`verified`或`release_ready`。说明以[0.4.6更新说明](../../docs/releases/0.4.6/RELEASE_NOTES.md)和[队友复测步骤](../../docs/releases/0.4.6/复测说明.md)为准。
