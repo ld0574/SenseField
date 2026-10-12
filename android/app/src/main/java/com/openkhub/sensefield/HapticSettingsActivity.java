@@ -28,6 +28,7 @@ public final class HapticSettingsActivity extends UiActivity {
     private boolean vibratorAvailable;
     private boolean amplitudeControl;
     private boolean capabilitiesReadable;
+    private int previewSector = 5;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -54,6 +55,9 @@ public final class HapticSettingsActivity extends UiActivity {
         addChoice(rhythm, "短促节奏（保留单／双震）",
                 "按原有的单震或双震数量与顺序缩短脉冲和间隔。",
                 HapticPolicy.PREF_MODE, HapticPolicy.MODE_SHORT);
+        addChoice(rhythm, "方位节奏（单马达）",
+                "附近敌人：左侧短后长，右侧长后短，上方短一次，下方短两次；斜向按左右侧。",
+                HapticPolicy.PREF_MODE, HapticPolicy.MODE_DIRECTIONAL);
         UiKit.add(rhythmCard, rhythm, 0);
         UiKit.add(content, rhythmCard, UiKit.GAP_SECTION);
         selectSaved(rhythm, HapticPolicy.PREF_MODE, HapticPolicy.MODE_ORIGINAL);
@@ -76,6 +80,13 @@ public final class HapticSettingsActivity extends UiActivity {
 
         LinearLayout testCard = UiKit.card(this);
         SettingHelp.addGroup(this, testCard, "haptic_preview", 12);
+        RadioGroup previewDirection = new RadioGroup(this);
+        addPreviewDirection(previewDirection, "左侧", 5);
+        addPreviewDirection(previewDirection, "右侧", 1);
+        addPreviewDirection(previewDirection, "上方", 3);
+        addPreviewDirection(previewDirection, "下方", 7);
+        addPreviewDirection(previewDirection, "方向不明", 0);
+        UiKit.add(testCard, previewDirection, 0);
         testButton = UiKit.button(this, "试听当前触觉设置", true);
         testButton.setContentDescription("发送一次当前节奏与震感档位的触觉试听");
         testButton.setOnClickListener(view -> playPreview());
@@ -128,6 +139,22 @@ public final class HapticSettingsActivity extends UiActivity {
         }
     }
 
+    private void addPreviewDirection(RadioGroup group, String label, int sector) {
+        RadioButton choice = new RadioButton(this);
+        choice.setText(label);
+        choice.setTextSize(18);
+        choice.setTextColor(UiKit.INK);
+        choice.setMinHeight(UiKit.dp(this, 56));
+        choice.setContentDescription("触觉试听方向：" + label);
+        UiKit.styleCheckable(choice, this);
+        choice.setId(android.view.View.generateViewId());
+        choice.setTag("haptic-preview-sector:" + sector);
+        choice.setChecked(previewSector == sector);
+        choice.setOnClickListener(view -> { stopPreview(); previewSector = sector; });
+        group.addView(choice, new RadioGroup.LayoutParams(
+                RadioGroup.LayoutParams.MATCH_PARENT, RadioGroup.LayoutParams.WRAP_CONTENT));
+    }
+
     private void readCapabilities() {
         try {
             Vibrator vibrator;
@@ -171,7 +198,7 @@ public final class HapticSettingsActivity extends UiActivity {
                 "haptic-settings-preview:" + now, "haptic-settings-preview:" + now,
                 "HAPTIC_PREVIEW", CueRequest.Category.NEAR_ZONE,
                 NearZoneRouting.NEAR_PRIORITY, now, now + 2000,
-                CueRequest.CHANNEL_HAPTIC, 0, 0, 0, null,
+                CueRequest.CHANNEL_HAPTIC, 0, 0, NearZoneRouting.hapticDirection(previewSector), null,
                 0.08f, 1f, -1, () -> true);
         try {
             previewPlayer = new CuePlayer(this);
@@ -187,7 +214,8 @@ public final class HapticSettingsActivity extends UiActivity {
                         : "设备未报告可用振动器，无法完成试听。");
                 return;
             }
-            testStatus.setText("已发送试听震动。若没有感觉到，请检查手机的振动设置。");
+            testStatus.setText(getString(R.string.haptic_preview_sent,
+                    NearZoneRouting.twoWordSpeech(previewSector)));
             testButton.setEnabled(false);
             CuePlayer player = previewPlayer;
             finishPreview = () -> {

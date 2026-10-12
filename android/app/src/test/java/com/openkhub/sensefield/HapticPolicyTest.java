@@ -3,6 +3,7 @@ package com.openkhub.sensefield;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -102,6 +103,76 @@ public final class HapticPolicyTest {
 
         assertArrayEquals(new long[]{0, 100, 140, 100}, pattern.timingsMs);
         assertNull(pattern.amplitudes);
+    }
+
+    @Test public void directionIsOptInAndDefaultNearTimingDoesNotDependOnIt() {
+        CueRequest left = request(CueRequest.Category.NEAR_ZONE, 1, .08f, 1f);
+        assertArrayEquals(new long[]{0, 100, 140, 100}, HapticPolicy.create(left,
+                false, false, HapticPolicy.MODE_ORIGINAL, HapticPolicy.STRENGTH_SYSTEM).timingsMs);
+        assertArrayEquals(new long[]{0, 35, 80, 35}, HapticPolicy.create(left,
+                false, false, HapticPolicy.MODE_SHORT, HapticPolicy.STRENGTH_SYSTEM).timingsMs);
+        long[][] expected = {{0, 35, 45, 80}, {0, 80, 45, 35}, {0, 35}, {0, 35, 45, 35}};
+        for (int direction = 1; direction <= 4; direction++) {
+            HapticPolicy.Pattern pattern = HapticPolicy.create(request(
+                    CueRequest.Category.NEAR_ZONE, direction, .08f, 1f), false, false,
+                    HapticPolicy.MODE_DIRECTIONAL, HapticPolicy.STRENGTH_SYSTEM);
+            assertArrayEquals(expected[direction - 1], pattern.timingsMs);
+            assertNull(pattern.amplitudes);
+        }
+    }
+
+    @Test public void unknownDirectionRemainsNeutralInDirectionalMode() {
+        for (int unknown : new int[]{-1, 0, 5, 99}) {
+            assertArrayEquals(new long[]{0, 100, 140, 100}, HapticPolicy.create(request(
+                    CueRequest.Category.NEAR_ZONE, unknown, .08f, 1f), false, false,
+                    HapticPolicy.MODE_DIRECTIONAL, HapticPolicy.STRENGTH_SYSTEM).timingsMs);
+        }
+    }
+
+    @Test public void distanceAndStrengthKeepDirectionalPulseOrderWithoutAmplitudeControl() {
+        for (String strength : new String[]{HapticPolicy.STRENGTH_SYSTEM,
+                HapticPolicy.STRENGTH_LIGHT, HapticPolicy.STRENGTH_STRONG}) {
+            for (int direction : new int[]{1, 2}) {
+                long[] close = HapticPolicy.create(request(CueRequest.Category.NEAR_ZONE,
+                        direction, .02f, 2f), true, false, HapticPolicy.MODE_DIRECTIONAL,
+                        strength).timingsMs;
+                long[] far = HapticPolicy.create(request(CueRequest.Category.NEAR_ZONE,
+                        direction, .18f, 2f), true, false, HapticPolicy.MODE_DIRECTIONAL,
+                        strength).timingsMs;
+                assertEquals(direction == 1, close[1] < close[3]);
+                assertEquals(direction == 1, far[1] < far[3]);
+                assertTrue(close[1] > far[1]);
+                assertTrue(close[3] > far[3]);
+                assertEquals(45, close[2]);
+            }
+        }
+    }
+
+    @Test public void amplitudeDistancePreservesTheSelectedRhythm() {
+        CueRequest closeRequest = request(CueRequest.Category.NEAR_ZONE, 2, .02f, 2f);
+        HapticPolicy.Pattern close = HapticPolicy.create(closeRequest, true, true,
+                HapticPolicy.MODE_DIRECTIONAL, HapticPolicy.STRENGTH_SYSTEM);
+        HapticPolicy.Pattern far = HapticPolicy.create(request(CueRequest.Category.NEAR_ZONE,
+                2, .18f, 2f), true, true, HapticPolicy.MODE_DIRECTIONAL, HapticPolicy.STRENGTH_SYSTEM);
+        assertArrayEquals(new long[]{0, 80, 45, 35}, close.timingsMs);
+        assertArrayEquals(close.timingsMs, far.timingsMs);
+        assertTrue(close.amplitudes[1] > far.amplitudes[1]);
+        assertEquals(close.amplitudes[1], close.amplitudes[3]);
+        assertEquals(0, close.amplitudes[2]);
+    }
+
+    @Test public void hapticAuditContainsFinalWaveformAndFiniteSettings() {
+        CueRequest left = request(CueRequest.Category.NEAR_ZONE, 1, .08f, 1f);
+        HapticPolicy.Pattern pattern = HapticPolicy.create(left, false, false,
+                HapticPolicy.MODE_DIRECTIONAL, HapticPolicy.STRENGTH_SYSTEM);
+        String audit = HapticPolicy.audit(left, pattern, false, false,
+                HapticPolicy.MODE_DIRECTIONAL, HapticPolicy.STRENGTH_SYSTEM);
+        assertTrue(audit.contains("hapticCode=1"));
+        assertTrue(audit.contains("timingsMs=[0,35,45,80] amplitudes=system"));
+        assertTrue(audit.contains("mode=directional"));
+        assertTrue(audit.contains("durationMs=160"));
+        assertTrue(HapticPolicy.audit(left, pattern, false, false, "bad", "bad")
+                .contains("mode=original strength=system"));
     }
 
     private static CueRequest nearRequest(float distance, float urgency) {

@@ -1,5 +1,7 @@
 package com.openkhub.sensefield;
 
+import java.util.Arrays;
+
 /** Pure Java pulse and strength policy shared by every CuePlayer haptic. */
 final class HapticPolicy {
     static final String PREF_MODE = "haptic_pattern_mode";
@@ -7,6 +9,7 @@ final class HapticPolicy {
 
     static final String MODE_ORIGINAL = "original";
     static final String MODE_SHORT = "short";
+    static final String MODE_DIRECTIONAL = "directional";
 
     static final String STRENGTH_SYSTEM = "system";
     static final String STRENGTH_LIGHT = "light";
@@ -48,7 +51,15 @@ final class HapticPolicy {
 
         long[] timings;
         if (request.category == CueRequest.Category.NEAR_ZONE) {
-            if (useDistance && !amplitudeControl) {
+            if (MODE_DIRECTIONAL.equals(mode) && request.hapticCode >= 1
+                    && request.hapticCode <= 4) {
+                timings = directionPattern(request.hapticCode);
+                if (useDistance && !amplitudeControl) {
+                    // Scale both pulses together to preserve left/right order.
+                    timings = scaleOnDurations(timings,
+                            distanceHapticDurationMs(request.distance, request.urgency) / 100f);
+                }
+            } else if (useDistance && !amplitudeControl) {
                 long pulse = distanceHapticDurationMs(request.distance, request.urgency);
                 timings = new long[]{0, pulse, NEAR_DEFAULT_GAP_MS, pulse};
             } else {
@@ -83,6 +94,21 @@ final class HapticPolicy {
             timings = scaleOnDurations(timings, strengthMultiplier(selectedStrength));
         }
         return new Pattern(timings, amplitudes);
+    }
+
+    /** Bounded final waveform parameters; platform acceptance is not perception. */
+    static String audit(CueRequest request, Pattern pattern, boolean amplitudeControl,
+                        boolean distanceEnabled, String mode, String strength) {
+        String selectedMode = MODE_DIRECTIONAL.equals(mode) ? MODE_DIRECTIONAL
+                : MODE_SHORT.equals(mode) ? MODE_SHORT : MODE_ORIGINAL;
+        return "HapticRequest cueId=" + request.cueId + " usage=ACCESSIBILITY"
+                + " durationMs=" + pattern.durationMs() + " mode=" + selectedMode
+                + " strength=" + validStrength(strength)
+                + " hapticCode=" + request.hapticCode
+                + " amplitudeControl=" + amplitudeControl + " distanceEnabled=" + distanceEnabled
+                + " timingsMs=" + Arrays.toString(pattern.timingsMs).replace(" ", "")
+                + " amplitudes=" + (pattern.amplitudes == null ? "system"
+                : Arrays.toString(pattern.amplitudes).replace(" ", ""));
     }
 
     static long distanceHapticDurationMs(float distance, float urgency) {

@@ -60,6 +60,20 @@ final class NearZoneRouting {
         return "附近";
     }
 
+    /** Dense output is always short; the saved preference applies outside it. */
+    static String speech(int sector, boolean preferTwoWord, boolean dense) {
+        return preferTwoWord || dense ? twoWordSpeech(sector) : speech(sector);
+    }
+
+    /** Single-vibrator rhythm code. Diagonals follow the same side as the pan. */
+    static int hapticDirection(int sector) {
+        if (sector == 4 || sector == 5 || sector == 6) return 1;
+        if (sector == 1 || sector == 2 || sector == 8) return 2;
+        if (sector == 3) return 3;
+        if (sector == 7) return 4;
+        return 0;
+    }
+
     static float presentationDistanceLevel(float distance) {
         if (!Float.isFinite(distance)) return 0f;
         return Math.max(0f, Math.min(1f, distance / PRESENTATION_DISTANCE_SCALE));

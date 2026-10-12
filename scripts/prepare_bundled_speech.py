@@ -51,7 +51,7 @@ def java_binary(name: str) -> str:
 
 def catalog() -> dict:
     names = ["BundledSpeechCatalog", "AlertSpeechCache", "NearZoneRouting", "CueRouting",
-             "CueRequest", "ReminderGuide", "ReminderGuideCatalog", "ReminderGuideSections"]
+             "CueRequest", "HapticPolicy", "ReminderGuide", "ReminderGuideCatalog", "ReminderGuideSections"]
     with tempfile.TemporaryDirectory(prefix="sensefield-speech-catalog-") as directory:
         run([java_binary("javac"), "-encoding", "UTF-8", "-d", directory,
              *[str(JAVA_SOURCE / f"{name}.java") for name in names]])

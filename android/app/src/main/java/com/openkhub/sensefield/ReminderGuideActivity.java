@@ -181,13 +181,18 @@ public final class ReminderGuideActivity extends UiActivity {
         try {
             ReminderGuide.Outputs outputs = currentOutputs();
             PresentationAudioPolicy policy = PresentationAudioPolicy.from(GameProfile.settings(this));
-            List<ReminderGuideCatalog.Item> items = ReminderGuideCatalog.build(outputs, policy.nearTwoWord, policy.distanceHaptic);
+            String hapticMode = GameProfile.settings(this).getString(HapticPolicy.PREF_MODE,
+                    HapticPolicy.MODE_ORIGINAL);
+            List<ReminderGuideCatalog.Item> items = ReminderGuideCatalog.build(outputs,
+                    policy.nearTwoWord, policy.distanceHaptic, hapticMode);
             if (!detail) {
                 if (items.isEmpty()) UiKit.add(content, body("当前没有可试听的提示，请到提示偏好中检查开启的通道与事件。"), 12);
                 for (ReminderGuideCatalog.Section section : ReminderGuideCatalog.Section.values())
                     sampleSection(content, items, section);
             } else if (full) {
-                fullSteps = ReminderGuideCatalog.fullGuide(outputs, policy.nearTwoWord);
+                if (HapticPolicy.MODE_DIRECTIONAL.equals(hapticMode))
+                    UiKit.add(content, body("已选方位节奏。左短后长、右长后短、上短一次、下短两次；各方向可在“振动”单项中分别试听。"), 12);
+                fullSteps = ReminderGuideCatalog.fullGuide(outputs, policy.nearTwoWord, hapticMode);
                 steps = fullSteps;
                 fullPlaybackControls(fullControls);
                 for (ReminderGuideSections.Section section : ReminderGuideSections.build(fullSteps)) {

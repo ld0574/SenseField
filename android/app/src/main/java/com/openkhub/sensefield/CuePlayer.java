@@ -1114,12 +1114,13 @@ final class CuePlayer implements CueDispatcher.Renderer {
             Vibrator vibrator = defaultVibrator();
             if (vibrator == null || !vibrator.hasVibrator()) return 0;
             android.content.SharedPreferences preferences = GameProfile.settings(context);
+            boolean distanceHaptic = PresentationAudioPolicy.from(preferences).distanceHaptic;
+            boolean amplitudeControl = vibrator.hasAmplitudeControl();
+            String hapticMode = preferences.getString(HapticPolicy.PREF_MODE, HapticPolicy.MODE_ORIGINAL);
+            String hapticStrength = preferences.getString(HapticPolicy.PREF_STRENGTH,
+                    HapticPolicy.STRENGTH_SYSTEM);
             HapticPolicy.Pattern pattern = HapticPolicy.create(request,
-                    PresentationAudioPolicy.from(preferences).distanceHaptic,
-                    vibrator.hasAmplitudeControl(),
-                    preferences.getString(HapticPolicy.PREF_MODE, HapticPolicy.MODE_ORIGINAL),
-                    preferences.getString(HapticPolicy.PREF_STRENGTH,
-                            HapticPolicy.STRENGTH_SYSTEM));
+                    distanceHaptic, amplitudeControl, hapticMode, hapticStrength);
             return pattern.durationMs();
         } catch (RuntimeException error) {
             Log.w(TAG, "Could not estimate accessibility haptic duration", error);
@@ -1940,12 +1941,13 @@ final class CuePlayer implements CueDispatcher.Renderer {
                 return false;
             }
             android.content.SharedPreferences preferences = GameProfile.settings(context);
+            boolean distanceHaptic = PresentationAudioPolicy.from(preferences).distanceHaptic;
+            boolean amplitudeControl = vibrator.hasAmplitudeControl();
+            String hapticMode = preferences.getString(HapticPolicy.PREF_MODE, HapticPolicy.MODE_ORIGINAL);
+            String hapticStrength = preferences.getString(HapticPolicy.PREF_STRENGTH,
+                    HapticPolicy.STRENGTH_SYSTEM);
             HapticPolicy.Pattern pattern = HapticPolicy.create(request,
-                    PresentationAudioPolicy.from(preferences).distanceHaptic,
-                    vibrator.hasAmplitudeControl(),
-                    preferences.getString(HapticPolicy.PREF_MODE, HapticPolicy.MODE_ORIGINAL),
-                    preferences.getString(HapticPolicy.PREF_STRENGTH,
-                            HapticPolicy.STRENGTH_SYSTEM));
+                    distanceHaptic, amplitudeControl, hapticMode, hapticStrength);
             VibrationEffect effect = pattern.amplitudes == null
                     ? VibrationEffect.createWaveform(pattern.timingsMs, -1)
                     : VibrationEffect.createWaveform(pattern.timingsMs,
@@ -1965,8 +1967,8 @@ final class CuePlayer implements CueDispatcher.Renderer {
                 activeHapticOwner = this;
             }
             // The API is void: submission is not proof the user felt vibration.
-            auditAudio("HapticRequest cueId=" + request.cueId
-                    + " usage=ACCESSIBILITY durationMs=" + pattern.durationMs());
+            auditAudio(HapticPolicy.audit(request, pattern, amplitudeControl,
+                    distanceHaptic, hapticMode, hapticStrength));
             return true;
         } catch (RuntimeException error) {
             auditAudio("HapticRequest unavailable=" + error.getClass().getSimpleName()

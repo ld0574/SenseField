@@ -31,6 +31,11 @@ final class ReminderGuideCatalog {
     private ReminderGuideCatalog() {}
 
     static List<Item> build(ReminderGuide.Outputs outputs, boolean twoWord, boolean distanceHaptic) {
+        return build(outputs, twoWord, distanceHaptic, HapticPolicy.MODE_ORIGINAL);
+    }
+
+    static List<Item> build(ReminderGuide.Outputs outputs, boolean twoWord, boolean distanceHaptic,
+                            String hapticMode) {
         List<Item> items = new ArrayList<>();
         if (has(outputs.near, CueRequest.CHANNEL_TONE)) {
             items.add(new Item("near_tone", "附近敌人短音",
@@ -61,9 +66,17 @@ final class ReminderGuideCatalog {
                             unknownSpeech, Float.NaN)));
         }
         if (has(outputs.near, CueRequest.CHANNEL_HAPTIC)) {
-            items.add(new Item("near_haptic", "附近敌人振动",
-                    "连续两次振动表示附近发现敌人。使用当前震感与节奏设置；振动不表示手机左侧或右侧。",
+            boolean directional = HapticPolicy.MODE_DIRECTIONAL.equals(hapticMode);
+            items.add(new Item("near_haptic", directional ? "方向不明时的振动" : "附近敌人振动",
+                    directional ? "方向不明时使用中性双震。方位明确时，用下方四个单马达节奏示例；斜向按左右侧。"
+                    : "连续两次振动表示附近发现敌人。使用当前震感与节奏设置；振动不表示手机左侧或右侧。",
                     sample("附近敌人振动", CueRequest.CHANNEL_HAPTIC, 7, null, 0f).withRange(0.08f, 1f)));
+            if (directional) {
+                directionHaptic(items, "left", "左侧", "短后长", 5);
+                directionHaptic(items, "right", "右侧", "长后短", 1);
+                directionHaptic(items, "up", "上方", "短一次", 3);
+                directionHaptic(items, "down", "下方", "短两次", 7);
+            }
             if (distanceHaptic) {
                 items.add(new Item("near_haptic_close", "距离振动：较近示例",
                         "距离振动实验已开启，这是较近目标的示例。强弱或时长效果取决于设备能力，需要实际感受后比较。",
@@ -125,6 +138,14 @@ final class ReminderGuideCatalog {
         return Collections.unmodifiableList(items);
     }
 
+    private static void directionHaptic(List<Item> items, String id, String title,
+                                        String rhythm, int sector) {
+        items.add(new Item("near_haptic_" + id, title + "方位振动",
+                title + "使用“" + rhythm + "”，由同一个振动器表达，不是手机两处震动。使用当前震感与距离设置。",
+                sample(title + "方位振动", CueRequest.CHANNEL_HAPTIC, 7, null, 0f)
+                        .withRange(0.08f, 1f).withHapticCode(NearZoneRouting.hapticDirection(sector))));
+    }
+
     static Item find(List<Item> items, String id) {
         for (Item item : items) if (item.id.equals(id)) return item;
         if (isLegacyDirectionId(id)) {
@@ -146,8 +167,19 @@ final class ReminderGuideCatalog {
     }
 
     static List<ReminderGuide.Step> fullGuide(ReminderGuide.Outputs outputs, boolean twoWord) {
+        return fullGuide(outputs, twoWord, HapticPolicy.MODE_ORIGINAL);
+    }
+
+    static List<ReminderGuide.Step> fullGuide(ReminderGuide.Outputs outputs, boolean twoWord,
+                                             String hapticMode) {
         List<ReminderGuide.Step> steps = new ArrayList<>();
         for (ReminderGuide.Step step : ReminderGuide.build(outputs)) {
+            // This old narration describes the neutral double pulse. In the
+            // opt-in direction mode, teach the four rhythms in the individual
+            // haptic catalog instead of playing an obsolete recorded claim.
+            if (HapticPolicy.MODE_DIRECTIONAL.equals(hapticMode)
+                    && ("两次震动：提醒注意附近".equals(step.title)
+                    || "附近敌人双震动示例".equals(step.title))) continue;
             if (twoWord && step.text != null && step.text.contains(NearZoneRouting.speech(4)))
                 step = step.withText(step.text.replace(NearZoneRouting.speech(4), NearZoneRouting.twoWordSpeech(4)));
             if (twoWord && "没有方向的语音".equals(step.title))

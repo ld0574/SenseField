@@ -102,6 +102,36 @@ public final class ReminderGuideCatalogTest {
         assertTrue(catalog(0, false, false).isEmpty());
     }
 
+    @Test public void directionSamplesUseTheSameLiveCodesAndSelectedWaveforms() {
+        List<ReminderGuideCatalog.Item> items = ReminderGuideCatalog.build(outputs(4),
+                false, false, HapticPolicy.MODE_DIRECTIONAL);
+        String[] ids = {"left", "right", "up", "down"};
+        int[] sectors = {5, 1, 3, 7};
+        for (int index = 0; index < ids.length; index++) {
+            CueRequest sample = ReminderGuideCatalog.find(items, "near_haptic_" + ids[index])
+                    .samples.get(0).request("sample", 100);
+            assertEquals(NearZoneRouting.hapticDirection(sectors[index]), sample.hapticCode);
+            assertEquals(CueRequest.Category.NEAR_ZONE, sample.category);
+            assertEquals(CueRequest.CHANNEL_HAPTIC, sample.requestedChannels);
+            assertNull(sample.speech);
+            HapticPolicy.Pattern pattern = HapticPolicy.create(sample, false, false,
+                    HapticPolicy.MODE_DIRECTIONAL, HapticPolicy.STRENGTH_SYSTEM);
+            assertEquals(index == 2 ? 2 : 4, pattern.timingsMs.length);
+        }
+        assertNull(ReminderGuideCatalog.find(catalog(4, false, false), "near_haptic_left"));
+        assertTrue(ReminderGuideCatalog.build(outputs(0), false, false,
+                HapticPolicy.MODE_DIRECTIONAL).isEmpty());
+    }
+
+    @Test public void directionModeFullGuideDoesNotPlayTheOldNoDirectionClaim() {
+        List<ReminderGuide.Step> full = ReminderGuideCatalog.fullGuide(outputs(4), false,
+                HapticPolicy.MODE_DIRECTIONAL);
+        assertTrue(full.stream().noneMatch(step -> step.text != null
+                && step.text.contains("震动不区分左右方向")));
+        assertTrue(ReminderGuideCatalog.fullGuide(outputs(4), false).stream()
+                .anyMatch(step -> step.text != null && step.text.contains("震动不区分左右方向")));
+    }
+
     private static ReminderGuide.Outputs outputs(int near) {
         return new ReminderGuide.Outputs(near, 0, 0, 0, false, false);
     }

@@ -1,9 +1,6 @@
 package com.openkhub.sensefield;
 
 import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 
 /**
  * Small, stateful policy for reducing output load during a changing team
@@ -38,51 +35,43 @@ final class NearZoneCombatPolicy {
 
     private final ArrayDeque<Long> nearEventTimes = new ArrayDeque<>();
     private boolean dense;
-    private String lastMultiTargetSignature = "";
     private long lastChangeAtMs = Long.MIN_VALUE / 2;
 
     Decision observe(NativeFrameResult frame, long observedAtMs, int maxAgeMs) {
         int freshEnemies = 0;
-        List<Integer> ids = new ArrayList<>();
         if (frame != null && frame.entities != null) {
             for (TrackedEntity entity : frame.entities) {
                 if (!entity.isMinimapEnemy() || entity.state != TrackedEntity.STATE_VISIBLE
                         || entity.freshnessMs < 0
                         || entity.freshnessMs > Math.max(0, maxAgeMs)) continue;
                 freshEnemies++;
-                ids.add(entity.trackId);
             }
         }
-        Collections.sort(ids);
-        String signature = ids.toString();
-        boolean multiTargetChange = freshEnemies >= DENSE_TARGET_COUNT
-                && !signature.equals(lastMultiTargetSignature);
-        if (multiTargetChange) {
-            lastMultiTargetSignature = signature;
-            lastChangeAtMs = observedAtMs;
-        } else if (freshEnemies < DENSE_TARGET_COUNT) {
-            lastMultiTargetSignature = "";
-        }
+        // Continued fresh presence is continued load, even when track IDs
+        // never change. Start the quiet window at the last such snapshot.
+        boolean multiTarget = freshEnemies >= DENSE_TARGET_COUNT;
+        if (multiTarget) lastChangeAtMs = observedAtMs;
 
         NativeFrameResult.Relation relation = frame == null ? null : frame.relation;
         boolean nearEvent = relation != null
                 && relation.event == NearZoneRouting.EVENT_NEAR_ENTER;
         if (nearEvent) {
             nearEventTimes.addLast(observedAtMs);
+            while (nearEventTimes.size() > DENSE_TARGET_COUNT) nearEventTimes.removeFirst();
             lastChangeAtMs = observedAtMs;
         }
         while (!nearEventTimes.isEmpty()
                 && observedAtMs - nearEventTimes.peekFirst() > DENSE_WINDOW_MS) {
             nearEventTimes.removeFirst();
         }
-        boolean denseTrigger = multiTargetChange || nearEventTimes.size() >= DENSE_TARGET_COUNT;
+        boolean denseTrigger = multiTarget || nearEventTimes.size() >= DENSE_TARGET_COUNT;
         boolean entered = false;
         boolean exited = false;
         String reason = "none";
         if (!dense && denseTrigger) {
             dense = true;
             entered = true;
-            reason = multiTargetChange ? "multiple_fresh_enemies" : "multiple_near_events";
+            reason = multiTarget ? "multiple_fresh_enemies" : "multiple_near_events";
         } else if (dense && observedAtMs - lastChangeAtMs > DENSE_QUIET_MS) {
             dense = false;
             exited = true;
@@ -102,7 +91,6 @@ final class NearZoneCombatPolicy {
     void reset() {
         nearEventTimes.clear();
         dense = false;
-        lastMultiTargetSignature = "";
         lastChangeAtMs = Long.MIN_VALUE / 2;
     }
 

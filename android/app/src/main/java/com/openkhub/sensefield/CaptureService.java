@@ -1182,18 +1182,14 @@ public final class CaptureService extends Service {
         // Confirmed new/returning near targets retain their configured speech
         // channel even during dense combat. Playback still expires old cues
         // and keeps only the newest pending near utterance.
-        int priority = combat == null ? NearZoneRouting.NEAR_PRIORITY : combat.priority;
         String cueId = auditSessionId + ":" + nextCueId++;
-        CueRequest request = new CueRequest(auditSessionId, cueId,
-                CueEventKeys.nearZone(nativeResetGeneration, relation.episodeId),
-                "NEAR_ZONE", CueRequest.Category.NEAR_ZONE, priority,
-                observedAtMs, observedAtMs + NearZoneRouting.NEAR_TTL_MS,
-                channels,
-                NearZoneRouting.TONE_NEAR, 0, 0,
-                GameProfile.settings(this).getBoolean("near_two_word", false)
-                        ? NearZoneRouting.twoWordSpeech(relation.sector) : NearZoneRouting.speech(relation.sector),
-                relation.pan, relation.nearestDistance, combat != null && combat.dense ? 2f : 1f,
-                combat == null ? -1 : combat.freshEnemyCount, () -> true);
+        CueRequest request = NearZoneCuePolicy.request(auditSessionId, cueId,
+                nativeResetGeneration, relation, combat, observedAtMs, channels,
+                GameProfile.settings(this).getBoolean(PresentationAudioPolicy.PREF_NEAR_TWO_WORD, false));
+        String presentation = NearZoneCuePolicy.presentationAudit(request, relation.sector,
+                combat != null && combat.dense);
+        Log.i(TAG, presentation);
+        if (diagnostics != null) diagnostics.audit(presentation);
         submitRelationCue(request, NearZoneRouting.KIND_NEAR_ZONE, relation, observedAtMs,
                 combat);
     }
@@ -1251,7 +1247,10 @@ public final class CaptureService extends Service {
                 + NearZoneRouting.eventName(relation.event) + " policy="
                 + NearZoneRouting.EVENT_POLICY + " episode=" + relation.episodeId
                 + " sector=" + relation.sector + " suppression="
-                + NearZoneRouting.suppressionName(relation.suppression) + " outcome=" + outcome);
+                + NearZoneRouting.suppressionName(relation.suppression) + " outcome=" + outcome
+                + " cueId=" + cueId + " atMs=" + observedAtMs
+                + " panMilli=" + Math.round(relation.pan * 1000f)
+                + " distanceMilli=" + Math.round(relation.nearestDistance * 1000f));
     }
 
     private boolean dispatchNativeCue(int kind, int direction, int nativePriority,

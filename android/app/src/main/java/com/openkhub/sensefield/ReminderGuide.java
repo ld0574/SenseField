@@ -44,6 +44,7 @@ final class ReminderGuide {
         final boolean sample;
         final float distance;
         final float urgency;
+        final int hapticCode;
 
         private Step(String title, String text, int channel, int tone,
                      float pan, boolean sample) {
@@ -52,6 +53,11 @@ final class ReminderGuide {
 
         private Step(String title, String text, int channel, int tone,
                      float pan, boolean sample, float distance, float urgency) {
+            this(title, text, channel, tone, pan, sample, distance, urgency, 0);
+        }
+
+        private Step(String title, String text, int channel, int tone,
+                     float pan, boolean sample, float distance, float urgency, int hapticCode) {
             this.title = title;
             this.text = text;
             this.channel = channel;
@@ -60,14 +66,19 @@ final class ReminderGuide {
             this.sample = sample;
             this.distance = distance;
             this.urgency = urgency;
+            this.hapticCode = hapticCode;
         }
 
         Step withText(String value) {
-            return new Step(title, value, channel, tone, pan, sample, distance, urgency);
+            return new Step(title, value, channel, tone, pan, sample, distance, urgency, hapticCode);
         }
 
         Step withRange(float value, float urgency) {
-            return new Step(title, text, channel, tone, pan, sample, value, urgency);
+            return new Step(title, text, channel, tone, pan, sample, value, urgency, hapticCode);
+        }
+
+        Step withHapticCode(int code) {
+            return new Step(title, text, channel, tone, pan, sample, distance, urgency, code);
         }
 
         CueRequest request(String id, long now) {
@@ -76,7 +87,7 @@ final class ReminderGuide {
                     sample ? SAMPLE_KIND : NARRATION_KIND,
                     nearSample ? CueRequest.Category.NEAR_ZONE : CueRequest.Category.SYSTEM,
                     80, now, now + (sample ? 2000 : NARRATION_TIMEOUT_MS), channel,
-                    tone, 0, 0, channel == CueRequest.CHANNEL_SPEECH ? text : null,
+                    tone, 0, hapticCode, channel == CueRequest.CHANNEL_SPEECH ? text : null,
                     pan, distance, urgency, -1, () -> true);
         }
     }

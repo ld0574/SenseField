@@ -14,4 +14,5 @@
     <string name="cue_sound_preparing">正在准备试听：%1$s · %2$s</string>
     <string name="cue_sound_playing">正在试听：%1$s · %2$s</string>
     <string name="cue_sound_done">试听结束：%1$s · %2$s</string>
+    <string name="haptic_preview_sent">已发送“%1$s”试听震动。方位节奏模式才区分方向；若没有感觉到，请检查手机振动设置。</string>
 </resources>

@@ -72,6 +72,7 @@ final class SettingHelpContent {
             case "haptic_rhythm": return "提醒节奏";
             case "haptic_rhythm_original": return "保留原有节奏（默认）";
             case "haptic_rhythm_short": return "短促节奏（保留单／双震）";
+            case "haptic_rhythm_directional": return "方位节奏（单马达）";
             case "haptic_strength": return "震感档位";
             case "haptic_strength_system": return "设备默认（默认）";
             case "haptic_strength_light": return "较轻";
@@ -98,7 +99,7 @@ final class SettingHelpContent {
             case "capture_notifications": return "查看运行状态，并暂停或停止辅助。";
             case "capture_overlay": return "视觉提醒需打开通道并授权置顶显示。";
             case "capture_battery": return "调整后台运行设置，减少意外中断。";
-            case "haptic_rhythm": return "保留原有节奏或使用短促震动。";
+            case "haptic_rhythm": return "可保留原有节奏、缩短震动，或用单马达节奏表达方位。";
             case "haptic_strength": return "选择默认、较轻或较强的震感。";
             case "haptic_preview": return "试听当前节奏与震感。";
             default: return "查看本组各项设置的作用与使用说明。";
@@ -139,7 +140,7 @@ final class SettingHelpContent {
             case "capture_battery":
                 return keys("capture_battery_app", "capture_battery_system");
             case "haptic_rhythm":
-                return keys("haptic_rhythm_original", "haptic_rhythm_short");
+                return keys("haptic_rhythm_original", "haptic_rhythm_short", "haptic_rhythm_directional");
             case "haptic_strength":
                 return keys("haptic_strength_system", "haptic_strength_light",
                         "haptic_strength_strong");
@@ -252,7 +253,7 @@ final class SettingHelpContent {
             case "presentation_haptic":
                 return "开启后会尝试用震动强度和节奏表达距离层级。此呈现仍需玩家验证，实际强弱和节奏感受受手机马达及系统设置影响，不能据此判断精确距离。";
             case "presentation_two_word":
-                return "开启后会尝试用更短的两字方位语音提示，减少播报长度。方向仍按当前提醒规则解释；此呈现需要在实际游戏中确认是否容易听懂。";
+                return "开启后，常规附近敌人提醒使用两字方位；多个新鲜敌人或短时多个近区事件触发密集模式时，自动使用两字，结束后恢复此选择。方向仍按小地图解释，需要实际确认是否容易听懂。";
             case "capture_screen":
                 return "每次开始新的辅助会话，系统都会单独询问是否共享屏幕。请先阅读系统对共享范围的说明，再点击“授权截屏并开始”；运行通知中可以暂停或停止辅助。";
             case "capture_screen_grant":
@@ -274,11 +275,13 @@ final class SettingHelpContent {
             case "capture_battery_system":
                 return "“系统省电优化设置”打开系统省电优化设置。允许后台运行可能有帮助，但标准省电状态无法代表所有厂商的后台限制；如仍中断，请查看手机厂商的应用管理设置。";
             case "haptic_rhythm":
-                return "“保留原有节奏（默认）”使用各类提醒原有震动节奏；“短促节奏（保留单／双震）”会缩短每次震动和间隔，同时保留原有脉冲数量与顺序。";
+                return "“保留原有节奏（默认）”和“短促节奏”保留原有规则。“方位节奏（单马达）”用脉冲顺序区分附近敌人：左侧短后长，右侧长后短，上方短一次，下方短两次，斜向按左右侧。方向不明仍用中性双震。这些是一个马达的节奏，不是手机左右两处震动。";
             case "haptic_rhythm_original":
                 return "保留各类提醒原有的震动节奏，不额外缩短震动和间隔。";
             case "haptic_rhythm_short":
                 return "按原有的单震或双震数量与顺序缩短脉冲和间隔。";
+            case "haptic_rhythm_directional":
+                return "用同一个振动器的不同节奏表达小地图方位：左侧短后长、右侧长后短、上方短一次、下方短两次。斜向按左右侧，未知方位使用中性双震。实际辨识效果需要自行确认。";
             case "haptic_strength":
                 return "“设备默认（默认）”使用设备默认振幅或原有脉冲时长；“较轻”和“较强”会按设备能力调整振幅，或缩短、延长脉冲时长。";
             case "haptic_strength_system":
@@ -288,7 +291,7 @@ final class SettingHelpContent {
             case "haptic_strength_strong":
                 return "请求较强的振幅；不支持可调振幅时延长脉冲。";
             case "haptic_preview":
-                return "点击“试听当前触觉设置”会发出一次附近提醒的震动，帮助比较当前节奏和震感。辅助或实时对局运行时无法试听。";
+                return "先选左、右、上、下或方向不明，再点击“试听当前触觉设置”。方位节奏模式会按所选方向发出不同节奏，原有与短促模式使用中性附近双震。辅助或实时对局运行时无法试听。";
             case "haptic_preview_button":
                 return "“试听当前触觉设置”会使用当前节奏与震感档位发送一次触觉试听。实际感觉受设备振动能力和系统设置影响。";
             default:
