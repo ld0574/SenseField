@@ -19,6 +19,8 @@
 
 ## 当前入口
 
+- [0.4.6 魔力鸟／饼干同版本交付](match3/MATCH3_COOKIE_BIRD_SAME_VERSION_0_4_6_2026-10-12.md)
+
 - [0.4.7 魔力鸟与剩余饼干识别／策略修订](match3/MATCH3_COOKIE_BIRD_STRATEGY_0_4_7_2026-10-12.md)
 
 - [0.4.5 新元素可信识别与有界诊断](match3/MATCH3_ELEMENT_EVIDENCE_0_4_5_2026-10-10.md)

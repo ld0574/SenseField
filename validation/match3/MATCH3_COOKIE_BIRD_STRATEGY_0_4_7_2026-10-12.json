@@ -175,5 +175,6 @@
     "targeted-cv-assertions.json": "61056651f8ba9c8f1038da9ae130077db06ce0d018fcba2955258e6f00645a55",
     "final-release-targeted-assertions.json": "310ee215c95c09884abf5e8fc43d58809c3c6e90f199c4376cf1ba0169a34f0b",
     "final-release-debug-parity.json": "4cc558b51ae08e220dca4498a18b68d1bb1d87f3494250d9b39d9318a3d3bb5e"
-  }
+  },
+  "delivery_status": "withdrawn_in_favor_of_user_selected_0_4_6_same_version_replacement"
 }

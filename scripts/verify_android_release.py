@@ -52,8 +52,8 @@ def elf_load_alignments(data: bytes):
 def verify(apk: Path, allow_fixture: bool):
     metadata = read_apk_metadata(apk, tool('aapt2'))
     app_id = "com.openkhub.sensefield.speechfixture" if allow_fixture else "com.openkhub.sensefield"
-    version = "0.4.7-fixture" if allow_fixture else "0.4.7"
-    if (metadata.package_name != app_id or metadata.version_code != 24
+    version = "0.4.6-fixture" if allow_fixture else "0.4.6"
+    if (metadata.package_name != app_id or metadata.version_code != 23
             or metadata.version_name != version or metadata.min_sdk_version != '29'
             or metadata.native_abis != ('arm64-v8a',)):
         raise ValueError(f"Unexpected APK identity: {metadata}")
