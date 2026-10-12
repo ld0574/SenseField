@@ -5,6 +5,39 @@ import android.graphics.Bitmap;
 import org.junit.Test;
 
 public final class Match3GeometryInstrumentedTest {
+    private static void island(Bitmap frame, int left, int top, int rows, int cols, int pitch) {
+        for (int y = top; y < top + rows * pitch; y++) for (int x = left; x < left + cols * pitch; x++) {
+            int xx = (x - left) % pitch, yy = (y - top) % pitch;
+            frame.setPixel(x, y, xx < 3 || yy < 3 || xx >= pitch - 3 || yy >= pitch - 3
+                    ? 0xff203050 : 0xffdd9944);
+        }
+    }
+
+    @Test public void separatedIslandsShareOneOriginOnlyWithCurrentAlignedGridEvidence() {
+        Bitmap frame = Bitmap.createBitmap(432, 960, Bitmap.Config.ARGB_8888);
+        try {
+            frame.eraseColor(0xff00ccee);
+            island(frame, 24, 280, 8, 4, 40); island(frame, 224, 280, 9, 4, 40);
+            BoardGeometry g = Match3Sampler.autoDetectGeometry(frame);
+            assertNotNull(g); assertEquals(9, g.rows); assertEquals(9, g.cols);
+            assertEquals(24, g.left); assertEquals(280, g.top); assertEquals(384, g.right); assertEquals(640, g.bottom);
+            assertEquals(244, g.centerX(5)); // retain the empty column in screen coordinates
+            frame.eraseColor(0xff00ccee);
+            island(frame, 24, 280, 8, 4, 40); island(frame, 224, 300, 9, 4, 40);
+            assertNull("Half-cell shifted panels are different grids", Match3Sampler.autoDetectGeometry(frame));
+            frame.eraseColor(0xff00ccee);
+            island(frame, 24, 280, 8, 4, 40); island(frame, 224, 280, 9, 4, 34);
+            assertNull("Islands must share the current cell pitch", Match3Sampler.autoDetectGeometry(frame));
+            frame.eraseColor(0xff00ccee);
+            island(frame, 24, 280, 8, 4, 40);
+            for (int y = 280; y < 640; y++) for (int x = 224; x < 384; x++) frame.setPixel(x, y, 0xff203050);
+            assertNull("A flat second panel cannot borrow the first island's grid", Match3Sampler.autoDetectGeometry(frame));
+            frame.eraseColor(0xff00ccee);
+            island(frame, 40, 280, 8, 4, 30); island(frame, 190, 280, 9, 4, 30);
+            assertNull("A small task preview cannot enter the new island path", Match3Sampler.autoDetectGeometry(frame));
+        } finally { frame.recycle(); }
+    }
+
     @Test public void actualDisplayStretchKeepsItsObservedOriginAndBothGridPhases() {
         Bitmap frame=Bitmap.createBitmap(432,960,Bitmap.Config.ARGB_8888);frame.eraseColor(0xff00ccee);
         try {

@@ -718,8 +718,80 @@ final class Match3Sampler implements AutoCloseable {
     }
 
     static BoardGeometry autoDetectGeometry(Bitmap frame) {
-        int[] b = autoDetectPixels(frame);
-        return b == null ? null : verifiedGeometry(frame, b);
+        List<int[]> fragments = new ArrayList<>();
+        int[] b = autoDetectPixels(frame, fragments);
+        BoardGeometry geometry = b == null ? null : verifiedGeometry(frame, b);
+        if (geometry != null || fragments.size() < 2) return geometry;
+        int step = Math.max(1, Math.min(frame.getWidth(), frame.getHeight()) / 160);
+        for (int i = 0; i < fragments.size(); i++) fragments.set(i, refineBoardBounds(frame, fragments.get(i), step));
+        return separatedGeometry(frame, fragments);
+    }
+
+    /** Disjoint board islands must independently support the same cell lattice.
+     * A union box alone would admit letterboxes, unrelated panels and shifted grids. */
+    private static BoardGeometry separatedGeometry(Bitmap frame, List<int[]> fragments) {
+        int step = Math.max(1, Math.min(frame.getWidth(), frame.getHeight()) / 160);
+        List<BoardGeometry> islands = new ArrayList<>();
+        for (int[] box : fragments) {
+            BoardGeometry island = fragmentGeometry(frame, box, step);
+            if (island != null) islands.add(island);
+        }
+        BoardGeometry accepted = null;
+        for (int i = 0; i < islands.size(); i++) for (int j = i + 1; j < islands.size(); j++) {
+            BoardGeometry a = islands.get(i), b = islands.get(j);
+            if (!(a.right < b.left || b.right < a.left || a.bottom < b.top || b.bottom < a.top)) continue;
+            float pitchX = ((a.right - a.left) / (float) a.cols + (b.right - b.left) / (float) b.cols) / 2;
+            float pitchY = ((a.bottom - a.top) / (float) a.rows + (b.bottom - b.top) / (float) b.rows) / 2;
+            int[] box = {Math.min(a.left, b.left), Math.min(a.top, b.top),
+                    Math.max(a.right, b.right), Math.max(a.bottom, b.bottom)};
+            // The new island path is for a display-sized board. A scaled game
+            // preview in the task switcher can retain both island phases too.
+            if (Math.max(box[2] - box[0], box[3] - box[1]) * 5L
+                    < Math.min(frame.getWidth(), frame.getHeight()) * 4L) continue;
+            int cols = Math.round((box[2] - box[0]) / pitchX), rows = Math.round((box[3] - box[1]) / pitchY);
+            if (cols < 6 || cols > 9 || rows < 6 || rows > 9) continue;
+            BoardGeometry union = new BoardGeometry(frame.getWidth(), frame.getHeight(),
+                    box[0], box[1], box[2], box[3], rows, cols);
+            if (!alignedIsland(union, a, step) || !alignedIsland(union, b, step)
+                    || !boundaryPhaseSupported(frame, box, false, cols, step)
+                    || !boundaryPhaseSupported(frame, box, true, rows, step)) continue;
+            if (accepted != null && !accepted.sameGrid(union)) return null;
+            accepted = union;
+        }
+        return accepted;
+    }
+
+    private static boolean alignedIsland(BoardGeometry union, BoardGeometry island, int step) {
+        float pitchX = (union.right - union.left) / (float) union.cols;
+        float pitchY = (union.bottom - union.top) / (float) union.rows;
+        int col = Math.round((island.left - union.left) / pitchX);
+        int row = Math.round((island.top - union.top) / pitchY);
+        return col >= 0 && row >= 0 && col + island.cols <= union.cols && row + island.rows <= union.rows
+                && Math.abs(union.left + col * pitchX - island.left) <= 2 * step
+                && Math.abs(union.left + (col + island.cols) * pitchX - island.right) <= 2 * step
+                && Math.abs(union.top + row * pitchY - island.top) <= 2 * step
+                && Math.abs(union.top + (row + island.rows) * pitchY - island.bottom) <= 2 * step;
+    }
+
+    private static BoardGeometry fragmentGeometry(Bitmap frame, int[] box, int step) {
+        boolean vertical = box[3] - box[1] >= box[2] - box[0];
+        int longExtent = vertical ? box[3] - box[1] : box[2] - box[0];
+        int shortExtent = vertical ? box[2] - box[0] : box[3] - box[1];
+        int brightness = detectGridAxis(frame, box, vertical), edges = detectGridAxis(frame, box, vertical, true);
+        BoardGeometry accepted = null;
+        for (int count : brightness == edges ? new int[]{brightness} : new int[]{brightness, edges}) {
+            if (count < 6) continue;
+            float pitch = longExtent / (float) count;
+            int across = Math.round(shortExtent / pitch);
+            if (across < 4 || across > 5 || Math.abs(shortExtent / (float) across - pitch) > 2 * step) continue;
+            if (!boundaryPhaseSupported(frame, box, vertical, count, step)
+                    || !boundaryPhaseSupported(frame, box, !vertical, across, step)) continue;
+            BoardGeometry candidate = new BoardGeometry(frame.getWidth(), frame.getHeight(),
+                    box[0], box[1], box[2], box[3], vertical ? count : across, vertical ? across : count);
+            if (accepted != null && !accepted.sameGrid(candidate)) return null;
+            accepted = candidate;
+        }
+        return accepted;
     }
 
     static BoardGeometry verifiedGeometry(Bitmap frame, int[] pixels) {
@@ -854,6 +926,10 @@ final class Match3Sampler implements AutoCloseable {
     }
 
     private static int[] autoDetectPixels(Bitmap frame) {
+        return autoDetectPixels(frame, null);
+    }
+
+    private static int[] autoDetectPixels(Bitmap frame, List<int[]> fragments) {
         // Keep the same sampling density when the full display rotates.
         int step = Math.max(1, Math.min(frame.getWidth(), frame.getHeight()) / 160);
         int cols = frame.getWidth() / step, rows = frame.getHeight() / step;
@@ -878,8 +954,24 @@ final class Match3Sampler implements AutoCloseable {
                 }
             }
         }
-        int[] box = connectedBoardBounds(mask);
+        List<int[]> components = componentEnvelopes(mask, true);
+        int[] box = largestBoardBounds(components, cols, rows);
+        if (fragments != null) {
+            for (int[] component : components) {
+                int bw = component[2] - component[0], bh = component[3] - component[1];
+                if (Math.min(bw, bh) * 10 < Math.min(cols, rows) * 2
+                        || Math.max(bw, bh) * 10 < Math.min(cols, rows) * 3
+                        || component[4] * 20L < (long) bw * bh) continue;
+                // Only the bounded fallback needs individual island edge refinement.
+                fragments.add(component);
+            }
+            if (fragments.size() > 8) fragments.clear(); // crowded UI is not an island grid
+        }
         if (box == null) return null;
+        return refineBoardBounds(frame, box, step);
+    }
+
+    private static int[] refineBoardBounds(Bitmap frame, int[] box, int step) {
         int l = box[0] * step, t = box[1] * step;
         int r = Math.min(frame.getWidth(), box[2] * step);
         int b = Math.min(frame.getHeight(), box[3] * step);
@@ -924,11 +1016,13 @@ final class Match3Sampler implements AutoCloseable {
     }
 
     private static int[] componentBounds(boolean[][] mask, boolean joinEnvelopes) {
+        return largestBoardBounds(componentEnvelopes(mask, joinEnvelopes), mask[0].length, mask.length);
+    }
+
+    private static List<int[]> componentEnvelopes(boolean[][] mask, boolean joinEnvelopes) {
         int height = mask.length, width = mask[0].length;
         boolean[][] seen = new boolean[height][width];
         int[] queue = new int[height * width];
-        int bestArea = 0;
-        int[] best = null;
         List<int[]> components = new ArrayList<>();
         for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) {
             if (!mask[y][x] || seen[y][x]) continue;
@@ -966,6 +1060,12 @@ final class Match3Sampler implements AutoCloseable {
             }
             components.add(component);
         }
+        return components;
+    }
+
+    private static int[] largestBoardBounds(List<int[]> components, int width, int height) {
+        int bestArea = 0;
+        int[] best = null;
         for (int[] component : components) {
             int bw = component[2] - component[0], bh = component[3] - component[1];
             int shortSide = Math.min(bw, bh), longSide = Math.max(bw, bh);
