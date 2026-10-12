@@ -13,7 +13,7 @@ final class Match3Position {
         CUTTLEFISH, MOVING_FLOOR, VACANT
     }
     enum SwapPermission { YES, NO, UNKNOWN }
-    enum Cover { NONE, FROZEN_ICE, LOCK, HONEY, CAGE, UNKNOWN }
+    enum Cover { NONE, FROZEN_ICE, LOCK, HONEY, CAGE, UNKNOWN, GRAY_FURBALL }
     enum Effect { NONE, HORIZONTAL, VERTICAL, BLAST, UNKNOWN }
     enum Gate { OPEN, CLOSED, UNKNOWN }
     static final class Cell {
@@ -54,7 +54,7 @@ final class Match3Position {
                     || kind==Kind.ANIMAL && Match3Goals.Kind.animal(color)==Match3Goals.Kind.UNKNOWN
                     || kind!=Kind.ANIMAL && effect!=Effect.NONE
                     || move==SwapPermission.YES && kind!=Kind.ANIMAL && kind!=Kind.BIRD
-                    || cover==Cover.FROZEN_ICE && coverLayers>2 || cover==Cover.LOCK && coverLayers>1
+                    || cover==Cover.FROZEN_ICE && coverLayers>2 || (cover==Cover.LOCK || cover==Cover.GRAY_FURBALL) && coverLayers>1
                     || !Match3Rules.knownRule(ruleId,version))
                 throw new IllegalArgumentException("Unverified cell state");
             this.kind=kind;this.color=color;this.layers=layers;this.iceLayers=iceLayers;this.objectId=objectId;
@@ -63,13 +63,13 @@ final class Match3Position {
             this.timedGate=timedGate;
             ruleVersion=version;this.floorRuleId=floorRuleId;baseSwapPermission=move;
             coverRuleId=cover==Cover.FROZEN_ICE?"frozen_ice":cover==Cover.LOCK?"locked_animal"
-                    :cover==Cover.HONEY?"honey_cover":cover==Cover.CAGE?"cage":"";
+                    :cover==Cover.HONEY?"honey_cover":cover==Cover.CAGE?"cage":cover==Cover.GRAY_FURBALL?"gray_furball":"";
             boolean blocked=gate!=Gate.OPEN || cover!=Cover.NONE || layers<0 || iceLayers<0
                     || effect==Effect.BLAST || effect==Effect.UNKNOWN;
-            swapPermission=move==SwapPermission.NO?SwapPermission.NO:blocked?(cover==Cover.FROZEN_ICE || cover==Cover.LOCK || gate==Gate.CLOSED
+            swapPermission=move==SwapPermission.NO?SwapPermission.NO:blocked?(cover==Cover.FROZEN_ICE || cover==Cover.LOCK || cover==Cover.GRAY_FURBALL || gate==Gate.CLOSED
                     ?SwapPermission.NO:SwapPermission.UNKNOWN):move;
             swappable=swapPermission==SwapPermission.YES;
-            matchPermission=kind!=Kind.ANIMAL || gate==Gate.CLOSED || cover==Cover.FROZEN_ICE?SwapPermission.NO
+            matchPermission=kind!=Kind.ANIMAL || gate==Gate.CLOSED || cover==Cover.FROZEN_ICE || cover==Cover.GRAY_FURBALL?SwapPermission.NO
                     :gate==Gate.UNKNOWN || layers<0 || iceLayers<0 || cover==Cover.UNKNOWN || cover==Cover.HONEY || cover==Cover.CAGE
                     || move==SwapPermission.UNKNOWN || effect==Effect.UNKNOWN || effect==Effect.BLAST
                     ?SwapPermission.UNKNOWN:SwapPermission.YES;
@@ -78,7 +78,7 @@ final class Match3Position {
                     :kind==Kind.ANIMAL && (effect==Effect.HORIZONTAL || effect==Effect.VERTICAL) || kind==Kind.BIRD
                     ?SwapPermission.YES:effect==Effect.BLAST || effect==Effect.UNKNOWN?SwapPermission.UNKNOWN:SwapPermission.NO;
             adjacentDamagePermission=gate!=Gate.OPEN?SwapPermission.UNKNOWN
-                    :cover==Cover.FROZEN_ICE || cover==Cover.LOCK || cover==Cover.HONEY || cover==Cover.CAGE
+                    :cover==Cover.FROZEN_ICE || cover==Cover.LOCK || cover==Cover.HONEY || cover==Cover.CAGE || cover==Cover.GRAY_FURBALL
                     || kind==Kind.SNOW || kind==Kind.COIN || kind==Kind.HONEY || kind==Kind.ICEFLOWER || kind==Kind.EGG
                     || kind==Kind.DYE_EGG || kind==Kind.POISON || kind==Kind.JELLYFISH || kind==Kind.MAGIC_STONE
                     ?SwapPermission.YES:kind==Kind.CHEST || kind==Kind.FURBALL || kind==Kind.INVINCIBLE_FURBALL
@@ -203,7 +203,7 @@ final class Match3Position {
             for(int c=0;c<cols;c++) {
                 Cell cell=cells[r][c];if(cell==null)throw new IllegalArgumentException("Missing cell");
                 if(cell.gate!=Gate.OPEN || cell.timedGate || cell.kind==Kind.POISON || cell.kind==Kind.OCTOPUS
-                        || cell.kind==Kind.INVINCIBLE_FURBALL || cell.kind==Kind.MOVING_FLOOR)
+                        || cell.kind==Kind.INVINCIBLE_FURBALL || cell.kind==Kind.MOVING_FLOOR || cell.cover==Cover.GRAY_FURBALL)
                     stepDynamics.set(r*cols+c);
             }
         }

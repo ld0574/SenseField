@@ -25,7 +25,7 @@ final class Match3UnknownElements {
         }
         boolean sameRuleState(Observation other) { return cell.equals(other.cell); }
         boolean detailed() {
-            if(detailed==null)detailed=new Match3AnimalAppearance.Face('.',patch).detailed;
+            if(detailed==null)detailed=Match3AnimalAppearance.hasFaceDetail(patch);
             return detailed;
         }
     }
@@ -59,6 +59,7 @@ final class Match3UnknownElements {
         Family(String id,Observation anchor) { this.id=id;this.anchor=anchor; }
     }
     private final List<Family> families=new ArrayList<>();
+    private java.nio.ByteBuffer nativeFamilies;
     private Observation[][] anchors;
     private Observation[][] previous;
     private int[][] counts;
@@ -118,6 +119,7 @@ final class Match3UnknownElements {
             }
             if(family==null)continue;
             if(family.samples>=MAX_SAMPLES_PER_FAMILY)continue;
+            if(family.samples>0 && at-family.sampledAt<SAMPLE_GAP_MS)continue;
             int detail=current.body.detail();
             if(family.samples==0 || family.samples<MAX_SAMPLES_PER_FAMILY
                     && at-family.sampledAt>=SAMPLE_GAP_MS && detail>family.detail) {
@@ -128,8 +130,15 @@ final class Match3UnknownElements {
     }
     private Family find(Observation observation) {
         Family best=null;float first=Float.POSITIVE_INFINITY,second=Float.POSITIVE_INFINITY;
-        for(Family family:families)if(observation.sameRuleState(family.anchor)) {
-            float error=observation.body.difference(family.anchor.body);
+        boolean[] compatible=new boolean[families.size()];boolean any=false;
+        for(int i=0;i<families.size();i++)any|=compatible[i]=observation.sameRuleState(families.get(i).anchor);
+        // Session family anchors never change. Batch only compatible rule
+        // states; an observation uses bounded native stack storage instead of
+        // allocating a direct descriptor for every prospective sample.
+        float[] distances=any && Match3NativeMath.AVAILABLE?observation.body.differences(nativeFamilies,families.size(),compatible):null;
+        for(int i=0;i<families.size();i++)if(compatible[i]) {
+            Family family=families.get(i);
+            float error=distances==null?observation.body.difference(family.anchor.body):distances[i];
             if(error<first) { second=first;first=error;best=family; }
             else second=Math.min(second,error);
         }
@@ -145,6 +154,11 @@ final class Match3UnknownElements {
         if(families.size()>=MAX_FAMILIES || !uncertainCover && general>=MAX_FAMILIES-COVER_RESERVED_FAMILIES) {
             saturatedObservations++;return null;
         }
-        Family family=new Family("u"+(families.size()+1),observation);families.add(family);return family;
+        Family family=new Family("u"+(families.size()+1),observation);families.add(family);
+        if(Match3NativeMath.AVAILABLE) {
+            if(nativeFamilies==null)nativeFamilies=java.nio.ByteBuffer.allocateDirect(MAX_FAMILIES*4748).order(java.nio.ByteOrder.nativeOrder());
+            observation.body.appendNativeDescriptor(nativeFamilies);
+        }
+        return family;
     }
 }

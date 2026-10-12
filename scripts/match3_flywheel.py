@@ -251,6 +251,9 @@ def apply_review(registry, review):
                               review["swappable"][family_id],review.get("bindings",{}).get(family_id))
         if review['labels'][family_id] in {'honey_cover','lock'} and family['role']!='goal':
             raise ValueError('cover cell state requires a separately reviewed covered foreground')
+        if review['labels'][family_id]=='gray_furball' and family['role']=='cell' and (truth.get('rule_binding') is None
+                or truth['rule_binding']['state'].get('cover')!='GRAY_FURBALL'):
+            raise ValueError('gray cover needs independent state evidence; hidden animal stays unknown')
         if family['role']=='goal' and truth.get('rule_binding') is not None:
             raise ValueError('cell-specific bindings cannot define a HUD goal mode')
         goal_binding=review.get('goal_bindings',{}).get(family_id)

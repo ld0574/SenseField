@@ -18,7 +18,7 @@ final class Match3Goals {
         CAGE('\0', "牢笼"), STAR_BOTTLE('\0', "星星瓶"), DYE_BABY('\0', "染色宝宝"),
         CANNON('\0', "魔法炮"), MAGIC_STONE('\0', "魔法石"),
         DOLPHIN('\0', "海豚"), SPRITE('\0', "精灵"), GEM('\0', "宝石"), STAR('\0', "星星"), HONEY_COVER('\0',"蜂蜜覆盖"), LOCK('\0',"藤蔓"),
-        FLOWER('\0', "花团");
+        FLOWER('\0', "花团"), GRAY_FURBALL('\0', "灰毛球");
         final char color;
         final String name;
         Kind(char color, String name) { this.color = color; this.name = name; }
@@ -40,7 +40,7 @@ final class Match3Goals {
         if(mode==Mode.UNKNOWN)return true;
         switch(mode) {
             case CLEAR:return kind.color!='\0' || kind==Kind.SNOW || kind==Kind.COIN || kind==Kind.ICE
-                    || kind==Kind.ICEFLOWER || kind==Kind.HONEY || kind==Kind.HONEY_COVER || kind==Kind.POISON || kind==Kind.FURBALL;
+                    || kind==Kind.ICEFLOWER || kind==Kind.HONEY || kind==Kind.HONEY_COVER || kind==Kind.POISON || kind==Kind.FURBALL || kind==Kind.GRAY_FURBALL;
             case HATCH:return kind==Kind.CHICK;
             case RESCUE:return kind==Kind.PENGUIN || kind==Kind.SNOW_BEAR || kind==Kind.DOLPHIN || kind==Kind.CAGE;
             case DELIVER:return kind==Kind.GOLD_POD || kind==Kind.KEY;
@@ -79,7 +79,7 @@ final class Match3Goals {
         }
         static Target observed(int slot,Kind kind,int remaining,boolean complete,String visualId) {
             boolean clear=kind.color!='\0' && kind!=Kind.CHICK || kind==Kind.SNOW || kind==Kind.COIN
-                    || kind==Kind.ICE || kind==Kind.ICEFLOWER || kind==Kind.HONEY || kind==Kind.POISON || kind==Kind.FURBALL;
+                    || kind==Kind.ICE || kind==Kind.ICEFLOWER || kind==Kind.HONEY || kind==Kind.POISON || kind==Kind.FURBALL || kind==Kind.GRAY_FURBALL;
             Mode mode=kind==Kind.LOCK?Mode.UNLOCK:clear?Mode.CLEAR:kind==Kind.GOLD_POD || kind==Kind.KEY?Mode.DELIVER:Mode.UNKNOWN;
             return new Target(slot,kind,remaining,complete,visualId,mode,
                     mode!=Mode.UNKNOWN?"reviewed_hud_rule":"icon_identity_only");

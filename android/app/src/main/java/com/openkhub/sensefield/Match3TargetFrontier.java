@@ -85,6 +85,7 @@ final class Match3TargetFrontier {
             case COOKIE: return cell.kind == Match3Position.Kind.COOKIE;
             case EGG: return cell.kind == Match3Position.Kind.EGG;
             case LOCK: return cell.cover==Match3Position.Cover.LOCK;
+            case GRAY_FURBALL: return cell.cover==Match3Position.Cover.GRAY_FURBALL;
             case ICE:
                 // Known ice and known foreground identity establish a location,
                 // even when the animal's exchange permission is unknown. This
@@ -106,6 +107,7 @@ final class Match3TargetFrontier {
         if (kind == Match3Goals.Kind.COOKIE) return "靠近饼干";
         if (kind == Match3Goals.Kind.EGG) return "靠近鸡蛋";
         if (kind == Match3Goals.Kind.LOCK) return "靠近藤蔓";
+        if (kind == Match3Goals.Kind.GRAY_FURBALL) return "靠近灰毛球";
         return "靠近目标";
     }
 }

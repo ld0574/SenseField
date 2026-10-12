@@ -20,7 +20,7 @@ DIRECT = {'ordinary_uncovered_animal', 'line_horizontal', 'line_vertical', 'magi
           'stationary_single_layer_ice', 'single_clear_honey'}
 PARTIAL = {'blast', 'poison', 'honey_cover', 'chest', 'transport', 'invincible_furball',
            'cage', 'penguin', 'snow_bear', 'jellyfish', 'cannon', 'magic_stone', 'cuttlefish',
-           'multistage_iceflower'}
+           'multistage_iceflower', 'gray_furball'}
 OPPORTUNITY = {'egg', 'chick_hatch_goal'}
 PENDING = {'combo_bird_line', 'combo_bird_blast', 'combo_line_line', 'combo_line_blast',
            'combo_blast_blast', 'combo_dye_dye', 'combo_star_star', 'combo_energy_energy',
@@ -100,15 +100,15 @@ KIND_RULE = {
     'MAGIC_STONE': 'magic_stone', 'DYE_EGG': 'dye_egg', 'DYE_BABY': 'dye_baby', 'STAR_BOTTLE': 'star_bottle',
     'ENERGY_BOTTLE': 'energy_bottle', 'OCTOPUS': 'octopus', 'CUTTLEFISH': 'cuttlefish', 'MOVING_FLOOR': 'moving_floor',
     'COIN': 'coin', 'SNOW': 'snow', 'ICEFLOWER': 'multistage_iceflower', 'HONEY': 'single_clear_honey',
-    'EGG': 'egg', 'COOKIE': 'identity_only_2x2', 'ANIMAL': 'ordinary_uncovered_animal'}
+    'EGG': 'egg', 'COOKIE': 'identity_only_2x2', 'ANIMAL': 'ordinary_uncovered_animal', 'UNKNOWN':'unknown'}
 
 GOAL_KINDS = {**dict(zip('ROYGBP',('RED','BEAR','CHICK','FROG','HIPPO','CAT'))),
               'coin':'COIN','snow':'SNOW','honey':'HONEY','honey_cover':'HONEY_COVER','iceflower':'ICEFLOWER',
-              'cookie':'COOKIE','ice':'ICE','egg':'EGG','lock':'LOCK','flower':'FLOWER',
+              'cookie':'COOKIE','ice':'ICE','egg':'EGG','lock':'LOCK','flower':'FLOWER','gray_furball':'GRAY_FURBALL',
               **{kind.lower():kind for kind in ('POISON','PENGUIN','SNOW_BEAR','GOLD_POD','KEY','FURBALL',
                   'DOLPHIN','SPRITE','GEM','STAR','STAR_BOTTLE','DYE_BABY','CANNON','MAGIC_STONE')}}
 GOAL_MODES = {**{kind:{'CLEAR'} for kind in ('RED','BEAR','CHICK','FROG','HIPPO','CAT','COIN','SNOW',
-                  'ICE','ICEFLOWER','HONEY','HONEY_COVER','POISON','FURBALL')},
+                  'ICE','ICEFLOWER','HONEY','HONEY_COVER','POISON','FURBALL','GRAY_FURBALL')},
               'CHICK':{'CLEAR','HATCH'},**{kind:{'RESCUE'} for kind in ('PENGUIN','SNOW_BEAR','DOLPHIN','CAGE')},
               'GOLD_POD':{'DELIVER'},'KEY':{'DELIVER'},'STAR_BOTTLE':{'CHARGE'},'DYE_BABY':{'CHARGE'},
               'CANNON':{'TRIGGER'},'MAGIC_STONE':{'TRIGGER'},'LOCK':{'UNLOCK'}}
@@ -148,12 +148,14 @@ def validate_binding(binding, kind=None, color=None):
         if type(value) is not int or not low <= value <= high:
             raise ValueError('invalid binding state: ' + key)
     cover = state.get('cover', 'UNKNOWN' if actual_kind == 'ANIMAL' else 'NONE')
-    if cover not in {'NONE', 'FROZEN_ICE', 'LOCK', 'HONEY', 'CAGE', 'UNKNOWN'} or state.get('gate', 'UNKNOWN') not in {'OPEN', 'CLOSED', 'UNKNOWN'}:
+    if cover not in {'NONE', 'FROZEN_ICE', 'LOCK', 'HONEY', 'CAGE', 'UNKNOWN', 'GRAY_FURBALL'} or state.get('gate', 'UNKNOWN') not in {'OPEN', 'CLOSED', 'UNKNOWN'}:
         raise ValueError('invalid covering/gate')
     if cover == 'NONE' and state.get('cover_layers', 0) != 0 or cover != 'NONE' and state.get('cover_layers', -1) == 0:
         raise ValueError('cover/layer mismatch')
-    if cover == 'FROZEN_ICE' and state.get('cover_layers', -1) > 2 or cover == 'LOCK' and state.get('cover_layers', -1) > 1:
+    if cover == 'FROZEN_ICE' and state.get('cover_layers', -1) > 2 or cover in {'LOCK','GRAY_FURBALL'} and state.get('cover_layers', -1) > 1:
         raise ValueError('unsupported cover count')
+    if actual_kind=='UNKNOWN' and (cover!='GRAY_FURBALL' or state.get('layers',-1)!=-1):
+        raise ValueError('unknown foreground needs independently reviewed gray cover')
     if state.get('capacity', -1) >= 0 and state.get('charge', -1) > state['capacity']:
         raise ValueError('charge exceeds capacity')
     if state.get('floor_ice', -1) > 0 and state.get('floor_rule_id') != 'stationary_single_layer_ice':

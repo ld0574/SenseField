@@ -180,6 +180,7 @@ final class Match3VisualCatalog {
     final List<Match3AnimalAppearance.Face> animalFaces;
     final List<Match3AnimalAppearance.Body> animalBodies;
     final List<Character> bodyColors;
+    private final Match3AnimalAppearance.BodyTable ordinaryBodies;
     List<Glyph> glyphs;
     final List<Glyph> checkmarks, levelSuffixes;
     /** One immutable buffer per bounded catalog; no native handles or per-cell
@@ -187,8 +188,34 @@ final class Match3VisualCatalog {
     private static final class PatternList extends java.util.AbstractList<Pattern> {
         private final List<Pattern> patterns;
         private final java.nio.ByteBuffer table;
+        private final java.util.Map<CoverPatch,float[]> coverScores;
+        /** Registered tables have the costly multi-offset comparisons. Reuse
+         * their complete scores only for identical pixels and exact ceiling;
+         * the owning catalog and all its patterns are immutable. */
+        private static final class CoverPatch {
+            final int[] pixels;
+            final int ceilingBits, hash;
+            CoverPatch(int[] pixels,float ceiling,boolean freeze) {
+                this.pixels=freeze?pixels.clone():pixels;
+                ceilingBits=Float.floatToIntBits(ceiling);
+                hash=31*java.util.Arrays.hashCode(pixels)+ceilingBits;
+            }
+            @Override public int hashCode() { return hash; }
+            @Override public boolean equals(Object other) {
+                if(!(other instanceof CoverPatch))return false;
+                CoverPatch patch=(CoverPatch)other;
+                return ceilingBits==patch.ceilingBits && java.util.Arrays.equals(pixels,patch.pixels);
+            }
+        }
         PatternList(List<Pattern> source) {
             patterns=Collections.unmodifiableList(new ArrayList<>(source));
+            boolean registered=false;
+            for(Pattern pattern:source)registered|=pattern.coverEvidence!=null;
+            coverScores=registered?new java.util.LinkedHashMap<CoverPatch,float[]>(128,.75f,true) {
+                @Override protected boolean removeEldestEntry(java.util.Map.Entry<CoverPatch,float[]> entry) {
+                    return size()>1024;
+                }
+            }:null;
             if(!Match3NativeMath.AVAILABLE || source.isEmpty()) { table=null;return; }
             java.nio.ByteBuffer packed=java.nio.ByteBuffer.allocateDirect(Math.multiplyExact(source.size(),7352)).order(java.nio.ByteOrder.nativeOrder());
             for(Pattern p:source) {
@@ -196,14 +223,23 @@ final class Match3VisualCatalog {
                 for(int pixel:p.pixels)packed.putInt(pixel);
                 for(boolean bit:p.mask)packed.put((byte)(bit?1:0));
                 for(int i=0;i<256;i++)packed.put((byte)(p.coverEvidence!=null && p.coverEvidence[i]?1:0));
-                packed.position(packed.position()+5808); // RGB sums, nine cover counts and pixel orders
+                packed.position(packed.position()+5808); // native RGB bounds, nine cover counts and pixel orders
             }
             packed.flip();table=Match3NativeMath.preparePatternTable(packed,size())?packed:null;
         }
         @Override public Pattern get(int index) { return patterns.get(index); }
         @Override public int size() { return patterns.size(); }
         float[] differences(int[] observed,float ceiling) {
-            return table==null?null:Match3NativeMath.patternDifferences(observed,table,size(),ceiling);
+            if(table==null)return null;
+            if(coverScores==null)return Match3NativeMath.patternDifferences(observed,table,size(),ceiling);
+            CoverPatch key=new CoverPatch(observed,ceiling,false);float[] cached;
+            synchronized(coverScores) { cached=coverScores.get(key); }
+            if(cached!=null)return cached;
+            float[] result=Match3NativeMath.patternDifferences(observed,table,size(),ceiling);
+            if(result!=null) {
+                synchronized(coverScores) { coverScores.put(new CoverPatch(observed,ceiling,true),result.clone()); }
+            }
+            return result;
         }
     }
     private Match3VisualCatalog() {
@@ -213,6 +249,7 @@ final class Match3VisualCatalog {
         animalFaces=Collections.emptyList();
         animalBodies=Collections.emptyList();
         bodyColors=Collections.emptyList();
+        ordinaryBodies=new Match3AnimalAppearance.BodyTable(animalBodies,bodyColors);
     }
     private Match3VisualCatalog(JSONObject json) throws Exception {
         if (!"match3-fixed-ui-v1".equals(json.getString("format"))) throw new IllegalArgumentException("Catalog format");
@@ -242,7 +279,7 @@ final class Match3VisualCatalog {
             } else if(!pattern.kind.startsWith("animal_"))objects.add(pattern);
         }
         cells=new PatternList(objects);animals=new PatternList(faces);
-        animalFaces=Collections.unmodifiableList(descriptors);
+        animalFaces=new Match3AnimalAppearance.FaceList(descriptors);
         List<Match3AnimalAppearance.Body> bodies=new ArrayList<>();List<Character> colors=new ArrayList<>();
         JSONArray envelopes=json.getJSONArray("ordinary_envelopes");
         for(int i=0;i<envelopes.length();i++) {
@@ -253,6 +290,7 @@ final class Match3VisualCatalog {
             bodies.add(new Match3AnimalAppearance.Body(patch));colors.add(color);
         }
         animalBodies=Collections.unmodifiableList(bodies);bodyColors=Collections.unmodifiableList(colors);
+        ordinaryBodies=new Match3AnimalAppearance.BodyTable(animalBodies,bodyColors);
         List<Glyph> parsed = new ArrayList<>(); JSONArray digits = json.getJSONArray("glyphs");
         for (int i = 0; i < digits.length(); i++) parsed.add(new Glyph(digits.getJSONObject(i)));
         glyphs = Collections.unmodifiableList(parsed); available = !steps.isEmpty() && !goals.isEmpty() && !glyphs.isEmpty();
@@ -293,16 +331,17 @@ final class Match3VisualCatalog {
                         loaded=new Match3VisualCatalog(json);loaded.galleryStatus="rejected:RuleProvenance";return loaded;
                     }
                 }
-                byte[] supplement=null;
-                try(java.io.InputStream extra=context.getAssets().open("match3-vine-v1.json")) {
-                    java.io.ByteArrayOutputStream data=new java.io.ByteArrayOutputStream();
-                    int count;while((count=extra.read(buffer))>0) {
-                        if(data.size()+count>65536)throw new IllegalArgumentException("Cover catalog size");
-                        data.write(buffer,0,count);
-                    }
-                    supplement=data.toByteArray();
-                } catch(java.io.IOException absent) { }
-                Match3VisualCatalog candidate = withReviewedSupplement(json,gallery,supplement,rules.sha256);
+                List<byte[]> supplements=new ArrayList<>();
+                for(String name:new String[]{"match3-vine-v1.json","match3-gray-v1.json"})
+                    try(java.io.InputStream extra=context.getAssets().open(name)) {
+                        java.io.ByteArrayOutputStream data=new java.io.ByteArrayOutputStream();
+                        int count;while((count=extra.read(buffer))>0) {
+                            if(data.size()+count>65536)throw new IllegalArgumentException("Cover catalog size");
+                            data.write(buffer,0,count);
+                        }
+                        supplements.add(data.toByteArray());
+                    } catch(java.io.IOException absent) { }
+                Match3VisualCatalog candidate = withReviewedSupplements(json,gallery,supplements,rules.sha256);
                 byte[] hudGlyphs=null;
                 try(java.io.InputStream extra=context.getAssets().open("match3-hud-glyphs-v1.json")) {
                     java.io.ByteArrayOutputStream data=new java.io.ByteArrayOutputStream();
@@ -377,23 +416,37 @@ final class Match3VisualCatalog {
     /** The original gallery stays byte-for-byte intact. A separately audited,
      * bounded supplement goes through the same typed admission and competition. */
     static Match3VisualCatalog withReviewedSupplement(JSONObject base,byte[] gallery,byte[] supplement,String rulesSha) throws Exception {
+        return withReviewedSupplements(base,gallery,supplement==null?Collections.emptyList():Collections.singletonList(supplement),rulesSha);
+    }
+    /** Two fixed sidecars share the original total entry budgets. Admission is
+     * atomic, and each sidecar retains its own 64KiB cap and rule provenance. */
+    static Match3VisualCatalog withReviewedSupplements(JSONObject base,byte[] gallery,List<byte[]> supplements,String rulesSha) throws Exception {
         CatalogMerge original=mergeGallery(base,gallery);
-        if(supplement==null)return original.catalog;
+        if(supplements.isEmpty())return original.catalog;
         try {
+            if(supplements.size()>2)throw new IllegalArgumentException("Supplement count");
+            CatalogMerge augmented=original;
+            int cells=0,goals=0,envelopes=0;StringBuilder ids=new StringBuilder();
+            java.io.ByteArrayOutputStream proof=new java.io.ByteArrayOutputStream();
+            for(byte[] supplement:supplements) {
             if(supplement.length>65536)throw new IllegalArgumentException("Cover catalog size");
             JSONObject extra=new JSONObject(new String(supplement,StandardCharsets.UTF_8));
             JSONObject metadata=extra.getJSONObject("metadata");
-            if(extra.optJSONArray("cells")!=null && extra.getJSONArray("cells").length()>32
-                    || extra.optJSONArray("goals")!=null && extra.getJSONArray("goals").length()>8
-                    || extra.optJSONArray("ordinary_envelopes")!=null && extra.getJSONArray("ordinary_envelopes").length()>4)
+            cells+=extra.optJSONArray("cells")==null?0:extra.getJSONArray("cells").length();
+            goals+=extra.optJSONArray("goals")==null?0:extra.getJSONArray("goals").length();
+            envelopes+=extra.optJSONArray("ordinary_envelopes")==null?0:extra.getJSONArray("ordinary_envelopes").length();
+            if(cells>32 || goals>8 || envelopes>4)
                 throw new IllegalArgumentException("Supplement entry budget");
             if(!rulesSha.matches("[0-9a-f]{64}") || !rulesSha.equals(metadata.getString("rule_catalog_sha256")))
                 throw new IllegalArgumentException("Cover rule provenance");
-            CatalogMerge augmented=mergeGallery(original.json,supplement);
+            augmented=mergeGallery(augmented.json,supplement);
             if(!"loaded".equals(augmented.catalog.galleryStatus))throw new IllegalArgumentException("Cover admission");
+            if(ids.length()>0)ids.append('+');ids.append(augmented.catalog.galleryId);
+            proof.write(supplement);
+            }
             Match3VisualCatalog result=augmented.catalog;
-            result.coverCatalogId=result.galleryId;
-            result.coverCatalogSha256=result.gallerySha256;
+            result.coverCatalogId=ids.toString();
+            result.coverCatalogSha256=sha256(proof.toByteArray());
             result.coverCatalogStatus="loaded";
             result.galleryId=original.catalog.galleryId;
             result.gallerySha256=original.catalog.gallerySha256;
@@ -550,6 +603,15 @@ final class Match3VisualCatalog {
         }
         return patch;
     }
+    static int[] combineEnvelopes(int[] topLeft,int[] topRight,int[] bottomLeft,int[] bottomRight) {
+        int[] patch=new int[256];
+        for(int y=0;y<16;y++) {
+            int[] left=y<8?topLeft:bottomLeft,right=y<8?topRight:bottomRight;
+            int base=(2*(y%8)+1)*16,row=y*16;
+            for(int x=0;x<8;x++) {int at=base+2*x+1;patch[row+x]=left[at];patch[row+x+8]=right[at];}
+        }
+        return patch;
+    }
     static String recognize(List<Pattern> patterns, int[] patch, float maximum, float margin) {
         String best = null; float error = Float.POSITIVE_INFINITY, second = Float.POSITIVE_INFINITY;
         java.util.Map<String,int[]> totals=new java.util.HashMap<>();
@@ -558,7 +620,8 @@ final class Match3VisualCatalog {
         float[] nativeScores=patterns instanceof PatternList?((PatternList)patterns).differences(patch,maximum+margin):null;
         if(nativeScores!=null && nativeScores.length!=patterns.size())nativeScores=null;
         int patternIndex=0;
-        for (Pattern pattern : patterns) {
+        for (int index=0,count=patterns.size();index<count;index++) {
+            Pattern pattern=patterns.get(index);
             float candidate;
             if(nativeScores!=null)candidate=nativeScores[patternIndex++];
             else {
@@ -670,13 +733,9 @@ final class Match3VisualCatalog {
                     else color=ordinary;
                 }
                 if(Match3Sampler.isMovable(color)) {
-                    boolean plain=false;
                     int ice=iceLayers(cache);
-                    for(int i=0;i<animalBodies.size();i++)if(bodyColors.get(i)==color
-                            && (ice==1?matchesIceBody(cache,animalBodies.get(i))
-                            :body(cache).difference(animalBodies.get(i))<=Match3AnimalAppearance.MAXIMUM)) {
-                        plain=true;break;
-                    }
+                    boolean plain=ice!=1 && ordinaryBodies.matches(body(cache),color);
+                    if(ice==1)for(int i=0;i<animalBodies.size();i++)if(bodyColors.get(i)==color && matchesIceBody(cache,animalBodies.get(i))) {plain=true;break;}
                     cache.animal=plain?ice==1?Match3Position.Cell.animalOnIce(color):Match3Position.Cell.animal(color)
                             :Match3Position.Cell.animalIdentity(color);
                 }

@@ -241,6 +241,9 @@
 -keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3AnimalAppearance$Body {
     float differenceJava(com.openkhub.sensefield.Match3AnimalAppearance$Body);
 }
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3AnimalAppearance$Face {
+    float differenceJava(com.openkhub.sensefield.Match3AnimalAppearance$Face);
+}
 -keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3Sampler {
     static com.openkhub.sensefield.BoardGeometry verifiedGeometry(android.graphics.Bitmap,int[]);
 }

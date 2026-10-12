@@ -20,7 +20,7 @@ final class Match3Rules {
             "cannon","shell","puffer","magic_stone","dye_egg","dye_baby","star_bottle","energy_bottle",
             "octopus","cuttlefish","moving_floor","tool_hammer","tool_shuffle","tool_extra_steps",
             "tool_start_special","tool_undo","stationary_single_layer_ice","single_clear_honey",
-            "multistage_iceflower","identity_only_2x2")));
+            "multistage_iceflower","identity_only_2x2","gray_furball")));
     static boolean knownRule(String id,int version) { return version==VERSION && ("unknown".equals(id) || IDS.contains(id)); }
     private static final java.util.Map<String,String> UNKNOWN_DAMAGE=new java.util.HashMap<>();
     static {

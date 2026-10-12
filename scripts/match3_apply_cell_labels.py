@@ -28,11 +28,11 @@ OBSTACLES = {
 
 DEFAULT_ARCH = {**{code: "ordinary" for code in ANIMALS}, "coin": "single", "snow": "single",
                 "honey": "single", "honey_cover":"cover", "lock":"cover", "iceflower": "multistage", "cookie": "large", "ice": "cover",
-                "egg": "spawner", "empty": "none", "special": "special", "unknown": "unknown"}
+                "egg": "spawner", "empty": "none", "special": "special", "unknown": "unknown", "gray_furball":"cover"}
 _spec=importlib.util.spec_from_file_location("match3_rules",Path(__file__).with_name("match3_rules.py"))
 _rules=importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_rules)
-TYPED={kind.lower():kind for kind in _rules.KIND_RULE if kind not in {"ANIMAL","COIN","SNOW","ICEFLOWER","HONEY","EGG","COOKIE"}}
+TYPED={kind.lower():kind for kind in _rules.KIND_RULE if kind not in {"ANIMAL","COIN","SNOW","ICEFLOWER","HONEY","EGG","COOKIE","UNKNOWN"}}
 DEFAULT_ARCH.update({code:"state" for code in TYPED})
 
 
@@ -41,7 +41,7 @@ def record(code: str, archetype: str = "unknown", swappable: Optional[bool] = No
         raise ValueError(f"unknown label code: {code}")
     allowed={DEFAULT_ARCH[code],"unknown"}
     if code in ANIMALS:
-        allowed.update({"frozen","locked","line_horizontal","line_vertical","blast","honey_cover","cage"})
+        allowed.update({"frozen","locked","line_horizontal","line_vertical","blast","honey_cover","cage","gray_furball"})
     if archetype not in allowed:
         raise ValueError(f"unsupported identity/mechanic combination: {code}/{archetype}")
     if swappable is not None and type(swappable) is not bool:
@@ -58,14 +58,14 @@ def record(code: str, archetype: str = "unknown", swappable: Optional[bool] = No
         state=binding['state'];cover=state.get('cover','UNKNOWN' if result['kind']=='ANIMAL' else 'NONE')
         effect=state.get('effect','UNKNOWN' if result['kind']=='ANIMAL' else 'NONE')
         if code in ANIMALS:
-            expected={'FROZEN_ICE':'frozen','LOCK':'locked','HONEY':'honey_cover','CAGE':'cage'}.get(cover)
+            expected={'FROZEN_ICE':'frozen','LOCK':'locked','HONEY':'honey_cover','CAGE':'cage','GRAY_FURBALL':'gray_furball'}.get(cover)
             if expected is None:
                 expected={'HORIZONTAL':'line_horizontal','VERTICAL':'line_vertical','BLAST':'blast','NONE':'ordinary'}.get(effect)
             if expected!=archetype:
                 raise ValueError('state differs from independently reviewed archetype')
         certain=(state.get('gate')=='OPEN' and cover=='NONE' and state.get('floor_ice',-1)>=0
                  and state.get('layers',-1)>=0 and effect not in {'BLAST','UNKNOWN'})
-        permission=(True if certain else False if cover in {'FROZEN_ICE','LOCK'} or state.get('gate')=='CLOSED' else None)
+        permission=(True if certain else False if cover in {'FROZEN_ICE','LOCK','GRAY_FURBALL'} or state.get('gate')=='CLOSED' else None)
         if result['kind'] not in {'ANIMAL','BIRD'}:
             permission=False
         if swappable is not permission:
@@ -92,6 +92,8 @@ def _identity(code: str) -> dict:
         return {"family": "HONEY", "kind": "HONEY", "color": "", "swappable": False, "rule": "single_clear_honey"}
     if code == "honey_cover":
         return {"family":"HONEY_COVER","kind":"SURFACE","color":"","swappable":False,"rule":"unverified"}
+    if code == "gray_furball":
+        return {"family":"GRAY_FURBALL","kind":"UNKNOWN","color":"","swappable":False,"rule":"unverified"}
     if code == "lock":
         # A HUD icon is not a covered animal. Cell review must bind the
         # independently observed foreground colour and LOCK cover separately.

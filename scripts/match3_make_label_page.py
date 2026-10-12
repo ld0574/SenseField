@@ -26,7 +26,7 @@ OPTIONS = [
     ("O", "棕色动物 O"), ("R", "狐狸 R"), ("B", "河马 B"), ("Y", "小鸡 Y"), ("G", "青蛙 G"), ("P", "紫猫头鹰 P"),
     ("coin", "银币"), ("cookie", "饼干"), ("snow", "雪块"), ("iceflower", "冰花(消完变雪)"),
     ("ice", "裸冰单层背景(不含动物)"), ("honey", "蜜罐"), ("honey_cover","蜂蜜覆盖目标图标"), ("lock","藤蔓任务图标"), ("egg", "鸡蛋"), ("empty", "空/背景/天空"),
-    ("special", "特殊(彩虹等)"), ("unknown", "不认识/障碍"),
+    ("gray_furball", "灰毛球覆盖·动物未知"), ("special", "特殊(彩虹等)"), ("unknown", "不认识/障碍"),
 ]
 # The bounded set of clearing mechanics; each is hand-coded once in the engine.
 ARCHETYPES = [
@@ -38,7 +38,7 @@ ARCHETYPES = [
 DEFAULT_ARCH = {
     "O": "ordinary", "R": "ordinary", "B": "ordinary", "Y": "ordinary", "G": "ordinary", "P": "ordinary",
     "coin": "single", "snow": "single", "honey": "single", "honey_cover":"cover", "lock":"cover", "iceflower": "multistage", "ice": "cover",
-    "cookie": "large", "egg": "spawner", "special": "special", "empty": "none", "unknown": "unknown",
+    "cookie": "large", "egg": "spawner", "special": "special", "empty": "none", "unknown": "unknown", "gray_furball":"cover",
 }
 _spec=importlib.util.spec_from_file_location('state_labels',Path(__file__).with_name('match3_apply_cell_labels.py'))
 _state_labels=importlib.util.module_from_spec(_spec)
@@ -46,7 +46,7 @@ _spec.loader.exec_module(_state_labels)
 OPTIONS += [(code,kind) for code,kind in _state_labels.TYPED.items()]
 ARCHETYPES += [('frozen','包裹冰·禁移动配对'),('locked','锁链·禁移动可配对'),
                ('line_horizontal','横向直线'),('line_vertical','纵向直线'),('blast','爆炸·参数待核实'),
-               ('honey_cover','多层蜂蜜覆盖'),('cage','牢笼'),('state','已知身份·独立状态')]
+               ('honey_cover','多层蜂蜜覆盖'),('cage','牢笼'),('gray_furball','灰毛球覆盖'),('state','已知身份·独立状态')]
 DEFAULT_ARCH.update({code:'state' for code in _state_labels.TYPED})
 
 

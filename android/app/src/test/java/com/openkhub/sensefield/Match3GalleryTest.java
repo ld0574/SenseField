@@ -153,6 +153,25 @@ public final class Match3GalleryTest {
         assertEquals(original.goals.size(),rejected.goals.size());assertEquals(original.gallerySha256,rejected.gallerySha256);
         assertArrayEquals(preserved,old);assertEquals(before,base.toString());
     }
+    @Test public void grayAndVineSidecarsShareTheTotalBudgetAndRejectAtomically() throws Exception {
+        Path assets=Path.of("src/main/assets");if(!Files.isDirectory(assets))assets=Path.of("app/src/main/assets");
+        byte[] gallery=Files.readAllBytes(assets.resolve("match3-gallery-v1.json"));
+        byte[] vine=Files.readAllBytes(assets.resolve("match3-vine-v1.json"));
+        byte[] gray=Files.readAllBytes(assets.resolve("match3-gray-v1.json"));
+        JSONObject grayJson=new JSONObject(new String(gray,StandardCharsets.UTF_8));
+        String ruleSha=grayJson.getJSONObject("metadata").getString("rule_catalog_sha256");
+        Match3VisualCatalog original=Match3VisualCatalog.withGallery(base(),gallery);
+        Match3VisualCatalog combined=Match3VisualCatalog.withReviewedSupplements(base(),gallery,java.util.Arrays.asList(vine,gray),ruleSha);
+        assertEquals("loaded",combined.galleryStatus);assertEquals("loaded",combined.coverCatalogStatus);
+        assertEquals(original.cells.size()+32,combined.cells.size());
+        assertEquals(original.gallerySha256,combined.gallerySha256);assertTrue(combined.coverCatalogId.contains("+gray-"));
+        assertEquals(Match3Position.Cover.GRAY_FURBALL,combined.classifyObstacle(
+                new Match3VisualCatalog.Pattern(grayJson.getJSONArray("cells").getJSONObject(0)).pixels).cover);
+        grayJson.getJSONObject("metadata").put("rule_catalog_sha256","0".repeat(64));
+        Match3VisualCatalog rejected=Match3VisualCatalog.withReviewedSupplements(base(),gallery,
+                java.util.Arrays.asList(vine,grayJson.toString().getBytes(StandardCharsets.UTF_8)),ruleSha);
+        assertTrue(rejected.coverCatalogStatus.startsWith("rejected:"));assertEquals(original.cells.size(),rejected.cells.size());
+    }
     @Test public void registeredCoverPruningRetainsEveryScoreInsideTheDecisionBudget() throws Exception {
         Path path=Path.of("src/main/assets/match3-vine-v1.json");if(!Files.isRegularFile(path))path=Path.of("app/src/main/assets/match3-vine-v1.json");
         JSONObject asset=new JSONObject(new String(Files.readAllBytes(path),StandardCharsets.UTF_8));JSONArray entries=asset.getJSONArray("cells");java.util.Random random=new java.util.Random(82983);

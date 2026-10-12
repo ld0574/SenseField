@@ -10,6 +10,13 @@ final class Match3NativeMath {
         AVAILABLE=loaded;
     }
     static native float bodyDifference(int[] observed,int[] reference,boolean[] background);
+    static native boolean prepareBodyDescriptor(java.nio.ByteBuffer descriptor,int[] pixels);
+    static native float preparedBodyDifference(java.nio.ByteBuffer observed,java.nio.ByteBuffer reference);
+    static native float bodyDifferenceAgainstPrepared(int[] observed,java.nio.ByteBuffer reference);
+    static native float faceShapeDifference(int[] observed,int[] reference);
+    static native float[] faceDifferences(int[] centered,int[] mean,java.nio.ByteBuffer table,int count);
+    static native boolean bodyMatchesTable(int[] observed,java.nio.ByteBuffer table,int count,int color);
+    static native float[] bodyDifferences(int[] observed,java.nio.ByteBuffer table,int count,boolean[] compatible);
     static native float coverDifference(int[] reference,int[] observed,boolean[] cover,float ceiling);
     static native float[] patternDifferences(int[] observed,java.nio.ByteBuffer table,int count,float ceiling);
     static native boolean preparePatternTable(java.nio.ByteBuffer table,int count);

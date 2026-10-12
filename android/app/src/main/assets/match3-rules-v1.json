@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/research/开心消消乐元素规则参考.md",
-    "sha256": "2f115d9253a0e42eb958cff5ea637a48b6375246f9a9369c87f4c03fecb723b1"
+    "sha256": "d5f8be36d12cdc0985cd0587ed5bd8e005daeb9a71d30aa849cabd36165c7f19"
   },
   "rules": [
     {
@@ -1472,6 +1472,35 @@
       "live_validation": "pending",
       "legacy_source": "docs/development/match3-element-evidence.md",
       "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "gray_furball",
+      "version": 1,
+      "source_entries": [
+        "灰毛球"
+      ],
+      "mechanism": "jumping_animal_cover",
+      "reference_evidence": "confirmed",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "orthogonal_clear": "remove_cover_preserve_animal",
+        "cover_layers": 1,
+        "surviving_after_step": "jump_destination_unknown"
+      },
+      "abilities": {
+        "move": "no",
+        "match": "no",
+        "activate": "no"
+      },
+      "required_evidence": [
+        "special_direct_hit",
+        "jump_destination",
+        "hidden_animal_identity"
+      ],
+      "engine_status": "partial_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Guaranteed adjacent cover removal only; unknown foreground and surviving jump block a known successor."
     }
   ],
   "engineering_entry": "android/app/src/main/java/com/openkhub/sensefield/Match3RuleEngine.java",

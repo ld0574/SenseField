@@ -59,7 +59,7 @@ final class Match3MoveValue {
                     :mode==Match3Goals.Mode.UNLOCK?"解除"+spoken.name
                     :spoken.color!='\0'?"收集"+spoken.name:spoken==Match3Goals.Kind.COIN?"收集银币"
                     :spoken==Match3Goals.Kind.ICE?"消除冰层":spoken==Match3Goals.Kind.ICEFLOWER?"消除冰花"
-                    :spoken==Match3Goals.Kind.HONEY?"消除蜜罐":"清除障碍";
+                    :spoken==Match3Goals.Kind.HONEY?"消除蜜罐":spoken==Match3Goals.Kind.GRAY_FURBALL?"消除灰毛球":"清除障碍";
         } else if(relevant>0)reason=goals.active(Match3Goals.Kind.STAR_BOTTLE) && goals.mode(Match3Goals.Kind.STAR_BOTTLE)==Match3Goals.Mode.CHARGE
                 && result.preparation(Match3Goals.Kind.STAR_BOTTLE,Match3Goals.Mode.CHARGE)>0?"准备充能星星瓶"
                 :goals.active(Match3Goals.Kind.GOLD_POD) && channelProgress(result,Match3Goals.Kind.GOLD_POD)>0?"打通金豆荚通道"

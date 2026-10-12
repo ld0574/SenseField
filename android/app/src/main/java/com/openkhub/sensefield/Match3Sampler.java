@@ -220,17 +220,15 @@ final class Match3Sampler implements AutoCloseable {
             boolean eligible=true;
             for(int rr=r;rr<=r+1;rr++)for(int cc=c;cc<=c+1;cc++) {
                 Match3Position.Kind kind=cells[rr][cc].kind;
-                if(kind!=Match3Position.Kind.UNKNOWN && kind!=Match3Position.Kind.SURFACE)eligible=false;
+                if(kind!=Match3Position.Kind.UNKNOWN && kind!=Match3Position.Kind.SURFACE
+                        || cells[rr][cc].cover!=Match3Position.Cover.NONE)eligible=false;
             }
             if(!eligible)continue;
             int anchor=r*g.cols+c;
             // Reuse this frame's complete per-cell envelopes. No new capture,
             // native pixel reads, learned prototype or partial-face permission.
-            int[] patch=new int[256];
-            for(int y=0;y<16;y++)for(int x=0;x<16;x++) {
-                int[] envelope=observationCache[r+y/8][c+x/8].envelope;
-                patch[y*16+x]=envelope[(2*(y%8)+1)*16+2*(x%8)+1];
-            }
+            int[] patch=Match3VisualCatalog.combineEnvelopes(observationCache[r][c].envelope,observationCache[r][c+1].envelope,
+                    observationCache[r+1][c].envelope,observationCache[r+1][c+1].envelope);
             if(!java.util.Arrays.equals(largeObjectPatches[anchor],patch)) {
                 largeObjectPatches[anchor]=patch;
                 largeObjectMatches[anchor]="cookie".equals(Match3VisualCatalog.recognize(observations.largeObjects,patch,.12f,.025f));

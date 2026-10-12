@@ -152,6 +152,64 @@ public final class Match3RuleEngineTest {
         p=replace(p,0,1,Match3Position.Cell.observed(Match3Position.Kind.CHEST,"chest",1,-1));
         r=settle(p,Match3Action.Type.SWAP,4,7);assertEquals(Match3Position.Kind.CHEST,r.after.cell(0,1).kind);
     }
+    @Test public void grayCoverCannotMoveMatchOrActivateEvenOnAKnownAnimal() {
+        Match3Position.Cell gray=Match3Position.Cell.animal('R').withCover(Match3Position.Cover.GRAY_FURBALL,1);
+        assertEquals(Match3Position.SwapPermission.NO,gray.swapPermission);
+        assertEquals(Match3Position.SwapPermission.NO,gray.matchPermission);
+        assertEquals(Match3Position.SwapPermission.NO,gray.activationPermission);
+        assertEquals(Match3Position.SwapPermission.YES,gray.adjacentDamagePermission);
+        assertTrue(Match3Action.enumerate(replace(board("RGR","HRH"),0,0,gray)).isEmpty());
+    }
+    @Test public void adjacentGrayRemovalPreservesKnownAnimalAndStationaryIce() {
+        Match3Position.Cell gray=Match3Position.Cell.animalOnIce('B').withCover(Match3Position.Cover.GRAY_FURBALL,1);
+        Match3Position p=replace(board("HHH","RGR","HRH"),0,1,gray);
+        Match3MoveValue best=Match3MoveRanker.rankedMoves(p,goals(Match3Goals.Kind.GRAY_FURBALL,1,Match3Goals.Mode.CLEAR,1)).get(0);
+        assertEquals(1,best.directUnits);assertTrue(best.allTargetsFinish);assertEquals("消除灰毛球",best.reason);
+        assertEquals('B',best.result.after.cell(0,1).color);assertEquals(1,best.result.after.cell(0,1).iceLayers);
+        assertEquals(Match3Position.Cover.NONE,best.result.after.cell(0,1).cover);
+        assertEquals(0,best.collected(Match3Goals.Kind.HIPPO));assertEquals(0,best.collected(Match3Goals.Kind.ICE));
+        assertFalse(best.result.unknowns.contains("gray_furball_jump_destination_unknown"));
+    }
+    @Test public void opaqueGrayRemovalCannotInventTheCoveredAnimalOrItsNextMove() {
+        Match3Position.Cell gray=Match3Position.Cell.obstacle(Match3Position.Kind.UNKNOWN,-1)
+                .withCover(Match3Position.Cover.GRAY_FURBALL,1);
+        Match3Position p=replace(board("HHH","RGR","HRH"),0,1,gray);
+        Match3RuleEngine.Result r=settle(p,Match3Action.Type.SWAP,4,7);
+        assertEquals(1,r.collected(Match3Goals.Kind.GRAY_FURBALL,Match3Goals.Mode.CLEAR));
+        assertEquals(Match3Position.Kind.UNKNOWN,r.after.cell(0,1).kind);assertFalse(r.after.cell(0,1).swappable);
+        assertFalse(r.successorKnown);assertTrue(r.unknowns.contains("gray_furball_foreground_unobserved"));
+    }
+    @Test public void untouchedGrayJumpsPreventKnownSuccessorSearch() {
+        Match3Position p=replace(board("HHHHH","RGRHH","HRHHH"),0,4,Match3Position.Cell.animal('B')
+                .withCover(Match3Position.Cover.GRAY_FURBALL,1));
+        Match3RuleEngine.Result r=settle(p,Match3Action.Type.SWAP,6,11);
+        assertEquals(0,r.collected(Match3Goals.Kind.GRAY_FURBALL,Match3Goals.Mode.CLEAR));
+        assertEquals(Match3Position.Cover.GRAY_FURBALL,r.after.cell(0,4).cover);assertFalse(r.successorKnown);
+        assertTrue(r.unknowns.contains("gray_furball_jump_destination_unknown"));
+    }
+    @Test public void grayCoverIsNotRemovedByDiagonalOrUnverifiedDirectSpecialHit() {
+        Match3Position.Cell gray=Match3Position.Cell.animal('B').withCover(Match3Position.Cover.GRAY_FURBALL,1);
+        Match3Position p=replace(board("HHHH","RGRH","HRHH"),0,3,gray);
+        assertEquals(0,settle(p,Match3Action.Type.SWAP,5,9).collected(Match3Goals.Kind.GRAY_FURBALL,Match3Goals.Mode.CLEAR));
+        p=replace(board("BHHH","HHHH"),0,3,gray);p=replace(p,0,0,Match3Position.Cell.animal('B').withEffect(Match3Position.Effect.HORIZONTAL));
+        Match3RuleEngine.Result r=settle(p,Match3Action.Type.ACTIVATE,0,0);
+        assertEquals(0,r.collected(Match3Goals.Kind.GRAY_FURBALL,Match3Goals.Mode.CLEAR));
+        assertTrue(r.unknowns.contains("gray_furball_special_damage_unverified"));
+    }
+    @Test public void missingGrayCoverLayerCannotClaimTaskCompletion() {
+        Match3Position p=replace(board("HHH","RGR","HRH"),0,1,Match3Position.Cell.animal('B')
+                .withCover(Match3Position.Cover.GRAY_FURBALL,-1));
+        Match3RuleEngine.Result r=settle(p,Match3Action.Type.SWAP,4,7);
+        assertEquals(1,r.hits(Match3Goals.Kind.GRAY_FURBALL));assertEquals(0,r.collected(Match3Goals.Kind.GRAY_FURBALL,Match3Goals.Mode.CLEAR));
+        assertEquals(-1,r.after.cell(0,1).coverLayers);assertFalse(r.successorKnown);
+    }
+    @Test public void lastGrayTaskOutranksADistantUnrelatedClear() {
+        Match3Position p=replace(board("HHHHHHH","RGRHBGB","HRHHHBH"),0,1,Match3Position.Cell.animal('Y')
+                .withCover(Match3Position.Cover.GRAY_FURBALL,1));
+        java.util.List<Match3MoveValue> ranked=Match3MoveRanker.rankedMoves(p,goals(Match3Goals.Kind.GRAY_FURBALL,1,Match3Goals.Mode.CLEAR,2));
+        assertTrue(ranked.size()>1);assertEquals(1,ranked.get(0).directUnits);assertTrue(ranked.get(0).allTargetsFinish);
+        assertTrue(ranked.stream().anyMatch(m->m.directUnits==0));
+    }
     @Test public void aLineIsLegalWithoutFormingATripleAndHitsOnlyItsObservedAxis() {
         Match3Position p=replace(board("RBG","GBR","YPG"),1,1,Match3Position.Cell.animal('B').withEffect(Match3Position.Effect.HORIZONTAL));
         Match3RuleEngine.Result row=settle(p,Match3Action.Type.ACTIVATE,4,4);

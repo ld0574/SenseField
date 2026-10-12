@@ -21,7 +21,7 @@ class RuleContractTests(unittest.TestCase):
     def test_catalog_covers_every_reference_entry_and_native_registry(self):
         result=rules.validate(json.loads(rules.CATALOG.read_text()),rules.REFERENCE.read_bytes(),
             (ROOT/'android/app/src/main/java/com/openkhub/sensefield/Match3Rules.java').read_text())
-        self.assertEqual(67,result['rules']);self.assertEqual(67,result['reference_entries'])
+        self.assertEqual(68,result['rules']);self.assertEqual(68,result['reference_entries'])
         self.assertEqual('pending',result['independent_acceptance'])
     def test_catalog_does_not_upgrade_missing_evidence_or_accept_changed_reference(self):
         catalog=json.loads(rules.CATALOG.read_text())
@@ -33,6 +33,20 @@ class RuleContractTests(unittest.TestCase):
         self.assertEqual('FROZEN_ICE',truth['rule_binding']['state']['cover']);self.assertFalse(truth['swappable'])
         for arch,permission in [('ordinary',False),('frozen',True),('unknown',None)]:
             with self.assertRaises(ValueError):labels.record('R',arch,permission,self.binding())
+    def test_opaque_gray_cover_binds_only_the_cover_and_never_a_hidden_color(self):
+        binding={'reviewed':True,'evidence':'gray_cover_hidden_animal_unobserved','rule_id':'unknown','rule_version':1,
+                 'state':{'kind':'UNKNOWN','layers':-1,'cover':'GRAY_FURBALL','cover_layers':1,'gate':'OPEN'}}
+        truth=labels.record('gray_furball','cover',False,binding)
+        self.assertEqual('UNKNOWN',truth['kind']);self.assertEqual('',truth['color']);self.assertFalse(truth['swappable'])
+        for change in ({'cover':'NONE','cover_layers':0},{'cover_layers':2},{'color':'G'},{'layers':0}):
+            bad=copy.deepcopy(binding);bad['state'].update(change)
+            with self.assertRaises(ValueError):rules.validate_binding(bad)
+        with self.assertRaises(ValueError):labels.record('gray_furball','cover',True,binding)
+    def test_gray_goal_is_separate_from_brown_furball_and_uses_clear_mode(self):
+        binding={'reviewed':True,'event_mode':'CLEAR','evidence':'gray_goal_and_adjacent_clear'}
+        self.assertEqual('GRAY_FURBALL',rules.GOAL_KINDS['gray_furball'])
+        self.assertEqual(binding,rules.validate_goal_binding(binding,'GRAY_FURBALL'))
+        with self.assertRaises(ValueError):rules.validate_goal_binding({**binding,'event_mode':'UNLOCK'},'GRAY_FURBALL')
     def test_name_only_typed_identity_remains_unverified_and_does_not_grant_actions(self):
         for code in ('bird','gold_pod','cannon','dye_baby','energy_bottle'):
             truth=labels.record(code,'state',None)

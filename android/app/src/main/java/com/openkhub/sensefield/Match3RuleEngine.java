@@ -164,6 +164,7 @@ final class Match3RuleEngine {
                     uncertain("gate_period_or_state_unknown");
                 if(cell.kind==Match3Position.Kind.INVINCIBLE_FURBALL)uncertain("temporary_return_period_unknown");
                 if(cell.kind==Match3Position.Kind.MOVING_FLOOR)uncertain("dynamic_floor_transition_unknown");
+                if(cell.cover==Match3Position.Cover.GRAY_FURBALL)uncertain("gray_furball_jump_destination_unknown");
             }
         }
         BitSet runMask(Match3Board.Run run) {
@@ -255,6 +256,20 @@ final class Match3RuleEngine {
                 // A chest's own closed lock is a known nondamageable state, separate from a timed stone gate.
                 if(cell.kind==Match3Position.Kind.CHEST && !cell.timedGate)continue;
                 if(cell.gate!=Match3Position.Gate.OPEN) { uncertain("gate_damage_guard_unknown");continue; }
+                // Removing this cover preserves the animal and stationary floor.
+                // An opaque observation supplies neither an animal color nor a
+                // future jump destination. A direct special hit is still unverified.
+                if(cell.cover==Match3Position.Cover.GRAY_FURBALL) {
+                    if(adjacent) {
+                        add(EventType.HIT,Match3Goals.Kind.GRAY_FURBALL,1,p,cell.coverRuleId,"orthogonal_clear");
+                        if(cell.coverLayers==1) {
+                            add(EventType.CLEAR,Match3Goals.Kind.GRAY_FURBALL,1,p,cell.coverRuleId,"cover_removed_animal_preserved");
+                            put(p,cell.withCover(Match3Position.Cover.NONE,0));
+                            if(cell.kind==Match3Position.Kind.UNKNOWN)uncertain("gray_furball_foreground_unobserved");
+                        } else uncertain("gray_furball_cover_layers_unknown");
+                    } else if(special)uncertain("gray_furball_special_damage_unverified");
+                    continue;
+                }
                 if(adjacent && cell.cover!=Match3Position.Cover.NONE) {
                     if(special)uncertain("special_cover_damage_unknown");
                     Match3Goals.Kind kind=cell.cover==Match3Position.Cover.FROZEN_ICE?Match3Goals.Kind.ICE

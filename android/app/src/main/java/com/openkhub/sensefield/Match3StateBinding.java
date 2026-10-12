@@ -27,6 +27,10 @@ final class Match3StateBinding {
         if(ice>1 || ice>0 && !"stationary_single_layer_ice".equals(state.optString("floor_rule_id")))
             throw new IllegalArgumentException("Unreviewed floor variant");
         Match3Position.Cover cover=Match3Position.Cover.valueOf(state.optString("cover",kind==Match3Position.Kind.ANIMAL?"UNKNOWN":"NONE"));
+        // A positively reviewed opaque cover may have an unobserved animal.
+        // This exception cannot turn generic UNKNOWN templates into rule states.
+        if(kind==Match3Position.Kind.UNKNOWN && (cover!=Match3Position.Cover.GRAY_FURBALL
+                || integer(state,"layers",-1)!=-1))throw new IllegalArgumentException("Unbound unknown foreground");
         String gateRule=state.optString("gate_rule_id","");
         if(!gateRule.isEmpty() && !"stone_gate".equals(gateRule))throw new IllegalArgumentException("Unknown gate rule");
         return cell.withIce(ice).withCover(cover,integer(state,"cover_layers",cover==Match3Position.Cover.NONE?0:-1))
