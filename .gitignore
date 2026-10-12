@@ -125,6 +125,8 @@ docs/**
 !docs/plans/符合度改造方案.md
 !docs/plans/消消乐目标价值排序.md
 !docs/plans/消消乐规则驱动最大价值改造.md
+!docs/plans/消消乐实局自动复盘.md
+!docs/development/match3-diagnostics-audit.md
 !docs/plans/消消乐新元素可信识别.md
 !docs/references/README.md
 !docs/requirements/README.md
