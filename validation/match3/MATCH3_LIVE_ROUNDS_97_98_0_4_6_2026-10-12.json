@@ -1,0 +1,153 @@
+{
+  "source_sha256": "a50259807df673e3355c48d90b3b888c75b46712ebadd29084379b209172578d",
+  "main_apk_sha256": "fa66c03baab3ca36c69b758c9cf7fae1c948da84f8254d53997f34894b86a993",
+  "standard_tests_apk_sha256": "b90f6248684de5f876cb7728cdee95fea705e38d7551e52afe6222feaf53fe3b",
+  "gallery_sha256": "a1a47b493db281a757827a2012835a2a88fec6c6bfd45ebc370f13443ddf72aa",
+  "archive_sha256": "a779c5e2743c63d0e09e4b42e11b5e83e7bb87c75d4b3dd2f9fbd44c58929268",
+  "archive_bytes": 4635839,
+  "archive_members": 88,
+  "duration_ms": 180197,
+  "frames": 219,
+  "images": 55,
+  "image_dimensions": {
+    "(432, 960)": 55
+  },
+  "element_image_members": 30,
+  "end_observed": true,
+  "interrupted": false,
+  "diagnostic_error": "",
+  "dropped_events": 0,
+  "dropped_image_requests": 18,
+  "hint_count": 9,
+  "ranking_count": 25,
+  "all_hint_coordinates_evidence_and_goal_key_match_top1": true,
+  "logged_candidate_count": 69,
+  "logged_candidate_action_types": {
+    "SWAP": 67,
+    "BIRD_COLOR": 2
+  },
+  "candidate_endpoint_preconditions": [
+    {
+      "kind": "ANIMAL",
+      "cover": "NONE",
+      "move": "YES",
+      "match": "YES",
+      "count": 136
+    },
+    {
+      "kind": "BIRD",
+      "cover": "NONE",
+      "move": "YES",
+      "match": "NO",
+      "count": 2
+    }
+  ],
+  "speech_dispatch_outcomes": {
+    "ACCEPTED": 9
+  },
+  "speech_callback_counts": {
+    "STARTED": 9,
+    "CANCELLED_BOARD_MOTION": 4,
+    "COMPLETED": 1,
+    "CANCELLED_GOAL_CHANGED": 3,
+    "CANCELLED_CASCADE": 1
+  },
+  "context_statuses": {
+    "ACCEPTED": 7,
+    "RATE_LIMITED": 5,
+    "COALESCED": 1
+  },
+  "accepted_windows_with_pre_and_post": 7,
+  "image_request_statuses": {
+    "queued": 55,
+    "already_requested": 12,
+    "queue_limited": 1
+  },
+  "image_request_result_statuses": {
+    "partial": 55
+  },
+  "pending_image_frames": 0,
+  "pending_image_bytes": 0,
+  "outcome_types": {
+    "GEOMETRY_CHANGED": 2,
+    "outcome_timeout": 1,
+    "mission_changed": 2,
+    "progress_unattributed": 3,
+    "multiple_actions_unattributed": 1
+  },
+  "action_evidence": {
+    "not_observed": 9
+  },
+  "element_sample_statuses": {
+    "saved": 30,
+    "budget_busy": 1
+  },
+  "frame_observation_to_completion_age_ms": {
+    "samples": 219,
+    "p95_nearest_rank": 700,
+    "max": 1249,
+    "greater_than_800ms": 8,
+    "scope": "all app frames including menus and animations; not isolated engine cost"
+  },
+  "uncontrolled_battery": {
+    "first_c": 38.5,
+    "last_c": 39.2,
+    "all_unplugged": true,
+    "thermal_statuses": [
+      0
+    ]
+  },
+  "monitor_segments": 1,
+  "monitor_reconnects_or_adb_errors": 0,
+  "external_logcat_speech_requests_match_diagnostic_dispatches": true,
+  "filtered_logcat_errors": 0,
+  "services_stopped_after_export": true,
+  "audio_preferences_unchanged_from_previous_host_export": true,
+  "limits": [
+    "development_diagnosis_not_human_independent_holdout",
+    "sampled_images_not_continuous_video_or_touch_tracking",
+    "no_whole_session_accuracy_truth",
+    "no_external_acoustic_evidence",
+    "uncontrolled_battery_observation_not_thermal_gate",
+    "no_gallery_label_threshold_or_release_state_changes",
+    "general_user_feedback_is_not_explicit_acoustic_confirmation",
+    "level_number_read_from_saved_images_not_engine_hud",
+    "prior_host_baseline_is_not_a_fresh_pre_match_export"
+  ],
+  "schema": "sensefield.sanitized_natural_live_rounds.v1",
+  "date": "2026-10-12",
+  "version_name": "0.4.6",
+  "version_code": 23,
+  "independent": false,
+  "user_feedback": "停止了，录了两局，感觉还行。",
+  "user_explicit_audio_confirmation": false,
+  "rounds": [
+    {
+      "level_from_development_image_review": 97,
+      "hint_count": 3,
+      "ranking_count": 14,
+      "speech_dispatch_count": 4,
+      "speech_terminals": {
+        "CANCELLED_BOARD_MOTION": 2,
+        "COMPLETED": 1,
+        "CANCELLED_GOAL_CHANGED": 1
+      }
+    },
+    {
+      "level_from_development_image_review": 98,
+      "hint_count": 6,
+      "ranking_count": 11,
+      "speech_dispatch_count": 5,
+      "speech_terminals": {
+        "CANCELLED_GOAL_CHANGED": 2,
+        "CANCELLED_CASCADE": 1,
+        "CANCELLED_BOARD_MOTION": 2
+      }
+    }
+  ],
+  "prior_baseline_scope": "previously completed host export, not a fresh pre-match export",
+  "old_members_still_exported_sha256_unchanged": 150,
+  "old_members_only_in_preserved_host_baseline": 55,
+  "current_export_member_total": 238,
+  "acceptance_scope": "natural session recorded; independent accuracy, action benefits, controlled foreground cost/thermal and release not claimed"
+}
