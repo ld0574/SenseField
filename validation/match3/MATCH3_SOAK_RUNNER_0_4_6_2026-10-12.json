@@ -1,0 +1,188 @@
+{
+  "source_sha256": "a50259807df673e3355c48d90b3b888c75b46712ebadd29084379b209172578d",
+  "main_apk_sha256": "fa66c03baab3ca36c69b758c9cf7fae1c948da84f8254d53997f34894b86a993",
+  "tests_apk_sha256": "b93e883d76619c31f73101ed38240d8edb1318b1f6ff2821f0283cb02cbec9f8",
+  "harness_sha256": "5dce9474440b8c0e6fd1810819db464d916cd1ef3436b566fd03506a470ca982",
+  "tool_file_sha256": {
+    "tools/android-soak/androidTest/AndroidManifest.xml": "12d04ae8e2752f2fc78c9646de1de0903038801056ee9e399121fba7a0a480f3",
+    "tools/android-soak/androidTest/com/openkhub/sensefield/Match3PhoneSoakInstrumentedTest.java": "5dce9474440b8c0e6fd1810819db464d916cd1ef3436b566fd03506a470ca982",
+    "tools/android-soak/androidTest/com/openkhub/sensefield/Match3SoakResultListener.java": "e72c23c56c9e8ea29e33d70a4342b0f5b91559829a756345b2882f84a21901fc",
+    "tools/android-soak/androidTest/com/openkhub/sensefield/Match3SoakWakeBootstrapInstrumentation.java": "372c96a23f1655cfae4218a6f4f720e4102be8cfaecf8dc15d8fbfa915332eb2",
+    "tools/android-soak/androidTest/com/openkhub/sensefield/Match3SoakWakeClient.java": "b75b2eb1e7c7f1fff5d0ea2f960d9fc7a1c7bd15fbae804ec486e1249eaa09a4",
+    "tools/android-soak/androidTest/com/openkhub/sensefield/Match3SoakWakeService.java": "5d752e394e5f9d81b5e8d404ee441c985bbb5e47a8983580454cc8c693a8737b",
+    "tools/android-soak/soak-proguard-rules.pro": "2b85f9a6a9c7a5092697a2f356cbb7d674da4ff230f9e352e6e0d8997cee095c",
+    "tools/android-soak/soak.init.gradle": "06b882c24271f5987c8d321558efac63989f135a5c1847d04fa14506752cb420"
+  },
+  "instrumentation_targets": {
+    "androidx.test.runner.AndroidJUnitRunner": "com.openkhub.sensefield",
+    "com.openkhub.sensefield.Match3SoakWakeBootstrapInstrumentation": "com.openkhub.sensefield.test"
+  },
+  "packaged_manifest_sha256": "0587b9cf9b0dd53f72dca7da119ad62f7907584666d95f18a25b663e984eead0",
+  "version_name": "0.4.6",
+  "version_code": 23,
+  "gallery_sha256": "a1a47b493db281a757827a2012835a2a88fec6c6bfd45ebc370f13443ddf72aa",
+  "input_manifest_sha256": "45be53bbd8a50b1b92549c4746825e4ccaa817feefd43ae597839fc62faf6bea",
+  "scope": "physical_phone_fixed_development_frames; no independent accuracy or controlled thermal acceptance",
+  "phone_soak_passed": true,
+  "controlled_thermal_acceptance": false,
+  "independent_accuracy_acceptance": false,
+  "negative_expiry_control": {
+    "protocol_check_passed": true,
+    "elapsed_s": 31.81118533294648,
+    "actual_bootstrap_passed": false,
+    "reason": "helper lifetime expired without verified release"
+  },
+  "short_smoke": {
+    "passed": true,
+    "duration_ms": 20000,
+    "observations": 25,
+    "ranked": 25,
+    "missing_geometry": 0,
+    "executed": 1,
+    "failed": 0,
+    "ignored": 0,
+    "assumption_failed": 0,
+    "cleanup_errors": []
+  },
+  "prior_failures_retained": [
+    "original driver: 900087ms, permission cleanup error, incomplete JUnit",
+    "heartbeat driver: 551311ms, 690 observations, bridge UID empty, cleanup error, incomplete JUnit",
+    "direct helper bind rejected by MIUI autostart",
+    "shell background service start rejected",
+    "AGP removed custom instrumentation before postprocess fix",
+    "short thermal stop at 43.6C while charging; actual JUnit 1 failed",
+    "restoration check matched historical rather than active wake tag; corrected and restored"
+  ],
+  "build_passed": true,
+  "standard_tests_apk_sha256": "b90f6248684de5f876cb7728cdee95fea705e38d7551e52afe6222feaf53fe3b",
+  "full_run": {
+    "requested_duration_ms": 900000,
+    "workload_elapsed_ms": 900000,
+    "processing_interval_ms": 800,
+    "source_frame_count": 19,
+    "workload_long_edge": 2712,
+    "observations": 1125,
+    "ranked_frames": 1125,
+    "missing_geometry": 0,
+    "all_sources_exercised": true,
+    "late_ticks": 0,
+    "over_800ms": 0,
+    "wall_timing": {
+      "n": 1125,
+      "min_ms": 50,
+      "median_ms": 181,
+      "p95_nearest_rank_ms": 439,
+      "max_ms": 499
+    },
+    "cpu_timing": {
+      "n": 1125,
+      "min_ms": 48.960626,
+      "median_ms": 179.81245,
+      "p95_nearest_rank_ms": 434.212245,
+      "max_ms": 493.124739
+    },
+    "io_drain_timing": {
+      "n": 87,
+      "min_ms": 0.088541,
+      "median_ms": 0.204115,
+      "p95_nearest_rank_ms": 0.972708,
+      "max_ms": 5.45599
+    },
+    "diagnostic_error": "",
+    "cleanup_errors": [],
+    "original_session_names_unchanged": true,
+    "preferences_unchanged": true,
+    "reason": "completed",
+    "passed": true,
+    "run": "helper-final-900s",
+    "actual_junit": {
+      "format": "actual-junit-result-v1",
+      "complete": true,
+      "successful": true,
+      "executed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "assumption_failed": 0,
+      "junit_runtime_ms": 900037,
+      "callback_events": [
+        "run_started",
+        "test_started",
+        "test_finished"
+      ]
+    },
+    "helper_release_and_unbind_passed": true,
+    "shell_instrumentation_complete": false,
+    "primary_result_protocol": "actual local JUnit Result and callbacks, workload report, verified helper release; declared before run; original shell logs retained without fabricated completion",
+    "original_shell_outputs": {
+      "instrumentation.log": {
+        "bytes": 396,
+        "sha256": "8aa2bbce9e31db872067419760b8b98fd9383bff0618743bb78d1bb1906e09e9"
+      },
+      "helper-instrumentation.log": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "diagnostics": {
+      "frame_count": 1125,
+      "image_count": 87,
+      "end_observed": true,
+      "dropped_events": 0,
+      "dropped_image_requests": 1,
+      "diagnostic_error": "",
+      "pending_image_frames": 0,
+      "pending_image_bytes": 0
+    },
+    "thermal": {
+      "samples": 87,
+      "battery_first_c": 42.9,
+      "battery_last_c": 38.5,
+      "battery_min_c": 38.5,
+      "battery_max_c": 42.9,
+      "thermal_statuses": [
+        0
+      ],
+      "plugged_states": [
+        0
+      ],
+      "screen_interactive_states": [
+        false,
+        true
+      ],
+      "controlled_thermal_acceptance": false
+    },
+    "pss_mib": {
+      "first": 88.05,
+      "last": 73.0,
+      "min": 53.92,
+      "max": 97.21
+    }
+  },
+  "recovery": {
+    "passed": true,
+    "original_archive_count": 3,
+    "original_member_counts": [
+      68,
+      82,
+      55
+    ],
+    "original_member_sha256_unchanged": true,
+    "board_audio_preferences_unchanged": true,
+    "services_stopped": true,
+    "instrumentation_exits": [
+      {
+        "package": "com.openkhub.sensefield",
+        "finished_instrumentation": true,
+        "app_crash": false
+      },
+      {
+        "package": "com.openkhub.sensefield.test",
+        "finished_instrumentation": true,
+        "app_crash": false
+      }
+    ],
+    "main_apk_sha256": "fa66c03baab3ca36c69b758c9cf7fae1c948da84f8254d53997f34894b86a993",
+    "standard_tests_apk_sha256": "b90f6248684de5f876cb7728cdee95fea705e38d7551e52afe6222feaf53fe3b",
+    "published": false
+  }
+}
