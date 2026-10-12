@@ -103,6 +103,7 @@
 -keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3Sampler {
     <init>(android.content.Context, com.openkhub.sensefield.BoardGeometry);
     static com.openkhub.sensefield.BoardGeometry autoDetectGeometry(android.graphics.Bitmap);
+    static boolean boardBackground(int);
     static boolean isMovable(char);
     com.openkhub.sensefield.Match3Position samplePosition(android.graphics.Bitmap);
     com.openkhub.sensefield.Match3Position samplePosition(android.graphics.Bitmap,long);

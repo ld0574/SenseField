@@ -2,9 +2,26 @@ package com.openkhub.sensefield;
 
 import static org.junit.Assert.*;
 import android.graphics.Bitmap;
+import android.graphics.Color;
 import org.junit.Test;
 
 public final class Match3GeometryInstrumentedTest {
+    @Test public void backgroundPredicateMatchesAndroidHsvForEveryRgbColor() {
+        float[] hsv = new float[3];
+        for (int red = 0; red < 256; red++) for (int green = 0; green < 256; green++)
+            for (int blue = 0; blue < 256; blue++) {
+                int rgb = Color.rgb(red, green, blue);
+                boolean expected = false;
+                if (Math.max(red, Math.max(green, blue)) < .45f * 255f) {
+                    Color.colorToHSV(rgb, hsv);
+                    expected = hsv[0] >= 170f && hsv[0] <= 300f;
+                }
+                if (expected != Match3Sampler.boardBackground(rgb))
+                    fail("Android HSV disagrees at RGB " + red + "," + green + "," + blue
+                            + " hue=" + hsv[0]);
+            }
+    }
+
     private static void island(Bitmap frame, int left, int top, int rows, int cols, int pitch) {
         for (int y = top; y < top + rows * pitch; y++) for (int x = left; x < left + cols * pitch; x++) {
             int xx = (x - left) % pitch, yy = (y - top) % pitch;

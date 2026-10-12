@@ -898,26 +898,26 @@ final class Match3Sampler implements AutoCloseable {
         int length=vertical?box[3]-box[1]:box[2]-box[0];
         int cross=vertical?box[2]-box[0]:box[3]-box[1];
         double[] dark=new double[length];java.util.Arrays.fill(dark,Double.NaN);
-        int[] line=new int[cross];float[] hsv=new float[3];
+        int[] line=new int[cross];
         int boundaries=0;
         for(int i=1;i<count;i++) {
-            double edge=profileMaximum(frame,box,vertical,dark,line,hsv,Math.round(i*length/(float)count),step);
-            double neighbors=Math.max(profileMaximum(frame,box,vertical,dark,line,hsv,Math.round((i-.25f)*length/count),step),
-                    profileMaximum(frame,box,vertical,dark,line,hsv,Math.round((i+.25f)*length/count),step));
+            double edge=profileMaximum(frame,box,vertical,dark,line,Math.round(i*length/(float)count),step);
+            double neighbors=Math.max(profileMaximum(frame,box,vertical,dark,line,Math.round((i-.25f)*length/count),step),
+                    profileMaximum(frame,box,vertical,dark,line,Math.round((i+.25f)*length/count),step));
             // Reuse the detector's 5% positive dark support, on at least three
             // distinct internal boundaries. Texture/colour without a grid phase abstains.
             if(edge-neighbors>=.05 && ++boundaries>=3)return true;
         }
         return false;
     }
-    private static double profileMaximum(Bitmap frame,int[] box,boolean vertical,double[] values,int[] line,float[] hsv,int at,int radius) {
+    private static double profileMaximum(Bitmap frame,int[] box,boolean vertical,double[] values,int[] line,int at,int radius) {
         double maximum=0;
         for(int i=Math.max(0,at-radius);i<Math.min(values.length,at+radius+1);i++) {
             if(Double.isNaN(values[i])) {
                 if(vertical)frame.getPixels(line,0,line.length,box[0],box[1]+i,line.length,1);
                 else frame.getPixels(line,0,1,box[0]+i,box[1],1,line.length);
                 int supporting=0;
-                for(int pixel:line)if(boardBackground(pixel,hsv))supporting++;
+                for(int pixel:line)if(boardBackground(pixel))supporting++;
                 values[i]=supporting/(double)line.length;
             }
             maximum=Math.max(maximum,values[i]);
@@ -934,7 +934,6 @@ final class Match3Sampler implements AutoCloseable {
         int step = Math.max(1, Math.min(frame.getWidth(), frame.getHeight()) / 160);
         int cols = frame.getWidth() / step, rows = frame.getHeight() / step;
         boolean[][] mask = new boolean[rows][cols];
-        float[] hsv = new float[3];
         int width = frame.getWidth();
         int[] band = new int[width * step];
         for (int r = 0; r < rows; r++) {
@@ -947,7 +946,7 @@ final class Match3Sampler implements AutoCloseable {
             for (int c = 0; c < cols; c++) {
                 for (int y = 0; y < step && !mask[r][c]; y++) for (int x = 0; x < step; x++) {
                     int rgb = band[y * width + c * step + x];
-                    if (boardBackground(rgb, hsv)) {
+                    if (boardBackground(rgb)) {
                         mask[r][c] = true;
                         break;
                     }
@@ -983,11 +982,15 @@ final class Match3Sampler implements AutoCloseable {
                 b - step + backgroundExtent(frame, l, b - step, r - l, step, true, true) + 1};
     }
 
-    private static boolean boardBackground(int rgb, float[] hsv) {
-        if (Math.max(Color.red(rgb), Math.max(Color.green(rgb), Color.blue(rgb))) >= .45f * 255f)
-            return false;
-        Color.colorToHSV(rgb, hsv);
-        return hsv[0] >= 170f && hsv[0] <= 300f;
+    static boolean boardBackground(int rgb) {
+        int red = Color.red(rgb), green = Color.green(rgb), blue = Color.blue(rgb);
+        if (Math.max(red, Math.max(green, blue)) >= .45f * 255f
+                || red == green && green == blue) return false;
+        // Blue maxima have hue 180..300. A green maximum reaches 170 when
+        // (blue-red)/(green-red) >= 5/6; tied red/blue maxima include 300.
+        // Keep the same inclusive hue and brightness bounds without a JNI HSV
+        // conversion for every dark pixel in a loading/settlement screen.
+        return blue >= red && (blue >= green || 6 * (blue - red) >= 5 * (green - red));
     }
 
     private static int backgroundExtent(Bitmap frame, int left, int top, int width, int height,
@@ -995,9 +998,8 @@ final class Match3Sampler implements AutoCloseable {
         int[] pixels = new int[width * height];
         frame.getPixels(pixels, 0, width, left, top, width, height);
         int extent = maximum ? -1 : (vertical ? height : width);
-        float[] hsv = new float[3];
         for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) {
-            if (!boardBackground(pixels[y * width + x], hsv)) continue;
+            if (!boardBackground(pixels[y * width + x])) continue;
             int at = vertical ? y : x;
             extent = maximum ? Math.max(extent, at) : Math.min(extent, at);
         }
