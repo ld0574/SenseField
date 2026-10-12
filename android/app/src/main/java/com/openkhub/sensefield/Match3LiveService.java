@@ -683,20 +683,20 @@ public class Match3LiveService extends Service {
     }
 
     private BoardGeometry estimateGeometry(Bitmap frame) {
-        BoardGeometry candidate = Match3Sampler.autoDetectGeometry(frame);
+        int[] calibratedBounds = null;
         var prefs = GameProfile.settings(this);
-        if (candidate == null && prefs.getBoolean("match3_calibrated", false)) {
+        if (prefs.getBoolean("match3_calibrated", false)) {
             int[] pct = {prefs.getInt("match3_l", 4), prefs.getInt("match3_t", 18),
                     prefs.getInt("match3_r", 96), prefs.getInt("match3_b", 82)};
             if (Match3Sampler.plausibleCalibration(frame.getWidth(), frame.getHeight(),
                     pct[0], pct[1], pct[2], pct[3], prefs.getInt("match3_rows", 8),
                     prefs.getInt("match3_cols", 8), new int[2])) {
-                candidate = Match3Sampler.verifiedGeometry(frame, new int[]{
+                calibratedBounds = new int[]{
                         frame.getWidth() * pct[0] / 100, frame.getHeight() * pct[1] / 100,
-                        frame.getWidth() * pct[2] / 100, frame.getHeight() * pct[3] / 100});
+                        frame.getWidth() * pct[2] / 100, frame.getHeight() * pct[3] / 100};
             }
         }
-        return candidate;
+        return Match3Sampler.autoDetectGeometry(frame, calibratedBounds);
     }
 
     private boolean prepareGeometry(Session s, Bitmap frame, BoardGeometry candidate) {

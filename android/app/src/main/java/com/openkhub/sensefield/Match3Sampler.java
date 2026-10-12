@@ -718,13 +718,79 @@ final class Match3Sampler implements AutoCloseable {
     }
 
     static BoardGeometry autoDetectGeometry(Bitmap frame) {
+        return autoDetectGeometry(frame, null);
+    }
+    static BoardGeometry autoDetectGeometry(Bitmap frame, int[] calibratedBounds) {
         List<int[]> fragments = new ArrayList<>();
-        int[] b = autoDetectPixels(frame, fragments);
+        List<int[]> edgeFragments = new ArrayList<>();
+        int[] b = autoDetectPixels(frame, fragments, edgeFragments);
         BoardGeometry geometry = b == null ? null : verifiedGeometry(frame, b);
-        if (geometry != null || fragments.size() < 2) return geometry;
+        if (geometry != null) return completeEdgeFragments(frame, geometry, edgeFragments);
         int step = Math.max(1, Math.min(frame.getWidth(), frame.getHeight()) / 160);
-        for (int i = 0; i < fragments.size(); i++) fragments.set(i, refineBoardBounds(frame, fragments.get(i), step));
-        return separatedGeometry(frame, fragments);
+        if (fragments.size() >= 2) {
+            for (int i = 0; i < fragments.size(); i++) fragments.set(i, refineBoardBounds(frame, fragments.get(i), step));
+            geometry = separatedGeometry(frame, fragments);
+            if (geometry != null) return completeEdgeFragments(frame, geometry, edgeFragments);
+        }
+        // A stored rectangle must pass the same current-fragment completion;
+        // it cannot reintroduce a truncated grid after automatic detection abstains.
+        geometry = calibratedBounds == null ? null : verifiedGeometry(frame, calibratedBounds);
+        return geometry == null ? null : completeEdgeFragments(frame, geometry, edgeFragments);
+    }
+
+    /** A valid main component can still omit a disconnected, partial outer row.
+     * Each extension must independently support the main component's current lattice. */
+    private static BoardGeometry completeEdgeFragments(Bitmap frame, BoardGeometry main, List<int[]> fragments) {
+        int step = Math.max(1, Math.min(frame.getWidth(), frame.getHeight()) / 160);
+        float pitchX = (main.right - main.left) / (float) main.cols;
+        float pitchY = (main.bottom - main.top) / (float) main.rows;
+        int firstRow = 0, firstCol = 0, lastRow = main.rows, lastCol = main.cols;
+        for (int[] pooled : fragments) {
+            // Avoid refining components already inside the main rectangle.
+            if (pooled[0] * step >= main.left - step && pooled[1] * step >= main.top - step
+                    && pooled[2] * step <= main.right + step && pooled[3] * step <= main.bottom + step) continue;
+            int[] box = refineBoardBounds(frame, pooled, step);
+            if (box[0] >= main.left && box[1] >= main.top && box[2] <= main.right && box[3] <= main.bottom) continue;
+            int col = Math.round((box[0] - main.left) / pitchX), row = Math.round((box[1] - main.top) / pitchY);
+            int cols = Math.round((box[2] - box[0]) / pitchX), rows = Math.round((box[3] - box[1]) / pitchY);
+            if (cols < 1 || rows < 1 || cols > 9 || rows > 9 || Math.max(cols, rows) < 2
+                    || Math.abs(main.left + col * pitchX - box[0]) > 2 * step
+                    || Math.abs(main.left + (col + cols) * pitchX - box[2]) > 2 * step
+                    || Math.abs(main.top + row * pitchY - box[1]) > 2 * step
+                    || Math.abs(main.top + (row + rows) * pitchY - box[3]) > 2 * step) continue;
+            // An extension touches one existing side and overlaps the other axis;
+            // a distant aligned panel cannot enlarge the board.
+            boolean adjacentRow = (row == main.rows || row + rows == 0) && col < main.cols && col + cols > 0;
+            boolean adjacentCol = (col == main.cols || col + cols == 0) && row < main.rows && row + rows > 0;
+            if (!adjacentRow && !adjacentCol
+                    || !fragmentAxisSupported(frame, box, false, cols, step)
+                    || !fragmentAxisSupported(frame, box, true, rows, step)) continue;
+            firstRow = Math.min(firstRow, row); firstCol = Math.min(firstCol, col);
+            lastRow = Math.max(lastRow, row + rows); lastCol = Math.max(lastCol, col + cols);
+        }
+        int rows = lastRow - firstRow, cols = lastCol - firstCol;
+        if (rows == main.rows && cols == main.cols) return main;
+        if (rows > 9 || cols > 9) return null;
+        int[] box = {Math.round(main.left + firstCol * pitchX), Math.round(main.top + firstRow * pitchY),
+                Math.round(main.left + lastCol * pitchX), Math.round(main.top + lastRow * pitchY)};
+        if (box[0] < 0 || box[1] < 0 || box[2] > frame.getWidth() || box[3] > frame.getHeight()
+                || !squareGrid(frame, box, rows, cols)
+                || !boundaryPhaseSupported(frame, box, false, cols, step)
+                || !boundaryPhaseSupported(frame, box, true, rows, step)) return null;
+        int[] axes = gridAxes(frame, box);
+        if (axes != null && (axes[0] != cols || axes[1] != rows)) return null;
+        return new BoardGeometry(frame.getWidth(), frame.getHeight(), box[0], box[1], box[2], box[3], rows, cols);
+    }
+
+    private static boolean fragmentAxisSupported(Bitmap frame, int[] box, boolean vertical, int count, int step) {
+        int length = vertical ? box[3] - box[1] : box[2] - box[0];
+        int cross = vertical ? box[2] - box[0] : box[3] - box[1];
+        double[] dark = new double[length]; java.util.Arrays.fill(dark, Double.NaN);
+        int[] line = new int[cross];
+        double middle = profileMaximum(frame, box, vertical, dark, line, Math.round(length / (2f * count)), step);
+        if (profileMaximum(frame, box, vertical, dark, line, 0, step) - middle < .05
+                || profileMaximum(frame, box, vertical, dark, line, length - 1, step) - middle < .05) return false;
+        return count == 1 || boundaryPhaseSupported(frame, box, vertical, count, step, Math.min(3, count - 1));
     }
 
     /** Disjoint board islands must independently support the same cell lattice.
@@ -895,6 +961,9 @@ final class Match3Sampler implements AutoCloseable {
     }
 
     private static boolean boundaryPhaseSupported(Bitmap frame,int[] box,boolean vertical,int count,int step) {
+        return boundaryPhaseSupported(frame,box,vertical,count,step,3);
+    }
+    private static boolean boundaryPhaseSupported(Bitmap frame,int[] box,boolean vertical,int count,int step,int required) {
         int length=vertical?box[3]-box[1]:box[2]-box[0];
         int cross=vertical?box[2]-box[0]:box[3]-box[1];
         double[] dark=new double[length];java.util.Arrays.fill(dark,Double.NaN);
@@ -906,7 +975,7 @@ final class Match3Sampler implements AutoCloseable {
                     profileMaximum(frame,box,vertical,dark,line,Math.round((i+.25f)*length/count),step));
             // Reuse the detector's 5% positive dark support, on at least three
             // distinct internal boundaries. Texture/colour without a grid phase abstains.
-            if(edge-neighbors>=.05 && ++boundaries>=3)return true;
+            if(edge-neighbors>=.05 && ++boundaries>=required)return true;
         }
         return false;
     }
@@ -930,9 +999,43 @@ final class Match3Sampler implements AutoCloseable {
     }
 
     private static int[] autoDetectPixels(Bitmap frame, List<int[]> fragments) {
+        return autoDetectPixels(frame, fragments, null);
+    }
+    private static int[] autoDetectPixels(Bitmap frame, List<int[]> fragments, List<int[]> edgeFragments) {
         // Keep the same sampling density when the full display rotates.
         int step = Math.max(1, Math.min(frame.getWidth(), frame.getHeight()) / 160);
         int cols = frame.getWidth() / step, rows = frame.getHeight() / step;
+        List<int[]> components = componentEnvelopes(boardMask(frame, step, cols, rows), true);
+        int[] box = largestBoardBounds(components, cols, rows);
+        if (edgeFragments != null) {
+            for (int[] component : components) {
+                int bw = component[2] - component[0], bh = component[3] - component[1];
+                // Keep one-cell tails, while excluding isolated eyes/icons and
+                // retaining the existing 5% positive dark-pixel support.
+                if (Math.min(bw, bh) * 18 < Math.min(cols, rows)
+                        || Math.max(bw, bh) * 5 < Math.min(cols, rows)
+                        || component[4] * 20L < (long) bw * bh) continue;
+                edgeFragments.add(component);
+            }
+            if (edgeFragments.size() > 16) edgeFragments.clear();
+        }
+        if (fragments != null) {
+            for (int[] component : components) {
+                int bw = component[2] - component[0], bh = component[3] - component[1];
+                if (Math.min(bw, bh) * 10 < Math.min(cols, rows) * 2
+                        || Math.max(bw, bh) * 10 < Math.min(cols, rows) * 3
+                        || component[4] * 20L < (long) bw * bh) continue;
+                // Only the bounded fallback needs individual island edge refinement.
+                fragments.add(component);
+            }
+            if (fragments.size() > 8) fragments.clear(); // crowded UI is not an island grid
+        }
+        if (box == null) return null;
+        return refineBoardBounds(frame, box, step);
+    }
+
+    /** Keep the hot pixel loop independent of fragment-list bookkeeping. */
+    private static boolean[][] boardMask(Bitmap frame, int step, int cols, int rows) {
         boolean[][] mask = new boolean[rows][cols];
         int width = frame.getWidth();
         int[] band = new int[width * step];
@@ -953,21 +1056,7 @@ final class Match3Sampler implements AutoCloseable {
                 }
             }
         }
-        List<int[]> components = componentEnvelopes(mask, true);
-        int[] box = largestBoardBounds(components, cols, rows);
-        if (fragments != null) {
-            for (int[] component : components) {
-                int bw = component[2] - component[0], bh = component[3] - component[1];
-                if (Math.min(bw, bh) * 10 < Math.min(cols, rows) * 2
-                        || Math.max(bw, bh) * 10 < Math.min(cols, rows) * 3
-                        || component[4] * 20L < (long) bw * bh) continue;
-                // Only the bounded fallback needs individual island edge refinement.
-                fragments.add(component);
-            }
-            if (fragments.size() > 8) fragments.clear(); // crowded UI is not an island grid
-        }
-        if (box == null) return null;
-        return refineBoardBounds(frame, box, step);
+        return mask;
     }
 
     private static int[] refineBoardBounds(Bitmap frame, int[] box, int step) {

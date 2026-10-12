@@ -66,6 +66,47 @@ public final class Match3GeometryInstrumentedTest {
             assertNotNull(g);assertEquals(9,g.rows);assertEquals(9,g.cols);assertEquals(280,g.top);assertEquals(622,g.bottom);
         } finally {frame.recycle();}
     }
+
+    @Test public void disconnectedPartialBottomRowExtendsTheCurrentGridWithoutBorrowingDecor() {
+        Bitmap frame = Bitmap.createBitmap(432, 960, Bitmap.Config.ARGB_8888);
+        try {
+            frame.eraseColor(0xff00ccee);
+            island(frame, 24, 280, 8, 9, 40);
+            island(frame, 224, 602, 1, 4, 40);
+            BoardGeometry g = Match3Sampler.autoDetectGeometry(frame);
+            assertNotNull(g); assertEquals(9, g.rows); assertEquals(9, g.cols);
+            assertEquals(24, g.left); assertEquals(280, g.top); assertEquals(384, g.right);
+            assertTrue(Math.abs(640 - g.bottom) <= 2);
+            assertArrayEquals(new int[]{8, 7}, g.cellAt(g.centerX(7), g.centerY(8)));
+            g = Match3Sampler.autoDetectGeometry(frame, new int[]{24, 280, 384, 600});
+            assertNotNull(g); assertEquals("Stored eight-row bounds cannot truncate the current tail", 9, g.rows);
+
+            frame.eraseColor(0xff00ccee);
+            island(frame, 24, 280, 8, 9, 40);
+            island(frame, 224, 622, 1, 4, 40);
+            g = Match3Sampler.autoDetectGeometry(frame);
+            assertNotNull(g); assertEquals("A half-cell shifted tail cannot add a row", 8, g.rows);
+
+            frame.eraseColor(0xff00ccee);
+            island(frame, 24, 280, 8, 9, 40);
+            for (int y = 602; y < 640; y++) for (int x = 224; x < 384; x++) frame.setPixel(x, y, 0xff203050);
+            g = Match3Sampler.autoDetectGeometry(frame);
+            assertNotNull(g); assertEquals("A flat aligned panel lacks its own cell boundaries", 8, g.rows);
+        } finally { frame.recycle(); }
+    }
+
+    @Test public void disconnectedPartialRightColumnUsesTheSameEvidenceAsABottomRow() {
+        Bitmap frame = Bitmap.createBitmap(432, 960, Bitmap.Config.ARGB_8888);
+        try {
+            frame.eraseColor(0xff00ccee);
+            island(frame, 24, 280, 9, 8, 40);
+            island(frame, 346, 480, 4, 1, 40);
+            BoardGeometry g = Match3Sampler.autoDetectGeometry(frame);
+            assertNotNull(g); assertEquals(9, g.rows); assertEquals(9, g.cols);
+            assertEquals(24, g.left); assertEquals(280, g.top);
+            assertTrue(Math.abs(384 - g.right) <= 2); assertEquals(640, g.bottom);
+        } finally { frame.recycle(); }
+    }
     @Test public void coveredOuterEdgesNeedRepeatedBoundariesBeforeRecoveringSquareCells() {
         for(int count=6;count<=9;count++)for(boolean vertical:new boolean[]{true,false}) {
             Bitmap frame=Bitmap.createBitmap(432,960,Bitmap.Config.ARGB_8888);
