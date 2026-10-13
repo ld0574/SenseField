@@ -1183,11 +1183,13 @@ public final class CaptureService extends Service {
         // channel even during dense combat. Playback still expires old cues
         // and keeps only the newest pending near utterance.
         String cueId = auditSessionId + ":" + nextCueId++;
+        boolean preferTwoWord = GameProfile.settings(this)
+                .getBoolean(PresentationAudioPolicy.PREF_NEAR_TWO_WORD, false);
         CueRequest request = NearZoneCuePolicy.request(auditSessionId, cueId,
                 nativeResetGeneration, relation, combat, observedAtMs, channels,
-                GameProfile.settings(this).getBoolean(PresentationAudioPolicy.PREF_NEAR_TWO_WORD, false));
+                preferTwoWord);
         String presentation = NearZoneCuePolicy.presentationAudit(request, relation.sector,
-                combat != null && combat.dense);
+                combat != null && combat.dense, preferTwoWord);
         Log.i(TAG, presentation);
         if (diagnostics != null) diagnostics.audit(presentation);
         submitRelationCue(request, NearZoneRouting.KIND_NEAR_ZONE, relation, observedAtMs,

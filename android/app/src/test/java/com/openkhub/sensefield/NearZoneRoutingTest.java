@@ -36,13 +36,20 @@ public final class NearZoneRoutingTest {
         assertEquals("附近", NearZoneRouting.twoWordSpeech(9));
     }
 
-    @Test public void denseSpeechIsTwoCharactersAndNormalSpeechRestoresTheSavedPreference() {
-        for (int sector = -1; sector <= 9; sector++) {
-            String dense = NearZoneRouting.speech(sector, false, true);
-            assertEquals(2, dense.codePointCount(0, dense.length()));
-            assertEquals(NearZoneRouting.twoWordSpeech(sector), dense);
-            assertEquals(NearZoneRouting.speech(sector), NearZoneRouting.speech(sector, false, false));
-            assertEquals(dense, NearZoneRouting.speech(sector, true, false));
+    @Test public void nearRequestsRespectTheSavedSpeechPreferenceInQuietAndDenseCombat() {
+        for (boolean dense : new boolean[] {false, true}) {
+            NearZoneCombatPolicy.Decision combat = new NearZoneCombatPolicy.Decision(
+                    dense ? 3 : 1, 40, 95, dense, false, false, "none");
+            for (int sector = -1; sector <= 9; sector++) {
+                CueRequest full = NearZoneCuePolicy.request("s", "full", 1,
+                        relation(sector, 0, -1), combat, 100, 7, false);
+                CueRequest shortCue = NearZoneCuePolicy.request("s", "short", 1,
+                        relation(sector, 0, -1), combat, 100, 7, true);
+                assertEquals("Disabled short style must remain full during dense=" + dense,
+                        NearZoneRouting.speech(sector), full.speech);
+                assertEquals(NearZoneRouting.twoWordSpeech(sector), shortCue.speech);
+                assertEquals(2, shortCue.speech.codePointCount(0, shortCue.speech.length()));
+            }
         }
     }
 
@@ -51,7 +58,7 @@ public final class NearZoneRoutingTest {
                 3, 40, 95, true, false, false, "none");
         CueRequest request = NearZoneCuePolicy.request("s", "cue", 7,
                 relation(4, -707, 125), combat, 5000, 7, false);
-        assertEquals("左上", request.speech);
+        assertEquals("左上有敌人", request.speech);
         assertEquals(1, request.hapticCode);
         assertEquals(-.707f, request.pan, 1e-6f);
         assertEquals(.125f, request.distance, 1e-6f);
@@ -77,15 +84,25 @@ public final class NearZoneRoutingTest {
         assertEquals(0, NearZoneRouting.hapticDirection(-1));
     }
 
-    @Test public void presentationAuditRecordsTheActualShortStyleAndUnknownDistance() {
+    @Test public void presentationAuditRecordsTheSavedPreferenceAndActualStyle() {
         CueRequest request = NearZoneCuePolicy.request("s", "cue", 1,
                 relation(0, 0, -1), null, 100, 7, true);
-        String audit = NearZoneCuePolicy.presentationAudit(request, 0, false);
+        String audit = NearZoneCuePolicy.presentationAudit(request, 0, false, true);
         assertTrue(audit.contains("cueId=cue"));
+        assertTrue(audit.contains("policy=saved_speech_style_v2"));
+        assertTrue(audit.contains("dense=false nearTwoWordEnabled=true"));
         assertTrue(audit.contains("speechStyle=two_word speechChars=2"));
         assertTrue(audit.contains("hapticCode=0"));
         assertTrue(audit.contains("distanceMilli=unknown"));
         assertFalse(audit.contains("NaN"));
+
+        NearZoneCombatPolicy.Decision combat = new NearZoneCombatPolicy.Decision(
+                3, 40, 95, true, false, false, "none");
+        CueRequest full = NearZoneCuePolicy.request("s", "full", 1,
+                relation(4, -707, 125), combat, 100, 7, false);
+        String denseAudit = NearZoneCuePolicy.presentationAudit(full, 4, true, false);
+        assertTrue(denseAudit.contains("dense=true nearTwoWordEnabled=false"));
+        assertTrue(denseAudit.contains("speechStyle=full speechChars=5"));
     }
 
     private static NativeFrameResult.Relation relation(int sector, int panMilli, int distanceMilli) {

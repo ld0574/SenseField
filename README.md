@@ -31,7 +31,7 @@
 
 [下载安卓安装包](https://github.com/ld0574/SenseField/releases/download/v0.4.5/sensefieldv0.4.5.apk) · [GitHub Release](https://github.com/ld0574/SenseField/releases/tag/v0.4.5) · [安装与使用说明](docs/releases/0.4.5/RELEASE_NOTES.md) · [历史版本](docs/releases/README.md)
 
-当前源码另包含 [0.4.6／code23 队友测试修订](docs/releases/0.4.6/RELEASE_NOTES.md)：修复密集灰毛球、右侧末块雪块及魔力鸟直线组合。最新 APK 与本地清单已配对，上传由用户执行。AI 助手默认关闭，功能验证进度与已知问题见[当前验证状态](validation/STATUS.md)。
+当前源码另包含 [0.4.6／code23 队友测试修订](docs/releases/0.4.6/RELEASE_NOTES.md)：修复王者密集场景覆盖两字开关，保留密集灰毛球、右侧末块雪块及魔力鸟直线组合修复。最新 APK 与本地清单已配对，上传由用户执行。AI 助手默认关闭，功能验证进度与已知问题见[当前验证状态](validation/STATUS.md)。
 
 ## 为什么做听野
 
@@ -99,7 +99,7 @@ bash scripts/build_android_preview.sh
 
 ```text
 output/releases/0.4.6/
-├── three-game-fix-20261013/sensefieldv0.4.6.apk
+├── honor-speech-fix-20261013/sensefieldv0.4.6.apk
 └── cdn-upload/latest.json
 ```
 

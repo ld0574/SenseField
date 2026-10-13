@@ -31,9 +31,9 @@ output/releases/0.4.5/
 
 ## 当前 0.4.6 同版本修订交付
 
-用户明确选择继续 0.4.6／code23 并更新 Gitee 已有附件。最新三局修订在 `output/releases/0.4.6/three-game-fix-20261013/`；主 APK 为 24,586,457 bytes，SHA-256 `ead5e38a0fe2211c40888cd7f8f863e253ecd160040f09b2f9172afe123408a8`。沿用原证书的混淆非 debuggable Release，手机已覆盖安装并回读相同 SHA，609 项 JVM、8 项模拟器 Release、7 项同包手机回放及原软件成本门限通过。
+用户明确选择继续 0.4.6／code23 并更新 Gitee 已有附件。最新王者两字开关修订在 `output/releases/0.4.6/honor-speech-fix-20261013/`；主 APK 为 24,586,457 bytes，SHA-256 `535a653a927f57744922951f63ec9014041e04959823404bb1662a6d80b4f080`。沿用原证书的混淆非 debuggable Release，609 项 Release JVM、Release lint 和实际包完整性检查通过。本轮仅准备本地更新包；三局修订的手机回放及软件成本结果保持原 `ead5e38a…` APK 绑定。
 
-更新已有 Gitee **0.4.6** Release 的同名 APK 附件和校验单。发布正文使用 `docs/releases/0.4.6/UPDATE_SUMMARY.txt` 的三行玩家摘要，完整使用及验证范围见[版本说明](../../docs/releases/0.4.6/RELEASE_NOTES.md)和[复测说明](../../docs/releases/0.4.6/复测说明.md)。实际上传 APK 使用 `three-game-fix-20261013/sensefieldv0.4.6.apk`；原 `gitee-upload/` 的 APK 与校验单仍对应此前修订。
+更新已有 Gitee **0.4.6** Release 的同名 APK 附件和校验单。发布正文使用交付目录 `GITEE_RELEASE.md` 的三行玩家摘要，`RELEASE_DETAILS.txt` 可作为完整说明附件；使用及验证范围见[版本说明](../../docs/releases/0.4.6/RELEASE_NOTES.md)和[复测说明](../../docs/releases/0.4.6/复测说明.md)。实际上传 APK 使用 `honor-speech-fix-20261013/sensefieldv0.4.6.apk`；原 `gitee-upload/` 和 `three-game-fix-20261013/` 的 APK 与校验单对应此前修订。
 
 配套清单已由最终 APK 生成，位于 `output/releases/0.4.6/cdn-upload/latest.json`，也随修复包保留同一字节。先下载核对 Gitee APK 与本地大小和 SHA 一致，再更新固定 `/apk/latest.json`。客户端按 SHA 识别同版本修订；模型分片继续复用 0.4.1。助手只准备本地材料，上传由用户执行；独立准确率、最终包实声和受控温升继续待验收。
 
@@ -89,7 +89,7 @@ output/releases/0.4.6/
 
 ```sh
 python3 scripts/build_app_update_manifest.py \
-  --apk output/releases/0.4.6/three-game-fix-20261013/sensefieldv0.4.6.apk \
+  --apk output/releases/0.4.6/honor-speech-fix-20261013/sensefieldv0.4.6.apk \
   --apk-url https://gitee.com/leda/SenseField/releases/download/0.4.6/sensefieldv0.4.6.apk \
   --output output/releases/0.4.6/cdn-upload/latest.json
 ```

@@ -15,16 +15,18 @@ final class NearZoneCuePolicy {
                 combat == null ? NearZoneRouting.NEAR_PRIORITY : combat.priority,
                 observedAtMs, observedAtMs + NearZoneRouting.NEAR_TTL_MS, channels,
                 NearZoneRouting.TONE_NEAR, 0, NearZoneRouting.hapticDirection(relation.sector),
-                NearZoneRouting.speech(relation.sector, preferTwoWord, dense),
+                NearZoneRouting.speech(relation.sector, preferTwoWord),
                 relation.pan, relation.nearestDistance, dense ? 2f : 1f,
                 combat == null ? -1 : combat.freshEnemyCount, () -> true);
     }
 
     /** Fixed near-zone request parameters; not evidence of physical sound or perception. */
-    static String presentationAudit(CueRequest request, int sector, boolean dense) {
+    static String presentationAudit(CueRequest request, int sector, boolean dense,
+                                    boolean preferTwoWord) {
         int speechChars = request.speech.codePointCount(0, request.speech.length());
         return "NearZonePresentation cueId=" + request.cueId
-                + " policy=dense_short_v1 dense=" + dense
+                + " policy=saved_speech_style_v2 dense=" + dense
+                + " nearTwoWordEnabled=" + preferTwoWord
                 + " speechStyle=" + (speechChars == 2 ? "two_word" : "full")
                 + " speechChars=" + speechChars
                 + " sector=" + sector + " hapticCode=" + request.hapticCode

@@ -60,9 +60,9 @@ final class NearZoneRouting {
         return "附近";
     }
 
-    /** Dense output is always short; the saved preference applies outside it. */
-    static String speech(int sector, boolean preferTwoWord, boolean dense) {
-        return preferTwoWord || dense ? twoWordSpeech(sector) : speech(sector);
+    /** The saved speech style applies to every near cue, including dense combat. */
+    static String speech(int sector, boolean preferTwoWord) {
+        return preferTwoWord ? twoWordSpeech(sector) : speech(sector);
     }
 
     /** Single-vibrator rhythm code. Diagonals follow the same side as the pan. */

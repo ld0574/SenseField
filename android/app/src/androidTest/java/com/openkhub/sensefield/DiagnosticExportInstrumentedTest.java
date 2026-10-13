@@ -57,11 +57,21 @@ public final class DiagnosticExportInstrumentedTest {
             String name = file.getName().substring(0, file.getName().length() - 4);
             for (Map.Entry<String, ?> value : context.getSharedPreferences(name, Context.MODE_PRIVATE).getAll().entrySet()) {
                 String key = value.getKey();
-                if (key.startsWith("match3_") || key.startsWith("cue_tts_") || key.equals("cue_bundled_voice"))
+                if (key.startsWith("match3_") || key.startsWith("cue_tts_")
+                        || key.equals("cue_bundled_voice")
+                        || key.equals(PresentationAudioPolicy.PREF_NEAR_TWO_WORD))
                     preferences.put(key, value.getValue());
             }
         }
         metadata.put("audio_and_board_preferences", preferences);
+        android.content.SharedPreferences settings = context.getSharedPreferences(
+                GameProfile.PREFS, Context.MODE_PRIVATE);
+        JSONObject nearSpeechPreference = new JSONObject();
+        nearSpeechPreference.put("two_word_enabled", settings.getBoolean(
+                PresentationAudioPolicy.PREF_NEAR_TWO_WORD, false));
+        nearSpeechPreference.put("stored", settings.contains(PresentationAudioPolicy.PREF_NEAR_TWO_WORD));
+        nearSpeechPreference.put("scope", "current_at_export_not_historical_session");
+        metadata.put("near_zone_speech_preference", nearSpeechPreference);
         try (FileOutputStream output = new FileOutputStream(new File(destination, "export.json"))) {
             output.write(metadata.toString(2).getBytes(StandardCharsets.UTF_8));
         }
