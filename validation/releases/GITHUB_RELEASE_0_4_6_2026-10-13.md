@@ -2,6 +2,8 @@
 
 2026-10-13 14:01:12（北京时间），按用户要求发布[听野 v0.4.6（队友测试）](https://github.com/ld0574/SenseField/releases/tag/v0.4.6)，`draft=false`、`prerelease=true`。发布 ID `411332765`，未设为 Latest；0.4.5 保留为稳定版 Latest。
 
+同日整理交付时，GitHub 接口已返回 `prerelease=false`，Latest 为 `v0.4.6`，发布信息的 `updated_at` 为 14:18:20（北京时间）。本次只读取这一状态，附件摘要与初次发布相同；独立验收状态保持原记录。唯一最新交付及删除范围见[制品清理记录](ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)。
+
 ## 主线与源码
 
 按用户要求，将 `feature/jev-l2-judgment` 快进合入 `main` 并推送 `origin/main`，由 `d9d0213f56a2236fc1fa3f04b00165e980ead6a8` 前进到 `29cb75b8e1cc154c903570f7d8213e33279c6ba6`。合并没有冲突，合并后的 1,215 个构建输入与候选源码回执逐项一致。GitHub `v0.4.6` 标签实际指向该提交；发布后的文档提交继续进入 `main`，标签保留在 APK 对应源码上。
@@ -32,6 +34,6 @@
 
 ## 分发与保存
 
-GitHub 四个公开附件位于 `output/releases/0.4.6/github-upload-20261013/`。草稿、发布接口、标签与主线接口、稳定版 Latest、包核验、资产摘要及公开下载回执保存在 `output/releases/0.4.6/validation/github-release-2026-10-13/`。
+GitHub 四个公开附件已统一位于 `output/releases/0.4.6/`，原 `github-upload-20261013/` 重复目录已删除。草稿、发布接口、标签与主线接口、发布时的 Latest、包核验、资产摘要及公开下载回执保存在 `validation/github-release-2026-10-13/`；下载验证副本已删除，回执和摘要保留。当前普通 Release／Latest 的接口快照与清理结果在 `validation/cleanup-2026-10-13/`。
 
-Gitee 交付目录为 `output/releases/0.4.6/honor-speech-fix-20261013/`，配套清单另在 `output/releases/0.4.6/cdn-upload/latest.json`。清单仍指向 `https://gitee.com/leda/SenseField/releases/download/0.4.6/sensefieldv0.4.6.apk`；GitHub 清单附件不更新应用读取的公网清单。本轮 Gitee 同版本附件及公网清单按用户选择由用户同步，步骤见[CDN 发布说明](../../deploy/assistant/CDN发布.md)。
+Gitee 使用相同的版本根目录 APK 和 `latest.json`，发布正文与上传说明在 `publishing/`；原 `honor-speech-fix-20261013/` 和 `cdn-upload/` 重复目录已删除。清单仍指向 `https://gitee.com/leda/SenseField/releases/download/0.4.6/sensefieldv0.4.6.apk`；GitHub 清单附件不更新应用读取的公网清单。本轮 Gitee 同版本附件及公网清单按用户选择由用户同步，步骤见[CDN 发布说明](../../deploy/assistant/CDN发布.md)。

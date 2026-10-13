@@ -1,8 +1,8 @@
 # 发布与交付索引
 
-2026-10-13 当前源码与交付按用户选择继续使用 [0.4.6](0.4.6/RELEASE_NOTES.md)（`versionCode 23`），已合入并推送 `main`，发布为 [GitHub 队友测试预发布](https://github.com/ld0574/SenseField/releases/tag/v0.4.6)。标签指向 `29cb75b8e1cc154c903570f7d8213e33279c6ba6`，四个附件及 APK 公开下载核对通过，见[发布记录](../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)；0.4.5 保留为稳定版 Latest。
+2026-10-13 当前源码与交付按用户选择继续使用 [0.4.6](0.4.6/RELEASE_NOTES.md)（`versionCode 23`），已合入并推送 `main`，[GitHub v0.4.6](https://github.com/ld0574/SenseField/releases/tag/v0.4.6) 当前为普通 Release、Latest。标签指向 `29cb75b8e1cc154c903570f7d8213e33279c6ba6`，四个附件及 APK 公开下载核对通过，见[发布记录](../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。
 
-最新修订修复王者密集场景覆盖两字关闭选择，继承密集灰毛球、右侧末块雪块、魔力鸟直线组合、饼干及发光青蛙修复。GitHub 附件在 `output/releases/0.4.6/github-upload-20261013/`；Gitee 交付在 `output/releases/0.4.6/honor-speech-fix-20261013/`，APK SHA 为 `535a653a927f57744922951f63ec9014041e04959823404bb1662a6d80b4f080`；配套清单同时位于该目录和 `output/releases/0.4.6/cdn-upload/latest.json`。本轮 Gitee 附件与公网清单由用户同步，发布正文、[复测说明](0.4.6/复测说明.md)和校验文件已配对。未发布的 0.4.7 开发候选已撤回并归档，其工程记录保留。
+最新修订修复王者密集场景覆盖两字关闭选择，继承密集灰毛球、右侧末块雪块、魔力鸟直线组合、饼干及发光青蛙修复。唯一交付为 `output/releases/0.4.6/sensefieldv0.4.6.apk`，APK SHA 为 `535a653a927f57744922951f63ec9014041e04959823404bb1662a6d80b4f080`；配套清单、使用说明和校验单在同一目录，发布／上传说明在 `publishing/`。旧包及重复交付已[删除](../../validation/releases/ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)，源码与历史验证回执集中到 `validation/`。本轮 Gitee 附件与公网清单由用户同步，[复测说明](0.4.6/复测说明.md)继续对应最新包。未发布的 0.4.7 开发候选已撤回并归档，其工程记录保留。
 
 最新修订通过 609 项 Release JVM、Release 构建／lint 和实际包完整性核验。此前三局修订 `ead5e38a…` 的 8 项模拟器 Release、7 项手机回放和软件成本门限保持原制品绑定。独立准确率、实际通关收益及新包手机实局／持续运行／受控温升和实际发声仍待验收。公网清单由用户在公开 APK 下载核对后更新。详见[王者开关更正](../../validation/protocols/COMPLIANCE_IMPROVEMENT_2026-10-13.md)、[三局修复记录](../development/消消乐三局反馈修复_2026-10-13.md)与[当前状态](../../validation/STATUS.md)。
 
@@ -18,9 +18,9 @@
 
 | 版本 | 日期 | versionCode | 交付状态 | 主要内容与说明 |
 | --- | --- | ---: | --- | --- |
-| [0.4.6](0.4.6/RELEASE_NOTES.md) | 2026-10-13 | 23 | 已合入 main、GitHub 预发布；本轮 Gitee 附件和公网清单由用户同步 | 王者两字开关遵循选择，保留灰毛球、末块雪块、魔力鸟组合与识别开销修复 |
+| [0.4.6](0.4.6/RELEASE_NOTES.md) | 2026-10-13 | 23 | 已合入 main、GitHub 普通 Release、Latest；唯一交付在版本根目录，本轮 Gitee 附件和公网清单由用户同步 | 王者两字开关遵循选择，保留灰毛球、末块雪块、魔力鸟组合与识别开销修复 |
 | [0.4.7](0.4.7/RELEASE_NOTES.md) | 2026-10-12 | 24 | 已撤回的开发候选，未上传或安装 | 用户改选0.4.6同版本修订，原制品与工程回执归档 |
-| [0.4.5](0.4.5/RELEASE_NOTES.md) | 2026-10-10 | 22 | GitHub 普通 Release、Latest；Gitee APK 与线上清单此前核对一致 | 稀疏整盘定位、确认的一步任务收益排序与交换高亮、最后目标准备建议；消消乐仍为体验版，最新试用问题继续整改 |
+| [0.4.5](0.4.5/RELEASE_NOTES.md) | 2026-10-10 | 22 | 历史 GitHub 普通 Release，发布时为 Latest；Gitee APK 与线上清单此前核对一致 | 稀疏整盘定位、确认的一步任务收益排序与交换高亮、最后目标准备建议；消消乐仍为体验版，最新试用问题继续整改 |
 | [0.4.4](0.4.4/RELEASE_NOTES.md) | 2026-10-08 | 21 | 历史 GitHub 普通 Release，发布时为 Latest | 默认游戏解说男声／可选游戏向导女声、离线完整说明、连续试听修复、24.22MB 正式包；受控温升待测 |
 | [0.4.3](0.4.3/RELEASE_NOTES.md) | 2026-10-07 | 20 | 历史主线普通 Release，独立标签 `v0.4.3-main` | 大字与导航改进、消消乐最新已验证合并、离线中文检查和方位缓存、内置音效自动试听、首次说明可随时跳过 |
 | 0.4.2 | 2026-10-06 | 19 | 主线历史本地交付；同名消消乐分支发布另计 | 分组帮助及首次学习流程，见[当批记录](../../validation/android/ANDROID_0_4_2_HELP_ONBOARDING_2026-10-06.md) |

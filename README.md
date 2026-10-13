@@ -27,11 +27,11 @@
 
 **听野（SenseField）** 是面向视野狭窄和低视力玩家的 Android 游戏辅助工具。它把玩家难以持续观察的游戏信息转成声音、语音、触觉和清晰的视觉提示。目前支持《王者荣耀》和《开心消消乐》两款游戏。
 
-**稳定版：0.4.5／code22 · Android 10 及以上 · arm64 · APK 约 24.36 MB**
+**当前公开版：0.4.6／code23 · Android 10 及以上 · arm64 · APK 约 24.59 MB**
 
-[下载安卓安装包](https://github.com/ld0574/SenseField/releases/download/v0.4.5/sensefieldv0.4.5.apk) · [GitHub Release](https://github.com/ld0574/SenseField/releases/tag/v0.4.5) · [安装与使用说明](docs/releases/0.4.5/RELEASE_NOTES.md) · [历史版本](docs/releases/README.md)
+[下载安卓安装包](https://github.com/ld0574/SenseField/releases/download/v0.4.6/sensefieldv0.4.6.apk) · [GitHub Release](https://github.com/ld0574/SenseField/releases/tag/v0.4.6) · [安装与使用说明](docs/releases/0.4.6/RELEASE_NOTES.md) · [历史版本](docs/releases/README.md)
 
-当前 [0.4.6／code23 队友测试修订](docs/releases/0.4.6/RELEASE_NOTES.md)已合入 `main` 并发布为 [GitHub 预发布](https://github.com/ld0574/SenseField/releases/tag/v0.4.6)，可[下载测试安装包](https://github.com/ld0574/SenseField/releases/download/v0.4.6/sensefieldv0.4.6.apk)：修复王者密集场景覆盖两字开关，保留密集灰毛球、右侧末块雪块及魔力鸟直线组合修复。本轮 Gitee 附件与公网清单由用户同步，0.4.5 保留为稳定版 Latest。AI 助手默认关闭，功能验证进度与已知问题见[当前验证状态](validation/STATUS.md)。
+当前 [0.4.6／code23 公开体验版](docs/releases/0.4.6/RELEASE_NOTES.md)已合入 `main`，GitHub 当前为普通 Release、Latest：修复王者密集场景覆盖两字开关，保留密集灰毛球、右侧末块雪块及魔力鸟直线组合修复。唯一最新本地安装包为 `output/releases/0.4.6/sensefieldv0.4.6.apk`，SHA-256 `535a653a927f57744922951f63ec9014041e04959823404bb1662a6d80b4f080`；旧包和重复交付已[清理](validation/releases/ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)。本轮 Gitee 附件与公网清单由用户同步。AI 助手默认关闭，功能验证进度与已知问题见[当前验证状态](validation/STATUS.md)。
 
 ## 为什么做听野
 
@@ -99,8 +99,12 @@ bash scripts/build_android_preview.sh
 
 ```text
 output/releases/0.4.6/
-├── honor-speech-fix-20261013/sensefieldv0.4.6.apk
-└── cdn-upload/latest.json
+├── sensefieldv0.4.6.apk
+├── installation-guide.txt
+├── latest.json
+├── SHA256SUMS.txt
+├── publishing/                 # 发布正文、上传与复测说明
+└── validation/                 # 当前源码回执与历史验证记录
 ```
 
 负责人先上传 Gitee APK 并校验，再更新固定网站清单；同版本修订以 SHA-256 区分。模型分片继续复用，步骤见[Gitee 分发与后续发布](deploy/assistant/CDN发布.md)。
@@ -132,7 +136,7 @@ python -m pip install -e '.[test]'
 | 产品与设计 | [赛题背景](docs/design/赛题背景.md) · [技术方案](docs/design/技术方案.md) · [视野记忆设计](docs/design/视野记忆.md) |
 | 实施与符合度 | [实施路线](docs/plans/黑客松方案收敛与实施路线.md) · [符合度改造方案](docs/plans/符合度改造方案.md) |
 | 消消乐改进 | [目标价值排序](docs/plans/消消乐目标价值排序.md) · [新元素可信识别](docs/plans/消消乐新元素可信识别.md) · [自动回归](docs/development/match3-regression.md) |
-| 安装与发布 | [0.4.5 使用说明](docs/releases/0.4.5/RELEASE_NOTES.md) · [发布索引](docs/releases/README.md) · [Gitee 分发步骤](deploy/assistant/CDN发布.md) |
+| 安装与发布 | [0.4.6 使用说明](docs/releases/0.4.6/RELEASE_NOTES.md) · [发布索引](docs/releases/README.md) · [Gitee 分发步骤](deploy/assistant/CDN发布.md) |
 | 助手与更新 | [助手部署](deploy/assistant/README.md) · [Android 自动更新](docs/development/app-update.md) |
 | 测试与反馈 | [当前验证状态](validation/STATUS.md) · [验证索引](validation/README.md) · [离线诊断](validation/protocols/DIAGNOSTIC_REPORT.md) · [玩家试用套件](validation/protocols/PLAYER_TRIAL_KIT.md) |
 

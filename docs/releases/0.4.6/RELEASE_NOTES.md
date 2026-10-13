@@ -1,6 +1,6 @@
-# 听野 0.4.6（队友测试：王者两字开关修订）
+# 听野 0.4.6（公开体验版：王者两字开关修订）
 
-2026-10-13 14:01:12（北京时间）已发布 [GitHub v0.4.6 预发布](https://github.com/ld0574/SenseField/releases/tag/v0.4.6)，可[直接下载 APK](https://github.com/ld0574/SenseField/releases/download/v0.4.6/sensefieldv0.4.6.apk)。源码已合入并推送 `main`，标签指向 `29cb75b8e1cc154c903570f7d8213e33279c6ba6`；附件摘要与公开下载核对见[发布记录](../../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。0.4.5 保留为稳定版 Latest，本轮 Gitee 附件及公网清单由用户同步。
+2026-10-13 14:01:12（北京时间）发布 [GitHub v0.4.6](https://github.com/ld0574/SenseField/releases/tag/v0.4.6)，当前为普通 Release、Latest，可[直接下载 APK](https://github.com/ld0574/SenseField/releases/download/v0.4.6/sensefieldv0.4.6.apk)。源码已合入并推送 `main`，标签指向 `29cb75b8e1cc154c903570f7d8213e33279c6ba6`；附件摘要与公开下载核对见[发布记录](../../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。本轮 Gitee 附件及公网清单由用户同步。
 
 修复王者关闭“两字方位提示”后，密集场景仍强制播两字的问题。现在完整／两字选择适用于所有附近敌人提醒；帮助说明同步更新，诊断记录实际开关值。最新修订通过 609 项 Release JVM、Release 构建与 lint（0 错误／31 警告），实际 APK 签名、模型／856 份语音资产摘要和 16KB 对齐核验通过。工程记录见[王者实局与后续更正](../../../validation/protocols/COMPLIANCE_IMPROVEMENT_2026-10-13.md)。
 
@@ -23,4 +23,4 @@ Android 10 及以上的 arm64-v8a 手机可覆盖安装。版本保持 0.4.6／v
 - 大小：24,586,457 bytes
 - SHA-256：`535a653a927f57744922951f63ec9014041e04959823404bb1662a6d80b4f080`
 
-消消乐工程记录：[第 107～109 关三局反馈修复](../../development/消消乐三局反馈修复_2026-10-13.md)。最新本地交付目录为 `output/releases/0.4.6/honor-speech-fix-20261013/`，三行 Release 正文见其中的 `GITEE_RELEASE.md`，完整版附件为 `RELEASE_DETAILS.txt`。历史真机实测包括[第 49～53 关反馈](../../../validation/match3/MATCH3_LIVE_FEEDBACK_0_4_5_2026-10-10.md)、[第 84～85 关记录](../../../validation/match3/MATCH3_LIVE_CV_0_4_6_2026-10-11.md)及[第 99～100 关记录](../../../validation/match3/MATCH3_LIVE_ROUNDS_99_100_COOKIE_BIRD_0_4_6_2026-10-12.md)，各自保持原版本与包摘要；该范围内的实测不代表第 1～100 关逐关全部验收通过。
+消消乐工程记录：[第 107～109 关三局反馈修复](../../development/消消乐三局反馈修复_2026-10-13.md)。唯一最新本地交付目录为 `output/releases/0.4.6/`，包含 APK、`installation-guide.txt`、`latest.json` 及 `SHA256SUMS.txt`；三行 Release 正文和完整版附件分别为 `publishing/GITEE_RELEASE.md`、`publishing/RELEASE_DETAILS.txt`。旧包与重复副本已[清理](../../../validation/releases/ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)，当前源码回执在 `validation/current-package/`。历史真机实测包括[第 49～53 关反馈](../../../validation/match3/MATCH3_LIVE_FEEDBACK_0_4_5_2026-10-10.md)、[第 84～85 关记录](../../../validation/match3/MATCH3_LIVE_CV_0_4_6_2026-10-11.md)及[第 99～100 关记录](../../../validation/match3/MATCH3_LIVE_ROUNDS_99_100_COOKIE_BIRD_0_4_6_2026-10-12.md)，各自保持原版本与包摘要；该范围内的实测不代表第 1～100 关逐关全部验收通过。

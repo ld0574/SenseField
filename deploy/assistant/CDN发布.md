@@ -1,6 +1,6 @@
 # 听野 Gitee 下载分发与后续发布
 
-更新日期：2026-10-13。面向负责打包、上传和发包的队友。已记录的公开版本为 `0.4.5 / versionCode 22`；最新本地队友测试修订为 `0.4.6 / versionCode 23`，由用户上传后生效。助手服务部署另见 [README](README.md)。
+更新日期：2026-10-13。面向负责打包、上传和发包的队友。当前 GitHub 公开版本为 `0.4.6 / versionCode 23`，普通 Release、Latest；唯一最新本地交付位于 `output/releases/0.4.6/`，本轮 Gitee 和公网清单由用户同步。助手服务部署另见 [README](README.md)。
 
 ## 0.4.5 公开发布记录（历史）
 
@@ -21,7 +21,7 @@ output/releases/0.4.5/
 | 内容 | 公开地址 | 后续如何维护 |
 | --- | --- | --- |
 | 版本清单 | [https://888413.xyz/apk/latest.json](https://888413.xyz/apk/latest.json) | 每次发布最后覆盖，文件由最终 APK 自动生成 |
-| 当前公开 APK | [sensefieldv0.4.5.apk](https://gitee.com/leda/SenseField/releases/download/0.4.5/sensefieldv0.4.5.apk) | 当前公网清单指向此版本；发布新版本时先核对新 APK，再切换清单 |
+| 本次要更新的 APK | [sensefieldv0.4.6.apk](https://gitee.com/leda/SenseField/releases/download/0.4.6/sensefieldv0.4.6.apk) | 本地配套清单指向此文件；用户上传并核对公开下载后，再更新公网清单 |
 | 语音模型第一片 | [sensevoice-int8-v1.zip.part01](https://gitee.com/leda/SenseField/releases/download/0.4.1/sensevoice-int8-v1.zip.part01) | 上传一次，后续 APK 继续复用 |
 | 语音模型第二片 | [sensevoice-int8-v1.zip.part02](https://gitee.com/leda/SenseField/releases/download/0.4.1/sensevoice-int8-v1.zip.part02) | 上传一次，后续 APK 继续复用 |
 
@@ -31,37 +31,31 @@ output/releases/0.4.5/
 
 ## 当前 0.4.6 同版本修订交付
 
-用户明确选择继续 0.4.6／code23 并更新 Gitee 已有附件。最新王者两字开关修订在 `output/releases/0.4.6/honor-speech-fix-20261013/`；主 APK 为 24,586,457 bytes，SHA-256 `535a653a927f57744922951f63ec9014041e04959823404bb1662a6d80b4f080`。沿用原证书的混淆非 debuggable Release，609 项 Release JVM、Release lint 和实际包完整性检查通过。本轮仅准备本地更新包；三局修订的手机回放及软件成本结果保持原 `ead5e38a…` APK 绑定。
+用户明确选择继续 0.4.6／code23 并更新 Gitee 已有附件。最新王者两字开关修订为 `output/releases/0.4.6/sensefieldv0.4.6.apk`；主 APK 为 24,586,457 bytes，SHA-256 `535a653a927f57744922951f63ec9014041e04959823404bb1662a6d80b4f080`。沿用原证书的混淆非 debuggable Release，609 项 Release JVM、Release lint 和实际包完整性检查通过。GitHub 普通 Release、Latest 已回读，四个附件与本地相同；三局修订的手机回放及软件成本结果保持原 `ead5e38a…` APK 绑定。
 
-更新已有 Gitee **0.4.6** Release 的同名 APK 附件和校验单。发布正文使用交付目录 `GITEE_RELEASE.md` 的三行玩家摘要，`RELEASE_DETAILS.txt` 可作为完整说明附件；使用及验证范围见[版本说明](../../docs/releases/0.4.6/RELEASE_NOTES.md)和[复测说明](../../docs/releases/0.4.6/复测说明.md)。实际上传 APK 使用 `honor-speech-fix-20261013/sensefieldv0.4.6.apk`；原 `gitee-upload/` 和 `three-game-fix-20261013/` 的 APK 与校验单对应此前修订。
+更新已有 Gitee **0.4.6** Release 的同名 APK 附件和校验单。发布正文使用交付目录 `publishing/GITEE_RELEASE.md` 的三行玩家摘要，`publishing/RELEASE_DETAILS.txt` 可作为完整说明附件；使用及验证范围见[版本说明](../../docs/releases/0.4.6/RELEASE_NOTES.md)和[复测说明](../../docs/releases/0.4.6/复测说明.md)。实际上传 APK 使用版本根目录 `sensefieldv0.4.6.apk`，同目录校验单覆盖 APK、使用说明和清单。
 
-配套清单已由最终 APK 生成，位于 `output/releases/0.4.6/cdn-upload/latest.json`，也随修复包保留同一字节。先下载核对 Gitee APK 与本地大小和 SHA 一致，再更新固定 `/apk/latest.json`。客户端按 SHA 识别同版本修订；模型分片继续复用 0.4.1。助手只准备本地材料，上传由用户执行；独立准确率、最终包实声和受控温升继续待验收。
+配套清单已由最终 APK 生成，位于 `output/releases/0.4.6/latest.json`。先下载核对 Gitee APK 与本地大小和 SHA 一致，再更新固定 `/apk/latest.json`。客户端按 SHA 识别同版本修订；模型分片继续复用 0.4.1。本轮 Gitee 与公网清单上传由用户执行；独立准确率、最终包实声和受控温升继续待验收。
 
-## 0.4.6 历史候选交付
-
-此前候选的交付位置相对于仓库根目录（最新三局修订使用上节目录）：
+当前唯一交付结构：
 
 ```text
 output/releases/0.4.6/
-├── gitee-upload/
-│   └── sensefieldv0.4.6.apk
-└── cdn-upload/
-    └── latest.json
+├── sensefieldv0.4.6.apk
+├── installation-guide.txt
+├── latest.json
+├── SHA256SUMS.txt
+├── publishing/
+└── validation/
 ```
 
-2026-10-12 已按用户要求生成队友体验交付，主APK为24,540,215 bytes、SHA-256 `f28db40ab86895ad653931116160d691bc51849d4dabee1463f9e35dbb449dac`；直接复制手机已验证候选，没有重新构建或签名。旧`aa4da1d5…`交付已归档至`output/releases/history/`。用户手动上传 Gitee 0.4.6 APK 和校验文件，发布正文与复测说明在交付目录；本轮**先不覆盖公网 `/apk/latest.json`**，配套新清单仅生成备用。
-
-后续面向全部用户发布时，先确认 Gitee 的 **0.4.6 Release** 永久下载文件与本地大小和 SHA-256 相同，再把配套 `latest.json` 覆盖到原网站 `/apk/latest.json`。文件大小、摘要和版本以这份自动生成的清单为准。
-
-本次 Gitee 队友体验仅上传 APK 和 `gitee-upload/SHA256SUMS.txt`；后续正式推送才同时更新网站清单。语音模型不变，分片继续留在 **0.4.1 Release**；本地位于 `output/releases/0.4.1/gitee-upload/`，不要重复上传到 0.4.6。
-
-0.4.5 已公开发布，原附件、清单和本地历史制品保留。本轮 0.4.6 本地包使用原 Android debug 证书的混淆 Release，包内非 debuggable；正式构建所需四项发布凭据未配置，发布状态仍待负责人处理。不得用本地候选覆盖 0.4.5 的公开附件或在核对前改动公网清单。0.4.6 说明与验证范围见 [Release 说明](../../docs/releases/0.4.6/RELEASE_NOTES.md)。
+2026-10-13 已按用户要求删除其他 0.4.6 安装包及重复交付目录；旧源码和工程回执仍按原 APK SHA 集中保存，详见[制品清理记录](../../validation/releases/ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)。0.4.5 历史公开附件、清单和记录保留。语音模型分片继续留在 **0.4.1 Release**，无需重新上传到 0.4.6。
 
 ## 后续发布步骤
 
 ### 1. 构建最终 APK 和配套清单
 
-在已准备 Android 构建环境、模型资源、内置语音和原签名的工作站，将四个 `SENSEFIELD_KEYSTORE_PATH`、`SENSEFIELD_KEY_ALIAS`、`SENSEFIELD_KEYSTORE_PASSWORD`、`SENSEFIELD_KEY_PASSWORD` 设为本机环境变量，再从仓库根目录运行。0.4.6 仅接受正式 Release：缺少完整语音或签名便停止，不回退 Debug；生成、来源限制及校验见[离线音频构建](../../docs/development/offline-speech.md)。
+本次已测 APK 可直接从上述唯一交付目录上传，无需重新构建。以下用于后续生成新制品：在已准备 Android 构建环境、模型资源、内置语音和原签名的工作站，将四个 `SENSEFIELD_KEYSTORE_PATH`、`SENSEFIELD_KEY_ALIAS`、`SENSEFIELD_KEYSTORE_PASSWORD`、`SENSEFIELD_KEY_PASSWORD` 设为本机环境变量，再从仓库根目录运行。缺少完整语音或签名便停止，不回退 Debug；生成、来源限制及校验见[离线音频构建](../../docs/development/offline-speech.md)。
 
 构建命令：
 
@@ -69,11 +63,11 @@ output/releases/0.4.6/
 bash scripts/build_android_preview.sh
 ```
 
-脚本生成：
+构建脚本原有临时输出路径如下；本次 0.4.6 已测交付以版本根目录为准：
 
 ```text
-output/releases/0.4.6/
-├── gitee-upload/sensefieldv0.4.6.apk
+output/releases/<版本>/
+├── gitee-upload/sensefieldv<版本>.apk
 └── cdn-upload/latest.json
 ```
 
@@ -89,9 +83,9 @@ output/releases/0.4.6/
 
 ```sh
 python3 scripts/build_app_update_manifest.py \
-  --apk output/releases/0.4.6/honor-speech-fix-20261013/sensefieldv0.4.6.apk \
+  --apk output/releases/0.4.6/sensefieldv0.4.6.apk \
   --apk-url https://gitee.com/leda/SenseField/releases/download/0.4.6/sensefieldv0.4.6.apk \
-  --output output/releases/0.4.6/cdn-upload/latest.json
+  --output output/releases/0.4.6/latest.json
 ```
 
 可用 `--notes-file docs/releases/0.4.6/UPDATE_SUMMARY.txt` 添加更新弹窗专用摘要。不要手工修改清单的版本、大小或哈希。
@@ -101,9 +95,9 @@ python3 scripts/build_app_update_manifest.py \
 0.4.6 使用以下摘要，源文件为 `docs/releases/0.4.6/UPDATE_SUMMARY.txt`：
 
 ```text
-已在前100关中的典型关卡完成真机实测。
-修复毛球密集无提示、末块雪块漏识及魔力鸟与直线特效组合漏选。
-保留饼干、发光青蛙和交换语音修复，优化识别开销。
+已在消消乐前100关中的典型关卡完成真机实测。
+保留毛球、末块雪块、魔力鸟组合及交换语音修复。
+修复王者关闭“两字方位提示”后，密集场景仍播两字的问题。
 ```
 
 只调整摘要时，从同一份最终 APK 重新生成 `latest.json` 并覆盖网站清单即可，无需重新构建 APK；核对版本、下载地址、大小和 SHA-256 均未改变。
@@ -128,7 +122,7 @@ from pathlib import Path
 import hashlib
 import json
 
-manifest = json.loads(Path('output/releases/0.4.6/cdn-upload/latest.json').read_text())
+manifest = json.loads(Path('output/releases/0.4.6/latest.json').read_text())
 apk = Path('output/cdn-check/sensefieldv0.4.6.apk')
 digest = hashlib.sha256()
 with apk.open('rb') as stream:
@@ -159,7 +153,7 @@ python3 - <<'PY'
 from pathlib import Path
 import json
 
-local = json.loads(Path('output/releases/0.4.6/cdn-upload/latest.json').read_text())
+local = json.loads(Path('output/releases/0.4.6/latest.json').read_text())
 online = json.loads(Path('output/cdn-check/latest.json').read_text())
 if online != local:
     raise SystemExit('线上清单不一致：核对上传目录和清单缓存。')
@@ -185,7 +179,7 @@ PY
 | 本次同版本修订 | 保持 `0.4.6 / code23` 和现有下载地址，按用户选择更新已有Release附件 | 新APK及校验文件；公网推送时再配套更新固定网站清单，模型不动 |
 | 语音模型确实变更 | 新建独立资源名称/地址，更新 APK 内固定资源元数据，再构建 | 新模型分片、新 APK、配套清单；保留仍有客户端依赖的旧模型 |
 
-本次魔力鸟／饼干修订按用户选择继续0.4.6，原0.4.6交付按SHA归档，未发布0.4.7候选撤回，已发布0.4.5记录保留。以后可按发布策略选择同版本修订或新版本；真正升级时，开发者需同步修改 `android/app/build.gradle` 的 `versionName/versionCode`、`scripts/build_android_preview.sh` 的 `PREVIEW_VERSION_NAME/PREVIEW_VERSION_CODE` 及 `scripts/verify_android_release.py` 的身份校验；脚本会按新版本自动生成 Gitee APK URL，固定清单地址保持不变。仅创建 Gitee 新 Release 不会自动通知旧 APP，仍需最后更新网站清单。
+本次按用户选择继续0.4.6，旧安装包和重复交付已删除，历史源码及工程证据按SHA保留；未发布0.4.7候选撤回，已发布0.4.5记录保留。以后可按发布策略选择同版本修订或新版本；真正升级时，开发者需同步修改 `android/app/build.gradle` 的 `versionName/versionCode`、`scripts/build_android_preview.sh` 的 `PREVIEW_VERSION_NAME/PREVIEW_VERSION_CODE` 及 `scripts/verify_android_release.py` 的身份校验；脚本会按新版本自动生成 Gitee APK URL，固定清单地址保持不变。仅创建 Gitee 新 Release 不会自动通知旧 APP，仍需最后更新网站清单。
 
 每个版本的分发目录只保留一份 APK 和配套清单；0.4.2保留在自己的目录作本轮设计对照，不混入0.4.6上传目录。临时下载用于校验的 APK 在校验后删除。`output/` 被 Git 忽略，队友需从当前交付路径取得构建产物。更高 `versionCode` 的客户端不能通过普通更新安装较低序号的旧包。
 

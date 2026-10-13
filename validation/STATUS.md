@@ -6,14 +6,16 @@
 
 | 项目 | 已有记录 |
 | --- | --- |
-| 当前队友测试版本 | 0.4.6／code23，已合入并推送 `main`；原 Android debug 证书的混淆 Release、非 debuggable，已发布为 GitHub 预发布 |
+| 当前公开体验版 | 0.4.6／code23，已合入并推送 `main`；原 Android debug 证书的混淆 Release、非 debuggable，GitHub 当前为普通 Release、Latest |
 | 当前交付摘要 | 王者两字开关修订，24,586,457 bytes；SHA-256 `535a653a927f57744922951f63ec9014041e04959823404bb1662a6d80b4f080`，源码与包回执在交付目录 |
 | 当前包工程检查 | 609 项 Release JVM、Release lint（0 错误／31 警告）、签名／模型／856 份语音资产及 16KB 对齐检查通过；新包实声和受控温升待验 |
 | 当前手机包 | 三局反馈修订 `ead5e38a…`；本轮王者日志来自该包，两字关闭选择在导出时确认为 false |
-| 已记录的公开版本 | 0.4.6／code23，2026-10-13 GitHub 预发布；0.4.5／code22 保留为普通 Release、Latest，附件与公网清单历史核对保留 |
-| 分发材料 | 已上传 GitHub 的四个附件位于 `output/releases/0.4.6/github-upload-20261013/`；Gitee 交付位于 `output/releases/0.4.6/honor-speech-fix-20261013/`，本轮公网清单由用户上传并核对后生效 |
+| 已记录的公开版本 | 0.4.6／code23，2026-10-13 GitHub 普通 Release、Latest；0.4.5／code22 的附件与公网清单历史核对保留 |
+| 唯一分发材料 | `output/releases/0.4.6/` 中 APK、使用说明、清单和校验单与 GitHub 四个附件字节一致；发布说明在 `publishing/`，当前源码回执在 `validation/current-package/`；本轮公网清单由用户上传并核对后生效 |
 
 [GitHub 0.4.6 发布记录](releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)：标签 `v0.4.6` 指向合入主线的 `29cb75b8e1cc154c903570f7d8213e33279c6ba6`，四个附件摘要核对一致；APK 公开下载 HTTP 200、SHA 与已测包一致。GitHub 分发完成，手机主包仍为旧修订；本轮 Gitee 附件与公网清单由用户同步。
+
+[0.4.6 制品清理](releases/ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)删除 190 份旧包／重复 APK 和 10 个旧交付目录，净释放约 5.01 GB。保留唯一最新 APK，历史日志及源码回执仍按原摘要保存；当前 GitHub 普通 Release、Latest 的状态已通过接口回读，包字节保持不变。
 
 最新[王者实局与两字开关更正](protocols/COMPLIANCE_IMPROVEMENT_2026-10-13.md)收齐约 11 分钟记录，25 次近区提醒中 23 次在密集模式被强制缩短；已改为密集场景也遵循两字开关，并增加实际开关审计。手机设置和原始会话内容在只读回收前后保持。
 
