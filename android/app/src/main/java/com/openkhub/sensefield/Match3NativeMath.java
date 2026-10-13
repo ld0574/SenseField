@@ -9,6 +9,13 @@ final class Match3NativeMath {
         catch(UnsatisfiedLinkError unavailable) { loaded=false; }
         AVAILABLE=loaded;
     }
+    /** Exact current-pixel comparison; nulls and lengths retain Arrays.equals semantics. */
+    static boolean samePixels(int[] first,int[] second) {
+        if(first==second)return true;
+        if(first==null || second==null || first.length!=second.length)return false;
+        return AVAILABLE?equalPixels(first,second):java.util.Arrays.equals(first,second);
+    }
+    static native boolean equalPixels(int[] first,int[] second);
     static native float bodyDifference(int[] observed,int[] reference,boolean[] background);
     static native boolean prepareBodyDescriptor(java.nio.ByteBuffer descriptor,int[] pixels);
     static native float preparedBodyDifference(java.nio.ByteBuffer observed,java.nio.ByteBuffer reference);

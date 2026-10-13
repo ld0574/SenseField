@@ -87,7 +87,7 @@ final class Match3HudReader {
         float scale=WIDTH/(float)frame.getWidth();headerCanvas.scale(scale,scale);
         headerCanvas.drawBitmap(frame,0,0,null);headerCanvas.restoreToCount(saved);
         int[] pixels=working;headerBitmap.getPixels(pixels,0,WIDTH,0,0,WIDTH,height);
-        if (height==previousHeight && Arrays.equals(previous,pixels) && cached!=null)
+        if (height==previousHeight && Match3NativeMath.samePixels(previous,pixels) && cached!=null)
             return new Match3Goals(cached.level,cached.steps,cached.targets,cached.hudVerified,at);
         int[] old=previous;previous=pixels;working=old==null?new int[pixels.length]:old;previousHeight=height;
         cached=readPixels(pixels,height,at);

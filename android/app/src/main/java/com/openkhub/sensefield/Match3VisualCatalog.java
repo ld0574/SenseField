@@ -792,7 +792,7 @@ final class Match3VisualCatalog {
         int ix = width/10, iy = height/10;
         int[] observed = patch(pixels,width,ix,iy,width-ix,height-iy);
         int[] envelope=patch(pixels,width,0,0,width,height);
-        if(java.util.Arrays.equals(cache.patch,observed) && java.util.Arrays.equals(cache.envelope,envelope))return cache.result;
+        if(Match3NativeMath.samePixels(cache.patch,observed) && Match3NativeMath.samePixels(cache.envelope,envelope))return cache.result;
         cache.patch=observed;cache.envelope=envelope;cache.result=classifyObstacle(observed);
         if(cache.result==null)cache.result=classifyEffect(envelope);
         cache.animalChecked=false;cache.animal=null;cache.face=null;cache.body=null;

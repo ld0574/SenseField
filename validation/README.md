@@ -9,7 +9,7 @@
 | [开心消消乐](match3/README.md) | 15 | 棋盘定位、元素证据、跨布局、任务价值、交换推荐、语音、高亮与设置；含队友原型历史 |
 | [王者荣耀](honor/README.md) | 4 | 操控期间漏报、敌人再出现、提醒频率与范围 |
 | [声音与提示呈现](audio/README.md) | 12 | 离线语音、TTS、音色、混音、声像、震感与听感 |
-| [发热与性能](performance/README.md) | 14 | 负载、像素复制、推理缓存、真机发热与对照试验 |
+| [发热与性能](performance/README.md) | 15 | 负载、像素复制、推理缓存、真机发热与对照试验 |
 | [AI 助手与部署](assistant/README.md) | 13 | ASR、视觉模型、回复时效、取消、默认开关与部署 |
 | [Android 与界面](android/README.md) | 10 | 授权、模拟器、真机冒烟、说明学习与大字布局 |
 | [升级与发布验收](releases/README.md) | 11 | 自动更新、CDN、Gitee 分发与 GitHub 发布核对、撤回候选归档 |
@@ -18,6 +18,8 @@
 | [历史状态快照](archive/README.md) | 1 | 原状态页的完整批次记录 |
 
 ## 当前入口
+
+- [0.4.7 第二轮工程：精确像素比较与 Release 回放 CPU 降幅 22.42%](performance/ENGINEERING_0_4_7_ROUND2_2026-10-13.md)
 
 - [0.4.7 第一轮工程：提示修复、视觉改善与未通过的整包成本](performance/ENGINEERING_0_4_7_ROUND1_2026-10-13.md)
 

@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 
 namespace {
@@ -83,6 +84,24 @@ float bodyAligned(const jint* observed,const jint* reference,int dx,int dy,const
     }
     return total/(supported*765.0f);
 }
+}
+
+// The live callers compare at most one 432x200 HUD or a 16x16 tile. Pin only
+// for the bounded memcmp; no allocation, I/O or other work holds these arrays.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_openkhub_sensefield_Match3NativeMath_equalPixels(JNIEnv* env,jclass,jintArray first,jintArray second) {
+    if(env->IsSameObject(first,second))return JNI_TRUE;
+    if(!first || !second)return JNI_FALSE;
+    jsize count=env->GetArrayLength(first);
+    if(count!=env->GetArrayLength(second))return JNI_FALSE;
+    if(count==0)return JNI_TRUE;
+    const auto* a=static_cast<const jint*>(env->GetPrimitiveArrayCritical(first,nullptr));
+    if(!a)return JNI_FALSE;
+    const auto* b=static_cast<const jint*>(env->GetPrimitiveArrayCritical(second,nullptr));
+    bool same=b && std::memcmp(a,b,static_cast<size_t>(count)*sizeof(jint))==0;
+    if(b)env->ReleasePrimitiveArrayCritical(second,const_cast<jint*>(b),JNI_ABORT);
+    env->ReleasePrimitiveArrayCritical(first,const_cast<jint*>(a),JNI_ABORT);
+    return same?JNI_TRUE:JNI_FALSE;
 }
 
 namespace {
