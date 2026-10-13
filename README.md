@@ -27,11 +27,11 @@
 
 **听野（SenseField）** 是面向视野狭窄和低视力玩家的 Android 游戏辅助工具。它把玩家难以持续观察的游戏信息转成声音、语音、触觉和清晰的视觉提示。目前支持《王者荣耀》和《开心消消乐》两款游戏。
 
-**已公开版本：0.4.5／code22 · Android 10 及以上 · arm64 · APK 约 24.36 MB**
+**稳定版：0.4.5／code22 · Android 10 及以上 · arm64 · APK 约 24.36 MB**
 
 [下载安卓安装包](https://github.com/ld0574/SenseField/releases/download/v0.4.5/sensefieldv0.4.5.apk) · [GitHub Release](https://github.com/ld0574/SenseField/releases/tag/v0.4.5) · [安装与使用说明](docs/releases/0.4.5/RELEASE_NOTES.md) · [历史版本](docs/releases/README.md)
 
-当前源码另包含 [0.4.6／code23 队友测试修订](docs/releases/0.4.6/RELEASE_NOTES.md)：修复王者密集场景覆盖两字开关，保留密集灰毛球、右侧末块雪块及魔力鸟直线组合修复。最新 APK 与本地清单已配对，上传由用户执行。AI 助手默认关闭，功能验证进度与已知问题见[当前验证状态](validation/STATUS.md)。
+当前 [0.4.6／code23 队友测试修订](docs/releases/0.4.6/RELEASE_NOTES.md)已合入 `main` 并发布为 [GitHub 预发布](https://github.com/ld0574/SenseField/releases/tag/v0.4.6)，可[下载测试安装包](https://github.com/ld0574/SenseField/releases/download/v0.4.6/sensefieldv0.4.6.apk)：修复王者密集场景覆盖两字开关，保留密集灰毛球、右侧末块雪块及魔力鸟直线组合修复。本轮 Gitee 附件与公网清单由用户同步，0.4.5 保留为稳定版 Latest。AI 助手默认关闭，功能验证进度与已知问题见[当前验证状态](validation/STATUS.md)。
 
 ## 为什么做听野
 

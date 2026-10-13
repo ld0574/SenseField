@@ -1,5 +1,7 @@
 # 听野 0.4.6（队友测试：王者两字开关修订）
 
+2026-10-13 14:01:12（北京时间）已发布 [GitHub v0.4.6 预发布](https://github.com/ld0574/SenseField/releases/tag/v0.4.6)，可[直接下载 APK](https://github.com/ld0574/SenseField/releases/download/v0.4.6/sensefieldv0.4.6.apk)。源码已合入并推送 `main`，标签指向 `29cb75b8e1cc154c903570f7d8213e33279c6ba6`；附件摘要与公开下载核对见[发布记录](../../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。0.4.5 保留为稳定版 Latest，本轮 Gitee 附件及公网清单由用户同步。
+
 修复王者关闭“两字方位提示”后，密集场景仍强制播两字的问题。现在完整／两字选择适用于所有附近敌人提醒；帮助说明同步更新，诊断记录实际开关值。最新修订通过 609 项 Release JVM、Release 构建与 lint（0 错误／31 警告），实际 APK 签名、模型／856 份语音资产摘要和 16KB 对齐核验通过。工程记录见[王者实局与后续更正](../../../validation/protocols/COMPLIANCE_IMPROVEMENT_2026-10-13.md)。
 
 修复灰毛球密集时缺少提示、右侧最后一块白色障碍未进入任务位置，以及漏选彩虹鸟（魔力鸟）与直线特效动物组合的问题。保留原棋盘校准、发光青蛙、饼干及交换语音功能。

@@ -4,7 +4,7 @@
 
 ## 交付状态与构建版本
 
-2026-10-13 当前候选为 [0.4.6／code23](0.4.6/RELEASE_NOTES.md)，最新公开版本为[听野 0.4.5](https://github.com/ld0574/SenseField/releases/tag/v0.4.5)（`versionCode 22`，2026-10-10 发布，GitHub Latest）。0.4.5 标签、附件及公网清单保留，本轮按用户选择更新0.4.6同版本附件，旧制品与验收证据保留；本地工程验证不等于手机或公开发布验收。历史主线 `v0.4.3-main` 和消消乐独立发布保留，公开 0.4.5 核对见[发布记录](../../validation/releases/GITHUB_RELEASE_0_4_5_2026-10-10.md)，完整历史见[发布索引](README.md)。普通 Release 不自动改变 `verified`／`release_ready`，版本名称继续使用 `a.b.c`。
+2026-10-13 当前 [0.4.6／code23](0.4.6/RELEASE_NOTES.md)已合入并推送 `main`，发布为[GitHub 队友测试预发布](https://github.com/ld0574/SenseField/releases/tag/v0.4.6)，标签及四个附件核对见[发布记录](../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。[听野 0.4.5](https://github.com/ld0574/SenseField/releases/tag/v0.4.5)（`versionCode 22`，2026-10-10 发布）保留为稳定版 Latest，原标签、附件及公网清单历史核对保留。本轮 Gitee 同版本附件和公网清单由用户同步。历史主线 `v0.4.3-main` 和消消乐独立发布保留，完整历史见[发布索引](README.md)。公开分发不自动改变 `verified`／`release_ready`，版本名称继续使用 `a.b.c`。
 
 发布前核对 `android/app/build.gradle`、`scripts/build_android_preview.sh` 和实际 APK 的版本、升级序号与签名，准备新版本交付时同步配置与脚本。发布说明必须对应实际 APK 和该版本的验证证据。历史 [0.3.0-alpha.1 发布说明](0.3.0-alpha.1/RELEASE_NOTES.md)与[检查记录](0.3.0-alpha.1/CHECKLIST.md)保留原始信息。
 
