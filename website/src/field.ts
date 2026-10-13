@@ -1,203 +1,201 @@
 import * as THREE from 'three';
-import { createFieldParticles } from './particles';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
-/** A ribbed sensory sculpture, rendered locally without model downloads. */
+/** Sweep a rounded, solid ribbon along a smooth wave. No points or particles. */
+function ribbonGeometry(phase: number, width: number, amplitude: number, offset: number) {
+  const steps = 192;
+  const sides = 16;
+  const vertices: number[] = [];
+  const indices: number[] = [];
+  function center(u: number) {
+    const angle = u * Math.PI * 2 + phase;
+    return new THREE.Vector3((u - .5) * 6.3, Math.sin(angle) * amplitude + offset, Math.cos(angle) * .85);
+  }
+  for (let step = 0; step <= steps; step++) {
+    const u = step / steps;
+    const point = center(u);
+    const tangent = center(u + .001).sub(center(u - .001)).normalize();
+    const roll = -.28 + Math.sin(u * Math.PI * 2 + phase) * .55;
+    const across = new THREE.Vector3(0, Math.cos(roll), Math.sin(roll));
+    across.addScaledVector(tangent, -across.dot(tangent)).normalize();
+    const normal = new THREE.Vector3().crossVectors(tangent, across).normalize();
+    const halfWidth = width * (.3 + .7 * Math.sin(Math.PI * u) ** .7) / 2;
+    for (let side = 0; side < sides; side++) {
+      const angle = side / sides * Math.PI * 2;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const acrossDistance = Math.sign(cos) * Math.abs(cos) ** .4 * halfWidth;
+      const depth = Math.sign(sin) * Math.abs(sin) ** .4 * .035;
+      const vertex = point.clone().addScaledVector(across, acrossDistance).addScaledVector(normal, depth);
+      vertices.push(vertex.x, vertex.y, vertex.z);
+      if (step < steps) {
+        const a = step * sides + side;
+        const b = step * sides + (side + 1) % sides;
+        indices.push(a, b, b + sides, a, b + sides, a + sides);
+      }
+    }
+  }
+  const start = vertices.length / 3;
+  const end = start + 1;
+  vertices.push(...center(0).toArray(), ...center(1).toArray());
+  for (let side = 0; side < sides; side++) {
+    indices.push(start, (side + 1) % sides, side);
+    indices.push(end, steps * sides + side, steps * sides + (side + 1) % sides);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+/** Continuous acoustic ribbons, with gentle breathing and damped pointer response. */
 export function mountField(canvas: HTMLCanvasElement, isPaused: () => boolean) {
   const host = canvas.parentElement!;
   let renderer: THREE.WebGLRenderer;
   try {
     renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'low-power' });
-  } catch {
-    return; // The CSS sculpture remains visible when WebGL is unavailable.
-  }
+  } catch { return; }
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 60);
-  camera.position.set(0, 0, 13.8);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, window.innerWidth < 760 ? 1.5 : 1.8));
+  const camera = new THREE.PerspectiveCamera(34, 1, .1, 40);
+  camera.position.set(0, 0, 11.7);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.28;
+  renderer.toneMappingExposure = 1.05;
+
+  const environment = new RoomEnvironment();
+  const generator = new THREE.PMREMGenerator(renderer);
+  const environmentTarget = generator.fromScene(environment, .04);
+  scene.environment = environmentTarget.texture;
+  environment.dispose();
+  generator.dispose();
 
   const sculpture = new THREE.Group();
-  sculpture.rotation.set(0.54, -0.38, -0.35);
+  sculpture.rotation.set(.22, -.28, -.48);
   scene.add(sculpture);
-
-  const geometry = new THREE.TorusGeometry(2.18, 0.65, 64, 640);
-  const positions = geometry.attributes.position;
-  const uv = geometry.attributes.uv;
-  for (let i = 0; i < positions.count; i++) {
-    const theta = uv.getX(i) * Math.PI * 2;
-    const phi = uv.getY(i) * Math.PI * 2;
-    const major = 2.12 + 0.21 * Math.sin(theta * 3 + 0.6);
-    const tube = 0.67 + 0.105 * Math.cos(theta * 2 + 1.1) + 0.022 * Math.sin(theta * 180);
-    positions.setXYZ(i,
-      (major + tube * Math.cos(phi)) * Math.cos(theta),
-      (major + tube * Math.cos(phi)) * Math.sin(theta) * 1.04,
-      tube * Math.sin(phi) + 0.28 * Math.sin(theta * 2 - 0.5),
-    );
+  const timeUniform = { value: 0 };
+  const teal = new THREE.MeshPhysicalMaterial({
+    color: '#236874', metalness: .22, roughness: .24, clearcoat: 1, clearcoatRoughness: .16,
+    envMapIntensity: .9, side: THREE.DoubleSide,
+  });
+  const peach = new THREE.MeshPhysicalMaterial({
+    color: '#f0c6b2', metalness: .18, roughness: .27, clearcoat: 1, clearcoatRoughness: .2,
+    envMapIntensity: .8, side: THREE.DoubleSide,
+  });
+  for (const material of [teal, peach]) {
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.uRibbonTime = timeUniform;
+      shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nuniform float uRibbonTime;');
+      shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
+        #include <begin_vertex>
+        transformed.y += sin(position.x * 1.1 + uRibbonTime * .4) * .045;
+        transformed.z += cos(position.x * .8 + uRibbonTime * .3) * .045;
+      `);
+    };
   }
-  geometry.computeVertexNormals();
-  const material = new THREE.MeshStandardMaterial({ color: '#236874', roughness: 0.42, metalness: 0.24, transparent: true, opacity: 0.12, depthWrite: false });
-  material.onBeforeCompile = (shader) => {
-    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vFieldUv;');
-    shader.vertexShader = shader.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\nvFieldUv = uv;');
-    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vFieldUv;');
-    shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `
-      #include <color_fragment>
-      float rib = sin(vFieldUv.x * 1130.973);
-      float groove = smoothstep(-0.85, -0.3, rib);
-      diffuseColor.rgb *= mix(0.45, 1.1, groove);
-      float grain = fract(sin(dot(vFieldUv, vec2(123.34, 456.21))) * 45634.12);
-      diffuseColor.rgb *= 0.97 + grain * 0.06;
-    `);
-  };
-  const mainRing = new THREE.Mesh(geometry, material);
-  sculpture.add(mainRing);
-  const particles = createFieldParticles(window.innerWidth < 760 ? 22000 : 42000, renderer.getPixelRatio());
-  sculpture.add(particles.points);
+  sculpture.add(new THREE.Mesh(ribbonGeometry(0, 1.13, 1.25, .16), teal));
+  sculpture.add(new THREE.Mesh(ribbonGeometry(Math.PI, .96, 1.2, -.16), teal));
+  sculpture.add(new THREE.Mesh(ribbonGeometry(Math.PI * .5, .38, 1.52, 0), peach));
 
-  const innerRingGeo = new THREE.TorusGeometry(1.29, 0.036, 16, 220);
-  const peachMaterial = new THREE.MeshStandardMaterial({ color: '#f0c6b2', roughness: 0.3, metalness: 0.35 });
-  const innerRing = new THREE.Mesh(innerRingGeo, peachMaterial);
-  innerRing.rotation.set(0.6, -0.55, 0.2);
-  innerRing.position.z = 0.35;
-  sculpture.add(innerRing);
-
-  const outerRingGeo = new THREE.TorusGeometry(3.16, 0.012, 8, 180);
-  const outerRing = new THREE.Mesh(outerRingGeo, peachMaterial);
-  outerRing.rotation.set(1.15, 0.25, -0.5);
-  scene.add(outerRing);
-
-  const satelliteGeo = new THREE.SphereGeometry(0.12, 24, 20);
-  const satellite = new THREE.Mesh(satelliteGeo, peachMaterial);
-  satellite.position.set(2.9, 1.1, 0.7);
-  scene.add(satellite);
-  const satelliteSmall = new THREE.Mesh(new THREE.SphereGeometry(0.055, 16, 12), material);
-  satelliteSmall.position.set(-2.65, -1.7, 0.4);
-  scene.add(satelliteSmall);
-
-  scene.add(new THREE.AmbientLight('#e7f2f2', 2.2));
-  const key = new THREE.DirectionalLight('#ffffff', 5.5);
+  scene.add(new THREE.AmbientLight('#ffffff', .65));
+  const key = new THREE.DirectionalLight('#ffffff', 3.2);
   key.position.set(-3, 5, 6);
   scene.add(key);
-  const fill = new THREE.DirectionalLight('#f0c6b2', 2.4);
+  const fill = new THREE.DirectionalLight('#f0c6b2', 1.7);
   fill.position.set(4, -2, 3);
   scene.add(fill);
-  const rim = new THREE.DirectionalLight('#c3e5e9', 3.5);
-  rim.position.set(2, 4, -4);
+  const rim = new THREE.DirectionalLight('#e7f2f2', 2.4);
+  rim.position.set(2, 4, -3);
   scene.add(rim);
 
   const shadowCanvas = document.createElement('canvas');
-  shadowCanvas.width = 128;
-  shadowCanvas.height = 128;
-  const ctx = shadowCanvas.getContext('2d')!;
-  const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-  gradient.addColorStop(0, 'rgba(25,49,57,.16)');
+  shadowCanvas.width = shadowCanvas.height = 128;
+  const context = shadowCanvas.getContext('2d')!;
+  const gradient = context.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gradient.addColorStop(0, 'rgba(25,49,57,.14)');
   gradient.addColorStop(1, 'rgba(25,49,57,0)');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 128, 128);
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 128, 128);
   const shadowTexture = new THREE.CanvasTexture(shadowCanvas);
-  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(7, 2), new THREE.MeshBasicMaterial({ map: shadowTexture, transparent: true, depthWrite: false }));
-  shadow.position.set(0, -3.35, -1);
+  const shadowMaterial = new THREE.MeshBasicMaterial({ map: shadowTexture, transparent: true, depthWrite: false });
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(6.7, 1.25), shadowMaterial);
+  shadow.position.set(.25, -2.9, -1.7);
   scene.add(shadow);
 
-  const pointer = { x: 0, y: 0, active: 0 };
-  const smoothed = { x: 0, y: 0, active: 0 };
-  let burst = 0;
-  let burstVelocity = 0;
-  let burstUntil = 0;
-  const burstButton = document.querySelector<HTMLButtonElement>('.field-interact');
-  const releaseField = () => {
-    if (isPaused()) return;
-    burstUntil = performance.now() + 520;
-    host.classList.remove('is-bursting');
-    host.classList.add('is-bursting');
-    if (burstButton) burstButton.setAttribute('aria-label', '再次释放感知场');
-  };
+  const pointer = { x: 0, y: 0 };
+  const eased = { x: 0, y: 0 };
   const onPointerMove = (event: PointerEvent) => {
-    if (event.pointerType === 'touch') return;
+    if (event.pointerType !== 'mouse') return;
     const bounds = host.getBoundingClientRect();
-    pointer.x = Math.max(-1, Math.min(1, ((event.clientX - bounds.left) / bounds.width - 0.5) * 2));
-    pointer.y = Math.max(-1, Math.min(1, ((event.clientY - bounds.top) / bounds.height - 0.5) * 2));
-    pointer.active = 1;
+    pointer.x = THREE.MathUtils.clamp((event.clientX - bounds.left) / bounds.width * 2 - 1, -1, 1);
+    pointer.y = THREE.MathUtils.clamp((event.clientY - bounds.top) / bounds.height * 2 - 1, -1, 1);
   };
-  const onLeave = () => { pointer.x = 0; pointer.y = 0; pointer.active = 0; };
+  const onPointerLeave = () => { pointer.x = pointer.y = 0; };
   host.addEventListener('pointermove', onPointerMove);
-  host.addEventListener('pointerleave', onLeave);
-  host.addEventListener('click', releaseField);
-  burstButton?.addEventListener('click', releaseField);
+  host.addEventListener('pointerleave', onPointerLeave);
+
   let visible = true;
   let frame = 0;
   let elapsed = 0;
-  let lastTime = performance.now();
-  let drawnPaused = false;
+  let previous = performance.now();
+  let pausedFrameDrawn = false;
+  let contextLost = false;
   function queueRender() {
-    if (frame || !visible || document.hidden) return;
-    if (isPaused() && drawnPaused) return;
+    if (frame || !visible || document.hidden || contextLost || (isPaused() && pausedFrameDrawn)) return;
     frame = requestAnimationFrame(render);
   }
+  function render(now: number) {
+    frame = 0;
+    const delta = Math.min((now - previous) / 1000, .05);
+    previous = now;
+    if (!visible || document.hidden || contextLost) return;
+    const paused = isPaused();
+    if (paused && pausedFrameDrawn) return;
+    pausedFrameDrawn = paused;
+    if (!paused) {
+      elapsed += delta;
+      const response = 1 - Math.exp(-delta * 3.5);
+      eased.x += (pointer.x - eased.x) * response;
+      eased.y += (pointer.y - eased.y) * response;
+      timeUniform.value = elapsed;
+      sculpture.rotation.x = .22 + eased.y * .08;
+      sculpture.rotation.y = -.28 + Math.sin(elapsed * .19) * .14 + eased.x * .15;
+      sculpture.rotation.z = -.48 + Math.sin(elapsed * .14) * .035;
+      sculpture.position.y = Math.sin(elapsed * .42) * .095;
+    }
+    renderer.render(scene, camera);
+    queueRender();
+  }
   const resize = () => {
-    const { width, height } = host.getBoundingClientRect();
-    if (!width || !height) return;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, window.innerWidth < 760 ? 1.5 : 1.8));
-    particles.uniforms.uPixelRatio.value = renderer.getPixelRatio();
-    renderer.setSize(width, height, false);
-    camera.aspect = width / height;
+    const bounds = host.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, window.innerWidth < 760 ? 1.5 : 1.75));
+    renderer.setSize(bounds.width, bounds.height, false);
+    camera.aspect = bounds.width / bounds.height;
     camera.updateProjectionMatrix();
-    drawnPaused = false;
+    pausedFrameDrawn = false;
     queueRender();
   };
   const resizeObserver = new ResizeObserver(resize);
   resizeObserver.observe(host);
   resize();
-
   const observer = new IntersectionObserver(([entry]) => {
     visible = entry.isIntersecting;
     if (!visible) { cancelAnimationFrame(frame); frame = 0; }
-    else { lastTime = performance.now(); drawnPaused = false; queueRender(); }
-  }, { rootMargin: '80px' });
+    else { previous = performance.now(); pausedFrameDrawn = false; queueRender(); }
+  });
   observer.observe(host);
-
-  const motionObserver = new MutationObserver(() => { drawnPaused = false; queueRender(); });
+  const motionObserver = new MutationObserver(() => { pausedFrameDrawn = false; queueRender(); });
   motionObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
   const onVisibility = () => {
     if (document.hidden) { cancelAnimationFrame(frame); frame = 0; }
-    else { lastTime = performance.now(); drawnPaused = false; queueRender(); }
+    else { previous = performance.now(); pausedFrameDrawn = false; queueRender(); }
   };
+  const onContextLost = (event: Event) => { event.preventDefault(); contextLost = true; host.classList.remove('field-ready'); cancelAnimationFrame(frame); frame = 0; };
+  const onContextRestored = () => { contextLost = false; pausedFrameDrawn = false; host.classList.add('field-ready'); queueRender(); };
   document.addEventListener('visibilitychange', onVisibility);
-  function render(time: number) {
-    frame = 0;
-    const delta = Math.min((time - lastTime) / 1000, 0.05);
-    lastTime = time;
-    if (!visible || document.hidden) return;
-    const paused = isPaused();
-    if (paused && drawnPaused) return;
-    drawnPaused = paused;
-    if (!paused) {
-      elapsed += delta;
-      smoothed.x += (pointer.x - smoothed.x) * 0.045;
-      smoothed.y += (pointer.y - smoothed.y) * 0.045;
-      smoothed.active += (pointer.active - smoothed.active) * 0.05;
-      const targetBurst = time < burstUntil ? 1 : 0;
-      burstVelocity += (targetBurst - burst) * 28 * delta;
-      burstVelocity *= Math.exp(-6.2 * delta);
-      burst += burstVelocity * delta;
-      particles.uniforms.uBurst.value = Math.max(0, burst);
-      particles.uniforms.uTime.value = elapsed;
-      particles.uniforms.uPointer.value.set(smoothed.x, -smoothed.y);
-      particles.uniforms.uPointerStrength.value = smoothed.active;
-      material.opacity = Math.max(0, 0.12 * (1 - burst));
-      sculpture.rotation.y = -0.38 + smoothed.x * 0.2 + Math.sin(elapsed * 0.2) * 0.08;
-      sculpture.rotation.x = 0.54 + smoothed.y * 0.13;
-      sculpture.rotation.z = -0.35 + Math.sin(elapsed * 0.15) * 0.035;
-      sculpture.position.y = Math.sin(elapsed * 0.55) * 0.08;
-      innerRing.rotation.z = elapsed * 0.08;
-      outerRing.rotation.z = -0.5 + elapsed * 0.018;
-      satellite.position.y = 1.1 + Math.sin(elapsed * 0.5) * 0.16;
-    }
-    renderer.render(scene, camera);
-    queueRender();
-  }
+  canvas.addEventListener('webglcontextlost', onContextLost);
+  canvas.addEventListener('webglcontextrestored', onContextRestored);
   renderer.render(scene, camera);
   host.classList.add('field-ready');
   queueRender();
@@ -206,19 +204,17 @@ export function mountField(canvas: HTMLCanvasElement, isPaused: () => boolean) {
     observer.disconnect();
     resizeObserver.disconnect();
     motionObserver.disconnect();
-    document.removeEventListener('visibilitychange', onVisibility);
     host.removeEventListener('pointermove', onPointerMove);
-    host.removeEventListener('pointerleave', onLeave);
-    host.removeEventListener('click', releaseField);
-    burstButton?.removeEventListener('click', releaseField);
-    scene.traverse((object) => {
-      if (object instanceof THREE.Mesh) object.geometry.dispose();
-    });
-    material.dispose();
-    peachMaterial.dispose();
-    (shadow.material as THREE.Material).dispose();
+    host.removeEventListener('pointerleave', onPointerLeave);
+    document.removeEventListener('visibilitychange', onVisibility);
+    canvas.removeEventListener('webglcontextlost', onContextLost);
+    canvas.removeEventListener('webglcontextrestored', onContextRestored);
+    scene.traverse((object) => { if (object instanceof THREE.Mesh) object.geometry.dispose(); });
+    teal.dispose();
+    peach.dispose();
+    shadowMaterial.dispose();
     shadowTexture.dispose();
-    particles.dispose();
+    environmentTarget.dispose();
     renderer.dispose();
   };
 }

@@ -37,3 +37,10 @@ test('only the explicit category, game and message enter a feedback draft', () =
   assert.ok(draft.body.includes('想试着把提醒频率再减少。'));
   assert.ok(!/userAgent|screenWidth|localhost|token|cookie/.test(draft.body));
 });
+
+test('English visitors receive an English review draft and validation errors', () => {
+  const draft = createVoiceDraft('game', 'A mobile game', 'Please add directional sound cues.', 'en');
+  assert.equal(draft.title, '[Game adaptation request] A mobile game');
+  assert.ok(draft.body.includes('### My experience or request'));
+  assert.throws(() => createVoiceDraft('game', '', 'Please add directional sound cues.', 'en'), /Name the game/);
+});

@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
 const code = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+const release = readFileSync(new URL('../src/release.ts', import.meta.url), 'utf8');
+const field = readFileSync(new URL('../src/field.ts', import.meta.url), 'utf8');
 const visibleCopy = html.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<[^>]*>/g, '');
 
 assert(!/\p{Extended_Pictographic}/u.test(visibleCopy), 'Interface copy must not contain emoji.');
@@ -25,9 +27,20 @@ for (const [, icon] of html.matchAll(/data-lucide="([^"]+)"/g)) {
 for (const [, attributes] of html.matchAll(/<a\s([^>]+)>/g)) {
   if (attributes.includes('target="_blank"')) assert(attributes.includes('rel="noopener noreferrer"'), 'External tabs must have a safe rel attribute.');
 }
-assert(html.includes('https://github.com/ld0574/SenseField/releases/download/v0.4.5/sensefieldv0.4.5.apk'), 'Keep a verified public APK download.');
+assert(!html.includes('releases/download/'), 'APK URLs come from the dynamic release manifest.');
+assert(release.includes('https://888413.xyz/apk/latest.json'), 'Use the project CDN as the release source.');
+assert((html.match(/data-download\s/g) ?? []).length === 2, 'Keep download buttons in the hero and download section.');
+assert(!field.includes('THREE.Points') && !field.includes('./particles'), 'The hero uses continuous ribbons, without particles.');
+assert(!html.includes('feature-trigger') && !html.includes('<details'), 'Feature descriptions and FAQs are visible while scrolling.');
+assert((html.match(/class="feature-row reveal"/g) ?? []).length === 3, 'Show all three features.');
+assert(html.includes('少一点寻找。') && html.includes('多一点尽兴。') && !html.includes('多一点，尽兴。'), 'Keep the feature headline parallel.');
+assert(html.includes('images/openkhub-logo.png') && !html.includes('footer-word'), 'Keep both footer identities in a compact layout.');
+assert(html.includes('https://gitee.com/leda/SenseField'), 'Include the Gitee project.');
+assert(html.includes('https://lcnh7zi6opm8.feishu.cn/docx/BADbdE0laoeN8nx5Ut4c7UTVnDq'), 'Link the product user guide.');
+assert(!/ACCESSIBLE PLAY|THE WHY|THE SENSORY|BUILT FOR YOUR PLAY|MORE PLAY/.test(visibleCopy), 'Default copy is Chinese.');
+assert(html.includes('class="language-toggle"') && code.includes('initLanguage'), 'Offer a persisted English language switch.');
 assert(html.includes('lang="zh-CN"'), 'Declare the page language.');
 assert(html.includes('class="skip-link"'), 'Keep keyboard skip navigation.');
 assert(code.includes("reducedMotion.matches"), 'Honor the OS motion preference.');
 assert(!html.includes('<svg'), 'Use Lucide for interface icons.');
-console.log('Website content checks passed: product colors, no emoji, navigation, assets, Lucide, public download and accessibility hooks.');
+console.log('Website checks passed: brand colors, Chinese copy, bilingual controls, continuous ribbons, expanded content, dynamic downloads, assets, Lucide and accessibility hooks.');

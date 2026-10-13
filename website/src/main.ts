@@ -1,10 +1,12 @@
 import './style.css';
-import { createIcons, ArrowRight, ArrowDown, ArrowUp, ArrowLeftRight, MoveUpRight, Pause, Play, Menu, X, ScanEye, VolumeX, Volume2, AudioLines, Speech, Vibrate, Headphones, Radio, Plus, Navigation, Mic, Smartphone, SlidersHorizontal, Hand, Download, Info, Asterisk, Circle, Diamond, Triangle, Flower2, Square, Expand, Copy, MessageCircle, ChevronDown } from 'lucide';
+import { createIcons, ArrowRight, ArrowDown, ArrowUp, ArrowLeftRight, MoveUpRight, Pause, Play, Menu, X, ScanEye, VolumeX, Volume2, AudioLines, Speech, Vibrate, Headphones, Radio, Navigation, Mic, Smartphone, SlidersHorizontal, Hand, Download, Info, Circle, Diamond, Triangle, Flower2, Square, Copy, MessageCircle, ChevronDown, Languages } from 'lucide';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { createVoiceDraft, type VoiceKind } from './feedback';
+import { initLanguage, getLanguage, t, directionName, type DirectionKey, type MessageKey } from './i18n';
+import { loadRelease, type Release } from './release';
 
-const icons = { ArrowRight, ArrowDown, ArrowUp, ArrowLeftRight, MoveUpRight, Pause, Play, Menu, X, ScanEye, VolumeX, Volume2, AudioLines, Speech, Vibrate, Headphones, Radio, Plus, Navigation, Mic, Smartphone, SlidersHorizontal, Hand, Download, Info, Asterisk, Circle, Diamond, Triangle, Flower2, Square, Expand, Copy, MessageCircle, ChevronDown };
+const icons = { ArrowRight, ArrowDown, ArrowUp, ArrowLeftRight, MoveUpRight, Pause, Play, Menu, X, ScanEye, VolumeX, Volume2, AudioLines, Speech, Vibrate, Headphones, Radio, Navigation, Mic, Smartphone, SlidersHorizontal, Hand, Download, Info, Circle, Diamond, Triangle, Flower2, Square, Copy, MessageCircle, ChevronDown, Languages };
 const renderIcons = () => createIcons({ icons, attrs: { 'aria-hidden': 'true' } });
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 let motionPaused = reducedMotion.matches;
@@ -34,7 +36,7 @@ const mobileNavigation = document.querySelector<HTMLElement>('.mobile-nav')!;
 function setMenu(open: boolean) {
   mobileNavigation.hidden = !open;
   menuButton.setAttribute('aria-expanded', String(open));
-  menuButton.setAttribute('aria-label', open ? '关闭导航菜单' : '打开导航菜单');
+  menuButton.setAttribute('aria-label', t(open ? 'closeMenu' : 'openMenu'));
   menuButton.innerHTML = `<i data-lucide="${open ? 'x' : 'menu'}"></i>`;
   renderIcons();
 }
@@ -47,7 +49,7 @@ document.addEventListener('click', (event) => {
   // The clicked SVG is replaced when the menu opens; use the original event path.
   if (!mobileNavigation.hidden && !event.composedPath().includes(document.querySelector('.site-header')!)) setMenu(false);
 });
-window.matchMedia('(min-width: 1001px)').addEventListener('change', (event) => { if (event.matches) setMenu(false); });
+window.matchMedia('(min-width: 1101px)').addEventListener('change', (event) => { if (event.matches) setMenu(false); });
 
 // Visitors review and publish in GitHub; the static site never claims to send a message itself.
 const voiceForm = document.querySelector<HTMLFormElement>('#voices-form')!;
@@ -56,19 +58,26 @@ const voiceGame = document.querySelector<HTMLInputElement>('#voice-game')!;
 const voiceMessage = document.querySelector<HTMLTextAreaElement>('#voice-message')!;
 const voiceStatus = document.querySelector<HTMLElement>('#voice-status')!;
 const draftLink = document.querySelector<HTMLAnchorElement>('#voice-draft-link')!;
-voiceKind.addEventListener('change', () => {
+let voiceStatusKey: MessageKey | null = null;
+function updateVoiceLabel() {
   const gameRequest = voiceKind.value === 'game';
   voiceGame.required = gameRequest;
-  document.querySelector('#voice-game-label')!.innerHTML = `游戏名称 <span>（${gameRequest ? '必填' : '选填'}）</span>`;
-});
+  const label = document.querySelector('#voice-game-label')!;
+  label.textContent = `${t('gameLabel')} `;
+  const requirement = document.createElement('span');
+  requirement.textContent = t(gameRequest ? 'required' : 'optional');
+  label.append(requirement);
+}
+voiceKind.addEventListener('change', updateVoiceLabel);
 function prepareVoice() {
   if (!voiceForm.reportValidity()) return null;
   try {
-    const draft = createVoiceDraft(voiceKind.value as VoiceKind, voiceGame.value, voiceMessage.value);
+    const draft = createVoiceDraft(voiceKind.value as VoiceKind, voiceGame.value, voiceMessage.value, getLanguage());
     draftLink.href = draft.url;
     draftLink.hidden = false;
     return draft;
   } catch (error) {
+    voiceStatusKey = null;
     voiceStatus.textContent = (error as Error).message;
     return null;
   }
@@ -78,54 +87,33 @@ voiceForm.addEventListener('submit', (event) => {
   const draft = prepareVoice();
   if (!draft) return;
   window.open(draft.url, '_blank', 'noopener,noreferrer');
-  voiceStatus.textContent = '反馈已整理。请在新打开的 GitHub 页面检查内容，再确认发布；如果页面没有打开，可使用下方链接。';
+  voiceStatusKey = 'draftReady';
+  voiceStatus.textContent = t(voiceStatusKey);
 });
 document.querySelector('#copy-voice')!.addEventListener('click', async () => {
   const draft = prepareVoice();
   if (!draft) return;
   try {
     await navigator.clipboard.writeText(draft.text);
-    voiceStatus.textContent = '反馈已复制。你可以保存这段内容，或打开下方链接前往 GitHub 确认发布。';
+    voiceStatusKey = 'draftCopied';
+    voiceStatus.textContent = t(voiceStatusKey);
   } catch {
-    voiceStatus.textContent = '浏览器未允许复制。可打开下方链接，在 GitHub 检查并提交已整理的反馈。';
+    voiceStatusKey = 'copyBlocked';
+    voiceStatus.textContent = t(voiceStatusKey);
   }
 });
 
-// Feature disclosures work independently of the visual illustrations.
-const featureItems = [...document.querySelectorAll<HTMLElement>('.feature-item')];
-featureItems.forEach((item) => {
-  const trigger = item.querySelector<HTMLButtonElement>('.feature-trigger')!;
-  trigger.addEventListener('click', () => {
-    const wasOpen = trigger.getAttribute('aria-expanded') === 'true';
-    featureItems.forEach((feature) => {
-      const open = feature === item && !wasOpen;
-      feature.classList.toggle('is-active', open);
-      feature.querySelector('button')!.setAttribute('aria-expanded', String(open));
-      feature.querySelector<HTMLElement>('.feature-body')!.hidden = !open;
-    });
-    if (!wasOpen) {
-      document.querySelectorAll<HTMLElement>('[data-preview]').forEach((preview) => {
-        const active = preview.dataset.preview === item.dataset.feature;
-        preview.hidden = !active;
-        if (active && !motionPaused) gsap.fromTo(preview, { opacity: 0, y: 15 }, { opacity: 1, y: 0, duration: 0.5, ease: 'power2.out' });
-      });
-      document.querySelector('#visual-index')!.textContent = `SENSEFIELD / 0${featureItems.indexOf(item) + 1}`;
-    }
-    ScrollTrigger.refresh();
-  });
-});
-
 // Audio requires explicit opt-in. One short cue plays at a time.
-type Direction = { name: string; pan: number; angle: number; frequency: number };
-const directions: Record<string, Direction> = {
-  nw: { name: '左前方', pan: -0.72, angle: -135, frequency: 640 },
-  n: { name: '前方', pan: 0, angle: -90, frequency: 740 },
-  ne: { name: '右前方', pan: 0.72, angle: -45, frequency: 640 },
-  w: { name: '左侧', pan: -1, angle: -180, frequency: 520 },
-  e: { name: '右侧', pan: 1, angle: 0, frequency: 520 },
-  sw: { name: '左后方', pan: -0.72, angle: 135, frequency: 400 },
-  s: { name: '后方', pan: 0, angle: 90, frequency: 340 },
-  se: { name: '右后方', pan: 0.72, angle: 45, frequency: 400 },
+type Direction = { pan: number; angle: number; frequency: number };
+const directions: Record<DirectionKey, Direction> = {
+  nw: { pan: -0.72, angle: -135, frequency: 640 },
+  n: { pan: 0, angle: -90, frequency: 740 },
+  ne: { pan: 0.72, angle: -45, frequency: 640 },
+  w: { pan: -1, angle: -180, frequency: 520 },
+  e: { pan: 1, angle: 0, frequency: 520 },
+  sw: { pan: -0.72, angle: 135, frequency: 400 },
+  s: { pan: 0, angle: 90, frequency: 340 },
+  se: { pan: 0.72, angle: 45, frequency: 400 },
 };
 const audioToggle = document.querySelector<HTMLButtonElement>('#audio-toggle')!;
 const audioLabel = document.querySelector('#audio-toggle-label')!;
@@ -138,6 +126,8 @@ let soundEnabled = false;
 let oscillator: OscillatorNode | null = null;
 let speechTimer: ReturnType<typeof setTimeout> | null = null;
 let cueToken = 0;
+let selectedDirection: DirectionKey | null = null;
+const directionCue = (key: DirectionKey) => t('directionCue', { direction: directionName(key) });
 
 function stopCue() {
   cueToken++;
@@ -145,8 +135,9 @@ function stopCue() {
   if (oscillator) { try { oscillator.stop(); } catch { /* It may already be stopped. */ } oscillator = null; }
   if ('speechSynthesis' in window) speechSynthesis.cancel();
 }
-async function playCue(direction: Direction) {
+async function playCue(key: DirectionKey) {
   if (!audio || !soundEnabled) return;
+  const direction = directions[key];
   stopCue();
   const token = cueToken;
   await audio.resume();
@@ -169,11 +160,11 @@ async function playCue(direction: Direction) {
   if ('speechSynthesis' in window) {
     speechTimer = setTimeout(() => {
       if (!soundEnabled || token !== cueToken) return;
-      const utterance = new SpeechSynthesisUtterance(`${direction.name}，出现新的动向。`);
-      utterance.lang = 'zh-CN';
+      const utterance = new SpeechSynthesisUtterance(directionCue(key));
+      utterance.lang = getLanguage() === 'en' ? 'en-US' : 'zh-CN';
       utterance.volume = 0.65;
       utterance.rate = 1.1;
-      const voice = speechSynthesis.getVoices().find((candidate) => candidate.lang.startsWith('zh'));
+      const voice = speechSynthesis.getVoices().find((candidate) => candidate.lang.startsWith(getLanguage()));
       if (voice) utterance.voice = voice;
       speechSynthesis.speak(utterance);
     }, 420);
@@ -181,9 +172,9 @@ async function playCue(direction: Direction) {
 }
 function updateAudioUI() {
   audioToggle.setAttribute('aria-pressed', String(soundEnabled));
-  audioLabel.textContent = soundEnabled ? '声音已开启 · 点击关闭' : '开启声音体验';
+  audioLabel.textContent = t(soundEnabled ? 'audioOn' : 'audioOff');
   audioToggle.querySelector('.audio-icon')!.innerHTML = `<i data-lucide="${soundEnabled ? 'volume-2' : 'volume-x'}"></i>`;
-  audioNote.textContent = soundEnabled ? '现在选择右侧方位；左右声道与音调会随方向变化。' : '声音仅在你开启后播放，建议佩戴耳机。';
+  audioNote.textContent = t(soundEnabled ? 'audioHintOn' : 'audioHintOff');
   renderIcons();
 }
 audioToggle.addEventListener('click', async () => {
@@ -193,22 +184,23 @@ audioToggle.addEventListener('click', async () => {
     await audio.resume();
     soundEnabled = true;
     updateAudioUI();
-    const selected = document.querySelector<HTMLElement>('.direction-point[aria-pressed="true"]');
-    if (selected) await playCue(directions[selected.dataset.direction!]);
+    if (selectedDirection) await playCue(selectedDirection);
   } catch {
     soundEnabled = false;
-    audioNote.textContent = '当前浏览器无法播放声音，你仍可以选择方位查看视觉提示。';
+    audioNote.textContent = t('audioError');
   }
 });
 document.querySelectorAll<HTMLButtonElement>('.direction-point').forEach((point) => {
   point.addEventListener('click', () => {
-    const direction = directions[point.dataset.direction!];
+    const key = point.dataset.direction as DirectionKey;
+    const direction = directions[key];
+    selectedDirection = key;
     document.querySelectorAll('.direction-point').forEach((node) => node.setAttribute('aria-pressed', String(node === point)));
     radar.classList.add('has-signal');
     radarPath.style.transform = `rotate(${direction.angle}deg)`;
-    feedback.textContent = `${direction.name}，出现新的动向。`;
-    document.querySelector('.radar-online')!.innerHTML = '<span class="status-dot"></span>感知已抵达';
-    if (soundEnabled) void playCue(direction).catch(() => { audioNote.textContent = '声音播放受限，可以继续查看视觉提示。'; });
+    feedback.textContent = directionCue(key);
+    document.querySelector('#radar-status')!.textContent = t('radarActive');
+    if (soundEnabled) void playCue(key).catch(() => { audioNote.textContent = t('audioLimited'); });
   });
 });
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopCue(); });
@@ -224,11 +216,9 @@ function updateMotionUI() {
   document.body.classList.toggle('motion-paused', motionPaused);
   document.body.classList.toggle('motion-enabled', !motionPaused);
   motionButton.setAttribute('aria-pressed', String(motionPaused));
-  motionButton.setAttribute('aria-label', motionPaused ? '开启页面动效' : '暂停页面动效');
-  motionButton.title = motionPaused ? '开启页面动效' : '暂停页面动效';
+  motionButton.setAttribute('aria-label', t(motionPaused ? 'playMotion' : 'pauseMotion'));
+  motionButton.title = t(motionPaused ? 'playMotion' : 'pauseMotion');
   motionButton.innerHTML = `<i data-lucide="${motionPaused ? 'play' : 'pause'}"></i>`;
-  const fieldButton = document.querySelector<HTMLButtonElement>('.field-interact');
-  if (fieldButton) { fieldButton.disabled = motionPaused; fieldButton.title = motionPaused ? '动效已暂停，可在页首开启' : '释放粒子，感受感知场的扩散与重聚'; }
   renderIcons();
 }
 function setupReveals() {
@@ -240,14 +230,14 @@ function setupReveals() {
   heroAnimation = gsap.timeline({ defaults: { ease: 'power3.out' } })
     .from('.hero-topline', { opacity: 0, duration: 0.8 }, 0)
     .from('.hero-line', { y: 38, opacity: 0, duration: 1, stagger: 0.13 }, 0.1)
-    .from('.hero-english', { y: 20, opacity: 0, duration: 0.85 }, 0.45)
-    .from('.hero-description, .hero-links', { y: 15, opacity: 0, duration: 0.8, stagger: 0.12 }, 0.6);
+    .from('.hero-kicker', { y: 16, opacity: 0, duration: 0.85 }, 0.3)
+    .from('.hero-description, .hero-links, .hero-release', { y: 15, opacity: 0, duration: 0.8, stagger: 0.1 }, 0.5);
 }
 function stopAnimations() {
   revealAnimations.forEach((tween) => { tween.scrollTrigger?.kill(); tween.kill(); });
   revealAnimations = [];
   heroAnimation?.progress(1).kill();
-  gsap.set('.reveal, .hero-topline, .hero-line, .hero-english, .hero-description, .hero-links', { clearProps: 'transform,opacity' });
+  gsap.set('.reveal, .hero-topline, .hero-line, .hero-kicker, .hero-description, .hero-links, .hero-release', { clearProps: 'transform,opacity' });
 }
 updateMotionUI();
 setupReveals();
@@ -281,6 +271,56 @@ document.querySelectorAll<HTMLElement>('.magnetic').forEach((button) => {
   });
   button.addEventListener('pointerleave', () => gsap.to(button, { x: 0, y: 0, duration: motionPaused ? 0 : 0.7, ease: 'elastic.out(1, 0.5)' }));
 });
+
+// The CDN does not currently send CORS headers. Actions supplies a fresh, same-origin
+// JSON snapshot automatically; release data and APK URLs never live in page source.
+let release: Release | null = null;
+let releaseFailed = false;
+function renderRelease() {
+  const versionText = release ? t('releaseVersion', { version: release.version_name }) : t(releaseFailed ? 'releaseError' : 'releaseLoading');
+  document.querySelectorAll('[data-release-version]').forEach((node) => { node.textContent = versionText; });
+  document.querySelectorAll<HTMLAnchorElement>('[data-download]').forEach((link) => {
+    if (release) link.href = release.apk_url;
+  });
+  document.querySelector('[data-release-size]')!.textContent = release ? t('releaseSize', { size: (release.apk_bytes / 1_000_000).toFixed(1) }) : (getLanguage() === 'en' ? 'Free and open source' : '免费开源');
+  document.querySelector('#release-notes-title')!.textContent = t('releaseNotes');
+  const notes = document.querySelector<HTMLElement>('#release-notes-content')!;
+  notes.lang = release ? 'zh-CN' : document.documentElement.lang;
+  const lines = release ? release.release_notes.split('\n').filter((line) => line.trim()) : [versionText];
+  notes.replaceChildren(...lines.map((line) => { const paragraph = document.createElement('p'); paragraph.textContent = line; return paragraph; }));
+  if (release) {
+    const schema = document.querySelector<HTMLScriptElement>('#software-data')!;
+    const value = JSON.parse(schema.textContent!);
+    value.softwareVersion = release.version_name;
+    value.downloadUrl = release.apk_url;
+    schema.textContent = JSON.stringify(value);
+  }
+}
+async function refreshRelease() {
+  try {
+    release = await loadRelease(`${import.meta.env.BASE_URL}latest.json?check=${Date.now()}`);
+    releaseFailed = false;
+  } catch { releaseFailed = !release; }
+  renderRelease();
+  ScrollTrigger.refresh();
+  updateProgress();
+}
+initLanguage(() => {
+  stopCue();
+  setMenu(!mobileNavigation.hidden);
+  updateMotionUI();
+  updateAudioUI();
+  updateVoiceLabel();
+  feedback.textContent = selectedDirection ? directionCue(selectedDirection) : t('directionHint');
+  document.querySelector('#radar-status')!.textContent = t(selectedDirection ? 'radarActive' : 'radarWaiting');
+  if (voiceStatusKey) voiceStatus.textContent = t(voiceStatusKey);
+  else voiceStatus.textContent = '';
+  renderRelease();
+  ScrollTrigger.refresh();
+  updateProgress();
+});
+void refreshRelease();
+setInterval(() => { if (!document.hidden) void refreshRelease(); }, 15 * 60_000);
 
 // The renderer is a separate chunk. Essential content works even if it fails.
 void import('./field').then(({ mountField }) => {
