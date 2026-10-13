@@ -1,12 +1,12 @@
 import './style.css';
-import { createIcons, ArrowRight, ArrowDown, ArrowUp, ArrowLeftRight, MoveUpRight, Pause, Play, Menu, X, ScanEye, VolumeX, Volume2, AudioLines, Speech, Vibrate, Headphones, Radio, Navigation, Mic, Smartphone, SlidersHorizontal, Hand, Download, Info, Circle, Diamond, Triangle, Flower2, Square, Copy, MessageCircle, ChevronDown, Languages } from 'lucide';
+import { createIcons, ArrowRight, ArrowDown, ArrowUp, ArrowLeftRight, MoveUpRight, Pause, Play, Menu, X, ScanEye, VolumeX, Volume2, AudioLines, Speech, Vibrate, Headphones, Radio, Navigation, Mic, Smartphone, SlidersHorizontal, Hand, Download, Info, Circle, Diamond, Triangle, Flower2, Square, Copy, MessageCircle, ChevronDown, Languages, Plus } from 'lucide';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { createVoiceDraft, type VoiceKind } from './feedback';
-import { initLanguage, getLanguage, t, directionName, type DirectionKey, type MessageKey } from './i18n';
+import { initLanguage, getLanguage, t, directionCue, type DirectionKey, type MessageKey } from './i18n';
 import { loadRelease, type Release } from './release';
 
-const icons = { ArrowRight, ArrowDown, ArrowUp, ArrowLeftRight, MoveUpRight, Pause, Play, Menu, X, ScanEye, VolumeX, Volume2, AudioLines, Speech, Vibrate, Headphones, Radio, Navigation, Mic, Smartphone, SlidersHorizontal, Hand, Download, Info, Circle, Diamond, Triangle, Flower2, Square, Copy, MessageCircle, ChevronDown, Languages };
+const icons = { ArrowRight, ArrowDown, ArrowUp, ArrowLeftRight, MoveUpRight, Pause, Play, Menu, X, ScanEye, VolumeX, Volume2, AudioLines, Speech, Vibrate, Headphones, Radio, Navigation, Mic, Smartphone, SlidersHorizontal, Hand, Download, Info, Circle, Diamond, Triangle, Flower2, Square, Copy, MessageCircle, ChevronDown, Languages, Plus };
 const renderIcons = () => createIcons({ icons, attrs: { 'aria-hidden': 'true' } });
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 let motionPaused = reducedMotion.matches;
@@ -127,7 +127,6 @@ let oscillator: OscillatorNode | null = null;
 let speechTimer: ReturnType<typeof setTimeout> | null = null;
 let cueToken = 0;
 let selectedDirection: DirectionKey | null = null;
-const directionCue = (key: DirectionKey) => t('directionCue', { direction: directionName(key) });
 
 function stopCue() {
   cueToken++;
@@ -263,6 +262,10 @@ function updateProgress() {
 window.addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(updateProgress); } }, { passive: true });
 updateProgress();
 
+document.querySelectorAll<HTMLDetailsElement>('.faq-item').forEach((item) => {
+  item.addEventListener('toggle', () => { ScrollTrigger.refresh(); updateProgress(); });
+});
+
 document.querySelectorAll<HTMLElement>('.magnetic').forEach((button) => {
   button.addEventListener('pointermove', (event) => {
     if (motionPaused || event.pointerType !== 'mouse') return;
@@ -330,6 +333,6 @@ void import('./field').then(({ mountField }) => {
     if (event.persisted) void audio?.suspend();
     else { dispose?.(); void audio?.close(); }
   });
-}).catch(() => { /* Keep the static sculpture visible. */ });
+}).catch(() => { /* Keep the static perception lens visible. */ });
 
 window.addEventListener('load', () => { ScrollTrigger.refresh(); updateProgress(); });

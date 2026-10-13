@@ -1,55 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
-/** Sweep a rounded, solid ribbon along a smooth wave. No points or particles. */
-function ribbonGeometry(phase: number, width: number, amplitude: number, offset: number) {
-  const steps = 192;
-  const sides = 16;
-  const vertices: number[] = [];
-  const indices: number[] = [];
-  function center(u: number) {
-    const angle = u * Math.PI * 2 + phase;
-    return new THREE.Vector3((u - .5) * 6.3, Math.sin(angle) * amplitude + offset, Math.cos(angle) * .85);
-  }
-  for (let step = 0; step <= steps; step++) {
-    const u = step / steps;
-    const point = center(u);
-    const tangent = center(u + .001).sub(center(u - .001)).normalize();
-    const roll = -.28 + Math.sin(u * Math.PI * 2 + phase) * .55;
-    const across = new THREE.Vector3(0, Math.cos(roll), Math.sin(roll));
-    across.addScaledVector(tangent, -across.dot(tangent)).normalize();
-    const normal = new THREE.Vector3().crossVectors(tangent, across).normalize();
-    const halfWidth = width * (.3 + .7 * Math.sin(Math.PI * u) ** .7) / 2;
-    for (let side = 0; side < sides; side++) {
-      const angle = side / sides * Math.PI * 2;
-      const cos = Math.cos(angle);
-      const sin = Math.sin(angle);
-      const acrossDistance = Math.sign(cos) * Math.abs(cos) ** .4 * halfWidth;
-      const depth = Math.sign(sin) * Math.abs(sin) ** .4 * .035;
-      const vertex = point.clone().addScaledVector(across, acrossDistance).addScaledVector(normal, depth);
-      vertices.push(vertex.x, vertex.y, vertex.z);
-      if (step < steps) {
-        const a = step * sides + side;
-        const b = step * sides + (side + 1) % sides;
-        indices.push(a, b, b + sides, a, b + sides, a + sides);
-      }
-    }
-  }
-  const start = vertices.length / 3;
-  const end = start + 1;
-  vertices.push(...center(0).toArray(), ...center(1).toArray());
-  for (let side = 0; side < sides; side++) {
-    indices.push(start, (side + 1) % sides, side);
-    indices.push(end, steps * sides + side, steps * sides + (side + 1) % sides);
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  return geometry;
-}
-
-/** Continuous acoustic ribbons, with gentle breathing and damped pointer response. */
+/** A perception lens: continuous optical bands, a scan arc and the original mark. */
 export function mountField(canvas: HTMLCanvasElement, isPaused: () => boolean) {
   const host = canvas.parentElement!;
   let renderer: THREE.WebGLRenderer;
@@ -57,70 +9,106 @@ export function mountField(canvas: HTMLCanvasElement, isPaused: () => boolean) {
     renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'low-power' });
   } catch { return; }
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(34, 1, .1, 40);
-  camera.position.set(0, 0, 11.7);
+  const camera = new THREE.PerspectiveCamera(35, 1, .1, 30);
+  camera.position.set(0, 0, 9.8);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
 
-  const environment = new RoomEnvironment();
+  const room = new RoomEnvironment();
   const generator = new THREE.PMREMGenerator(renderer);
-  const environmentTarget = generator.fromScene(environment, .04);
-  scene.environment = environmentTarget.texture;
-  environment.dispose();
+  const environment = generator.fromScene(room, .04);
+  scene.environment = environment.texture;
+  room.dispose();
   generator.dispose();
 
-  const sculpture = new THREE.Group();
-  sculpture.rotation.set(.22, -.28, -.48);
-  scene.add(sculpture);
-  const timeUniform = { value: 0 };
-  const teal = new THREE.MeshPhysicalMaterial({
-    color: '#236874', metalness: .22, roughness: .24, clearcoat: 1, clearcoatRoughness: .16,
-    envMapIntensity: .9, side: THREE.DoubleSide,
+  const lens = new THREE.Group();
+  lens.rotation.set(.19, -.28, -.12);
+  scene.add(lens);
+  const time = { value: 0 };
+  const opticalMaterial = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    uniforms: { uTime: time, uTeal: { value: new THREE.Color('#236874') }, uSoft: { value: new THREE.Color('#e7f2f2') }, uPeach: { value: new THREE.Color('#f0c6b2') } },
+    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `
+      varying vec2 vUv;
+      uniform float uTime;
+      uniform vec3 uTeal, uSoft, uPeach;
+      void main() {
+        vec2 p = (vUv - .5) * 5.4;
+        float r = length(p);
+        float a = atan(p.y, p.x);
+        float mask = smoothstep(.86, .96, r) * (1.0 - smoothstep(2.12, 2.25, r));
+        float refraction = .5 + .5 * sin(r * 32.0 - uTime * .8 + sin(a * 3.0) * .65);
+        float bands = pow(refraction, 7.0);
+        float scan = pow(.5 + .5 * cos(a - uTime * .19), 22.0);
+        float edge = pow(abs(sin(r * 10.0)), 14.0);
+        vec3 color = mix(uSoft, uTeal, .17 + bands * .34);
+        color = mix(color, uPeach, scan * .55);
+        gl_FragColor = vec4(color, mask * (.28 + bands * .28 + edge * .16 + scan * .19));
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }
+    `,
   });
-  const peach = new THREE.MeshPhysicalMaterial({
-    color: '#f0c6b2', metalness: .18, roughness: .27, clearcoat: 1, clearcoatRoughness: .2,
-    envMapIntensity: .8, side: THREE.DoubleSide,
-  });
-  for (const material of [teal, peach]) {
-    material.onBeforeCompile = (shader) => {
-      shader.uniforms.uRibbonTime = timeUniform;
-      shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nuniform float uRibbonTime;');
-      shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
-        #include <begin_vertex>
-        transformed.y += sin(position.x * 1.1 + uRibbonTime * .4) * .045;
-        transformed.z += cos(position.x * .8 + uRibbonTime * .3) * .045;
-      `);
-    };
-  }
-  sculpture.add(new THREE.Mesh(ribbonGeometry(0, 1.13, 1.25, .16), teal));
-  sculpture.add(new THREE.Mesh(ribbonGeometry(Math.PI, .96, 1.2, -.16), teal));
-  sculpture.add(new THREE.Mesh(ribbonGeometry(Math.PI * .5, .38, 1.52, 0), peach));
+  const opticalGlass = new THREE.Mesh(new THREE.PlaneGeometry(5.4, 5.4), opticalMaterial);
+  opticalGlass.position.z = -.16;
+  lens.add(opticalGlass);
 
-  scene.add(new THREE.AmbientLight('#ffffff', .65));
-  const key = new THREE.DirectionalLight('#ffffff', 3.2);
-  key.position.set(-3, 5, 6);
+  const enamel = new THREE.MeshPhysicalMaterial({ color: '#236874', metalness: .48, roughness: .24, clearcoat: 1, envMapIntensity: 1.2 });
+  const porcelain = new THREE.MeshPhysicalMaterial({ color: '#fbf7f1', metalness: .08, roughness: .3, clearcoat: 1 });
+  const silver = new THREE.MeshPhysicalMaterial({ color: '#e7f2f2', metalness: .72, roughness: .18, envMapIntensity: 1.1 });
+  const peach = new THREE.MeshPhysicalMaterial({ color: '#f0c6b2', metalness: .3, roughness: .24, clearcoat: 1 });
+  const fineLine = new THREE.LineBasicMaterial({ color: '#236874', transparent: true, opacity: .28 });
+
+  function ring(radius: number, tube: number, z: number, material: THREE.Material) {
+    const mesh = new THREE.Mesh(new THREE.TorusGeometry(radius, tube, 16, 192), material);
+    mesh.position.z = z;
+    lens.add(mesh);
+    return mesh;
+  }
+  ring(2.13, .065, -.15, enamel);
+  ring(2.23, .017, -.22, silver);
+  ring(1.75, .021, -.02, silver);
+  ring(1.26, .018, .05, enamel);
+  ring(.92, .031, .1, silver);
+
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(.86, .89, .15, 96), porcelain);
+  core.rotation.x = Math.PI / 2;
+  core.position.z = .13;
+  lens.add(core);
+  ring(.885, .021, .19, peach);
+
+  // Etched index marks are connected geometry, not a cloud of points.
+  const marks: number[] = [];
+  for (let i = 0; i < 96; i++) {
+    const angle = i / 96 * Math.PI * 2;
+    const inner = i % 8 === 0 ? 2.36 : 2.39;
+    for (const radius of [inner, 2.44]) marks.push(Math.cos(angle) * radius, Math.sin(angle) * radius, -.24);
+  }
+  lens.add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(marks, 3)), fineLine));
+  lens.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(Array.from({ length: 192 }, (_, i) => {
+    const angle = i / 192 * Math.PI * 2;
+    return new THREE.Vector3(Math.cos(angle) * 2.55, Math.sin(angle) * 2.55, -.26);
+  })), fineLine));
+
+  const scan = new THREE.Group();
+  const arc = new THREE.Mesh(new THREE.TorusGeometry(2.27, .042, 12, 100, Math.PI * .65), peach);
+  arc.position.z = -.05;
+  scan.add(arc);
+  const echo = new THREE.Mesh(new THREE.TorusGeometry(1.74, .03, 12, 80, Math.PI * .42), enamel);
+  echo.rotation.z = Math.PI * 1.15;
+  echo.position.z = .02;
+  scan.add(echo);
+  lens.add(scan);
+
+  scene.add(new THREE.AmbientLight('#ffffff', .9));
+  const key = new THREE.DirectionalLight('#ffffff', 3);
+  key.position.set(-4, 5, 6);
   scene.add(key);
   const fill = new THREE.DirectionalLight('#f0c6b2', 1.7);
-  fill.position.set(4, -2, 3);
+  fill.position.set(4, -3, 4);
   scene.add(fill);
-  const rim = new THREE.DirectionalLight('#e7f2f2', 2.4);
-  rim.position.set(2, 4, -3);
-  scene.add(rim);
-
-  const shadowCanvas = document.createElement('canvas');
-  shadowCanvas.width = shadowCanvas.height = 128;
-  const context = shadowCanvas.getContext('2d')!;
-  const gradient = context.createRadialGradient(64, 64, 0, 64, 64, 64);
-  gradient.addColorStop(0, 'rgba(25,49,57,.14)');
-  gradient.addColorStop(1, 'rgba(25,49,57,0)');
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, 128, 128);
-  const shadowTexture = new THREE.CanvasTexture(shadowCanvas);
-  const shadowMaterial = new THREE.MeshBasicMaterial({ map: shadowTexture, transparent: true, depthWrite: false });
-  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(6.7, 1.25), shadowMaterial);
-  shadow.position.set(.25, -2.9, -1.7);
-  scene.add(shadow);
 
   const pointer = { x: 0, y: 0 };
   const eased = { x: 0, y: 0 };
@@ -140,28 +128,29 @@ export function mountField(canvas: HTMLCanvasElement, isPaused: () => boolean) {
   let previous = performance.now();
   let pausedFrameDrawn = false;
   let contextLost = false;
+  let disposed = false;
   function queueRender() {
-    if (frame || !visible || document.hidden || contextLost || (isPaused() && pausedFrameDrawn)) return;
+    if (disposed || frame || !visible || document.hidden || contextLost || (isPaused() && pausedFrameDrawn)) return;
     frame = requestAnimationFrame(render);
   }
   function render(now: number) {
     frame = 0;
     const delta = Math.min((now - previous) / 1000, .05);
     previous = now;
-    if (!visible || document.hidden || contextLost) return;
+    if (!visible || document.hidden || contextLost || disposed) return;
     const paused = isPaused();
     if (paused && pausedFrameDrawn) return;
     pausedFrameDrawn = paused;
     if (!paused) {
       elapsed += delta;
-      const response = 1 - Math.exp(-delta * 3.5);
+      const response = 1 - Math.exp(-delta * 3);
       eased.x += (pointer.x - eased.x) * response;
       eased.y += (pointer.y - eased.y) * response;
-      timeUniform.value = elapsed;
-      sculpture.rotation.x = .22 + eased.y * .08;
-      sculpture.rotation.y = -.28 + Math.sin(elapsed * .19) * .14 + eased.x * .15;
-      sculpture.rotation.z = -.48 + Math.sin(elapsed * .14) * .035;
-      sculpture.position.y = Math.sin(elapsed * .42) * .095;
+      time.value = elapsed;
+      scan.rotation.z = elapsed * .19 - Math.PI * .2;
+      lens.rotation.x = .19 + eased.y * .12 + Math.sin(elapsed * .22) * .035;
+      lens.rotation.y = -.28 + eased.x * .17 + Math.sin(elapsed * .16) * .04;
+      lens.position.y = Math.sin(elapsed * .32) * .055;
     }
     renderer.render(scene, camera);
     queueRender();
@@ -172,6 +161,8 @@ export function mountField(canvas: HTMLCanvasElement, isPaused: () => boolean) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, window.innerWidth < 760 ? 1.5 : 1.75));
     renderer.setSize(bounds.width, bounds.height, false);
     camera.aspect = bounds.width / bounds.height;
+    // Preserve the full lens, including its outer index marks, on narrow screens.
+    camera.position.z = Math.max(9.8, 9.1 / camera.aspect);
     camera.updateProjectionMatrix();
     pausedFrameDrawn = false;
     queueRender();
@@ -196,10 +187,25 @@ export function mountField(canvas: HTMLCanvasElement, isPaused: () => boolean) {
   document.addEventListener('visibilitychange', onVisibility);
   canvas.addEventListener('webglcontextlost', onContextLost);
   canvas.addEventListener('webglcontextrestored', onContextRestored);
-  renderer.render(scene, camera);
-  host.classList.add('field-ready');
+
+  const markMaterial = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, toneMapped: false });
+  const mark = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.16), markMaterial);
+  mark.position.z = .22;
+  lens.add(mark);
+  const markTexture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}images/brand-mark.png`, (texture) => {
+    if (disposed) return;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    markMaterial.map = texture;
+    markMaterial.needsUpdate = true;
+    pausedFrameDrawn = false;
+    renderer.render(scene, camera);
+    host.classList.add('field-ready');
+    queueRender();
+  }, undefined, () => { /* Keep the static lens and original mark visible. */ });
   queueRender();
+
   return () => {
+    disposed = true;
     cancelAnimationFrame(frame);
     observer.disconnect();
     resizeObserver.disconnect();
@@ -209,12 +215,10 @@ export function mountField(canvas: HTMLCanvasElement, isPaused: () => boolean) {
     document.removeEventListener('visibilitychange', onVisibility);
     canvas.removeEventListener('webglcontextlost', onContextLost);
     canvas.removeEventListener('webglcontextrestored', onContextRestored);
-    scene.traverse((object) => { if (object instanceof THREE.Mesh) object.geometry.dispose(); });
-    teal.dispose();
-    peach.dispose();
-    shadowMaterial.dispose();
-    shadowTexture.dispose();
-    environmentTarget.dispose();
+    scene.traverse((object) => { if (object instanceof THREE.Mesh || object instanceof THREE.Line) object.geometry.dispose(); });
+    [opticalMaterial, enamel, porcelain, silver, peach, fineLine, markMaterial].forEach((material) => material.dispose());
+    markTexture.dispose();
+    environment.dispose();
     renderer.dispose();
   };
 }

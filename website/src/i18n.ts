@@ -9,12 +9,11 @@ const messages = {
   playMotion: ['开启页面动效', 'Resume animations'],
   audioOn: ['声音已开启 · 点击关闭', 'Sound is on · Turn off'],
   audioOff: ['开启声音体验', 'Try spatial sound'],
-  audioHintOn: ['现在选择右侧方位；左右声道与音调会随方向变化。', 'Choose a direction. Stereo position and pitch change with each direction.'],
+  audioHintOn: ['选择任意方位，感受不同局势提示和声音方向。', 'Choose any direction to hear a different game cue and stereo position.'],
   audioHintOff: ['声音仅在你开启后播放，建议佩戴耳机。', 'Sound plays only after you turn it on. Headphones are recommended.'],
   audioError: ['当前浏览器无法播放声音，你仍可以选择方位查看视觉提示。', 'Audio is unavailable in this browser. You can still explore the visual directions.'],
   audioLimited: ['声音播放受限，可以继续查看视觉提示。', 'Audio playback is restricted. You can still use the visual cues.'],
   directionHint: ['选择方位，感受声音的方向。', 'Choose a direction to explore spatial sound.'],
-  directionCue: ['{direction}，出现新的动向。', 'New activity {direction}.'],
   radarWaiting: ['等待你的探索', 'Ready to explore'],
   radarActive: ['感知已抵达', 'A cue has arrived'],
   gameLabel: ['游戏名称', 'Game name'],
@@ -45,13 +44,18 @@ export function t(key: MessageKey, values: Record<string, string> = {}) {
   return result;
 }
 
-const directionLabels = {
-  nw: ['左前方', 'ahead to your left'], n: ['前方', 'ahead'], ne: ['右前方', 'ahead to your right'],
-  w: ['左侧', 'to your left'], e: ['右侧', 'to your right'],
-  sw: ['左后方', 'behind to your left'], s: ['后方', 'behind'], se: ['右后方', 'behind to your right'],
+const directionCues = {
+  nw: ['左前方有敌人。', 'Enemy ahead to your left.'],
+  n: ['前方兵线正在接近。', 'A minion wave is approaching ahead.'],
+  ne: ['右前方正在开团。', 'A team fight is happening ahead to your right.'],
+  w: ['左侧草丛有动静。', 'Movement in the brush to your left.'],
+  e: ['右侧队友正在集合。', 'Teammates are gathering to your right.'],
+  sw: ['左后方有敌人绕行。', 'An enemy is flanking behind to your left.'],
+  s: ['后方队友正在支援。', 'Teammates are coming to help from behind.'],
+  se: ['右后方防御塔受到攻击。', 'The tower behind to your right is under attack.'],
 } as const;
-export type DirectionKey = keyof typeof directionLabels;
-export const directionName = (key: DirectionKey) => directionLabels[key][language === 'en' ? 1 : 0];
+export type DirectionKey = keyof typeof directionCues;
+export const directionCue = (key: DirectionKey) => directionCues[key][language === 'en' ? 1 : 0];
 
 /** Translation targets contain only text, so switching never replaces controls or icons. */
 export function initLanguage(onChange: () => void) {
