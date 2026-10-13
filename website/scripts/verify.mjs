@@ -35,11 +35,14 @@ assert(!html.includes('feature-trigger'), 'Feature descriptions remain visible w
 const faqs = [...html.matchAll(/<details class="faq-item reveal"([^>]*)>/g)];
 assert(faqs.length === 5 && faqs.every(([, attrs]) => !/\bopen\b/.test(attrs)), 'The five FAQs are native disclosures, collapsed by default.');
 assert(!html.includes('体验版') && !html.includes('Preview feature') && html.includes('已测通 100 关'), 'Reflect the completed 100-level Anipop playthrough without preview labels.');
+assert((html.match(/100 关/g) ?? []).length === 1 && (html.match(/100 levels/g) ?? []).length === 1, 'Mention the 100-level Anipop result only once in each language.');
+assert((html.match(/class="hero-channel"/g) ?? []).length === 4 && html.includes('data-en="Visual"'), 'Present sound, speech, touch and visual highlights in the hero.');
 assert((html.match(/class="feature-row reveal"/g) ?? []).length === 3, 'Show all three features.');
 assert(html.includes('少一点寻找。') && html.includes('多一点尽兴。') && !html.includes('多一点，尽兴。'), 'Keep the feature headline parallel.');
 assert(html.includes('images/openkhub-logo.png') && !html.includes('footer-word'), 'Keep both footer identities in a compact layout.');
 assert(html.includes('https://gitee.com/leda/SenseField'), 'Include the Gitee project.');
 assert(html.includes('https://lcnh7zi6opm8.feishu.cn/docx/BADbdE0laoeN8nx5Ut4c7UTVnDq'), 'Link the product user guide.');
+assert(!html.includes('安卓手游场景示意') && !html.includes('阅读我们的出发点'), 'Remove the redundant scene caption and story link.');
 assert(!/ACCESSIBLE PLAY|THE WHY|THE SENSORY|BUILT FOR YOUR PLAY|MORE PLAY/.test(visibleCopy), 'Default copy is Chinese.');
 assert(html.includes('class="language-toggle"') && code.includes('initLanguage'), 'Offer a persisted English language switch.');
 assert(html.includes('lang="zh-CN"'), 'Declare the page language.');

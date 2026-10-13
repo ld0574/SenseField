@@ -2,7 +2,7 @@ export type Language = 'zh' | 'en';
 
 const messages = {
   pageTitle: ['听野 — 视野有限，感知无界。', 'SenseField — Play beyond sight.'],
-  description: ['听野，为视野狭窄和低视力玩家而设计。把游戏中难以持续观察的信息，转成声音、语音与触觉。安卓 10 及以上，免费开源。', 'SenseField is an open-source Android companion for players with low vision. Explore game information through sound, speech and touch. Android 10 or later.'],
+  description: ['听野，为视野狭窄和低视力玩家而设计。通过声音、语音、触觉与视觉高亮，让游戏线索更清晰。安卓 10 及以上，免费开源。', 'SenseField is an open-source Android companion for players with low vision. Explore game information through sound, speech, touch and visual highlights. Android 10 or later.'],
   openMenu: ['打开导航菜单', 'Open navigation'],
   closeMenu: ['关闭导航菜单', 'Close navigation'],
   pauseMotion: ['暂停页面动效', 'Pause animations'],

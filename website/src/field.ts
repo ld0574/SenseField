@@ -24,6 +24,8 @@ export function mountField(canvas: HTMLCanvasElement, isPaused: () => boolean) {
 
   const lens = new THREE.Group();
   lens.rotation.set(.19, -.28, -.12);
+  lens.scale.setScalar(.92);
+  lens.position.y = .2;
   scene.add(lens);
   const time = { value: 0 };
   const opticalMaterial = new THREE.ShaderMaterial({
@@ -39,13 +41,21 @@ export function mountField(canvas: HTMLCanvasElement, isPaused: () => boolean) {
         float r = length(p);
         float a = atan(p.y, p.x);
         float mask = smoothstep(.86, .96, r) * (1.0 - smoothstep(2.12, 2.25, r));
-        float refraction = .5 + .5 * sin(r * 32.0 - uTime * .8 + sin(a * 3.0) * .65);
-        float bands = pow(refraction, 7.0);
-        float scan = pow(.5 + .5 * cos(a - uTime * .19), 22.0);
-        float edge = pow(abs(sin(r * 10.0)), 14.0);
-        vec3 color = mix(uSoft, uTeal, .17 + bands * .34);
-        color = mix(color, uPeach, scan * .55);
-        gl_FragColor = vec4(color, mask * (.28 + bands * .28 + edge * .16 + scan * .19));
+        float refraction = .5 + .5 * sin(r * 32.0 - uTime * 1.2 + sin(a * 3.0) * .65);
+        float bands = pow(refraction, 3.0);
+        float scan = pow(.5 + .5 * cos(a - uTime * .19), 8.0);
+        float sound = exp(-pow((r - 1.52 - .055 * sin(a * 22.0 - uTime * 1.6)) * 25.0, 2.0));
+        float phase = fract(uTime * .15);
+        float touch = exp(-pow((r - .96 - phase * 1.2) * 24.0, 2.0)) * sin(phase * 3.14159);
+        vec2 tileA = abs(p - vec2(-1.1, -1.2)) - .15;
+        vec2 tileB = abs(p - vec2(-.72, -1.2)) - .15;
+        float visual = max(1.0 - smoothstep(-.008, .012, max(tileA.x, tileA.y)), 1.0 - smoothstep(-.008, .012, max(tileB.x, tileB.y)));
+        float halo = exp(-pow((r - 2.13) * 4.0, 2.0)) * .2;
+        vec3 color = mix(uTeal, uSoft, .06 + bands * .24 + sound * .14);
+        color = mix(color, uPeach, scan * .75 + touch * .3);
+        color = mix(color, uPeach, visual * (.85 + .1 * sin(uTime * 1.4)));
+        float alpha = mask * (.72 + bands * .2 + sound * .05 + touch * .08);
+        gl_FragColor = vec4(color, max(alpha, halo));
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }
@@ -55,7 +65,7 @@ export function mountField(canvas: HTMLCanvasElement, isPaused: () => boolean) {
   opticalGlass.position.z = -.16;
   lens.add(opticalGlass);
 
-  const enamel = new THREE.MeshPhysicalMaterial({ color: '#236874', metalness: .48, roughness: .24, clearcoat: 1, envMapIntensity: 1.2 });
+  const enamel = new THREE.MeshPhysicalMaterial({ color: '#236874', emissive: '#236874', emissiveIntensity: .12, metalness: .35, roughness: .24, clearcoat: 1, envMapIntensity: 1.2 });
   const porcelain = new THREE.MeshPhysicalMaterial({ color: '#fbf7f1', metalness: .08, roughness: .3, clearcoat: 1 });
   const silver = new THREE.MeshPhysicalMaterial({ color: '#e7f2f2', metalness: .72, roughness: .18, envMapIntensity: 1.1 });
   const peach = new THREE.MeshPhysicalMaterial({ color: '#f0c6b2', metalness: .3, roughness: .24, clearcoat: 1 });
@@ -150,7 +160,7 @@ export function mountField(canvas: HTMLCanvasElement, isPaused: () => boolean) {
       scan.rotation.z = elapsed * .19 - Math.PI * .2;
       lens.rotation.x = .19 + eased.y * .12 + Math.sin(elapsed * .22) * .035;
       lens.rotation.y = -.28 + eased.x * .17 + Math.sin(elapsed * .16) * .04;
-      lens.position.y = Math.sin(elapsed * .32) * .055;
+      lens.position.y = .2 + Math.sin(elapsed * .32) * .055;
     }
     renderer.render(scene, camera);
     queueRender();
