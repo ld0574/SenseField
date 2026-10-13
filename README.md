@@ -10,7 +10,13 @@
 
 <p align="center"><strong>把视野之外的战局，交给耳朵和手。</strong></p>
 
-<p align="center"><a href="https://ld0574.github.io/SenseField/"><strong>探索听野官网</strong></a> · <a href="https://ld0574.github.io/SenseField/#voices">用户心声与游戏适配反馈</a></p>
+<p align="center">
+  <a href="https://github.com/ld0574/SenseField/releases/download/v0.4.6/sensefieldv0.4.6.apk"><img src="assets/icons/download.svg" width="18" height="18" alt="" align="middle"> 下载安卓安装包</a>
+  &nbsp;·&nbsp;
+  <a href="https://ld0574.github.io/SenseField/"><img src="assets/icons/globe.svg" width="18" height="18" alt="" align="middle"> 听野官网</a>
+  &nbsp;·&nbsp;
+  <a href="https://ld0574.github.io/SenseField/#voices"><img src="assets/icons/message-circle.svg" width="18" height="18" alt="" align="middle"> 用户心声与游戏适配反馈</a>
+</p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-22C55E.svg" alt="Apache-2.0 License"></a>
