@@ -10,7 +10,7 @@ import java.util.LinkedHashSet;
 
 /** Advisory actions. No game clicks or consumable tools are executed here. */
 final class Match3Action {
-    enum Type { SWAP, ACTIVATE, LINE_SWAP, BIRD_COLOR, BIRD_PAIR, CHARGED_PAIR }
+    enum Type { SWAP, ACTIVATE, LINE_SWAP, BIRD_COLOR, BIRD_PAIR, BIRD_LINE, CHARGED_PAIR }
     final Match3Board.Swap geometry;
     final Type type;
     final String ruleId;
@@ -71,7 +71,7 @@ final class Match3Action {
         if(!open(a) || !open(b))return;
         boolean bird=a.kind==Match3Position.Kind.BIRD || b.kind==Match3Position.Kind.BIRD;
         Match3Position.Cell other=a.kind==Match3Position.Kind.BIRD?b:a;
-        if(bird && other.effect!=Match3Position.Effect.NONE)reasons.add("bird_special_combination_unverified");
+        if(bird && other.effect!=Match3Position.Effect.NONE && !line(other))reasons.add("bird_special_combination_unverified");
         if(a.effect!=Match3Position.Effect.NONE && b.effect!=Match3Position.Effect.NONE)
             reasons.add("special_pair_combination_unverified");
         if(a.kind==Match3Position.Kind.DYE_BABY && b.kind==Match3Position.Kind.DYE_BABY
@@ -93,6 +93,9 @@ final class Match3Action {
         } else if(a.kind==Match3Position.Kind.BIRD && a.swappable && ordinary(b)
                 || b.kind==Match3Position.Kind.BIRD && b.swappable && ordinary(a)) {
             type=Type.BIRD_COLOR;rule="combo_bird_color";
+        } else if(a.kind==Match3Position.Kind.BIRD && a.swappable && line(b) && b.swappable
+                || b.kind==Match3Position.Kind.BIRD && b.swappable && line(a) && a.swappable) {
+            type=Type.BIRD_LINE;rule="combo_bird_line";
         } else if(line(a) && a.swappable && ordinary(b) || line(b) && b.swappable && ordinary(a)) {
             type=Type.LINE_SWAP;rule=line(a)?a.ruleId:b.ruleId;
         } else if((a.kind==Match3Position.Kind.DYE_BABY && b.kind==Match3Position.Kind.STAR_BOTTLE

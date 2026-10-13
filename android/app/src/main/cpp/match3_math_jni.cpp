@@ -274,14 +274,14 @@ void coverOrder(const jboolean* cover,jint* supports,jboolean* indices) {
         }
     }
 }
-float coverScore(const jint* reference,const jint* observed,float ceiling,const jint* referenceSums,const jint* observedSums,const jint* supports,const jboolean* indices) {
+float coverScore(const jint* reference,const jint* observed,float ceiling,const jint* referenceSums,const jint* observedSums,const jint* supports,const jboolean* indices,int positiveWeight=1) {
     float best=infinity;
     int offset=0;
     for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++,offset++) {
         int support=supports[offset],count=(16-std::abs(dx))*(16-std::abs(dy));
         if(support<24)continue;
         double wholeBudget=static_cast<double>(std::nextafter(ceiling,infinity))*count*765;
-        double coverBudget=static_cast<double>(std::nextafter(ceiling,infinity))*support*765;
+        double coverBudget=static_cast<double>(std::nextafter(ceiling,infinity))*support*765/positiveWeight;
         // These are the original exact Manhattan lower bounds, with the
         // rectangle sums reused across templates. Positive cover evidence is
         // still a separate mandatory constraint on every surviving offset.
@@ -299,7 +299,7 @@ float coverScore(const jint* reference,const jint* observed,float ceiling,const 
             if(whole>wholeBudget) { rejected=true;break; }
         }
         if(!rejected) {
-            float score=std::max(whole/(count*765.0f),partial/(support*765.0f));
+            float score=std::max(whole/(count*765.0f),positiveWeight*partial/(support*765.0f));
             if(score<=ceiling)best=std::min(best,score);
             if(best==0)return best;
         }
@@ -326,7 +326,7 @@ Java_com_openkhub_sensefield_Match3NativeMath_preparePatternTable(JNIEnv* env,jc
     auto* bytes=static_cast<jboolean*>(env->GetDirectBufferAddress(table));if(!bytes)return false;
     for(int i=0;i<count;i++) {
         auto* at=bytes+recordSize*i;auto* header=reinterpret_cast<jint*>(at);
-        if(header[0]==1 && header[1]==256) {
+        if((header[0]==1 || header[0]==2) && header[1]==256) {
             jint integral[867];prefix(header+2,integral);
             registeredSums(integral,reinterpret_cast<jint*>(at+1544),false);
             coverOrder(at+1288,reinterpret_cast<jint*>(at+5012),at+5048);
@@ -351,9 +351,9 @@ Java_com_openkhub_sensefield_Match3NativeMath_patternDifferences(JNIEnv* env,jcl
             auto* at=bytes+recordSize*(offset+i);auto* header=reinterpret_cast<const jint*>(at);
             auto* reference=header+2;auto* mask=at+8+1024;
             auto* referenceSums=reinterpret_cast<const jint*>(at+1544);
-            if(header[0]==1 && header[1]==256) {
+            if((header[0]==1 || header[0]==2) && header[1]==256) {
                 if(!registrationsReady) {registeredSums(observedSums,observationRegistrations,true);registrationsReady=true;}
-                scores[i]=coverScore(reference,observed,ceiling,referenceSums,observationRegistrations,reinterpret_cast<const jint*>(at+5012),at+5048);
+                scores[i]=coverScore(reference,observed,ceiling,referenceSums,observationRegistrations,reinterpret_cast<const jint*>(at+5012),at+5048,header[0]);
             }
             else if(header[0]==0 && header[1]>=24 && header[1]<=256) {
                 int total=0;double budget=static_cast<double>(std::nextafter(ceiling,infinity))*header[1]*765;

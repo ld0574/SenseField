@@ -20,9 +20,9 @@ DIRECT = {'ordinary_uncovered_animal', 'line_horizontal', 'line_vertical', 'magi
           'stationary_single_layer_ice', 'single_clear_honey'}
 PARTIAL = {'blast', 'poison', 'honey_cover', 'chest', 'transport', 'invincible_furball',
            'cage', 'penguin', 'snow_bear', 'jellyfish', 'cannon', 'magic_stone', 'cuttlefish',
-           'multistage_iceflower', 'gray_furball'}
+           'multistage_iceflower', 'gray_furball', 'combo_bird_line'}
 OPPORTUNITY = {'egg', 'chick_hatch_goal'}
-PENDING = {'combo_bird_line', 'combo_bird_blast', 'combo_line_line', 'combo_line_blast',
+PENDING = {'combo_bird_blast', 'combo_line_line', 'combo_line_blast',
            'combo_blast_blast', 'combo_dye_dye', 'combo_star_star', 'combo_energy_energy',
            'combo_dye_egg_bird', 'tool_hammer', 'tool_shuffle', 'tool_extra_steps',
            'tool_start_special', 'tool_undo'}

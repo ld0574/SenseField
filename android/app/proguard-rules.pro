@@ -371,5 +371,9 @@
     java.lang.String hudGlyphCatalogId; java.lang.String hudGlyphCatalogSha256; java.lang.String hudGlyphCatalogStatus;
     static com.openkhub.sensefield.Match3VisualCatalog withGallery(org.json.JSONObject,byte[]);
     static com.openkhub.sensefield.Match3VisualCatalog withReviewedSupplement(org.json.JSONObject,byte[],byte[],java.lang.String);
+    static com.openkhub.sensefield.Match3VisualCatalog withReviewedSupplements(org.json.JSONObject,byte[],java.util.List,java.lang.String);
+    static com.openkhub.sensefield.Match3VisualCatalog withHudGlyphSupplement(com.openkhub.sensefield.Match3VisualCatalog,byte[],java.lang.String);
     com.openkhub.sensefield.Match3Position$Cell classifyObstacle(int[]);
+    java.lang.String boardFeedbackId; java.lang.String boardFeedbackSha256; java.lang.String boardFeedbackStatus;
+    java.util.List effectEnvelopes;
 }

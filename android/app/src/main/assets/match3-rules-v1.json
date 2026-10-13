@@ -199,17 +199,18 @@
       "reference_evidence": "partial",
       "parameter_completeness": "partial",
       "parameters": {
-        "partner_guards": "魔力鸟 + 直线特效"
+        "partner_guards": "魔力鸟 + 直线特效",
+        "lower_bound": "known_unblocked_partner_color_animals_only"
       },
       "abilities": {},
       "required_evidence": [
         "exact_conversion",
         "hit_mask"
       ],
-      "engine_status": "pending",
+      "engine_status": "partial_effect",
       "visual_status": "pending",
       "live_validation": "pending",
-      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+      "engineering_scope": "Observed bird plus confirmed directional line: partner-color clear lower bound only; transformed directions, extra hit mask and successor remain unknown. Developer feedback from levels 107..109, 2026-10-13; no independent acceptance."
     },
     {
       "rule_id": "combo_bird_blast",

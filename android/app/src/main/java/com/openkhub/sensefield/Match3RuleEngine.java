@@ -129,9 +129,16 @@ final class Match3RuleEngine {
                 }
                 else {
                     char color='\0';
-                    if(action.type==Match3Action.Type.BIRD_COLOR)color=get(from).kind==Match3Position.Kind.ANIMAL?get(from).color:get(to).color;
+                    if(action.type==Match3Action.Type.BIRD_COLOR || action.type==Match3Action.Type.BIRD_LINE)
+                        color=get(from).kind==Match3Position.Kind.ANIMAL?get(from).color:get(to).color;
                     for(int p=0;p<original.rows*original.cols;p++)if(get(p).kind==Match3Position.Kind.ANIMAL
                             && (color=='\0' || color==get(p).color))direct.set(p);
+                    if(action.type==Match3Action.Type.BIRD_LINE) {
+                        // The partner color is observed. Only its unobstructed,
+                        // known animals supply clears; transformed line directions
+                        // and additional hits are not a deterministic board mask.
+                        uncertain("bird_line_conversion_and_extra_hit_mask_unknown");
+                    }
                     if(action.type==Match3Action.Type.CHARGED_PAIR) {
                         uncertain("charged_pair_terminal_state_unknown");
                     } else {

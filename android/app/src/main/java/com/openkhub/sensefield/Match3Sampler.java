@@ -77,6 +77,7 @@ final class Match3Sampler implements AutoCloseable {
     private boolean closed;
     private Match3VisualCatalog observations;
     private int[] observationPixels;
+    private int[] boardEdgePixels;
     private Match3VisualCatalog.CellCache[][] observationCache;
     private final Match3AppearanceMotion motion=new Match3AppearanceMotion();
     private boolean frameMotion;
@@ -300,20 +301,41 @@ final class Match3Sampler implements AutoCloseable {
         return Color.rgb((int)(r/n),(int)(g/n),(int)(b/n));
     }
 
-    private static boolean boardEdgeSupported(Bitmap frame,BoardGeometry g,int row,int col) {
-        int l=(int)g.cellLeft(col),r=(int)g.cellLeft(col+1)-1;
-        int t=(int)g.cellTop(row),b=(int)g.cellTop(row+1)-1;
-        int x=g.centerX(col),y=g.centerY(row);float[] hsv=new float[3];
-        int[][] points={{l+1,y},{r-1,y},{x,t+1},{x,b-1}};int sides=0;
-        for(int[] point:points) {
-            boolean supported=false;
-            for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++) {
-                int xx=point[0]+dx,yy=point[1]+dy;
-                if(xx<=l || yy<=t || xx>=r || yy>=b)continue;
-                Color.colorToHSV(frame.getPixel(xx,yy),hsv);
-                if(hsv[2]<.5f && hsv[0]>=170f && hsv[0]<=300f)supported=true;
+    private boolean boardEdgeSupported(Bitmap frame,BoardGeometry g,int row,int col) {
+        int l=(int)g.cellLeft(col),r=(int)g.cellLeft(col+1);
+        int t=(int)g.cellTop(row),b=(int)g.cellTop(row+1);
+        int radius=Math.max(1,Math.min(r-l,b-t)/16),sides=0;
+        int left=Math.max(0,l-radius),top=Math.max(0,t-radius);
+        int right=Math.min(frame.getWidth(),r+radius+1),bottom=Math.min(frame.getHeight(),b+radius+1);
+        int width=right-left,height=bottom-top;
+        if(width<=0 || height<=0)return false;
+        if(boardEdgePixels==null || boardEdgePixels.length<width*height)boardEdgePixels=new int[width*height];
+        // Read the same current border probes through one Bitmap transfer.
+        // Reusing only the allocation, never old pixels, preserves the guard
+        // when an adjacent cell changes without changing the snow descriptor.
+        frame.getPixels(boardEdgePixels,0,width,left,top,width,height);
+        float[] hsv=new float[3];
+        // A full white tile may cover every interior probe. Inspect narrow
+        // strips across the actual tile boundaries, including their outside
+        // board border. Three points per side prevent a lone neighbour pixel
+        // from admitting sky/background within the rectangular envelope.
+        for(int side=0;side<4;side++) {
+            int support=0;
+            for(int along=1;along<=3;along++) {
+                boolean dark=false;
+                for(int offset=-radius;offset<=radius && !dark;offset++) {
+                    int x=side<2?(side==0?l:r)+offset:l+(r-l)*along/4;
+                    int y=side<2?t+(b-t)*along/4:(side==2?t:b)+offset;
+                    if(x<0 || y<0 || x>=frame.getWidth() || y>=frame.getHeight())continue;
+                    int pixel=boardEdgePixels[(y-top)*width+x-left];
+                    // HSV value is max(R,G,B)/255: values >=128 cannot satisfy <.5.
+                    if((pixel>>16&255)>=128 || (pixel>>8&255)>=128 || (pixel&255)>=128)continue;
+                    Color.colorToHSV(pixel,hsv);
+                    dark=hsv[2]<.5f && hsv[0]>=170f && hsv[0]<=300f;
+                }
+                if(dark)support++;
             }
-            if(supported && ++sides>=2)return true;
+            if(support==3 && ++sides>=2)return true;
         }
         return false;
     }

@@ -28,6 +28,12 @@ final class Match3MoveRanker {
             int order = Boolean.compare(b.allTargetsFinish, a.allTargetsFinish);
             if(order==0 && goals.steps>1)order=Match3Search.compare(a.search,b.search);
             if (order == 0) order = Integer.compare(b.completedTargets, a.completedTargets);
+            // A bird/line combination has a documented broad-effect opportunity,
+            // while its units contain only the known color-clear lower bound.
+            // Prefer that useful opportunity during an unfinished multi-step game;
+            // a proven finish, completed target or final-step gain still wins.
+            if (order == 0 && hasTarget && goals.steps!=1)
+                order=Boolean.compare(usefulBirdLine(b),usefulBirdLine(a));
             if (order == 0) order = Integer.compare(b.progressMilli, a.progressMilli);
             if (order == 0) order = Integer.compare(b.directUnits, a.directUnits);
             if (order == 0 && goals.steps!=1) order = Integer.compare(b.relevantHits, a.relevantHits);
@@ -51,6 +57,10 @@ final class Match3MoveRanker {
             return order;
         });
         return moves;
+    }
+
+    private static boolean usefulBirdLine(Match3MoveValue move) {
+        return move.action.type==Match3Action.Type.BIRD_LINE && (move.directUnits>0 || move.relevantHits>0);
     }
 
     static List<Match3Board.Swap> rankedSwaps(char[][] board) {

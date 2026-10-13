@@ -39,6 +39,8 @@ final class Match3VisualCatalog {
         final int supported;
         final String maskKey;
         final boolean[] coverEvidence;
+        final boolean tileEnvelope;
+        final int positiveWeight;
         private final int[] registeredCoverSupport=new int[9];
         final int registrationPixels;
         private final Match3PatchSums registrationSums;
@@ -80,12 +82,22 @@ final class Match3VisualCatalog {
             maskKey=maskText.toString().intern();
             if (count < 24) throw new IllegalArgumentException("Empty template");
             supported=count;
-            String evidence=json.optString("cover_evidence_mask_bits","");
+            String coverProof=json.optString("cover_evidence_mask_bits","");
+            String effectProof=json.optString("effect_evidence_mask_bits","");
+            tileEnvelope="tile_envelope".equals(json.optString("sampling","cell_inset"));
+            positiveWeight=effectProof.isEmpty()?1:2;
+            if(tileEnvelope!=!effectProof.isEmpty())throw new IllegalArgumentException("Effect sampling contract");
+            if(!coverProof.isEmpty() && !effectProof.isEmpty())throw new IllegalArgumentException("Mixed positive evidence");
+            String evidence=coverProof.isEmpty()?effectProof:coverProof;
             registrationPixels=json.optInt("max_registration_pixels",0);
             if(!evidence.isEmpty() || registrationPixels!=0) {
-                if(boundState==null || boundState.cover!=Match3Position.Cover.LOCK
+                boolean lock=boundState!=null && boundState.cover==Match3Position.Cover.LOCK && !coverProof.isEmpty();
+                boolean line=boundState!=null && boundState.kind==Match3Position.Kind.ANIMAL
+                        && boundState.cover==Match3Position.Cover.NONE && !effectProof.isEmpty()
+                        && (boundState.effect==Match3Position.Effect.HORIZONTAL || boundState.effect==Match3Position.Effect.VERTICAL);
+                if((!lock && !line)
                         || !evidence.matches("[01]{256}") || registrationPixels!=1 || supported!=256)
-                    throw new IllegalArgumentException("Cover evidence contract");
+                    throw new IllegalArgumentException("Positive state evidence contract");
                 coverEvidence=new boolean[256];int evidenceCount=0;
                 for(int i=0;i<256;i++) {coverEvidence[i]=evidence.charAt(i)=='1';if(coverEvidence[i])evidenceCount++;}
                 if(evidenceCount<24)throw new IllegalArgumentException("Sparse cover evidence");
@@ -111,7 +123,7 @@ final class Match3VisualCatalog {
         }
         float difference(int[] observed,float ceiling,Match3PatchSums observedSums) {
             if(coverEvidence!=null) {
-                if(Match3NativeMath.AVAILABLE)return Match3NativeMath.coverDifference(pixels,observed,coverEvidence,ceiling);
+                if(Match3NativeMath.AVAILABLE && positiveWeight==1)return Match3NativeMath.coverDifference(pixels,observed,coverEvidence,ceiling);
                 if(observedSums==null)observedSums=new Match3PatchSums(observed);
                 float best=registeredCoverDifference(observed,observedSums,0,0,ceiling);
                 // One patch pixel accommodates projection rounding and idle
@@ -137,7 +149,7 @@ final class Match3VisualCatalog {
             int coverCount=registeredCoverSupport[(dy+1)*3+dx+1];
             if(coverCount<24)return Float.POSITIVE_INFINITY;
             double wholeBudget=(double)Math.nextUp(ceiling)*allCount*765;
-            double coverBudget=(double)Math.nextUp(ceiling)*coverCount*765;
+            double coverBudget=(double)Math.nextUp(ceiling)*coverCount*765/positiveWeight;
             if(registrationSums.lowerBound(observedSums,dx,dy,wholeBudget)>wholeBudget)return Float.POSITIVE_INFINITY;
             for(int y=Math.max(0,-dy);y<Math.min(16,16-dy);y++)for(int x=Math.max(0,-dx);x<Math.min(16,16-dx);x++) {
                 int i=y*16+x,a=pixels[i],b=observed[(y+dy)*16+x+dx];
@@ -149,7 +161,7 @@ final class Match3VisualCatalog {
             }
             // The independently reviewed cover stencil remains sufficiently
             // supported even at the one-pixel registration boundary.
-            float error=Math.max(whole/(allCount*765f),cover/(coverCount*765f));
+            float error=Math.max(whole/(allCount*765f),positiveWeight*cover/(coverCount*765f));
             return error<=ceiling?error:Float.POSITIVE_INFINITY;
         }
     }
@@ -175,8 +187,9 @@ final class Match3VisualCatalog {
     int galleryGoalsPendingReview;
     String coverCatalogId="", coverCatalogSha256="", coverCatalogStatus="absent";
     String hudGlyphCatalogId="", hudGlyphCatalogSha256="", hudGlyphCatalogStatus="absent";
+    String boardFeedbackId="",boardFeedbackSha256="",boardFeedbackStatus="absent";
     private final boolean hasBoundGoalModes;
-    final List<Pattern> steps, goals, cells, animals, largeObjects, iceSurfaces, iceBackgrounds;
+    final List<Pattern> steps, goals, cells, animals, largeObjects, iceSurfaces, iceBackgrounds, effectEnvelopes;
     final List<Match3AnimalAppearance.Face> animalFaces;
     final List<Match3AnimalAppearance.Body> animalBodies;
     final List<Character> bodyColors;
@@ -219,7 +232,9 @@ final class Match3VisualCatalog {
             if(!Match3NativeMath.AVAILABLE || source.isEmpty()) { table=null;return; }
             java.nio.ByteBuffer packed=java.nio.ByteBuffer.allocateDirect(Math.multiplyExact(source.size(),7352)).order(java.nio.ByteOrder.nativeOrder());
             for(Pattern p:source) {
-                packed.putInt(p.registrationPixels).putInt(p.supported);
+                // Mode 1 retains the cover contract; mode 2 applies the
+                // stricter positive arrow score with the same offsets/record.
+                packed.putInt(p.registrationPixels*p.positiveWeight).putInt(p.supported);
                 for(int pixel:p.pixels)packed.putInt(pixel);
                 for(boolean bit:p.mask)packed.put((byte)(bit?1:0));
                 for(int i=0;i<256;i++)packed.put((byte)(p.coverEvidence!=null && p.coverEvidence[i]?1:0));
@@ -245,7 +260,7 @@ final class Match3VisualCatalog {
     private Match3VisualCatalog() {
         available = false; id = "unavailable";
         hasBoundGoalModes=false;
-        steps = goals = cells = animals = largeObjects = iceSurfaces = iceBackgrounds = Collections.emptyList(); glyphs = checkmarks = levelSuffixes = Collections.emptyList();
+        steps = goals = cells = animals = largeObjects = iceSurfaces = iceBackgrounds = effectEnvelopes = Collections.emptyList(); glyphs = checkmarks = levelSuffixes = Collections.emptyList();
         animalFaces=Collections.emptyList();
         animalBodies=Collections.emptyList();
         bodyColors=Collections.emptyList();
@@ -269,16 +284,20 @@ final class Match3VisualCatalog {
             }
         }
         iceSurfaces=new PatternList(surfaces);iceBackgrounds=Collections.unmodifiableList(backgrounds);
-        List<Pattern> objects=new ArrayList<>(), faces=new ArrayList<>();
+        List<Pattern> objects=new ArrayList<>(), faces=new ArrayList<>(),effects=new ArrayList<>();
         List<Match3AnimalAppearance.Face> descriptors=new ArrayList<>();
         for(Pattern pattern:patterns(json.getJSONArray("cells"))) {
             if(pattern.kind.startsWith("animal_") && pattern.kind.length()==8
                     && "ordinary_uncovered_animal".equals(pattern.rule)) {
                 Match3AnimalAppearance.Face face=new Match3AnimalAppearance.Face(pattern.kind.charAt(7),pattern.pixels);
                 if(face.detailed) { faces.add(pattern);descriptors.add(face); }
-            } else if(!pattern.kind.startsWith("animal_"))objects.add(pattern);
+            } else if(pattern.tileEnvelope)effects.add(pattern);
+            else if(!pattern.kind.startsWith("animal_"))objects.add(pattern);
         }
         cells=new PatternList(objects);animals=new PatternList(faces);
+        // Arrows can sit outside the face inset. Both paths use the full tile
+        // and the separately weighted positive stencil, at identical scores.
+        effectEnvelopes=new PatternList(effects);
         animalFaces=new Match3AnimalAppearance.FaceList(descriptors);
         List<Match3AnimalAppearance.Body> bodies=new ArrayList<>();List<Character> colors=new ArrayList<>();
         JSONArray envelopes=json.getJSONArray("ordinary_envelopes");
@@ -341,7 +360,15 @@ final class Match3VisualCatalog {
                         }
                         supplements.add(data.toByteArray());
                     } catch(java.io.IOException absent) { }
-                Match3VisualCatalog candidate = withReviewedSupplements(json,gallery,supplements,rules.sha256);
+                byte[] feedback=null;
+                try(java.io.InputStream extra=context.getAssets().open("match3-board-feedback-v1.json")) {
+                    java.io.ByteArrayOutputStream data=new java.io.ByteArrayOutputStream();int count;
+                    while((count=extra.read(buffer))>0) {
+                        data.write(buffer,0,count);if(data.size()>65536)break;
+                    }
+                    feedback=data.toByteArray();
+                } catch(java.io.IOException absent) { }
+                Match3VisualCatalog candidate = withBoardFeedback(json,gallery,supplements,feedback,rules.sha256);
                 byte[] hudGlyphs=null;
                 try(java.io.InputStream extra=context.getAssets().open("match3-hud-glyphs-v1.json")) {
                     java.io.ByteArrayOutputStream data=new java.io.ByteArrayOutputStream();
@@ -421,8 +448,11 @@ final class Match3VisualCatalog {
     /** Two fixed sidecars share the original total entry budgets. Admission is
      * atomic, and each sidecar retains its own 64KiB cap and rule provenance. */
     static Match3VisualCatalog withReviewedSupplements(JSONObject base,byte[] gallery,List<byte[]> supplements,String rulesSha) throws Exception {
+        return reviewedMerge(base,gallery,supplements,rulesSha).catalog;
+    }
+    private static CatalogMerge reviewedMerge(JSONObject base,byte[] gallery,List<byte[]> supplements,String rulesSha) throws Exception {
         CatalogMerge original=mergeGallery(base,gallery);
-        if(supplements.isEmpty())return original.catalog;
+        if(supplements.isEmpty())return original;
         try {
             if(supplements.size()>2)throw new IllegalArgumentException("Supplement count");
             CatalogMerge augmented=original;
@@ -452,10 +482,58 @@ final class Match3VisualCatalog {
             result.gallerySha256=original.catalog.gallerySha256;
             result.galleryStatus=original.catalog.galleryStatus;
             result.galleryGoalsPendingReview+=original.catalog.galleryGoalsPendingReview;
-            return result;
+            return augmented;
         } catch(Exception invalid) {
             original.catalog.coverCatalogStatus="rejected:"+invalid.getClass().getSimpleName();
-            return original.catalog;
+            return original;
+        }
+    }
+    /** One fixed 64KiB board feedback sidecar: at most 24 reviewed foreground
+     * exemplars and four ordinary envelopes. Separate from the existing cover
+     * budget; every pattern still competes at the unchanged decision thresholds.
+     * Invalid feedback leaves both earlier galleries fully intact. */
+    static Match3VisualCatalog withBoardFeedback(JSONObject base,byte[] gallery,List<byte[]> supplements,
+                                                 byte[] feedback,String rulesSha) throws Exception {
+        CatalogMerge previous=reviewedMerge(base,gallery,supplements,rulesSha);
+        if(feedback==null)return previous.catalog;
+        try {
+            if(feedback.length>65536)throw new IllegalArgumentException("Board feedback byte budget");
+            JSONObject json=new JSONObject(new String(feedback,StandardCharsets.UTF_8));
+            JSONObject metadata=json.getJSONObject("metadata");
+            if(!rulesSha.matches("[0-9a-f]{64}") || !rulesSha.equals(metadata.getString("rule_catalog_sha256"))
+                    || !"developer_visual_review".equals(metadata.getString("review_scope"))
+                    || !Boolean.FALSE.equals(metadata.get("independent")))
+                throw new IllegalArgumentException("Board feedback provenance");
+            JSONArray cells=json.getJSONArray("cells");
+            JSONArray bodies=json.optJSONArray("ordinary_envelopes");
+            if(cells.length()<1 || cells.length()>24 || bodies!=null && bodies.length()>4)
+                throw new IllegalArgumentException("Board feedback entry budget");
+            for(String key:new String[]{"goals","large_objects","ice_surfaces"})
+                if(json.has(key) && json.getJSONArray(key).length()>0)throw new IllegalArgumentException("Board feedback scope");
+            JSONObject bindings=json.getJSONObject("state_bindings");
+            for(int i=0;i<cells.length();i++) {
+                JSONObject item=cells.getJSONObject(i);
+                if(!item.getString("source_sha256").matches("[0-9a-f]{64}") || !Boolean.TRUE.equals(item.get("reviewed")))
+                    throw new IllegalArgumentException("Board feedback source review");
+                Match3Position.Cell state=Match3StateBinding.parse(bindings.getJSONObject(item.getString("rule_binding_ref")));
+                if(state.kind!=Match3Position.Kind.BIRD && !(state.kind==Match3Position.Kind.SNOW && state.layers==-1)
+                        && !(state.kind==Match3Position.Kind.UNKNOWN && state.cover==Match3Position.Cover.GRAY_FURBALL)
+                        && !(state.kind==Match3Position.Kind.ANIMAL && Match3Action.line(state)))
+                    throw new IllegalArgumentException("Board feedback state scope");
+                if(state.kind==Match3Position.Kind.ANIMAL && !item.has("effect_evidence_mask_bits"))
+                    throw new IllegalArgumentException("Missing positive direction evidence");
+            }
+            CatalogMerge merge=mergeGallery(previous.json,feedback);
+            Match3VisualCatalog result=merge.catalog,old=previous.catalog;
+            if(!"loaded".equals(result.galleryStatus))throw new IllegalArgumentException("Board feedback admission");
+            result.boardFeedbackId=result.galleryId;result.boardFeedbackSha256=sha256(feedback);result.boardFeedbackStatus="loaded";
+            result.galleryId=old.galleryId;result.gallerySha256=old.gallerySha256;result.galleryStatus=old.galleryStatus;
+            result.galleryGoalsPendingReview=old.galleryGoalsPendingReview;
+            result.coverCatalogId=old.coverCatalogId;result.coverCatalogSha256=old.coverCatalogSha256;result.coverCatalogStatus=old.coverCatalogStatus;
+            return result;
+        } catch(Exception invalid) {
+            previous.catalog.boardFeedbackStatus="rejected:"+invalid.getClass().getSimpleName();
+            return previous.catalog;
         }
     }
     private static CatalogMerge mergeGallery(JSONObject base, byte[] bytes) throws Exception {
@@ -644,7 +722,7 @@ final class Match3VisualCatalog {
             // A partial sum above maximum+margin cannot win or make an
             // accepted winner ambiguous. Stop only those comparisons; retain
             // the exact scores and original thresholds for every contender.
-            if(!Match3NativeMath.AVAILABLE && pattern.registrationPixels!=0 && registrationSums==null)registrationSums=new Match3PatchSums(patch);
+            if((!Match3NativeMath.AVAILABLE || pattern.positiveWeight!=1) && pattern.registrationPixels!=0 && registrationSums==null)registrationSums=new Match3PatchSums(patch);
             candidate = pattern.difference(patch,maximum+margin,registrationSums);
             }
             if(pattern.goalShape!=null && candidate<=maximum+margin) {
@@ -715,7 +793,9 @@ final class Match3VisualCatalog {
         int[] observed = patch(pixels,width,ix,iy,width-ix,height-iy);
         int[] envelope=patch(pixels,width,0,0,width,height);
         if(java.util.Arrays.equals(cache.patch,observed) && java.util.Arrays.equals(cache.envelope,envelope))return cache.result;
-        cache.patch=observed;cache.envelope=envelope;cache.result=classifyObstacle(observed);cache.animalChecked=false;cache.animal=null;cache.face=null;cache.body=null;
+        cache.patch=observed;cache.envelope=envelope;cache.result=classifyObstacle(observed);
+        if(cache.result==null)cache.result=classifyEffect(envelope);
+        cache.animalChecked=false;cache.animal=null;cache.face=null;cache.body=null;
         cache.inferredChecked=false;cache.inferred=null;cache.iceChecked=false;
         return cache.result;
     }
@@ -809,6 +889,15 @@ final class Match3VisualCatalog {
             if(green>=6)return Match3Position.Cell.obstacle(Match3Position.Kind.EGG,-1);
         }
         return null;
+    }
+    Match3Position.Cell classifyEffect(int[] envelope) {
+        String kind=recognize(effectEnvelopes,envelope,.12f,.025f);
+        Match3Position.Cell state=null;
+        if(kind!=null)for(Pattern p:effectEnvelopes)if(kind.equals(p.kind)) {
+            if(p.boundState==null || state!=null && !state.equals(p.boundState))return null;
+            state=p.boundState;
+        }
+        return state;
     }
     /** A cyan field or animal must not acquire an obstacle identity from colour proximity alone. */
     static boolean obstacleIdentity(List<Pattern> patterns,String kind,int[] observed) {

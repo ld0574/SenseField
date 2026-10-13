@@ -118,7 +118,7 @@ Python 38 项、JVM 549 项、Debug 原生 80 项全部通过，JVM／原生均�
 | `magic_bird` | 魔力鸟（俗称"彩虹"） | documented | complete | direct_effect | generated_special_retained_position |
 | `combo_bird_color` | 组合:魔力鸟 + 普通动物 | confirmed | complete | direct_effect | — |
 | `combo_bird_bird` | 组合:魔力鸟 + 魔力鸟 | confirmed | complete | direct_effect | — |
-| `combo_bird_line` | 组合:魔力鸟 + 直线特效 | partial | partial | pending | exact_conversion、hit_mask |
+| `combo_bird_line` | 组合:魔力鸟 + 直线特效 | partial | partial | partial_effect | exact_conversion、hit_mask |
 | `combo_bird_blast` | 组合:魔力鸟 + 爆炸特效 | unverified | missing | pending | exact_conversion、hit_mask |
 | `combo_line_line` | 组合:直线 + 直线 | unverified | missing | pending | kxxxl_specific_trigger_and_mask |
 | `combo_line_blast` | 组合:直线 + 爆炸 | unverified | missing | pending | kxxxl_specific_trigger_and_mask |
@@ -223,3 +223,7 @@ HUD 采样按图标槽分别要求三帧新鲜稳定证据，邻槽动画不再�
 ## 提示前后截图清晰度（2026-10-11）
 
 MATCH3上下文优先960长边，并在分配前按取整后的ARGB输出预算限制到原2 MiB；小源图不放大，王者480屏幕／512小地图路径保持。原缓存、队列、档案、窗口及采样限额保持，JPEG75不变。真实recorder回读的两张同源开发盘藤蔓LOCK从4／16、4／8到16／16、8／8；这是未来保存策略验证，不能恢复旧低清图或确认真实触摸。详见[窗口工程记录](../../validation/match3/MATCH3_CONTEXT_QUALITY_0_4_6_2026-10-11.md)；交换归因、规则和资产不改。
+
+### 2026-10-13 三局反馈
+
+见 [第 107～109 关三局反馈修复](消消乐三局反馈修复_2026-10-13.md)。新增固定预算的 board feedback 库，方向证据采完整格子；鸟与直线组合只计已知同色清除下界，未知额外命中和后继仍不搜索。

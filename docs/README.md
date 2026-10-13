@@ -51,6 +51,7 @@
 | [消消乐自动回归](development/match3-regression.md) | JVM、原生故障序列、投影、最终 Release 与门禁复现 |
 | [消消乐元素证据与扩展](development/match3-element-evidence.md) | 不凭颜色猜规则，按家族补一次证据，诊断图片与缓存的边界 |
 | [消消乐规则引擎](development/match3-rules.md) · [工程验收记录](development/match3-rules-validation.md) | 全量规则覆盖、未知参数、复现命令及工程／实局验收边界 |
+| [消消乐三局反馈修复（2026-10-13）](development/消消乐三局反馈修复_2026-10-13.md) | 密集灰毛球、右侧末块雪块、魔力鸟直线组合及最终包回放与软件成本 |
 | [Android 真实助手传输测试](development/assistant-android-transport-test.md) | 合成输入、临时证书、真实 GLM/CPU ASR 与正式客户端联调 |
 | [Linux 测试网关部署](development/assistant-gateway-test-deployment.md) | 隔离测试部署、CPU 依赖、HTTPS/WSS 与未覆盖门禁 |
 | [Android 自动更新](development/app-update.md) | 0.4.1/code18：固定网站清单与 Gitee APK 下载、同版本 SHA 修订及校验规则；历史同源 CDN 结果单独保留。实际发包见[Gitee发布步骤](../deploy/assistant/CDN发布.md) |
