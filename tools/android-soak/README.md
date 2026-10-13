@@ -15,7 +15,7 @@
 
 ## 输入与启动
 
-要求实体设备、明确授权参数 `authorizedPhoneAcceptance=true`、生产辅助与采集服务已停止。不得同时运行其他验收、构建或启动游戏自动化。原会话归档先导出并逐成员固定SHA，同时记录棋盘／音频偏好。
+实体设备要求明确授权参数 `authorizedPhoneAcceptance=true`、生产辅助与采集服务已停止。模拟器工程持续运行使用独立参数 `authorizedEmulatorAcceptance=true`；两种模式按实际硬件分别校验，报告写明 `device_kind` 和 scope，模拟器结果不作为手机验收。不得同时运行其他验收、构建或启动游戏自动化。原会话归档先导出并逐成员固定SHA，同时记录棋盘／音频偏好。
 
 文件放在目标应用外部目录 `match3-soak-inputs/`，其中 `manifest.json` 包含 `independent:false` 和长度为19的 `frames` 数组，每项为 `{"file":"<文件名>","sha256":"<64位摘要>"}`；文件不能越出输入目录。`soakRun` 每轮使用新的小写字母／数字／连字符名称，输出目录已存在即失败。完整负载为900秒，20秒只检查驱动。
 
@@ -41,6 +41,8 @@ adb -s "$SENSEFIELD_ADB_SERIAL" shell am instrument -w -r \
 ```
 
 无线ADB运行宜通过设备端 `setsid`／`nohup` 启动脚本，分别保留两个instrumentation的原始输出和退出标记；断连不能当作测试结束。不要用shell直接启动后台Service：本次手机明确拒绝该启动；未启动的跨包绑定还被小米自启动规则拒绝。自指向instrumentation在测试包权限内创建绑定，主测试随后请求锁；不用调整系统设置。
+
+模拟器执行同样的两段启动与清理流程，命令显式选择 `adb -s emulator-5554`，并将两处授权参数换为 `authorizedEmulatorAcceptance true`。保留完整 900 秒、全部 19 图、JUnit 回调、诊断排空、设置／原会话保持及锁释放门禁；仅设备证据范围不同。
 
 ## 权限、负载与清理
 

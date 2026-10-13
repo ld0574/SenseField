@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-readonly PREVIEW_VERSION_NAME='0.4.6'
-readonly PREVIEW_VERSION_CODE='23'
+readonly PREVIEW_VERSION_NAME='0.4.7'
+readonly PREVIEW_VERSION_CODE='24'
 readonly DEFAULT_UPDATE_MANIFEST_URL='https://888413.xyz/apk/latest.json'
 readonly DEFAULT_UPDATE_APK_URL="https://gitee.com/leda/SenseField/releases/download/${PREVIEW_VERSION_NAME}/sensefieldv${PREVIEW_VERSION_NAME}.apk"
 readonly PREVIEW_ABI='arm64-v8a'
@@ -21,7 +21,8 @@ usage() {
 
 默认版本清单：https://888413.xyz/apk/latest.json
 APK 默认从听野 Gitee Release 下载。如需更换清单地址，设置 SENSEFIELD_UPDATE_MANIFEST_URL。
-构建后生成 output/releases/<版本>/gitee-upload/ 中的唯一 APK 和 cdn-upload/latest.json。
+构建后生成 output/releases/<版本>/ 下的唯一 APK、使用说明、latest.json、SHA256SUMS.txt 与核验回执。
+这是本地候选；脚本不发布版本，也不更新公网清单。
 更换 APK 地址时设置 SENSEFIELD_UPDATE_APK_URL；允许同源 HTTPS，或固定清单搭配听野 Gitee Release。
 
 只构建并核验 Release candidate，请在环境变量中同时提供现有签名：
@@ -154,77 +155,42 @@ candidate_label='signed-release-candidate'
 source_apk="$android_dir/app/build/outputs/apk/release/app-release.apk"
 
 preview_dir="$repo_root/output/releases/${PREVIEW_VERSION_NAME}"
-candidate_apk="$preview_dir/gitee-upload/sensefieldv${PREVIEW_VERSION_NAME}.apk"
-python3 "$repo_root/scripts/prepare_bundled_speech.py" verify
-# Remove any prior handoff before starting a new build. A failed build must not
-# leave an older candidate at the path that the release checklist uploads.
-rm -f "$candidate_apk" "$preview_dir/cdn-upload/latest.json"
+candidate_apk="$preview_dir/sensefieldv${PREVIEW_VERSION_NAME}.apk"
+python_bin="$repo_root/.venv/bin/python"
+if [[ ! -x "$python_bin" ]]; then
+  python_bin="$(command -v python3)" || fail "生成候选需要 Python 3。"
+fi
+handoff_tool="$repo_root/scripts/prepare_android_candidate.py"
+"$python_bin" "$handoff_tool" check-urls \
+  --index-url "$SENSEFIELD_UPDATE_MANIFEST_URL" --apk-url "$SENSEFIELD_UPDATE_APK_URL"
+"$python_bin" "$repo_root/scripts/prepare_bundled_speech.py" verify
+"$python_bin" "$handoff_tool" begin --output "$preview_dir"
+
+record_build_failure() {
+  build_exit=$?
+  trap - EXIT
+  if ((build_exit != 0)); then
+    "$python_bin" "$handoff_tool" failed --output "$preview_dir" --exit-code "$build_exit" || \
+      printf '%s\n' '无法写入构建失败回执；原错误和先前候选归档仍保留。' >&2
+  fi
+  exit "$build_exit"
+}
+trap record_build_failure EXIT
 
 printf '==> 构建 SenseField %s（versionCode %s，%s，%s）\n' \
   "$PREVIEW_VERSION_NAME" "$PREVIEW_VERSION_CODE" "$PREVIEW_ABI" "$variant"
-printf '%s\n' '==> 使用已有发布 keystore；不会打印密码或创建发布 keystore。'
-
+printf '%s\n' '==> 使用已有签名；不会打印密码或创建 keystore。'
 (
   cd "$android_dir"
   ./gradlew --no-daemon "-PsensefieldAbi=$PREVIEW_ABI" \
     "-PsensefieldUpdateManifestUrl=$SENSEFIELD_UPDATE_MANIFEST_URL" "$gradle_task"
 )
-
 [[ -f "$source_apk" ]] || fail "Gradle 完成但没有生成预期 APK：$source_apk"
-
-printf '==> 核验构建产物签名：%s\n' "$source_apk"
-"$apksigner_bin" verify --verbose --print-certs "$source_apk"
-python3 "$repo_root/scripts/verify_android_release.py" "$source_apk" \
-  --output "$preview_dir/validation/release-package.json"
-# Only verified real Release bytes may reach the upload directory.
-mkdir -p "$(dirname "$candidate_apk")"
-mv "$source_apk" "$candidate_apk"
-
-apk_sha256=''
-if command -v shasum >/dev/null 2>&1; then
-  apk_sha256="$(shasum -a 256 "$candidate_apk" | awk '{print $1}')"
-elif command -v sha256sum >/dev/null 2>&1; then
-  apk_sha256="$(sha256sum "$candidate_apk" | awk '{print $1}')"
-else
-  fail "找不到 shasum 或 sha256sum，无法输出 APK SHA-256。"
-fi
-apk_bytes="$(wc -c < "$candidate_apk" | tr -d '[:space:]')"
-checksum_file="${candidate_apk}.sha256"
-printf '%s  %s\n' "$apk_sha256" "$(basename "$candidate_apk")" > "$checksum_file"
-
+"$python_bin" "$handoff_tool" prepare --output "$preview_dir" --apk "$source_apk" \
+  --apk-url "$SENSEFIELD_UPDATE_APK_URL" --docs "$repo_root/docs/releases/${PREVIEW_VERSION_NAME}"
+trap - EXIT
 printf '\n完成：%s\n' "$candidate_apk"
-printf '候选类型：%s\n' "$candidate_label"
-printf '文件大小：%s bytes\n' "$apk_bytes"
-printf 'SHA-256：%s\n' "$apk_sha256"
-printf '校验文件：%s\n' "$checksum_file"
-printf '%s\n' '脚本未创建或上传发布 keystore，也未上传 CDN 文件。'
-
-# Hash the exact signed candidate; never hand-maintain a revision checksum.
-python_bin="$repo_root/.venv/bin/python"
-if [[ ! -x "$python_bin" ]]; then
-  python_bin="$(command -v python3)" || fail "生成 CDN 清单需要 Python 3。"
-fi
-"$python_bin" - <<'PY'
-import os, re
-from urllib.parse import urlsplit
-def origin(name):
-    value = urlsplit(os.environ[name])
-    return value.scheme, value.hostname, value.port or 443
-index = urlsplit(os.environ['SENSEFIELD_UPDATE_MANIFEST_URL'])
-apk = urlsplit(os.environ['SENSEFIELD_UPDATE_APK_URL'])
-project_release = (apk.scheme == 'https' and apk.hostname == 'gitee.com'
-    and apk.port in (None, 443) and not apk.username and not apk.password
-    and not apk.query and not apk.fragment
-    and re.fullmatch(r'/leda/SenseField/releases/download/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*\.apk', apk.path))
-owned_index = (os.environ['SENSEFIELD_UPDATE_MANIFEST_URL'] == 'https://888413.xyz/apk/latest.json')
-if origin('SENSEFIELD_UPDATE_MANIFEST_URL') != origin('SENSEFIELD_UPDATE_APK_URL') and not (owned_index and project_release):
-    raise SystemExit('APK 必须同源，或由固定版本清单指向听野 Gitee Release。')
-PY
-cdn_dir="$preview_dir/cdn-upload"
-mkdir -p "$cdn_dir"
-"$python_bin" "$repo_root/scripts/build_app_update_manifest.py" \
-  --apk "$candidate_apk" \
-  --apk-url "$SENSEFIELD_UPDATE_APK_URL" --output "$cdn_dir/latest.json" \
-  --notes-file "$repo_root/docs/releases/${PREVIEW_VERSION_NAME}/UPDATE_SUMMARY.txt"
-printf 'Gitee APK：%s\n' "$candidate_apk"
-printf '网站版本清单：%s/latest.json\n' "$cdn_dir"
+printf '候选类型：%s；完整工程验收以 validation/current-package/ 的最终回执为准。\n' "$candidate_label"
+printf '校验文件：%s/SHA256SUMS.txt\n' "$preview_dir"
+printf '本地版本清单：%s/latest.json\n' "$preview_dir"
+printf '%s\n' '本脚本未公开发布 APK，也未更新公网清单。'

@@ -13,10 +13,16 @@ import struct
 import subprocess
 from zipfile import ZipFile, ZIP_DEFLATED
 
-from build_app_update_manifest import read_apk_metadata
-from prepare_bundled_speech import catalog, expected
+if __package__:
+    from .build_app_update_manifest import read_apk_metadata
+    from .prepare_bundled_speech import catalog, expected
+else:
+    from build_app_update_manifest import read_apk_metadata
+    from prepare_bundled_speech import catalog, expected
 
 CERT = "5a42a53a8f06850e89c46ea193931e9853e3ce7cff99551b42e8b414a1eaaf68"
+VERSION_NAME = "0.4.7"
+VERSION_CODE = 24
 REQUIRED_LIBRARIES = {"libmapassist.so", "libmapassist_jni.so", "libmatch3_math_jni.so", "libondevice_asr_jni.so",
                       "libonnxruntime.so", "libpresentation_audio_jni.so", "libsherpa-onnx-c-api.so"}
 
@@ -52,8 +58,8 @@ def elf_load_alignments(data: bytes):
 def verify(apk: Path, allow_fixture: bool):
     metadata = read_apk_metadata(apk, tool('aapt2'))
     app_id = "com.openkhub.sensefield.speechfixture" if allow_fixture else "com.openkhub.sensefield"
-    version = "0.4.6-fixture" if allow_fixture else "0.4.6"
-    if (metadata.package_name != app_id or metadata.version_code != 23
+    version = VERSION_NAME + "-fixture" if allow_fixture else VERSION_NAME
+    if (metadata.package_name != app_id or metadata.version_code != VERSION_CODE
             or metadata.version_name != version or metadata.min_sdk_version != '29'
             or metadata.native_abis != ('arm64-v8a',)):
         raise ValueError(f"Unexpected APK identity: {metadata}")

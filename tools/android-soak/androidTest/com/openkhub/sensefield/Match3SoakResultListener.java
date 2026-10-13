@@ -20,7 +20,9 @@ public final class Match3SoakResultListener extends RunListener {
     }
     @Override public void testRunStarted(Description description) throws Exception {
         android.os.Bundle args=InstrumentationRegistry.getArguments();
-        if(!"true".equals(args.getString("authorizedPhoneAcceptance")))throw new IllegalStateException("authorized test only");
+        boolean emulator=android.os.Build.HARDWARE.contains("ranchu")||android.os.Build.HARDWARE.contains("goldfish");
+        if(!"true".equals(args.getString(emulator?"authorizedEmulatorAcceptance":"authorizedPhoneAcceptance")))
+            throw new IllegalStateException("authorized test for this device kind only");
         String run=args.getString("soakRun");
         if(run==null || !run.matches("[a-z0-9-]+"))throw new IllegalArgumentException("unique test run required");
         directory=new File(InstrumentationRegistry.getInstrumentation().getTargetContext().getExternalFilesDir("match3-soak-junit"),run);

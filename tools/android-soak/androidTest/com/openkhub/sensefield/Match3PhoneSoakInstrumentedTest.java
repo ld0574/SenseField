@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.json.*;
 import org.junit.Test;
 
-/** Opt-in physical-device endurance workload; no activity, game control or preferences mutation. */
+/** Opt-in endurance workload; separately authorized physical and emulator scopes. */
 public final class Match3PhoneSoakInstrumentedTest {
     private static void save(File directory,String name,JSONObject value) throws Exception {
         Files.write(new File(directory,name+".part").toPath(),value.toString(2).getBytes(StandardCharsets.UTF_8));
@@ -41,8 +41,9 @@ public final class Match3PhoneSoakInstrumentedTest {
             .put("p95_nearest_rank_ms",sorted.get((int)Math.ceil(sorted.size()*.95)-1)/1e6).put("max_ms",sorted.get(sorted.size()-1)/1e6);
     }
     @Test public void sustainedFixedFramesWithProductionDiagnostics() throws Exception {
-        Bundle args=InstrumentationRegistry.getArguments();assertEquals("true",args.getString("authorizedPhoneAcceptance"));
-        assertFalse(Build.HARDWARE.contains("ranchu")||Build.HARDWARE.contains("goldfish"));
+        Bundle args=InstrumentationRegistry.getArguments();
+        boolean emulator=Build.HARDWARE.contains("ranchu")||Build.HARDWARE.contains("goldfish");
+        assertEquals("true",args.getString(emulator?"authorizedEmulatorAcceptance":"authorizedPhoneAcceptance"));
         Context app=InstrumentationRegistry.getInstrumentation().getTargetContext();
         Map<String,?> preferences=new HashMap<>(GameProfile.settings(app).getAll());
         assertNull("no active assistance diagnostics",DiagnosticRecorder.current);
@@ -60,7 +61,8 @@ public final class Match3PhoneSoakInstrumentedTest {
         }; // Production archive retention applies only within this new scratch root.
         int seconds=Integer.parseInt(args.getString("soakSeconds","900"));assertTrue(seconds>=10&&seconds<=900);
         long duration=seconds*1000L,start=SystemClock.elapsedRealtime(),nextTick=start,nextTelemetry=start;
-        JSONObject report=new JSONObject().put("scope","physical_phone_fixed_replay_at_800ms; includes_geometry_recognition_ranker_and_production_async_diagnostics; excludes_projection_overlay_tts_and_controlled_thermal_comparison")
+        JSONObject report=new JSONObject().put("scope",(emulator?"emulator":"physical_phone")+"_fixed_replay_at_800ms; includes_geometry_recognition_ranker_and_production_async_diagnostics; excludes_projection_overlay_tts_and_controlled_thermal_comparison")
+            .put("device_kind",emulator?"emulator":"physical")
             .put("source_sha256",args.getString("match3SourceSha256")).put("harness_sha256",args.getString("phoneHarnessSha256"))
             .put("manifest_sha256",Match3HoldoutAccuracyInstrumentedTest.sha256(manifestBytes)).put("requested_duration_ms",duration)
             .put("processing_interval_ms",800).put("source_frame_count",entries.length()).put("workload_long_edge",2712)

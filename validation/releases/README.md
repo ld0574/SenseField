@@ -4,7 +4,9 @@
 
 [验证总索引](../README.md) · [当前状态](../STATUS.md)
 
-当前修订见[王者实局与两字开关更正](../protocols/COMPLIANCE_IMPROVEMENT_2026-10-13.md)，继承[三局反馈修复](../../docs/development/消消乐三局反馈修复_2026-10-13.md)；版本递增与历史手机核对见[0.4.6 候选记录](ANDROID_CANDIDATE_0_4_6_2026-10-11.md)。当前 GitHub 普通 Release、Latest 见[0.4.6 发布记录](GITHUB_RELEASE_0_4_6_2026-10-13.md)，唯一交付目录及旧包清理见[制品整理](ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)；[0.4.5](GITHUB_RELEASE_0_4_5_2026-10-10.md)及[0.4.4](GITHUB_RELEASE_0_4_4_2026-10-08.md)历史记录继续保留。各记录保持原制品摘要。
+新候选见[0.4.7 统一交付与最终工程核验](ANDROID_CANDIDATE_0_4_7_2026-10-14.md)，版本 0.4.7／code24，唯一 APK `a0c83659…`；最终包真机温升、实际发声和独立准确率待验，未公开发布。
+
+当前公开修订见[王者实局与两字开关更正](../protocols/COMPLIANCE_IMPROVEMENT_2026-10-13.md)，继承[三局反馈修复](../../docs/development/消消乐三局反馈修复_2026-10-13.md)；版本递增与历史手机核对见[0.4.6 候选记录](ANDROID_CANDIDATE_0_4_6_2026-10-11.md)。当前 GitHub 普通 Release、Latest 见[0.4.6 发布记录](GITHUB_RELEASE_0_4_6_2026-10-13.md)，唯一交付目录及旧包清理见[制品整理](ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)；[0.4.5](GITHUB_RELEASE_0_4_5_2026-10-10.md)及[0.4.4](GITHUB_RELEASE_0_4_4_2026-10-08.md)历史记录继续保留。各记录保持原制品摘要。
 
 ## 记录索引
 
@@ -12,6 +14,7 @@
 
 | 日期 | 记录 |
 | --- | --- |
+| 2026-10-14 | [0.4.7 唯一候选、JVM 缓存补正、完整套件及成本／持续运行](ANDROID_CANDIDATE_0_4_7_2026-10-14.md) |
 | 2026-10-12（2026-10-13 归档） | [撤回的 0.4.7 饼干／魔力鸟候选原说明](ANDROID_WITHDRAWN_0_4_7_2026-10-12.md)，与新一轮版本规划分别记录 |
 | 2026-10-13 | [0.4.6 唯一交付及旧包清理](ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md) |
 | 2026-10-13 | [GitHub 0.4.6 发布及主线合并](GITHUB_RELEASE_0_4_6_2026-10-13.md) |

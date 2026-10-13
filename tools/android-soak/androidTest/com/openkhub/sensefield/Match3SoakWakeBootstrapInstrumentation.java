@@ -31,7 +31,9 @@ public final class Match3SoakWakeBootstrapInstrumentation extends Instrumentatio
         };
         Throwable error=null;Bundle result=new Bundle();
         try {
-            if(!"true".equals(args.getString("authorizedPhoneAcceptance")))throw new IllegalStateException("authorized test only");
+            boolean emulator=Build.HARDWARE.contains("ranchu")||Build.HARDWARE.contains("goldfish");
+            if(!"true".equals(args.getString(emulator?"authorizedEmulatorAcceptance":"authorizedPhoneAcceptance")))
+                throw new IllegalStateException("authorized test for this device kind only");
             String run=args.getString("soakRun");
             if(run==null||!run.matches("[a-z0-9-]+"))throw new IllegalArgumentException("unique run required");
             directory=new File(context.getExternalFilesDir("match3-soak-bootstrap"),run);

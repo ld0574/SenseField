@@ -109,6 +109,8 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--kind", choices=("control", "optimization", "functional"), required=True)
     parser.add_argument("--workload", choices=("fixed-repeat-v1", "sequence-v1", "honor-sequence-v2"), default="fixed-repeat-v1")
+    parser.add_argument("--allow-emulator-downgrade", action="store_true",
+                        help="Allow an emulator-only reinstall of a lower versionCode during paired measurements")
     args = parser.parse_args()
     assert_emulator(args.serial)
     out = args.output.resolve()
@@ -142,7 +144,8 @@ def main() -> int:
     command_prefix = [str(args.adb), "-s", args.serial]
     report = {"scope": "installed_emulator_APK_declared_processing_workload; excludes_capture_audio_io_and_game_heat",
               "kind": args.kind, "workload": args.workload, "started_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
-              "packages": receipts, "manifest_sha256": manifest_sha, "steps": [], "pairs": [], "passed": False}
+              "packages": receipts, "manifest_sha256": manifest_sha, "steps": [], "pairs": [], "passed": False,
+              "emulator_version_downgrade_allowed": args.allow_emulator_downgrade}
 
     def save():
         (out / "receipt.json").write_text(json.dumps(report, indent=2) + "\n")
@@ -171,8 +174,9 @@ def main() -> int:
                 package = receipts[mode]
                 print(name, flush=True)
                 run(name + "-stop", ["shell", "am", "force-stop", PACKAGE])
-                run(name + "-install", ["install", "-r", package["app"]["path"]])
-                run(name + "-test-install", ["install", "-r", "-t", package["test"]["path"]])
+                reinstall = ["install", "-r"] + (["-d"] if args.allow_emulator_downgrade else [])
+                run(name + "-install", [*reinstall, package["app"]["path"]])
+                run(name + "-test-install", [*reinstall, "-t", package["test"]["path"]])
                 installed = run(name + "-path", ["shell", "pm", "path", PACKAGE]).strip().splitlines()
                 if len(installed) != 1 or not installed[0].startswith("package:"):
                     raise ValueError("Require one installed APK")

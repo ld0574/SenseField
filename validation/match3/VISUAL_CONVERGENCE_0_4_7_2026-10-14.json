@@ -1493,6 +1493,18 @@
       "error": "emulator directory root ownership denied shell cleanup",
       "repair": "emulator-only adbd root; resume four replays; completed suite not repeated",
       "source_unchanged_at_final_verification": true
+    },
+    "jvm_cache_correction": {
+      "discovered_date": "2026-10-14",
+      "original_counts_from_cached_results": true,
+      "fresh_execution_for_changed_appearance_asset": false,
+      "subsequent_actual_execution": {
+        "tests": 616,
+        "failures": 1
+      },
+      "failure": "Match3BoardFeedbackTest expected 6 directional templates but observed 8",
+      "repair": "update reviewed template count; declare runtime JSON assets as Gradle JVM test task inputs",
+      "original_instrumentation_quality_and_cost_receipts_preserved": true
     }
   },
   "private_receipt_sha256": {

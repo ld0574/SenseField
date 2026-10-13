@@ -1,12 +1,14 @@
 # 发布与交付索引
 
-2026-10-13 当前源码与交付按用户选择继续使用 [0.4.6](0.4.6/RELEASE_NOTES.md)（`versionCode 23`），已合入并推送 `main`，[GitHub v0.4.6](https://github.com/ld0574/SenseField/releases/tag/v0.4.6) 当前为普通 Release、Latest。标签指向 `29cb75b8e1cc154c903570f7d8213e33279c6ba6`，四个附件及 APK 公开下载核对通过，见[发布记录](../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。
+2026-10-14 新增 [0.4.7 候选](0.4.7/RELEASE_NOTES.md)（`versionCode 24`），唯一候选目录为 `output/releases/0.4.7/`，APK SHA-256 为 `a0c8365938475b4e37b08c48bb33c2ff1e410604706fc29555e7bbd5d687467d`，24,589,117 bytes。提示链路、视觉与处理成本修复已收口到同一份候选，完整结果及剩余验收见[候选工程记录](../../validation/releases/ANDROID_CANDIDATE_0_4_7_2026-10-14.md)。未公开发布或更新公网清单；手机实际发声、前台配对温升与独立准确率继续待验。
+
+当前公开交付仍为 [0.4.6](0.4.6/RELEASE_NOTES.md)（`versionCode 23`），已合入并推送 `main`，[GitHub v0.4.6](https://github.com/ld0574/SenseField/releases/tag/v0.4.6) 当前为普通 Release、Latest。标签指向 `29cb75b8e1cc154c903570f7d8213e33279c6ba6`，四个附件及 APK 公开下载核对通过，见[发布记录](../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。
 
 最新修订修复王者密集场景覆盖两字关闭选择，继承密集灰毛球、右侧末块雪块、魔力鸟直线组合、饼干及发光青蛙修复。唯一交付为 `output/releases/0.4.6/sensefieldv0.4.6.apk`，APK SHA 为 `535a653a927f57744922951f63ec9014041e04959823404bb1662a6d80b4f080`；配套清单、使用说明和校验单在同一目录，发布／上传说明在 `publishing/`。旧包及重复交付已[删除](../../validation/releases/ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)，源码与历史验证回执集中到 `validation/`。本轮 Gitee 附件与公网清单由用户同步，[复测说明](0.4.6/复测说明.md)继续对应最新包。2026-10-12 的 0.4.7 开发候选已撤回，原说明与工程范围见[历史归档](../../validation/releases/ANDROID_WITHDRAWN_0_4_7_2026-10-12.md)。
 
-新一轮 [0.4.7 规划](../plans/0.4.7版本规划.md)以两款游戏的提示稳定性、视觉感知与发热为主线，拟用 code24；当前尚未实施版本递增或生成新 APK。现有规则引擎、热保护与离线复盘继续复用，工程验证先使用已有日志，最终包的实际提示与前台温升单独验收。
+新一轮 [0.4.7 规划](../plans/0.4.7版本规划.md)以两款游戏的提示稳定性、视觉感知与发热为主线。候选已同步 Gradle、构建脚本、APK 身份与本地清单，沿用现有签名；现有规则引擎、热保护与离线复盘继续复用。真实执行的 Debug／Release JVM 各 616 项、完整仪器套件 118／84 项及两种构建各 4 项生产回放通过；原缓存 JVM 结果的补正和失败记录单独保留。
 
-最新修订通过 609 项 Release JVM、Release 构建／lint 和实际包完整性核验。此前三局修订 `ead5e38a…` 的 8 项模拟器 Release、7 项手机回放和软件成本门限保持原制品绑定。独立准确率、实际通关收益及新包手机实局／持续运行／受控温升和实际发声仍待验收。公网清单由用户在公开 APK 下载核对后更新。详见[王者开关更正](../../validation/protocols/COMPLIANCE_IMPROVEMENT_2026-10-13.md)、[三局修复记录](../development/消消乐三局反馈修复_2026-10-13.md)与[当前状态](../../validation/STATUS.md)。
+公开 0.4.6 修订通过 609 项 Release JVM、Release 构建／lint 和实际包完整性核验。此前三局修订 `ead5e38a…` 的 8 项模拟器 Release、7 项手机回放和软件成本门限保持原制品绑定。独立准确率、实际通关收益及新包手机实局／持续运行／受控温升和实际发声仍待验收。公网清单由用户在公开 APK 下载核对后更新。详见[王者开关更正](../../validation/protocols/COMPLIANCE_IMPROVEMENT_2026-10-13.md)、[三局修复记录](../development/消消乐三局反馈修复_2026-10-13.md)与[当前状态](../../validation/STATUS.md)。
 
 2026-10-10 公开发布记录：当时主线为[0.4.5](0.4.5/RELEASE_NOTES.md)（`versionCode 22`），消消乐代码已完整合入 `main`，包含两款游戏入口、离线固定语音与默认关闭的助手。[GitHub v0.4.5](https://github.com/ld0574/SenseField/releases/tag/v0.4.5) 已发布为普通 Release、Latest，源码标签指向 `859e672f9505e380d8af7b2ca216fbaf0477d7a6`；附件和下载入口见[发布核对](../../validation/releases/GITHUB_RELEASE_0_4_5_2026-10-10.md)。此前负责人已上传 Gitee APK 与固定网站清单，两处使用同一份已测字节。
 
@@ -20,7 +22,7 @@
 
 | 版本 | 日期 | versionCode | 交付状态 | 主要内容与说明 |
 | --- | --- | ---: | --- | --- |
-| [0.4.7](0.4.7/RELEASE_NOTES.md) | 2026-10-13 规划 | 拟 24 | 规划中，尚无新 APK | 提示链路与恢复、视觉难样例改进、两款游戏处理成本和前台温升、唯一版本交付；旧同名候选见历史归档 |
+| [0.4.7](0.4.7/RELEASE_NOTES.md) | 2026-10-14 | 24 | 本地冻结候选，完整工程／成本及模拟器 900 秒通过；尚未公开发布 | 提示链路与恢复、横向特效视觉改进、当前帧处理优化和唯一版本交付；真机温升／发声及独立准确率待验，旧同名候选见历史归档 |
 | [0.4.6](0.4.6/RELEASE_NOTES.md) | 2026-10-13 | 23 | 已合入 main、GitHub 普通 Release、Latest；唯一交付在版本根目录，本轮 Gitee 附件和公网清单由用户同步 | 王者两字开关遵循选择，保留灰毛球、末块雪块、魔力鸟组合与识别开销修复 |
 | [0.4.5](0.4.5/RELEASE_NOTES.md) | 2026-10-10 | 22 | 历史 GitHub 普通 Release，发布时为 Latest；Gitee APK 与线上清单此前核对一致 | 稀疏整盘定位、确认的一步任务收益排序与交换高亮、最后目标准备建议；消消乐仍为体验版，最新试用问题继续整改 |
 | [0.4.4](0.4.4/RELEASE_NOTES.md) | 2026-10-08 | 21 | 历史 GitHub 普通 Release，发布时为 Latest | 默认游戏解说男声／可选游戏向导女声、离线完整说明、连续试听修复、24.22MB 正式包；受控温升待测 |
