@@ -8,9 +8,8 @@ import { loadRelease, type Release } from './release';
 
 const icons = { ArrowRight, ArrowDown, ArrowUp, ArrowLeftRight, MoveUpRight, Pause, Play, Menu, X, ScanEye, VolumeX, Volume2, AudioLines, Speech, Vibrate, Headphones, Radio, Navigation, Mic, Smartphone, SlidersHorizontal, Hand, Download, Info, Circle, Diamond, Triangle, Flower2, Square, Copy, MessageCircle, ChevronDown, Languages, Plus };
 const renderIcons = () => createIcons({ icons, attrs: { 'aria-hidden': 'true' } });
-const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-let motionPaused = reducedMotion.matches;
-try { motionPaused = reducedMotion.matches || localStorage.getItem('sensefield-motion') === 'paused'; } catch { /* Motion still follows the OS preference. */ }
+// Every visit starts with motion enabled; manual pause applies to this page.
+let motionPaused = false;
 
 // Preview symbols are Lucide icons, like every other interface icon.
 const board = document.querySelector('.match-board')!;
@@ -241,12 +240,6 @@ updateMotionUI();
 setupReveals();
 motionButton.addEventListener('click', () => {
   motionPaused = !motionPaused;
-  if (motionPaused) stopAnimations();
-  try { localStorage.setItem('sensefield-motion', motionPaused ? 'paused' : 'enabled'); } catch { /* Optional preference persistence. */ }
-  updateMotionUI();
-});
-reducedMotion.addEventListener('change', (event) => {
-  motionPaused = event.matches;
   if (motionPaused) stopAnimations();
   updateMotionUI();
 });

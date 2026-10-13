@@ -47,6 +47,5 @@ assert(!/ACCESSIBLE PLAY|THE WHY|THE SENSORY|BUILT FOR YOUR PLAY|MORE PLAY/.test
 assert(html.includes('class="language-toggle"') && code.includes('initLanguage'), 'Offer a persisted English language switch.');
 assert(html.includes('lang="zh-CN"'), 'Declare the page language.');
 assert(html.includes('class="skip-link"'), 'Keep keyboard skip navigation.');
-assert(code.includes("reducedMotion.matches"), 'Honor the OS motion preference.');
 assert(!html.includes('<svg'), 'Use Lucide for interface icons.');
 console.log('Website checks passed: brand colors, bilingual controls, perception lens, expanded features, collapsed FAQs, 100-level Anipop copy, dynamic downloads, assets, Lucide and accessibility hooks.');

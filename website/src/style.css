@@ -369,10 +369,6 @@ body.motion-paused *, body.motion-paused *::before, body.motion-paused *::after 
 body.motion-paused * { transition-duration: 0s !important; }
 html:has(body.motion-paused) { scroll-behavior: auto; }
 body.motion-paused .reveal { opacity: 1 !important; transform: none !important; }
-@media (prefers-reduced-motion: reduce) {
-  :root { scroll-behavior: auto; }
-  body:not(.motion-enabled) *, body:not(.motion-enabled) *::before, body:not(.motion-enabled) *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
-}
 html[data-language='en'] .hero h1 { font-size: clamp(56px, 5.7vw, 92px); letter-spacing: -.065em; }
 html[data-language='en'] .brand-name { letter-spacing: -.025em; }
 html[data-language='en'] .brand-name > small { letter-spacing: .02em; }
