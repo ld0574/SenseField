@@ -1,0 +1,26 @@
+plugins {
+    id 'com.android.application' version '9.3.3'
+}
+android {
+    namespace 'com.openkhub.apkreplay'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'com.openkhub.sensefield.test'
+        minSdk 29
+        targetSdk 35
+        versionCode 1
+        versionName 'original-apk-comparison-1'
+    }
+    if (!findProperty('contractAssets')) {
+        throw new GradleException('Require separately frozen APK contracts via -PcontractAssets')
+    }
+    sourceSets.main.assets.srcDir file(findProperty('contractAssets').toString())
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+dependencies {
+    implementation 'androidx.test:runner:1.6.2'
+    implementation 'junit:junit:4.13.2'
+}
