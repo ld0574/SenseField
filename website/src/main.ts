@@ -227,7 +227,6 @@ function setupReveals() {
     scrollTrigger: { trigger: element, start: 'top 92%', once: true },
   }));
   heroAnimation = gsap.timeline({ defaults: { ease: 'power3.out' } })
-    .from('.hero-topline', { opacity: 0, duration: 0.8 }, 0)
     .from('.hero-line', { y: 38, opacity: 0, duration: 1, stagger: 0.13 }, 0.1)
     .from('.hero-kicker', { y: 16, opacity: 0, duration: 0.85 }, 0.3)
     .from('.hero-description, .hero-links, .hero-release', { y: 15, opacity: 0, duration: 0.8, stagger: 0.1 }, 0.5);
@@ -236,7 +235,7 @@ function stopAnimations() {
   revealAnimations.forEach((tween) => { tween.scrollTrigger?.kill(); tween.kill(); });
   revealAnimations = [];
   heroAnimation?.progress(1).kill();
-  gsap.set('.reveal, .hero-topline, .hero-line, .hero-kicker, .hero-description, .hero-links, .hero-release', { clearProps: 'transform,opacity' });
+  gsap.set('.reveal, .hero-line, .hero-kicker, .hero-description, .hero-links, .hero-release', { clearProps: 'transform,opacity' });
 }
 updateMotionUI();
 setupReveals();

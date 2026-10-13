@@ -69,11 +69,8 @@ svg { display: block; flex-shrink: 0; width: 22px; height: 22px; stroke-width: 1
 .mobile-nav a { display: flex; justify-content: space-between; align-items: center; padding: 18px 4px; border-bottom: 1px solid var(--line); font-size: 20px; }
 .mobile-nav a:last-child { border-bottom: 0; }
 
-.hero { position: relative; min-height: 710px; height: min(880px, calc(100svh - 94px)); padding: 28px 5.5% 0; isolation: isolate; overflow: hidden; }
-.hero-topline { display: flex; justify-content: space-between; gap: 20px; font-size: 15px; letter-spacing: .03em; position: relative; z-index: 2; }
-.hero-topline > span:first-child { display: flex; align-items: center; gap: 10px; }
-.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); display: inline-block; flex-shrink: 0; box-shadow: 0 0 0 4px rgba(35,104,116,.07); }
-.hero-copy { position: relative; z-index: 3; padding-top: clamp(58px, 5.3vw, 92px); width: 53%; }
+.hero { position: relative; display: flex; flex-direction: column; min-height: max(710px, min(880px, calc(100svh - 94px))); padding: 28px 5.5% 0; isolation: isolate; overflow: hidden; }
+.hero-copy { position: relative; z-index: 3; padding-top: clamp(58px, 5.3vw, 92px); padding-bottom: 48px; width: 53%; }
 .hero-kicker { font-size: 18px; color: var(--primary); letter-spacing: .06em; margin-bottom: 22px; }
 .hero h1 { font-size: clamp(62px, 6.6vw, 105px); line-height: 1.21; font-weight: 650; letter-spacing: -.07em; }
 .hero-line { display: block; }
@@ -125,7 +122,7 @@ svg { display: block; flex-shrink: 0; width: 22px; height: 22px; stroke-width: 1
 .hero-channel > span { min-width: 0; }
 .hero-channel strong { display: block; font-size: 21px; font-weight: 550; line-height: 1.4; }
 .hero-channel small { display: block; font-size: 13px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
-.hero-footer { position: absolute; bottom: 0; left: 5.5%; right: 5.5%; display: flex; align-items: center; justify-content: space-between; gap: 25px; padding: 23px 0; border-top: 1px solid var(--line); z-index: 5; }
+.hero-footer { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 25px; margin-top: auto; padding: 23px 0; border-top: 1px solid var(--line); z-index: 5; }
 .scroll-link { display: flex; align-items: center; gap: 12px; font-size: 14px; white-space: nowrap; }
 .scroll-icon { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 50%; display: grid; place-items: center; }
 .scroll-icon svg { width: 16px; height: 16px; }
@@ -378,13 +375,13 @@ body.motion-paused .reveal { opacity: 1 !important; transform: none !important; 
 }
 html[data-language='en'] .hero h1 { font-size: clamp(56px, 5.7vw, 92px); letter-spacing: -.065em; }
 html[data-language='en'] .brand-name { letter-spacing: -.025em; }
+html[data-language='en'] .brand-name > small { letter-spacing: .02em; }
 html[data-language='en'] .hero-links .button { gap: 17px; }
 html[data-language='en'] .hero-kicker { letter-spacing: 0; }
 
 @media (min-width: 1720px) {
   .hero-copy { max-width: 790px; }
-  .hero { padding-left: max(5.5%, calc((100vw - 1530px) / 2)); }
-  .hero-footer { left: max(5.5%, calc((100vw - 1530px) / 2)); right: max(5.5%, calc((100vw - 1530px) / 2)); }
+  .hero { padding-left: max(5.5%, calc((100vw - 1530px) / 2)); padding-right: max(5.5%, calc((100vw - 1530px) / 2)); }
   .hero-art { width: min(57%, 1030px); right: max(-1.5%, calc((100vw - 1820px) / 2)); }
 }
 @media (max-width: 1200px) {
@@ -403,7 +400,7 @@ html[data-language='en'] .hero-kicker { letter-spacing: 0; }
 @media (max-width: 1100px) {
   .desktop-nav { display: none; }
   .menu-button { display: flex; }
-  .hero { min-height: 735px; }
+  .hero { min-height: max(735px, min(880px, calc(100svh - 94px))); }
   .hero-copy { width: 54%; }
   .hero-art { width: 56%; right: -1%; }
   .hero h1 { font-size: 7.2vw; }
@@ -441,9 +438,7 @@ html[data-language='en'] .hero-kicker { letter-spacing: 0; }
   .language-toggle { min-width: 44px; gap: 4px; font-size: 14px; }
   .language-toggle svg { width: 16px; height: 16px; }
   .hero { min-height: 0; height: auto; padding: 22px 6% 0; }
-  .hero-topline { font-size: 14px; letter-spacing: 0; }
-  .hero-edition { display: none; }
-  .hero-copy { width: 100%; padding-top: 42px; }
+  .hero-copy { width: 100%; padding-top: 20px; padding-bottom: 0; }
   .hero-kicker { font-size: 17px; margin-bottom: 18px; }
   .hero h1 { font-size: clamp(48px, 13.5vw, 83px); line-height: 1.23; letter-spacing: -.065em; }
   html[data-language='en'] .hero h1 { font-size: clamp(44px, 11vw, 75px); }

@@ -47,13 +47,9 @@ export function mountField(canvas: HTMLCanvasElement, isPaused: () => boolean) {
         float sound = exp(-pow((r - 1.52 - .055 * sin(a * 22.0 - uTime * 1.6)) * 25.0, 2.0));
         float phase = fract(uTime * .15);
         float touch = exp(-pow((r - .96 - phase * 1.2) * 24.0, 2.0)) * sin(phase * 3.14159);
-        vec2 tileA = abs(p - vec2(-1.1, -1.2)) - .15;
-        vec2 tileB = abs(p - vec2(-.72, -1.2)) - .15;
-        float visual = max(1.0 - smoothstep(-.008, .012, max(tileA.x, tileA.y)), 1.0 - smoothstep(-.008, .012, max(tileB.x, tileB.y)));
         float halo = exp(-pow((r - 2.13) * 4.0, 2.0)) * .2;
         vec3 color = mix(uTeal, uSoft, .06 + bands * .24 + sound * .14);
         color = mix(color, uPeach, scan * .75 + touch * .3);
-        color = mix(color, uPeach, visual * (.85 + .1 * sin(uTime * 1.4)));
         float alpha = mask * (.72 + bands * .2 + sound * .05 + touch * .08);
         gl_FragColor = vec4(color, max(alpha, halo));
         #include <tonemapping_fragment>
