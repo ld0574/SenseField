@@ -4,7 +4,7 @@ import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { createVoiceDraft, type VoiceKind } from './feedback';
 import { initLanguage, getLanguage, t, directionCue, type DirectionKey, type MessageKey } from './i18n';
-import { loadRelease, type Release } from './release';
+import { loadRelease, RELEASE_PAGE, type Release } from './release';
 
 const icons = { ArrowRight, ArrowDown, ArrowUp, ArrowLeftRight, MoveUpRight, Pause, Play, Menu, X, ScanEye, VolumeX, Volume2, AudioLines, Speech, Vibrate, Headphones, Radio, Navigation, Mic, Smartphone, SlidersHorizontal, Hand, Download, Info, Circle, Diamond, Triangle, Flower2, Square, Copy, MessageCircle, ChevronDown, Languages, Plus };
 const renderIcons = () => createIcons({ icons, attrs: { 'aria-hidden': 'true' } });
@@ -267,15 +267,15 @@ document.querySelectorAll<HTMLElement>('.magnetic').forEach((button) => {
   button.addEventListener('pointerleave', () => gsap.to(button, { x: 0, y: 0, duration: motionPaused ? 0 : 0.7, ease: 'elastic.out(1, 0.5)' }));
 });
 
-// The CDN does not currently send CORS headers. Actions supplies a fresh, same-origin
-// JSON snapshot automatically; release data and APK URLs never live in page source.
+// Read the authoritative CDN on every visit; never ship a separate release snapshot.
 let release: Release | null = null;
 let releaseFailed = false;
+let releaseRequest: Promise<void> | null = null;
 function renderRelease() {
   const versionText = release ? t('releaseVersion', { version: release.version_name }) : t(releaseFailed ? 'releaseError' : 'releaseLoading');
   document.querySelectorAll('[data-release-version]').forEach((node) => { node.textContent = versionText; });
   document.querySelectorAll<HTMLAnchorElement>('[data-download]').forEach((link) => {
-    if (release) link.href = release.apk_url;
+    link.href = release?.apk_url ?? RELEASE_PAGE;
   });
   document.querySelector('[data-release-size]')!.textContent = release ? t('releaseSize', { size: (release.apk_bytes / 1_000_000).toFixed(1) }) : (getLanguage() === 'en' ? 'Free and open source' : '免费开源');
   document.querySelector('#release-notes-title')!.textContent = t('releaseNotes');
@@ -283,22 +283,32 @@ function renderRelease() {
   notes.lang = release ? 'zh-CN' : document.documentElement.lang;
   const lines = release ? release.release_notes.split('\n').filter((line) => line.trim()) : [versionText];
   notes.replaceChildren(...lines.map((line) => { const paragraph = document.createElement('p'); paragraph.textContent = line; return paragraph; }));
+  const schema = document.querySelector<HTMLScriptElement>('#software-data')!;
+  const value = JSON.parse(schema.textContent!);
   if (release) {
-    const schema = document.querySelector<HTMLScriptElement>('#software-data')!;
-    const value = JSON.parse(schema.textContent!);
     value.softwareVersion = release.version_name;
     value.downloadUrl = release.apk_url;
-    schema.textContent = JSON.stringify(value);
+  } else {
+    delete value.softwareVersion;
+    delete value.downloadUrl;
   }
+  schema.textContent = JSON.stringify(value);
 }
-async function refreshRelease() {
-  try {
-    release = await loadRelease(`${import.meta.env.BASE_URL}latest.json?check=${Date.now()}`);
-    releaseFailed = false;
-  } catch { releaseFailed = !release; }
-  renderRelease();
-  ScrollTrigger.refresh();
-  updateProgress();
+function refreshRelease(): Promise<void> {
+  if (releaseRequest) return releaseRequest;
+  releaseRequest = (async () => {
+    try {
+      release = await loadRelease();
+      releaseFailed = false;
+    } catch {
+      release = null;
+      releaseFailed = true;
+    }
+    renderRelease();
+    ScrollTrigger.refresh();
+    updateProgress();
+  })().finally(() => { releaseRequest = null; });
+  return releaseRequest;
 }
 initLanguage(() => {
   stopCue();
@@ -315,7 +325,9 @@ initLanguage(() => {
   updateProgress();
 });
 void refreshRelease();
-setInterval(() => { if (!document.hidden) void refreshRelease(); }, 15 * 60_000);
+setInterval(() => { if (!document.hidden) void refreshRelease(); }, 5 * 60_000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshRelease(); });
+window.addEventListener('pageshow', (event: PageTransitionEvent) => { if (event.persisted) void refreshRelease(); });
 
 // The renderer is a separate chunk. Essential content works even if it fails.
 void import('./field').then(({ mountField }) => {

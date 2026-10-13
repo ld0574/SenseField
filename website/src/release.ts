@@ -12,7 +12,7 @@ export type Release = {
   release_notes: string;
 };
 
-/** Both the browser and the deployment synchronizer validate the untrusted manifest. */
+/** Validate the public CDN manifest before rendering its fields or download URL. */
 export function parseRelease(value: unknown): Release {
   if (!value || typeof value !== 'object') throw new Error('Invalid release manifest.');
   const data = value as Record<string, unknown>;
@@ -32,8 +32,12 @@ export function parseRelease(value: unknown): Release {
   };
 }
 
-export async function loadRelease(url: string, fetcher: typeof fetch = fetch): Promise<Release> {
-  const response = await fetcher(url, { cache: 'no-store', signal: AbortSignal.timeout(8_000) });
+export async function loadRelease(fetcher: typeof fetch = fetch): Promise<Release> {
+  const url = new URL(RELEASE_SOURCE);
+  url.searchParams.set('check', String(Date.now()));
+  const response = await fetcher(url.href, {
+    cache: 'no-store', credentials: 'omit', signal: AbortSignal.timeout(8_000),
+  });
   if (!response.ok) throw new Error(`Release manifest returned HTTP ${response.status}.`);
   return parseRelease(await response.json());
 }

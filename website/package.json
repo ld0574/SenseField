@@ -9,7 +9,6 @@
     "preview": "vite preview --host 127.0.0.1",
     "check": "tsc --noEmit",
     "verify": "node scripts/verify.mjs",
-    "release:sync": "node --experimental-strip-types scripts/sync-release.mjs",
     "test": "node --experimental-strip-types --test tests/*.test.ts"
   },
   "dependencies": {

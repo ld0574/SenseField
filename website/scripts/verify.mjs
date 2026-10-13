@@ -29,6 +29,7 @@ for (const [, attributes] of html.matchAll(/<a\s([^>]+)>/g)) {
 }
 assert(!html.includes('releases/download/'), 'APK URLs come from the dynamic release manifest.');
 assert(release.includes('https://888413.xyz/apk/latest.json'), 'Use the project CDN as the release source.');
+assert(!existsSync(new URL('../public/latest.json', import.meta.url)), 'Do not ship a stale, independent release manifest.');
 assert((html.match(/data-download\s/g) ?? []).length === 2, 'Keep download buttons in the hero and download section.');
 assert(!field.includes('THREE.Points') && !field.includes('./particles'), 'The hero uses a continuous perception lens, without particles.');
 assert(!html.includes('feature-trigger'), 'Feature descriptions remain visible while scrolling.');

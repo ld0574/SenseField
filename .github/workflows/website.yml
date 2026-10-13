@@ -8,8 +8,6 @@ on:
     branches: [main]
     paths: ['website/**', '.github/workflows/website.yml']
   workflow_dispatch:
-  schedule:
-    - cron: '17,47 * * * *'
 
 permissions:
   contents: read
@@ -19,28 +17,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  manifest:
-    runs-on: ubuntu-latest
-    outputs:
-      updated: ${{ steps.sync.outputs.updated }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Synchronize the CDN release manifest
-        id: sync
-        working-directory: website
-        run: npm run release:sync
-      - uses: actions/upload-artifact@v4
-        with:
-          name: website-release-manifest
-          path: website/public/latest.json
-          retention-days: 1
-
   build:
-    needs: manifest
-    if: github.event_name != 'schedule' || needs.manifest.outputs.updated == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -57,10 +34,6 @@ jobs:
           cache-dependency-path: website/package-lock.json
       - name: Install locked dependencies
         run: npm ci
-      - uses: actions/download-artifact@v4
-        with:
-          name: website-release-manifest
-          path: website/public
       - name: Check website content
         run: npm run verify
       - name: Check feedback and dynamic release handling
