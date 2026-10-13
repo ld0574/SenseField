@@ -551,7 +551,7 @@ public final class UiQualityInstrumentedTest {
         return maximum;
     }
 
-    private static void assertLayout(View root, String page) {
+    static void assertLayout(View root, String page) {
         List<String> errors = new ArrayList<>(); inspect(root, errors);
         assertTrue(page + " layout problems: " + errors, errors.isEmpty());
     }
@@ -588,7 +588,7 @@ public final class UiQualityInstrumentedTest {
         try { InstrumentationRegistry.getInstrumentation().getUiAutomation().waitForIdle(100, 3000); }
         catch (java.util.concurrent.TimeoutException ignored) { }
     }
-    private static void screenshot(String name) throws Exception {
+    static void screenshot(String name) throws Exception {
         Bitmap screenshot = null;
         for (int attempt = 0; attempt < 3; attempt++) {
             awaitCommittedWindow();

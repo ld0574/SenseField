@@ -683,19 +683,8 @@ public class Match3LiveService extends Service {
     }
 
     private BoardGeometry estimateGeometry(Bitmap frame) {
-        int[] calibratedBounds = null;
-        var prefs = GameProfile.settings(this);
-        if (prefs.getBoolean("match3_calibrated", false)) {
-            int[] pct = {prefs.getInt("match3_l", 4), prefs.getInt("match3_t", 18),
-                    prefs.getInt("match3_r", 96), prefs.getInt("match3_b", 82)};
-            if (Match3Sampler.plausibleCalibration(frame.getWidth(), frame.getHeight(),
-                    pct[0], pct[1], pct[2], pct[3], prefs.getInt("match3_rows", 8),
-                    prefs.getInt("match3_cols", 8), new int[2])) {
-                calibratedBounds = new int[]{
-                        frame.getWidth() * pct[0] / 100, frame.getHeight() * pct[1] / 100,
-                        frame.getWidth() * pct[2] / 100, frame.getHeight() * pct[3] / 100};
-            }
-        }
+        BoardGeometry saved = Match3Calibration.candidateForFrame(GameProfile.settings(this), frame.getWidth(), frame.getHeight());
+        int[] calibratedBounds = saved == null ? null : new int[]{saved.left, saved.top, saved.right, saved.bottom};
         return Match3Sampler.autoDetectGeometry(frame, calibratedBounds);
     }
 

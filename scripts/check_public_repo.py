@@ -229,6 +229,7 @@ def workspace_candidates(root: Path) -> list[str]:
         "docs/plans/符合度改造方案.md",
         "docs/plans/符合度重新评估_2026-10-13.md",
         "docs/plans/符合度丢分项改进Goal_2026-10-13.md",
+        "docs/plans/消消乐棋盘校准改进_2026-10-13.md",
         "docs/plans/消消乐实局自动复盘.md",
         "docs/references/README.md",
         "docs/requirements/README.md",

@@ -4,9 +4,6 @@ import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.Canvas;
-import android.graphics.Color;
-import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
@@ -18,7 +15,6 @@ import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Spinner;
@@ -41,7 +37,11 @@ public final class Match3ToolsActivity extends UiActivity {
     private Bitmap screenshot;
     private Uri screenshotUri;
     private BoardGeometry screenshotGeometry;
-    private ImageView preview;
+    private Match3BoardPreview preview;
+    private Button selectBoard, saveBoard;
+    private TextView calibrationStatus;
+    private boolean updatingCalibrationFields;
+    private BoardGeometry restoredGeometry;
     private Spinner rowsSpin;
     private Spinner colsSpin;
     private EditText leftIn;
@@ -88,7 +88,7 @@ public final class Match3ToolsActivity extends UiActivity {
 
         /* ---------- 标定 ---------- */
         LinearLayout calib = foldedCard(page, "手动棋盘校准");
-        calib.addView(note("通常无需手动设置。只有自动定位不准时，才调整截图范围；实时识别仍会核验当前棋盘。"));
+        calib.addView(note("自动定位不准时，框出整个棋盘并确认行列。绿色网格应对齐每一格；不规则棋盘要包含边缘格和中间空位。确认后点击保存，实时识别仍会核验当前棋盘。"));
         rowsSpin = spinner(new String[]{"6", "7", "8", "9"}, 2);
         colsSpin = spinner(new String[]{"6", "7", "8", "9"}, 2);
         calib.addView(UiKit.fieldRow(this, UiKit.field(this, "行数", rowsSpin),
@@ -102,6 +102,23 @@ public final class Match3ToolsActivity extends UiActivity {
         calib.addView(UiKit.fieldRow(this, UiKit.field(this, "右下 X（%）", rightIn),
                 UiKit.field(this, "右下 Y（%）", bottomIn)));
         loadCalibration();
+        selectBoard = UiKit.button(this, "框选棋盘范围", false);
+        selectBoard.setTag("match3_select_board");
+        selectBoard.setEnabled(false);
+        selectBoard.setOnClickListener(v -> beginBoardSelection());
+        calib.addView(selectBoard);
+        saveBoard = UiKit.button(this, "确认网格并保存校准", true);
+        saveBoard.setTag("match3_save_calibration");
+        saveBoard.setEnabled(false);
+        saveBoard.setOnClickListener(v -> saveCalibration());
+        calib.addView(saveBoard);
+        Button resetBoard = UiKit.button(this, "清除校准，恢复自动定位", false);
+        resetBoard.setTag("match3_reset_calibration");
+        resetBoard.setOnClickListener(v -> resetCalibration());
+        calib.addView(resetBoard);
+        calibrationStatus = note("截图试读不会保存设置，只有确认保存才会用于实时识别。");
+        calibrationStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        calib.addView(calibrationStatus);
         loadGating();
         /* ---------- 特殊棋子模板库 ---------- */
         LinearLayout special = foldedCard(page, "棋子学习库");
@@ -122,20 +139,20 @@ public final class Match3ToolsActivity extends UiActivity {
         markSave.setOnClickListener(v -> saveSpecialTemplate());
         special.addView(markSave);
 
-        preview = new ImageView(this);
-        preview.setAdjustViewBounds(true);
-        preview.setContentDescription("棋盘截图预览：点击格子播报该格");
-        preview.setOnTouchListener((v, event) -> {
-            if (event.getAction() != android.view.MotionEvent.ACTION_UP) return false;
-            if (screenshot == null) return false;
-            int bw = screenshot.getWidth(), bh = screenshot.getHeight();
-            if (preview.getWidth() == 0 || preview.getHeight() == 0) return false;
-            int px = (int) (event.getX() * bw / preview.getWidth());
-            int py = (int) (event.getY() * bh / preview.getHeight());
-            handlePreviewTap(px, py);
-            return true;
+        preview = new Match3BoardPreview(this);
+        preview.setTag("match3_board_preview");
+        preview.setListener(new Match3BoardPreview.Listener() {
+            @Override public void onImageTap(int x, int y) { handlePreviewTap(x, y); }
+            @Override public void onFirstCorner() {
+                calibrationStatus.setText("第一个角已选，再点另一个对角。框中应包含整个棋盘。");
+                preview.announceForAccessibility(calibrationStatus.getText());
+            }
+            @Override public boolean onBoardSelected(int left, int top, int right, int bottom) {
+                return acceptBoardSelection(left, top, right, bottom);
+            }
         });
         UiKit.add(page, preview, UiKit.GAP_SECTION);
+        watchCalibrationFields();
 
         /* ---------- 说明书与点读 ---------- */
         LinearLayout coach = foldedCard(page, "说明书与截图点读");
@@ -149,8 +166,12 @@ public final class Match3ToolsActivity extends UiActivity {
             kbIndex++;
         });
         coach.addView(kb);
-        Button region = UiKit.button(this, "框选识别（点我后在预览上点左上角和右下角）", false);
+        coach.addView(note("区域试读只读取已定位棋盘中的部分格子。调整整个棋盘范围，请使用手动棋盘校准。"));
+        Button region = UiKit.button(this, "选取区域并试读（点两个对角格）", false);
         region.setOnClickListener(v -> {
+            if (screenshot == null) { toast("先选择一张游戏截图"); return; }
+            preview.cancelSelection();
+            selectBoard.setText("框选棋盘范围");
             regionPick = !regionPick;
             regionFirst = null;
             toast(regionPick ? "框选模式：先点棋盘区域的左上角" : "框选模式已取消");
@@ -204,6 +225,12 @@ public final class Match3ToolsActivity extends UiActivity {
         outCard.addView(output);
         if (savedInstanceState != null && savedInstanceState.getString("screenshot_uri") != null)
             loadScreenshot(Uri.parse(savedInstanceState.getString("screenshot_uri")), false);
+        if (savedInstanceState != null && screenshot != null) {
+            int[] grid = savedInstanceState.getIntArray("screenshot_geometry");
+            if (grid != null && grid.length == 8) try {
+                restoredGeometry = new BoardGeometry(grid[0], grid[1], grid[2], grid[3], grid[4], grid[5], grid[6], grid[7]);
+            } catch (IllegalArgumentException ignored) { }
+        }
         if (savedInstanceState != null) for (LinearLayout section : optionalSections) {
             String key = section.getTag().toString();
             section.findViewWithTag("ui_details_body").setVisibility(
@@ -237,19 +264,23 @@ public final class Match3ToolsActivity extends UiActivity {
             }
             BitmapFactory.Options opts = new BitmapFactory.Options();
             opts.inSampleSize = Math.max(1, bounds.outWidth / 1080);
+            Bitmap decoded;
             try (InputStream in = getContentResolver().openInputStream(uri)) {
-                if (screenshot != null) screenshot.recycle();
-                screenshotGeometry = null;
-                screenshot = BitmapFactory.decodeStream(in, null, opts);
+                decoded = BitmapFactory.decodeStream(in, null, opts);
             }
-            screenshotUri = uri;
-            if (screenshot == null) {
+            if (decoded == null) {
                 toast("图片读取失败，换一张试试");
                 return;
             }
+            preview.cancelSelection(); regionPick = false; regionFirst = null;
+            selectBoard.setText("框选棋盘范围");
+            preview.setImageBitmap(decoded);
+            preview.setGeometry(null);
+            if (screenshot != null && screenshot != decoded) screenshot.recycle();
+            screenshotGeometry = null; screenshot = decoded; screenshotUri = uri;
+            selectBoard.setEnabled(true); saveBoard.setEnabled(true);
             if (!autoFitBoard(false)) {
-                preview.setImageBitmap(screenshot);
-                output.setText("尚未确认截图中的棋盘。可换一张稳定截图，或展开手动棋盘校准。");
+                output.setText("尚未确认截图中的棋盘。可换一张稳定截图，或展开手动棋盘校准，框出整个棋盘。");
             }
             if (tellUser) toast("截图已载入，可采样或点击棋子试读");
         } catch (Exception e) {
@@ -261,6 +292,8 @@ public final class Match3ToolsActivity extends UiActivity {
 
     private void loadCalibration() {
         var prefs = GameProfile.settings(this);
+        BoardGeometry manual = Match3Calibration.manual(prefs);
+        if (manual != null) { applyGeometryFields(manual); return; }
         rowsSpin.setSelection(intToIndex(prefs.getInt("match3_rows", 8), 6, 9));
         colsSpin.setSelection(intToIndex(prefs.getInt("match3_cols", 8), 6, 9));
         leftIn.setText(String.valueOf(prefs.getInt("match3_l", 4)));
@@ -270,69 +303,116 @@ public final class Match3ToolsActivity extends UiActivity {
     }
 
     private boolean saveCalibration() {
-        int rows = 6 + rowsSpin.getSelectedItemPosition();
-        int cols = 6 + colsSpin.getSelectedItemPosition();
-        int l = parseInt(leftIn, 4), t = parseInt(topIn, 18);
-        int r = parseInt(rightIn, 96), b = parseInt(bottomIn, 82);
-        /* 写入侧同用一把闸门（BUGFIX_PLAN 修复三）：只堵实时服务的使用侧，
-         * 设置页照样还能把坏值塞回 SharedPreferences。 */
-        int[] cell = new int[2];
-        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
-        int width = screenshot == null ? dm.widthPixels : screenshot.getWidth();
-        int height = screenshot == null ? dm.heightPixels : screenshot.getHeight();
-        if (!Match3Sampler.plausibleCalibration(width, height,
-                l, t, r, b, rows, cols, cell)) {
-            toast("标定区域太小：单格只有 " + cell[0] + "x" + cell[1] + " 像素，"
-                    + "至少需要 " + Match3Sampler.minPlausibleCell(width)
-                    + " 像素。请把整个棋盘框进来（画面 " + width
-                    + "x" + height + "）。");
-            return false;
-        }
-        GameProfile.settings(this).edit()
-                .putInt("match3_rows", rows)
-                .putInt("match3_cols", cols)
-                .putInt("match3_l", l)
-                .putInt("match3_t", t)
-                .putInt("match3_r", r)
-                .putInt("match3_b", b)
-                /* 标记「玩家亲手标定过」：实时服务在自动检测失败时只信这份标定，
-                 * 没有此标志一律 ABSTAIN 播报，绝不拿默认 8×8 硬读（防满屏河马式乱播） */
-                .putBoolean("match3_calibrated", true)
-                .apply();
+        BoardGeometry geometry = checkedScreenshotGeometry();
+        if (geometry == null) return false;
+        Match3Calibration.saveManual(GameProfile.settings(this), geometry);
+        drawPreview();
+        calibrationStatus.setText("校准已保存。实时识别会先自动定位，仅在需要时核验此范围；下次棋盘变化仍会重新确认。");
+        toast("校准已保存");
         return true;
+    }
+
+    private void resetCalibration() {
+        Match3Calibration.clear(GameProfile.settings(this));
+        preview.cancelSelection(); regionPick = false; regionFirst = null;
+        selectBoard.setText("框选棋盘范围"); screenshotGeometry = null;
+        loadCalibration(); preview.setGeometry(null);
+        if (screenshot != null) autoFitBoard(false);
+        calibrationStatus.setText("已清除保存的校准，恢复自动定位。当前截图可继续试读。");
+        toast("已恢复自动定位");
+    }
+
+    private void beginBoardSelection() {
+        if (screenshot == null) { toast("先选择一张游戏截图"); return; }
+        if (preview.isSelecting()) {
+            preview.cancelSelection(); selectBoard.setText("框选棋盘范围");
+            calibrationStatus.setText("框选已取消，保存的校准未改变。"); return;
+        }
+        regionPick = false; regionFirst = null;
+        preview.beginSelection(); selectBoard.setText("取消棋盘框选"); hideKeyboard();
+        calibrationStatus.setText("在下方截图中拖出整个棋盘，或依次点两个对角；然后确认行列与网格，再保存。");
+        preview.post(() -> preview.requestRectangleOnScreen(new android.graphics.Rect(0, 0,
+                preview.getWidth(), Math.min(preview.getHeight(), UiKit.dp(this, 320))), false));
+        preview.announceForAccessibility(calibrationStatus.getText());
+    }
+
+    private boolean acceptBoardSelection(int left, int top, int right, int bottom) {
+        BoardGeometry geometry;
+        try { geometry = new BoardGeometry(screenshot.getWidth(), screenshot.getHeight(), left, top, right, bottom,
+                6 + rowsSpin.getSelectedItemPosition(), 6 + colsSpin.getSelectedItemPosition()); }
+        catch (IllegalArgumentException invalid) { toast("范围无效，请重新框出整个棋盘"); return false; }
+        if (!Match3Calibration.plausible(geometry)) { toast("范围太小，请框出整个棋盘后再试"); return false; }
+        applyGeometryFields(geometry); screenshotGeometry = geometry; drawPreview();
+        selectBoard.setText("框选棋盘范围");
+        calibrationStatus.setText("范围已框选，尚未保存。请确认行列数和绿色网格对齐，再点击「确认网格并保存校准」。");
+        output.setText(calibrationStatus.getText());
+        preview.announceForAccessibility(calibrationStatus.getText());
+        return true;
+    }
+
+    private void applyGeometryFields(BoardGeometry geometry) {
+        boolean wasUpdating = updatingCalibrationFields; updatingCalibrationFields = true;
+        int[] pct = geometry.percentages();
+        rowsSpin.setSelection(geometry.rows - 6); colsSpin.setSelection(geometry.cols - 6);
+        leftIn.setText(String.valueOf(pct[0])); topIn.setText(String.valueOf(pct[1]));
+        rightIn.setText(String.valueOf(pct[2])); bottomIn.setText(String.valueOf(pct[3]));
+        updatingCalibrationFields = wasUpdating;
+    }
+
+    private void watchCalibrationFields() {
+        android.text.TextWatcher watcher = new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { calibrationFieldsChanged(); }
+            @Override public void afterTextChanged(android.text.Editable s) { }
+        };
+        for (EditText input : new EditText[]{leftIn, topIn, rightIn, bottomIn}) input.addTextChangedListener(watcher);
+        android.widget.AdapterView.OnItemSelectedListener listener = new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) {
+                if (!updatingCalibrationFields && screenshot != null && screenshotGeometry != null) {
+                    if (screenshotGeometry != null && screenshotGeometry.rows == 6 + rowsSpin.getSelectedItemPosition()
+                            && screenshotGeometry.cols == 6 + colsSpin.getSelectedItemPosition()) return;
+                    calibrationFieldsChanged();
+                }
+            }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
+        };
+        rowsSpin.setOnItemSelectedListener(listener); colsSpin.setOnItemSelectedListener(listener);
+    }
+
+    private void calibrationFieldsChanged() {
+        if (updatingCalibrationFields || screenshot == null) return;
+        drawPreview();
+        calibrationStatus.setText("当前截图的范围尚未保存。确认网格后再保存，实时设置才会改变。");
+    }
+
+    private BoardGeometry checkedScreenshotGeometry() {
+        if (screenshot == null) { toast("先选择一张游戏截图"); return null; }
+        if (preview.isSelecting()) { toast("先完成棋盘框选，或取消框选后再操作"); return null; }
+        if (screenshotGeometry == null) { toast("先框选整个棋盘或调整校准，确认绿色网格后再操作"); return null; }
+        try {
+            BoardGeometry geometry = screenshotGeometry();
+            if (Match3Calibration.plausible(geometry)) return geometry;
+            toast("范围太小，请框出整个棋盘并确认行列数");
+        } catch (IllegalArgumentException invalid) { toast("请填写 0 到 100 的整数百分比，并保证左上角在右下角之前"); }
+        return null;
     }
 
     private static int intToIndex(int value, int min, int max) {
         return Math.max(0, Math.min(max - min, value - min));
     }
 
-    private static int parseInt(EditText input, int fallback) {
+    private static int parsePercent(EditText input) {
         try {
-            return Math.max(0, Math.min(100, Integer.parseInt(input.getText().toString().trim())));
-        } catch (Exception e) {
-            return fallback;
-        }
+            int value = Integer.parseInt(input.getText().toString().trim());
+            if (value < 0 || value > 100) throw new IllegalArgumentException("Invalid percentage");
+            return value;
+        } catch (NumberFormatException invalid) { throw new IllegalArgumentException("Invalid percentage", invalid); }
     }
 
     private void drawPreview() {
         if (screenshot == null) return;
-        BoardGeometry geometry;
-        try { geometry = screenshotGeometry(); }
-        catch (IllegalArgumentException invalid) { return; }
-        Bitmap marked = screenshot.copy(Bitmap.Config.ARGB_8888, true);
-        Canvas canvas = new Canvas(marked);
-        Paint paint = new Paint();
-        paint.setColor(Color.rgb(0, 200, 120));
-        paint.setStrokeWidth(Math.max(2, marked.getWidth() / 300));
-        for (int i = 0; i <= geometry.cols; i++) {
-            float x = geometry.cellLeft(i);
-            canvas.drawLine(x, geometry.top, x, geometry.bottom, paint);
-        }
-        for (int i = 0; i <= geometry.rows; i++) {
-            float y = geometry.cellTop(i);
-            canvas.drawLine(geometry.left, y, geometry.right, y, paint);
-        }
-        preview.setImageBitmap(marked);
+        try { preview.setGeometry(screenshotGeometry()); }
+        catch (IllegalArgumentException invalid) { preview.setGeometry(null); }
     }
 
     /* ---------- 截图式识别 ---------- */
@@ -342,7 +422,7 @@ public final class Match3ToolsActivity extends UiActivity {
             toast("先选择一张游戏截图");
             return;
         }
-        if (!saveCalibration()) return;
+        if (checkedScreenshotGeometry() == null) return;
         drawPreview();
         char[][] board; List<String> scan; Match3Position position; Match3Goals goals;
         try (Match3Sampler sampler = sampler()) {
@@ -390,9 +470,17 @@ public final class Match3ToolsActivity extends UiActivity {
 
     private BoardGeometry screenshotGeometry() {
         int rows = 6 + rowsSpin.getSelectedItemPosition(), cols = 6 + colsSpin.getSelectedItemPosition();
-        int[] pct = {parseInt(leftIn, 4), parseInt(topIn, 18), parseInt(rightIn, 96), parseInt(bottomIn, 82)};
-        if (screenshotGeometry != null && screenshotGeometry.rows == rows && screenshotGeometry.cols == cols
-                && java.util.Arrays.equals(pct, screenshotGeometry.percentages())) return screenshotGeometry;
+        int[] pct = {parsePercent(leftIn), parsePercent(topIn), parsePercent(rightIn), parsePercent(bottomIn)};
+        if (screenshotGeometry != null) {
+            int[] previous = screenshotGeometry.percentages();
+            // Editing one edge or the grid count must not round the other selected pixel edges.
+            screenshotGeometry = new BoardGeometry(screenshot.getWidth(), screenshot.getHeight(),
+                    pct[0] == previous[0] ? screenshotGeometry.left : screenshot.getWidth() * pct[0] / 100,
+                    pct[1] == previous[1] ? screenshotGeometry.top : screenshot.getHeight() * pct[1] / 100,
+                    pct[2] == previous[2] ? screenshotGeometry.right : screenshot.getWidth() * pct[2] / 100,
+                    pct[3] == previous[3] ? screenshotGeometry.bottom : screenshot.getHeight() * pct[3] / 100, rows, cols);
+            return screenshotGeometry;
+        }
         screenshotGeometry = BoardGeometry.fromPercent(screenshot.getWidth(), screenshot.getHeight(), rows, cols, pct);
         return screenshotGeometry;
     }
@@ -411,7 +499,7 @@ public final class Match3ToolsActivity extends UiActivity {
             toast("先选或填棋子名称");
             return;
         }
-        if (!saveCalibration()) return;
+        if (checkedScreenshotGeometry() == null) return;
         int row = markRowSpin.getSelectedItemPosition();
         int col = markColSpin.getSelectedItemPosition();
         BoardGeometry geometry = screenshotGeometry();
@@ -447,7 +535,7 @@ public final class Match3ToolsActivity extends UiActivity {
         if (imm != null && focus != null) imm.hideSoftInputFromWindow(focus.getWindowToken(), 0);
     }
 
-    /** 自动适配：对当前截图检测深色棋盘格包围盒，写回标定（实时识别启动时也会自动做一次）。 */
+    /** Automatic screenshot positioning updates a draft; only the explicit save button persists it. */
     private boolean autoFitBoard(boolean readStatus) {
         if (screenshot == null) {
             toast("先选择一张游戏截图");
@@ -458,16 +546,12 @@ public final class Match3ToolsActivity extends UiActivity {
             toast("棋盘位置或格数还没确认，请换一张稳定的截图或重新校准");
             return false;
         }
-        int[] box = geometry.percentages();
-        rowsSpin.setSelection(geometry.rows - 6);
-        colsSpin.setSelection(geometry.cols - 6);
-        leftIn.setText(String.valueOf(box[0]));
-        topIn.setText(String.valueOf(box[1]));
-        rightIn.setText(String.valueOf(box[2]));
-        bottomIn.setText(String.valueOf(box[3]));
-        if (!saveCalibration()) return false;
+        preview.cancelSelection(); selectBoard.setText("框选棋盘范围");
+        regionPick = false; regionFirst = null;
+        applyGeometryFields(geometry);
         screenshotGeometry = geometry;
         drawPreview();
+        calibrationStatus.setText("当前截图已自动定位，尚未保存。可直接试读；只有确认保存才会用于实时识别。");
         String result = "截图已自动定位为 " + geometry.rows + " 行 " + geometry.cols + " 列。可采样验证或点击棋子试读。";
         if (readStatus) announce(result);
         output.setText(result);
@@ -544,7 +628,7 @@ public final class Match3ToolsActivity extends UiActivity {
 
     /** 预览点击：普通模式报单格；框选模式两次点击定区域后播报内容摘要。 */
     private void handlePreviewTap(int px, int py) {
-        if (!saveCalibration()) return;
+        if (checkedScreenshotGeometry() == null) return;
         BoardGeometry geometry = screenshotGeometry();
         int[] cell = geometry.cellAt(px, py);
         int rows = geometry.rows, cols = geometry.cols;
@@ -799,6 +883,7 @@ public final class Match3ToolsActivity extends UiActivity {
         handler.removeCallbacksAndMessages(null);
         if (dispatcher != null) dispatcher.close();
         if (player != null) player.close();
+        preview.setImageDrawable(null);
         if (screenshot != null && !screenshot.isRecycled()) screenshot.recycle();
         screenshot = null;
     }
@@ -838,9 +923,34 @@ public final class Match3ToolsActivity extends UiActivity {
 
     @Override protected void onSaveInstanceState(Bundle state) {
         if (screenshotUri != null) state.putString("screenshot_uri", screenshotUri.toString());
+        if (screenshot != null && screenshotGeometry != null) try {
+            BoardGeometry g = screenshotGeometry();
+            state.putIntArray("screenshot_geometry", new int[]{g.frameWidth, g.frameHeight, g.left, g.top, g.right, g.bottom, g.rows, g.cols});
+        } catch (IllegalArgumentException ignored) { }
         for (LinearLayout section : optionalSections) state.putBoolean(section.getTag().toString(),
                 section.findViewWithTag("ui_details_body").getVisibility() == View.VISIBLE);
         super.onSaveInstanceState(state);
+    }
+
+    @Override protected void onPostResume() {
+        updatingCalibrationFields = true;
+        super.onPostResume();
+        updatingCalibrationFields = false;
+        if (restoredGeometry != null && screenshot != null) {
+            BoardGeometry candidate = restoredGeometry.scaledTo(screenshot.getWidth(), screenshot.getHeight());
+            if (candidate != null && candidate.rows == 6 + rowsSpin.getSelectedItemPosition()
+                    && candidate.cols == 6 + colsSpin.getSelectedItemPosition()) {
+                int[] pct;
+                try { pct = new int[]{parsePercent(leftIn), parsePercent(topIn), parsePercent(rightIn), parsePercent(bottomIn)}; }
+                catch (IllegalArgumentException invalid) { pct = null; }
+                if (java.util.Arrays.equals(candidate.percentages(), pct)) {
+                    screenshotGeometry = candidate;
+                    calibrationStatus.setText("当前截图的网格已恢复。可继续试读；调整后需确认保存，实时设置才会改变。");
+                }
+            }
+            restoredGeometry = null;
+        }
+        if (screenshot != null && screenshotGeometry != null) drawPreview();
     }
 
     private LinearLayout foldedCard(LinearLayout page, String title) {

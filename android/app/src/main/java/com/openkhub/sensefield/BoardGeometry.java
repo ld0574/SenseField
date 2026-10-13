@@ -53,6 +53,17 @@ final class BoardGeometry {
                         <= Math.max(frameWidth, frameHeight);
     }
 
+    BoardGeometry scaledTo(int width, int height) {
+        if (!mapsToDisplay(width, height)) return null;
+        return new BoardGeometry(width, height, scale(left, width, frameWidth),
+                scale(top, height, frameHeight), scale(right, width, frameWidth),
+                scale(bottom, height, frameHeight), rows, cols);
+    }
+
+    private static int scale(int coordinate, int target, int source) {
+        return (int) (((long) coordinate * target + source / 2) / source);
+    }
+
     @Override public String toString() {
         return rows + "x" + cols + " bounds=" + left + "," + top + "," + right + "," + bottom
                 + " frame=" + frameWidth + "x" + frameHeight;

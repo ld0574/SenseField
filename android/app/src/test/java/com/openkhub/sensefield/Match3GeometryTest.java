@@ -58,6 +58,25 @@ public final class Match3GeometryTest {
         assertSame(eight, gate.accept(eight));
         gate.reset(); assertNull(gate.accept(eight));
     }
+    @Test public void savedPixelEdgesScaleWithoutWholePercentRoundingOrAspectStretch() {
+        BoardGeometry source = new BoardGeometry(432, 960, 25, 281, 385, 641, 9, 9);
+        BoardGeometry scaled = source.scaledTo(1296, 2880);
+        assertNotNull(scaled);
+        assertEquals(75, scaled.left); assertEquals(843, scaled.top);
+        assertEquals(1155, scaled.right); assertEquals(1923, scaled.bottom);
+        assertEquals(9, scaled.rows); assertEquals(9, scaled.cols);
+        assertArrayEquals(new int[]{8, 8}, scaled.cellAt(scaled.centerX(8), scaled.centerY(8)));
+        assertNull(source.scaledTo(960, 432));
+        assertNull(source.scaledTo(432, 850));
+    }
+    @Test public void proportionalScalingRoundsEdgesWithinOnePixel() {
+        BoardGeometry source = new BoardGeometry(432, 960, 25, 281, 385, 641, 9, 9);
+        BoardGeometry smaller = source.scaledTo(216, 480);
+        assertNotNull(smaller);
+        assertEquals(13, smaller.left); assertEquals(141, smaller.top);
+        assertEquals(193, smaller.right); assertEquals(321, smaller.bottom);
+        assertNull(source.scaledTo(0, 480));
+    }
     @Test public void horizontalAndVerticalSpeechNameBothAxesWithoutRenumberingRegions() {
         assertEquals("第 5 行，第 4 列和第 5 列交换",
                 Match3Board.swapSpeech(new Match3Board.Swap(4, 3, 4, 4, 1)));
