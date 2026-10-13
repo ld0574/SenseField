@@ -19,7 +19,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-22C55E.svg" alt="Apache-2.0 License"></a>
   <img src="https://img.shields.io/badge/platform-Android%2010%2B-3DDC84.svg" alt="Android 10及以上，arm64">
-  <img src="https://img.shields.io/badge/%E7%8A%B6%E6%80%81-%E6%8C%81%E7%BB%AD%E5%BC%80%E5%8F%91-236874.svg?labelColor=193139" alt="状态：持续开发">
+  <img src="https://img.shields.io/badge/status-active-22C55E.svg" alt="Active development">
 </p>
 
 <p align="center">
