@@ -9,7 +9,7 @@
 | 需要做什么 | 从这里开始 |
 | --- | --- |
 | 了解玩家问题与产品边界 | [赛题背景](design/赛题背景.md) |
-| 安装已公开版本 | [0.4.5 安装与使用说明](releases/0.4.5/RELEASE_NOTES.md) · [发布索引](releases/README.md) |
+| 安装已公开版本 | [GitHub 0.4.5](https://github.com/ld0574/SenseField/releases/tag/v0.4.5) · [安装与使用说明](releases/0.4.5/RELEASE_NOTES.md) |
 | 查看最新版本变化 | [版本与交付索引](releases/README.md) |
 | 查看当前源码候选 | [0.4.6 候选说明](releases/0.4.6/RELEASE_NOTES.md) · [当前验证状态](../validation/STATUS.md) |
 | 查找测试与排查记录 | [按主题查找验证记录](../validation/README.md) |

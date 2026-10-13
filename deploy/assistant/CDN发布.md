@@ -1,6 +1,18 @@
 # 听野 Gitee 下载分发与后续发布
 
-更新日期：2026-10-12。面向负责打包、上传和发包的队友。已发布版本为 `0.4.5 / versionCode 22`，本次本地候选改用 `0.4.6 / versionCode 23`，由负责人另行发布后生效；助手服务部署另见 [README](README.md)。
+更新日期：2026-10-13。面向负责打包、上传和发包的队友。已记录的公开版本为 `0.4.5 / versionCode 22`；最新本地队友测试修订为 `0.4.6 / versionCode 23`，由用户上传后生效。助手服务部署另见 [README](README.md)。
+
+## 0.4.5 公开发布记录（历史）
+
+0.4.5 消消乐代码已在当时合入 GitHub `main`；GitHub 普通 Release、Latest 及 Gitee 的发布核对见[公开发布记录](../../validation/releases/GITHUB_RELEASE_0_4_5_2026-10-10.md)。该版本交付保留在：
+
+```text
+output/releases/0.4.5/
+├── gitee-upload/sensefieldv0.4.5.apk
+└── cdn-upload/latest.json
+```
+
+历史 APK 为 24,364,276 bytes，SHA-256 `00c3b31434d26d105eb0b96f6cad30506756f3d7d550fa752074a5ac2e86c4e4`，永久地址为 [sensefieldv0.4.5.apk](https://gitee.com/leda/SenseField/releases/download/0.4.5/sensefieldv0.4.5.apk)。当时的实际试用问题及验收范围见[合并反馈记录](../../validation/match3/MATCH3_TASK_FEEDBACK_0_4_5_2026-10-10.md)，不改绑为最新 0.4.6 的证据。
 
 ## 下载地址怎么分工
 
@@ -17,17 +29,17 @@
 
 清单和模型配置只填写上述永久 Release 链接。浏览器下载时可能跳转到 `foruda.gitee.com` 临时签名地址，APP 已适配本项目的跳转；不要把临时地址复制进配置或清单。不要把清单移到固定的 0.4.1 Release，否则旧 APP 无法通过固定入口发现后续版本。
 
-## 当前0.4.6同版本修订交付
+## 当前 0.4.6 同版本修订交付
 
-用户明确选择继续0.4.6／code23并更新Gitee已有附件。魔力鸟／饼干识别与排序修复保持，原0.4.6包和撤回的0.4.7开发候选已归档；当前交付目录仍为 `output/releases/0.4.6/`。主APK 24,544,063 bytes，SHA-256 `120c3ec9ab7b89f6d4662e6cfb4d5f609f20ac87ef3f1a15ee6dd99a12fe631f`，沿用原证书的混淆非debuggable Release，未安装实体手机。
+用户明确选择继续 0.4.6／code23 并更新 Gitee 已有附件。最新三局修订在 `output/releases/0.4.6/three-game-fix-20261013/`；主 APK 为 24,586,457 bytes，SHA-256 `ead5e38a0fe2211c40888cd7f8f863e253ecd160040f09b2f9172afe123408a8`。沿用原证书的混淆非 debuggable Release，手机已覆盖安装并回读相同 SHA，609 项 JVM、8 项模拟器 Release、7 项同包手机回放及原软件成本门限通过。
 
-更新已有Gitee **0.4.6** Release正文和同名附件，正文取本地 `GITEE_RELEASE.md`，上传新 `gitee-upload/sensefieldv0.4.6.apk` 与 `SHA256SUMS.txt`，避免保留多个同名APK。重新下载永久地址 `https://gitee.com/leda/SenseField/releases/download/0.4.6/sensefieldv0.4.6.apk` 并核对实际大小和SHA，文件名／版本相同不能证明字节已更新；如仍返回旧SHA，先处理旧附件与下载缓存。
+更新已有 Gitee **0.4.6** Release 的同名 APK 附件和校验单。发布正文使用 `docs/releases/0.4.6/UPDATE_SUMMARY.txt` 的三行玩家摘要，完整使用及验证范围见[版本说明](../../docs/releases/0.4.6/RELEASE_NOTES.md)和[复测说明](../../docs/releases/0.4.6/复测说明.md)。实际上传 APK 使用 `three-game-fix-20261013/sensefieldv0.4.6.apk`；原 `gitee-upload/` 的 APK 与校验单仍对应此前修订。
 
-`cdn-upload/latest.json`由这份新APK生成。本轮供用户手动更新队友体验附件，先不改公网清单；需要应用内更新时，须先确认公开APK匹配，再更新固定 `/apk/latest.json`，不能沿用旧包哈希的清单。语音模型继续复用0.4.1，旧公开附件保留。详见[版本说明](../../docs/releases/0.4.6/RELEASE_NOTES.md)与[复测说明](../../docs/releases/0.4.6/复测说明.md)。
+配套清单已由最终 APK 生成，位于 `output/releases/0.4.6/cdn-upload/latest.json`，也随修复包保留同一字节。先下载核对 Gitee APK 与本地大小和 SHA 一致，再更新固定 `/apk/latest.json`。客户端按 SHA 识别同版本修订；模型分片继续复用 0.4.1。助手只准备本地材料，上传由用户执行；独立准确率、最终包实声和受控温升继续待验收。
 
-## 0.4.6历史候选交付
+## 0.4.6 历史候选交付
 
-唯一交付位置相对于仓库根目录：
+此前候选的交付位置相对于仓库根目录（最新三局修订使用上节目录）：
 
 ```text
 output/releases/0.4.6/
@@ -77,7 +89,7 @@ output/releases/0.4.6/
 
 ```sh
 python3 scripts/build_app_update_manifest.py \
-  --apk output/releases/0.4.6/gitee-upload/sensefieldv0.4.6.apk \
+  --apk output/releases/0.4.6/three-game-fix-20261013/sensefieldv0.4.6.apk \
   --apk-url https://gitee.com/leda/SenseField/releases/download/0.4.6/sensefieldv0.4.6.apk \
   --output output/releases/0.4.6/cdn-upload/latest.json
 ```
@@ -89,9 +101,9 @@ python3 scripts/build_app_update_manifest.py \
 0.4.6 使用以下摘要，源文件为 `docs/releases/0.4.6/UPDATE_SUMMARY.txt`：
 
 ```text
-补充魔力鸟和饼干托盘识别，按剩余任务选择交换颜色。
-优先清理饼干周边，保留未知机制弃权。
-改善分离棋盘、语音恢复和加载结算性能。
+已在前100关中的典型关卡完成真机实测。
+修复毛球密集无提示、末块雪块漏识及魔力鸟与直线特效组合漏选。
+保留饼干、发光青蛙和交换语音修复，优化识别开销。
 ```
 
 只调整摘要时，从同一份最终 APK 重新生成 `latest.json` 并覆盖网站清单即可，无需重新构建 APK；核对版本、下载地址、大小和 SHA-256 均未改变。

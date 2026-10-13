@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://ld0574.github.io/SenseField/sitemap.xml

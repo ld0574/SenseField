@@ -61,7 +61,7 @@ public final class Match3AssistActivity extends UiActivity {
         UiKit.add(page, UiKit.pageTitle(this, "开心消消乐辅助"), 8);
         UiKit.add(page, UiKit.body(this, "识别棋盘，用语音和高亮提示交换。"), 24);
         LinearLayout stateCard = UiKit.accentCard(this);
-        UiKit.addSignatureLabel(stateCard, "运行状态 · 体验版");
+        UiKit.addSignatureLabel(stateCard, "运行状态");
         status = UiKit.text(this, "尚未开始", 24, UiKit.INK, true);
         status.setTag("match3_run_status");
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);

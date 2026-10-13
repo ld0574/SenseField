@@ -115,3 +115,11 @@ The source headers additionally refer to the WebRTC patent grant in its
 `PATENTS` file; see the upstream [WebRTC PATENTS file](https://webrtc.googlesource.com/src/+/refs/heads/main/PATENTS).
 The complete WebRTC notice is also bundled in the APK at
 [`android/app/src/main/assets/THIRD_PARTY_NOTICES.txt`](android/app/src/main/assets/THIRD_PARTY_NOTICES.txt).
+
+## Website
+
+The static website uses Three.js (MIT), Lucide (ISC), GSAP (standard no-charge
+license), and the Manrope and Instrument Serif fonts (SIL Open Font License
+1.1). Its editorial photograph is used under the Unsplash License. Website
+asset provenance and upstream license links are listed in
+[website/ASSETS.md](website/ASSETS.md).
