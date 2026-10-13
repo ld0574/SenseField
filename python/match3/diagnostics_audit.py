@@ -14,12 +14,14 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[2]
 KINDS = frozenset("RED BEAR CHICK FROG HIPPO CAT COIN SNOW ICE ICEFLOWER HONEY EGG COOKIE UNKNOWN POISON PENGUIN SNOW_BEAR GOLD_POD KEY FURBALL CAGE STAR_BOTTLE DYE_BABY CANNON MAGIC_STONE DOLPHIN SPRITE GEM STAR HONEY_COVER LOCK FLOWER GRAY_FURBALL".split())
 MODES = frozenset("CLEAR HATCH RESCUE DELIVER CHARGE TRIGGER UNKNOWN UNLOCK".split())
-ACTIONS = frozenset("SWAP ACTIVATE LINE_SWAP BIRD_COLOR BIRD_PAIR CHARGED_PAIR".split())
+ACTIONS = frozenset("SWAP ACTIVATE LINE_SWAP BIRD_COLOR BIRD_PAIR BIRD_LINE CHARGED_PAIR".split())
 SPECIAL = ACTIONS - {"SWAP"}
 GATES = frozenset("starting frame_error popup popup_closed geometry_unavailable geometry_confirming touch_read cascade visual_motion board_changing goal_confirming goals_complete no_swap ready".split())
 CLEAR_REASONS = frozenset("GOAL_CHANGED GOAL_STALE CASCADE VISUAL_MOTION OBSERVATION_INVALID BOARD_MOTION HINT_EVIDENCE_CHANGED POINT_READ_MODE PROJECTION_STOPPED FRAME_ERROR POPUP POPUP_CLOSED CAPTURE_SIZE GEOMETRY_UNVERIFIED GEOMETRY_CHANGED FRAME_STALE SERVICE_STOPPED DISPLAY_CHANGED".split())
 OUTCOMES = frozenset("replaced_without_attributable_outcome outcome_timeout geometry_changed mission_changed counter_reset_or_added_steps counter_coverage_incomplete multiple_actions_unattributed progress_unattributed below_lower_bound_rule_abstained visual_exchange_progress_observed visual_exchange_no_target_gain".split()) | CLEAR_REASONS
-PLAYBACK = frozenset("STARTED COMPLETED FAILED CANCELLED".split()) | {"CANCELLED_" + r for r in CLEAR_REASONS}
+LIFECYCLE_CLEARS = frozenset("CLEAR_CATEGORY CLEAR_ALL PAUSED CLOSED REPLACED".split())
+PLAYBACK = frozenset("STARTED COMPLETED FAILED CANCELLED EXPIRED SETTINGS_DISABLED COOLDOWN UNAVAILABLE QUEUE_REPLACED QUEUE_EVICTED PREEMPTED".split()) | {"CANCELLED_" + r for r in CLEAR_REASONS | LIFECYCLE_CLEARS}
+DISPATCH_REASONS = frozenset("closed paused expired category_disabled channels_disabled deduplicated tone_unavailable haptic_cooldown speech_cooldown speech_unavailable_or_queue_full renderer_unavailable none".split())
 CRITICAL = frozenset("Match3Ranking Match3GoalOutcome CueDispatch CuePlayback checkpoint Match3HintImageContext".split())
 # Recorder writers include asynchronous TTS/context callbacks. Validate the
 # engine lifecycle in file order; callbacks use their exact cue IDs and clocks.
@@ -253,7 +255,8 @@ def audit_source(source: Source, alias: str, tokens: set[str], rules: set[str]) 
     last_rank = None
     geometry_epoch = 0
     cue_hints = {}
-    cue_dispatch_at = {}
+    cue_attempts = {}
+    playback_rows = []
     hint_actions, hint_goals = {}, {}
     unlinked = Counter()
     frame_times = []
@@ -345,18 +348,30 @@ def audit_source(source: Source, alias: str, tokens: set[str], rules: set[str]) 
             hint = hints.get(revision)
             cue_id = data.get("cue_id")
             cue_matches = isinstance(cue_id, str) and re.fullmatch(re.escape(source.session_id) + f":hint:{revision}:" + r"\d+", cue_id)
-            if hint and cue_matches and cue_id not in cue_hints and (hint["cleared"] is None or ref(row)["elapsed_ms"] <= hint["cleared"]["elapsed_ms"]):
+            created, expires = integer(data.get("created_at_ms")), integer(data.get("expires_at_ms"))
+            valid_clock = (created is not None and expires is not None
+                           and source.origin + (hint["elapsed_ms"] if hint else 0) <= created <= row["at_ms"]
+                           and created <= expires)
+            start = created - source.origin if valid_clock else ref(row)["elapsed_ms"]
+            if hint and cue_matches and cue_id not in cue_hints and hint["elapsed_ms"] <= start and (hint["cleared"] is None or start <= hint["cleared"]["elapsed_ms"]):
                 cue_hints[cue_id] = revision
-                cue_dispatch_at[cue_id] = ref(row)["elapsed_ms"]
-                hint["dispatches"].append({**ref(row), "outcome": label(data.get("outcome"), {"ACCEPTED", "DROPPED", "REJECTED"}), "accepted_channels": integer(data.get("accepted_channels"), 0, 7)})
+                attempt = {**ref(row), "attempt": len(hint["dispatches"]) + 1,
+                           "outcome": label(data.get("outcome"), {"ACCEPTED", "DROPPED", "REJECTED"}),
+                           "accepted_channels": integer(data.get("accepted_channels"), 0, 15),
+                           "reason": label(data.get("reason"), DISPATCH_REASONS),
+                           "created_elapsed_ms": created - source.origin if valid_clock else None,
+                           "expires_elapsed_ms": expires - source.origin if valid_clock else None,
+                           "clock_evidence": "request" if valid_clock else "invalid_request" if created is not None or expires is not None else "dispatch_only",
+                           "playback": [], "callback_anomalies": []}
+                cue_attempts[cue_id] = (attempt, start)
+                hint["dispatches"].append(attempt)
             else:
                 unlinked["dispatch"] += 1
         elif typ == "CuePlayback":
-            revision = cue_hints.get(data.get("cue_id"))
-            if revision is not None and ref(row)["elapsed_ms"] >= cue_dispatch_at[data["cue_id"]] and data.get("event_key") == f"m3live:hint:{revision}" and data.get("channel") == "SPEECH":
-                hints[revision]["playback"].append({**ref(row), "result": label(data.get("result"), PLAYBACK)})
-            else:
-                unlinked["playback"] += 1
+            # Renderers may synchronously call back before submit() reports its
+            # result. Join by exact cue after collecting dispatches, never by
+            # proximity, and require the actual request clock for early callbacks.
+            playback_rows.append(row)
         elif typ == "Match3GoalOutcome":
             revision = integer(data.get("hint_revision"), 1)
             hint = hints.get(revision)
@@ -383,6 +398,50 @@ def audit_source(source: Source, alias: str, tokens: set[str], rules: set[str]) 
             elif data.get("status") == "ACCEPTED":
                 unlinked["image_window"] += 1
 
+    for row in playback_rows:
+        data = row.get("data", {})
+        cue_id = data.get("cue_id")
+        revision = cue_hints.get(cue_id) if isinstance(cue_id,str) else None
+        observed = integer(data.get("at_ms"))
+        callback_at = row["at_ms"] if observed is None else observed
+        if (revision is not None and ("at_ms" not in data or observed is not None)
+                and source.origin + cue_attempts[cue_id][1] <= callback_at <= row["at_ms"]
+                and data.get("event_key") == f"m3live:hint:{revision}" and data.get("channel") == "SPEECH"):
+            attempt = cue_attempts[cue_id][0]
+            record = {**ref(row), "callback_elapsed_ms": callback_at - source.origin,
+                      "callback_clock_recorded": observed is not None,
+                      "result": label(data.get("result"), PLAYBACK), "attempt": attempt["attempt"]}
+            attempt["playback"].append(record)
+            hints[revision]["playback"].append(record)
+        else:
+            unlinked["playback"] += 1
+    terminal_states = {"COMPLETED": "completed", "FAILED": "failed", "EXPIRED": "expired",
+                       "SETTINGS_DISABLED": "settings_disabled", "COOLDOWN": "cooldown", "UNAVAILABLE": "unavailable",
+                       "QUEUE_REPLACED": "replaced", "QUEUE_EVICTED": "evicted", "PREEMPTED": "preempted"}
+    attempt_states = Counter()
+    for hint in hints.values():
+        for attempt in hint["dispatches"]:
+            terminal, started = None, False
+            for callback in sorted(attempt["playback"], key=lambda p: (p["callback_elapsed_ms"], p["line"])):
+                result = callback["result"]
+                if result == "STARTED":
+                    if terminal: attempt["callback_anomalies"].append("start_after_terminal")
+                    elif started: attempt["callback_anomalies"].append("duplicate_start")
+                    started = True
+                    if (attempt["expires_elapsed_ms"] is not None and callback["callback_elapsed_ms"] > attempt["expires_elapsed_ms"]
+                            or hint["cleared"] is not None and callback["callback_elapsed_ms"] > hint["cleared"]["elapsed_ms"]):
+                        attempt["callback_anomalies"].append("start_after_validity_window")
+                elif result in terminal_states or result.startswith("CANCELLED"):
+                    if terminal: attempt["callback_anomalies"].append("duplicate_terminal")
+                    else: terminal = "cancelled" if result.startswith("CANCELLED") else terminal_states[result]
+            channels = attempt["accepted_channels"]
+            attempt["speech_state"] = terminal or ("started_without_terminal" if started else
+                "unrecognized_callback" if attempt["playback"] else
+                "not_accepted" if attempt["outcome"] in {"DROPPED", "REJECTED"} else
+                "accepted_without_callback" if attempt["outcome"] == "ACCEPTED" and channels is not None and channels & 2 else
+                "speech_not_accepted" if attempt["outcome"] == "ACCEPTED" and channels is not None else "unknown_admission")
+            attempt_states[attempt["speech_state"]] += 1
+
     summary = source.summary
     timed = [r["at_ms"] - source.origin for r in source.events if integer(r.get("at_ms")) is not None]
     duration = integer(summary.get("duration_ms"))
@@ -395,6 +454,9 @@ def audit_source(source: Source, alias: str, tokens: set[str], rules: set[str]) 
                 and ended_at is not None and duration is not None
                 and abs(ended_at - source.origin - duration) <= 1
                 and 0 <= duration - max(timed, default=0) <= 2400)
+    for hint in hints.values():
+        for attempt in hint["dispatches"]:
+            attempt["right_censored"] = not complete and attempt["speech_state"] in {"accepted_without_callback", "started_without_terminal"}
     long_gates = []
     for index, gate in enumerate(gates):
         stop = gates[index + 1]["elapsed_ms"] if index + 1 < len(gates) else end
@@ -437,6 +499,9 @@ def audit_source(source: Source, alias: str, tokens: set[str], rules: set[str]) 
                          "frames": counts["frame"], "image_records": len(source.images), "present_image_members": sum(n.startswith("images/") for n in source.members),
                          "missing_image_records": sum(i["status"] == "missing" for i in source.images)},
             "totals": {"rankings": len(rankings), "hints": len(hints), "goal_outcomes": len(outcomes), "speech_callbacks": dict(sorted(callbacks.items())),
+                       "speech_attempt_states": dict(sorted(attempt_states.items())),
+                       "dispatch_reasons": dict(sorted(Counter(d["reason"] for h in hints.values() for d in h["dispatches"]).items())),
+                       "attempts_missing_request_clock": sum(d["clock_evidence"] != "request" for h in hints.values() for d in h["dispatches"]),
                        "hints_without_dispatch": sum(not h["dispatches"] for h in hints.values()),
                        "hints_with_speech_start": sum(any(p["result"] == "STARTED" for p in h["playback"]) for h in hints.values()),
                        "hints_with_speech_completion": sum(any(p["result"] == "COMPLETED" for p in h["playback"]) for h in hints.values()),
@@ -512,6 +577,8 @@ def markdown(report: dict) -> str:
         lines.append(f"| {r['source']} | {totals['rankings']} | {totals['hints']} | {totals['goal_outcomes']} | {cb.get('STARTED',0)}／{cb.get('COMPLETED',0)} | {len(r['long_non_ready_gates'])} |")
     for r in report["recordings"]:
         lines.extend(["", f"## {r['source']}", "", f"事件 SHA：`{r['events_sha256']}`；正常结束且无已记录丢事件：{r['coverage']['normal_end_and_no_logged_drops']}。"])
+        lines.append("\n逐次语音请求状态：" + "、".join(f"`{state}` {count}" for state, count in r["totals"]["speech_attempt_states"].items()) + "。缺回调表示缺证据，不证明未发声；软件完成回调不证明实际听见。")
+        lines.append(f"\n缺请求时钟的旧分发：{r['totals']['attempts_missing_request_clock']} 次，保留分发时钟口径。")
         for flag, count in r["totals"]["ranking_flags"].items():
             lines.append(f"\n- `{flag}`：{count} 次。")
         for gate in r["long_non_ready_gates"]:

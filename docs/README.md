@@ -50,6 +50,7 @@
 | [团队协作与本地运行](development/团队协作与本地运行.md) | 环境安装、标注、回放、Android 构建与协作约定 |
 | [外部数据引入与预训练](development/外部数据引入与预训练.md) | 来源审计、导入要求与训练顺序 |
 | [消消乐自动回归](development/match3-regression.md) | JVM、原生故障序列、投影、最终 Release 与门禁复现 |
+| [两款游戏提示链路复盘](development/android-cue-diagnostics.md) | 请求／回调关联、设置快照、取消原因与固定输入成本范围 |
 | [消消乐元素证据与扩展](development/match3-element-evidence.md) | 不凭颜色猜规则，按家族补一次证据，诊断图片与缓存的边界 |
 | [消消乐规则引擎](development/match3-rules.md) · [工程验收记录](development/match3-rules-validation.md) | 全量规则覆盖、未知参数、复现命令及工程／实局验收边界 |
 | [消消乐三局反馈修复（2026-10-13）](development/消消乐三局反馈修复_2026-10-13.md) | 密集灰毛球、右侧末块雪块、魔力鸟直线组合及最终包回放与软件成本 |

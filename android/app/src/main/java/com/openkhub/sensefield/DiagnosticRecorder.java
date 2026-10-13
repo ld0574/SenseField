@@ -364,6 +364,8 @@ final class DiagnosticRecorder {
         if (finished || !failure.isEmpty()) return;
         record("CueDispatch", object("cue_id", request.cueId, "event_key", request.eventKey,
                 "category", request.category == null ? "unknown" : request.category.name(),
+                "kind", request.kind, "priority", request.priority, "requested_channels", request.requestedChannels,
+                "created_at_ms", request.createdAtMs, "expires_at_ms", request.expiresAtMs,
                 "outcome", outcome, "reason", reason,
                 "accepted_channels", acceptedChannels));
     }

@@ -59,7 +59,11 @@ public final class Match3IceTaskInstrumentedTest {
                 // The glowing idle outline may abstain; it is not another ice layer.
                 assertTrue("The visible 5x5 ice field must be observed, not treated as a plain board: "+observed,observed>=20);
                 assertEquals(1,p.cell(2,2).iceLayers);assertTrue(p.cell(2,2).swappable);
-                assertFalse("Rainbow special is not an ordinary swap endpoint",p.cell(6,6).swappable);
+                Match3Position.Cell bird=p.cell(6,6);
+                assertEquals(Match3Position.Kind.BIRD,bird.kind);
+                assertEquals("magic_bird",bird.ruleId);
+                assertTrue("An uncovered magic bird is a special exchange endpoint",bird.swappable);
+                assertEquals("A bird cannot join an ordinary three-match",Match3Position.SwapPermission.NO,bird.matchPermission);
                 Match3Goals goals=reader.read(f,geometry(f,false),100);
                 List<Match3MoveValue> moves=Match3MoveRanker.rankedMoves(p,goals);
                 assertFalse(moves.isEmpty());Match3MoveValue best=moves.get(0);

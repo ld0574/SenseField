@@ -74,7 +74,8 @@ public class Match3LiveService extends Service {
     private CuePlayer player;
     private CueDispatcher dispatcher;
 
-    // Every mutable recognition field belongs to one projection; worker-only except exploreMode.
+    // Recognition belongs to one projection. The main thread only publishes
+    // the latest mode-command revision; mode changes still run on the worker.
     private static final class Session {
         final long generation;
         final MediaProjection projection;
@@ -121,6 +122,7 @@ public class Match3LiveService extends Service {
         boolean overlayHintAnnounced, calibrationConflictAnnounced;
         volatile boolean projectionStopped;
         volatile boolean exploreMode;
+        volatile long exploreCommandRevision;
         Session(long generation, MediaProjection projection, ImageReader reader,
                 DiagnosticRecorder diagnostics) {
             this.generation = generation;
@@ -152,7 +154,10 @@ public class Match3LiveService extends Service {
                 stopSelfResult(startId);
                 return START_NOT_STICKY;
             }
-            handler().post(() -> projectionSession.runIfCurrent(s.generation, s.projection, () -> {
+            boolean modeCommand=ACTION_EXPLORE_ON.equals(action) || ACTION_EXPLORE_OFF.equals(action);
+            long modeRevision=modeCommand?++s.exploreCommandRevision:0;
+            Runnable command=() -> projectionSession.runIfCurrent(s.generation, s.projection, () -> {
+                if(modeCommand && s.exploreCommandRevision!=modeRevision)return true;
                 if (ACTION_MARK_ISSUE.equals(action)) s.diagnostics.markIssue();
                 else if (ACTION_REFRESH_VISUAL.equals(action)) {
                     if (!GameProfile.settings(this).getBoolean("match3_hint_highlight_enabled", true)) {
@@ -171,7 +176,12 @@ public class Match3LiveService extends Service {
                     invalidateBoard(s, "POINT_READ_MODE");
                 }
                 return true;
-            }));
+            });
+            // A mode switch invalidates the old hint before queued capture work.
+            // Front-of-queue posts run in reverse order, so only the latest
+            // revision may apply. An in-flight frame remains worker-owned.
+            if(modeCommand)handler().postAtFrontOfQueue(command);
+            else handler().post(command);
             return START_NOT_STICKY;
         }
         if (intent == null || ACTION_STOP.equals(action)) {

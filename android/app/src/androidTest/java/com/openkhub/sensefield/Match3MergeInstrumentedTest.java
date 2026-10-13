@@ -235,13 +235,13 @@ public class Match3MergeInstrumentedTest {
         }
     }
 
-    @Test public void bothGameEntriesResolveAndMatch3RemainsAnExperienceBuild() {
+    @Test public void bothReleasedGameEntriesResolveAndAreAvailable() {
         assertEquals(2, GameCatalog.GAMES.size());
         for (GameCatalog.GameEntry game : GameCatalog.GAMES) {
             assertTrue(game.available);
             assertNotNull(new Intent(context(), game.activityClass).resolveActivity(context().getPackageManager()));
         }
-        assertEquals("体验版", GameCatalog.GAMES.get(1).availability);
+        assertEquals("当前可用", GameCatalog.GAMES.get(1).availability);
     }
 
     private static boolean hasText(View view, String text) {

@@ -67,6 +67,93 @@ def single(root):
     return analyze([root])[0]["recordings"][0]
 
 
+def dispatch(at=50, created=1015, expires=2000, cue=None, **changes):
+    data = {"event_key": "m3live:hint:1", "cue_id": cue or f"{SESSION}:hint:1:1015",
+            "outcome": "ACCEPTED", "accepted_channels": 2, "reason": "none",
+            "created_at_ms": created, "expires_at_ms": expires}
+    data.update(changes)
+    return event("CueDispatch", at, data)
+
+
+def playback(at, result, cue=None, **changes):
+    data = {"event_key": "m3live:hint:1", "cue_id": cue or f"{SESSION}:hint:1:1015",
+            "channel": "SPEECH", "result": result, "at_ms": 1000 + at}
+    data.update(changes)
+    return event("CuePlayback", at, data)
+
+
+def test_synchronous_callbacks_written_before_dispatch_use_request_clock(tmp_path):
+    result = single(export(tmp_path, [ranking(), hint(), playback(20, "STARTED"),
+                                     playback(21, "COMPLETED"), dispatch()]))
+    assert result["totals"]["speech_callbacks"] == {"COMPLETED": 1, "STARTED": 1}
+    assert result["totals"]["speech_attempt_states"] == {"completed": 1}
+    assert result["hints"][0]["dispatches"][0]["created_elapsed_ms"] == 15
+
+
+def test_callbacks_before_request_or_with_other_event_key_remain_unlinked(tmp_path):
+    result = single(export(tmp_path, [ranking(), hint(), dispatch(), playback(12, "STARTED"),
+                                     playback(60, "COMPLETED", event_key="m3live:hint:2")]))
+    assert result["totals"]["unlinked"]["playback"] == 2
+    assert result["totals"]["speech_attempt_states"] == {"accepted_without_callback": 1}
+
+
+@pytest.mark.parametrize("terminal,state", [("EXPIRED", "expired"), ("SETTINGS_DISABLED", "settings_disabled"),
+    ("QUEUE_REPLACED", "replaced"), ("QUEUE_EVICTED", "evicted"), ("PREEMPTED", "preempted"),
+    ("UNAVAILABLE", "unavailable"), ("COOLDOWN", "cooldown"), ("CANCELLED_PAUSED", "cancelled")])
+def test_all_dispatcher_terminals_are_preserved(tmp_path, terminal, state):
+    r = single(export(tmp_path, [ranking(), hint(), dispatch(), playback(60, terminal)]))
+    assert r["totals"]["speech_callbacks"] == {terminal: 1}
+    assert r["totals"]["speech_attempt_states"] == {state: 1}
+
+
+def test_each_attempt_keeps_own_terminal_and_duplicate_or_late_callbacks(tmp_path):
+    second = f"{SESSION}:hint:1:1100"
+    rows = [ranking(), hint(), dispatch(), playback(60, "FAILED"), dispatch(100, 1100, cue=second),
+            playback(110, "STARTED", second), playback(115, "COMPLETED", second),
+            playback(120, "COMPLETED", second), playback(125, "STARTED", second)]
+    r = single(export(tmp_path, rows))
+    assert r["totals"]["speech_attempt_states"] == {"completed": 1, "failed": 1}
+    attempts = r["hints"][0]["dispatches"]
+    assert attempts[1]["callback_anomalies"] == ["duplicate_terminal", "start_after_terminal"]
+    assert r["totals"]["speech_callbacks"]["COMPLETED"] == 2  # raw callbacks remain exact
+
+
+def test_missing_timing_and_unrecognized_reason_do_not_invent_failure(tmp_path):
+    d = dispatch(); d["data"].pop("created_at_ms"); d["data"].pop("expires_at_ms")
+    d["data"]["reason"] = "PRIVATE_DEVICE_SENTINEL"
+    r = single(export(tmp_path, [ranking(), hint(), d, playback(60, "STARTED")]))
+    attempt = r["hints"][0]["dispatches"][0]
+    assert attempt["created_elapsed_ms"] is None and attempt["reason"] == "unrecognized"
+    assert attempt["speech_state"] == "started_without_terminal"
+    assert "PRIVATE_DEVICE_SENTINEL" not in json.dumps(r)
+
+
+def test_invalid_declared_request_clock_cannot_authorize_earlier_callback(tmp_path):
+    r = single(export(tmp_path, [ranking(), hint(), dispatch(created=999), playback(20, "STARTED")]))
+    assert r["totals"]["unlinked"]["playback"] == 1
+
+
+@pytest.mark.parametrize("changes", [{"at_ms": "broken_clock"}, {"cue_id": []}])
+def test_malformed_callback_clock_or_identity_remains_unlinked(tmp_path, changes):
+    r = single(export(tmp_path, [ranking(), hint(), dispatch(), playback(60, "STARTED", **changes)]))
+    assert r["totals"]["unlinked"]["playback"] == 1
+
+
+def test_incomplete_started_attempt_is_right_censored(tmp_path):
+    r = single(export(tmp_path, [ranking(), hint(), dispatch(), playback(60, "STARTED")],
+                      overrides={"end_observed": False}))
+    assert r["hints"][0]["dispatches"][0]["right_censored"] is True
+
+
+def test_disabled_channel_is_choice_and_truncated_callback_is_missing_evidence(tmp_path):
+    r = single(export(tmp_path, [ranking(), hint(), dispatch(outcome="DROPPED", accepted_channels=0,
+                      reason="channels_disabled")], overrides={"end_observed": False}))
+    attempt = r["hints"][0]["dispatches"][0]
+    assert attempt["speech_state"] == "not_accepted"
+    assert attempt["reason"] == "channels_disabled"
+    assert r["coverage"]["normal_end_and_no_logged_drops"] is False
+
+
 def test_last_goal_and_better_logged_special_are_review_findings_not_player_benefit(tmp_path):
     source = export(tmp_path, [ranking(candidates=[candidate(), candidate("BIRD_COLOR", units=1, contacts=1)]), hint()])
     result = single(source)

@@ -24,7 +24,7 @@ public final class Match3BoardFeedbackTest {
         Match3VisualCatalog previous=load(null),candidate=load(asset("match3-board-feedback-v1.json"));
         assertEquals("loaded",candidate.boardFeedbackStatus);assertEquals("loaded",candidate.coverCatalogStatus);
         assertEquals(previous.gallerySha256,candidate.gallerySha256);assertEquals(previous.coverCatalogSha256,candidate.coverCatalogSha256);
-        assertEquals(previous.effectEnvelopes.size()+4,candidate.effectEnvelopes.size());
+        assertEquals(previous.effectEnvelopes.size()+6,candidate.effectEnvelopes.size());
         for(Match3VisualCatalog.Pattern p:candidate.effectEnvelopes) {
             assertEquals(Match3Position.Effect.HORIZONTAL,p.boundState.effect);assertTrue(p.tileEnvelope);
             assertEquals(2,p.positiveWeight);assertNotNull(p.coverEvidence);

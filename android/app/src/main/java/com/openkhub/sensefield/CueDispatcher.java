@@ -68,6 +68,8 @@ final class CueDispatcher implements AutoCloseable {
     private static final class Pending {
         final CueRequest request;
         final long sequence;
+        boolean admitted = true;
+        boolean terminalReported;
         Pending(CueRequest request, long sequence) {
             this.request = request;
             this.sequence = sequence;
@@ -226,13 +228,12 @@ final class CueDispatcher implements AutoCloseable {
                 listener.onPlayback(worst.request, "SPEECH", clock.nowMs(), "QUEUE_EVICTED");
             } else return false;
         }
-        speechQueue.add(new Pending(request, sequence++));
+        Pending submitted = new Pending(request, sequence++);
+        speechQueue.add(submitted);
         drainSpeech();
-        if (speaking == request) return true;
-        for (Pending pending : speechQueue) {
-            if (pending.request == request) return true;
-        }
-        return false;
+        // A renderer may finish synchronously. Queue membership / speaking
+        // no longer describes whether that submission was accepted.
+        return submitted.admitted;
     }
 
     private static boolean preemptsAssistant(CueRequest.Category category) {
@@ -287,17 +288,21 @@ final class CueDispatcher implements AutoCloseable {
     private void drainSpeech() {
         if (closed || paused || speaking != null) return;
         while (!speechQueue.isEmpty()) {
-            CueRequest next = speechQueue.poll().request;
+            Pending pending = speechQueue.poll();
+            CueRequest next = pending.request;
             if (clock.nowMs() > next.expiresAtMs) {
+                pending.admitted = false;
                 listener.onPlayback(next, "SPEECH", clock.nowMs(), "EXPIRED");
                 continue;
             }
             if (!policy.categoryEnabled(next.category) ||
                     (policy.enabledChannels(next.category) & CueRequest.CHANNEL_SPEECH) == 0) {
+                pending.admitted = false;
                 listener.onPlayback(next, "SPEECH", clock.nowMs(), "SETTINGS_DISABLED");
                 continue;
             }
             if (!next.playbackAllowedAt(clock.nowMs())) {
+                pending.admitted = false;
                 listener.onPlayback(next, "SPEECH", clock.nowMs(), "EXPIRED");
                 continue;
             }
@@ -306,46 +311,58 @@ final class CueDispatcher implements AutoCloseable {
                     && next.category != CueRequest.Category.ASSISTANT
                     && lastStarted != null &&
                     clock.nowMs() - lastStarted < policy.dedupeWindowMs(next.category)) {
+                pending.admitted = false;
                 listener.onPlayback(next, "SPEECH", clock.nowMs(), "COOLDOWN");
                 continue;
             }
             cancelledSpeech.remove(next.cueId);
             speaking = next;
-            boolean accepted = renderer.speak(next, next.priority >= 90, speechCallback(next));
+            boolean accepted = renderer.speak(next, next.priority >= 90, speechCallback(next,pending));
+            pending.admitted = accepted;
             if (accepted) return;
-            speaking = null;
-            listener.onPlayback(next, "SPEECH", clock.nowMs(), "UNAVAILABLE");
+            if (speaking == next) speaking = null;
+            if (!pending.terminalReported) listener.onPlayback(next, "SPEECH", clock.nowMs(), "UNAVAILABLE");
+            if (speaking != null) return; // A synchronous callback may have drained another cue.
         }
     }
 
     private PlaybackCallback speechCallback(CueRequest request) {
+        return speechCallback(request,null);
+    }
+    private PlaybackCallback speechCallback(CueRequest request,Pending pending) {
         final long playbackEpoch = speechEpoch;
         final boolean[] started = {false};
+        final boolean[] finished = {false};
         return new PlaybackCallback() {
             @Override public void onStarted(long atMs) {
                 synchronized (CueDispatcher.this) {
-                    if (cancelledSpeech.contains(request.cueId)
-                            || paused || playbackEpoch != speechEpoch) return;
-                    if (!request.playbackAllowedAt(atMs)) {
+                    if (finished[0] || started[0] || speaking != request
+                            || cancelledSpeech.contains(request.cueId)
+                            || closed || paused || playbackEpoch != speechEpoch) return;
+                    boolean disabled = !policy.categoryEnabled(request.category)
+                            || (policy.enabledChannels(request.category) & CueRequest.CHANNEL_SPEECH) == 0;
+                    if (disabled || !request.playbackAllowedAt(atMs)) {
                         // A TTS engine may accept an utterance and
                         // start it only after its short-lived cue
                         // window has expired.  Emit the queued
                         // terminal state the parser expects and
                         // suppress the engine's later onDone.
                         cancelledSpeech.add(request.cueId);
+                        finished[0] = true;
+                        if (pending != null) pending.terminalReported = true;
                         if (speaking == request) speaking = null;
                         if (request.category == CueRequest.Category.ASSISTANT)
                             renderer.cancelAssistantSpeech();
                         else renderer.stopSpeech();
-                        listener.onPlayback(request, "SPEECH", atMs, "EXPIRED");
+                        listener.onPlayback(request, "SPEECH", atMs, disabled ? "SETTINGS_DISABLED" : "EXPIRED");
                         drainSpeech();
                         return;
                     }
                     started[0] = true;
                     lastSpeechStarted.put(request.category, atMs);
                     if (isAlert(request.category)) lastAlertAtMs = atMs;
+                    listener.onPlayback(request, "SPEECH", atMs, "STARTED");
                 }
-                listener.onPlayback(request, "SPEECH", atMs, "STARTED");
             }
             @Override public void onFinished(long atMs, boolean success) {
                 finish(atMs, success, null);
@@ -355,8 +372,11 @@ final class CueDispatcher implements AutoCloseable {
             }
             private void finish(long atMs, boolean success, String reason) {
                 synchronized (CueDispatcher.this) {
-                    if (cancelledSpeech.remove(request.cueId)) return;
-                    if (paused || playbackEpoch != speechEpoch) return;
+                    boolean cancelled = cancelledSpeech.remove(request.cueId);
+                    if (finished[0] || speaking != request || cancelled) return;
+                    if (closed || paused || playbackEpoch != speechEpoch) return;
+                    finished[0] = true;
+                    if (pending != null) pending.terminalReported = true;
                     if (speaking == request) speaking = null;
                     listener.onPlayback(request, "SPEECH", atMs,
                             !started[0] && !request.playbackAllowedAt(atMs) ? "EXPIRED"
@@ -371,14 +391,17 @@ final class CueDispatcher implements AutoCloseable {
     private PlaybackCallback toneCallback(CueRequest request) {
         final long playbackEpoch = toneEpoch;
         final long categoryToneEpoch = toneEpoch(request.category);
+        final java.util.concurrent.atomic.AtomicInteger state = new java.util.concurrent.atomic.AtomicInteger();
         return new PlaybackCallback() {
             @Override public void onStarted(long atMs) {
                 if (!toneCallbackIsCurrent(request.category, playbackEpoch, categoryToneEpoch)) return;
+                if (!state.compareAndSet(0,1)) return;
                 if (isAlert(request.category)) lastAlertAtMs = atMs;
                 listener.onPlayback(request, "TONE", atMs, "STARTED");
             }
             @Override public void onFinished(long atMs, boolean success) {
                 if (!toneCallbackIsCurrent(request.category, playbackEpoch, categoryToneEpoch)) return;
+                if (state.getAndSet(2)==2) return;
                 listener.onPlayback(request, "TONE", atMs, success ? "COMPLETED" : "FAILED");
             }
         };
@@ -460,12 +483,14 @@ final class CueDispatcher implements AutoCloseable {
 
     synchronized void clearCategory(CueRequest.Category category) {
         if (closed || category == null) return;
-        speechQueue.removeIf(pending -> pending.request.category == category);
+        discardQueuedSpeech(category, "CANCELLED_CLEAR_CATEGORY");
         if (speaking != null && speaking.category == category) {
+            CueRequest cancelled = speaking;
             cancelledSpeech.add(speaking.cueId);
             speaking = null;
             speechEpoch++;
             renderer.stopSpeech();
+            listener.onPlayback(cancelled, "SPEECH", clock.nowMs(), "CANCELLED_CLEAR_CATEGORY");
         }
         lastSpeech.remove(category);
         lastSpeechStarted.remove(category);
@@ -484,12 +509,14 @@ final class CueDispatcher implements AutoCloseable {
     /** Clear all output atomically when native/session state is reset. */
     synchronized void clearAll() {
         if (closed) return;
-        speechQueue.clear();
+        discardQueuedSpeech(null, "CANCELLED_CLEAR_ALL");
         if (speaking != null) {
+            CueRequest cancelled = speaking;
             cancelledSpeech.add(speaking.cueId);
             speaking = null;
             speechEpoch++;
             renderer.stopSpeech();
+            listener.onPlayback(cancelled, "SPEECH", clock.nowMs(), "CANCELLED_CLEAR_ALL");
         }
         lastSpeech.clear();
         lastSpeechStarted.clear();
@@ -509,10 +536,12 @@ final class CueDispatcher implements AutoCloseable {
         speechEpoch++;
         toneEpoch++;
         if (speaking != null) {
+            CueRequest cancelled = speaking;
             cancelledSpeech.add(speaking.cueId);
             speaking = null;
+            listener.onPlayback(cancelled, "SPEECH", clock.nowMs(), "CANCELLED_PAUSED");
         }
-        speechQueue.clear();
+        discardQueuedSpeech(null, "CANCELLED_PAUSED");
         renderer.stopSpeech();
         renderer.cancelPendingTone();
         // A pause starts a fresh cue window when resumed. This prevents an
@@ -540,12 +569,22 @@ final class CueDispatcher implements AutoCloseable {
         toneEpoch++;
         renderer.stopSpeech();
         renderer.cancelPendingTone();
-        speechQueue.clear();
+        discardQueuedSpeech(null, "CANCELLED_CLOSED");
+        if (speaking != null) listener.onPlayback(speaking, "SPEECH", clock.nowMs(), "CANCELLED_CLOSED");
         speaking = null;
         lastAccepted.clear();
         acceptedCategories.clear();
         lastSpeech.clear();
         lastSpeechStarted.clear();
         cancelledSpeech.clear();
+    }
+
+    private void discardQueuedSpeech(CueRequest.Category category, String result) {
+        List<Pending> discarded = new ArrayList<>();
+        for (Pending pending : speechQueue)
+            if (category == null || pending.request.category == category) discarded.add(pending);
+        speechQueue.removeAll(discarded);
+        for (Pending pending : discarded)
+            listener.onPlayback(pending.request, "SPEECH", clock.nowMs(), result);
     }
 }

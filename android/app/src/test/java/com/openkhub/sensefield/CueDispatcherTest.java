@@ -22,6 +22,8 @@ public final class CueDispatcherTest {
         CueDispatcher.PlaybackCallback toneCallback;
         boolean stopped;
         boolean autoStartSpeech = true;
+        boolean autoFinishSpeech;
+        boolean failImmediately;
         boolean autoStartTone = true;
         boolean acceptHaptics = true;
         int tones;
@@ -48,7 +50,9 @@ public final class CueDispatcherTest {
             this.callback = callback;
             speechCallbacks.put(request.cueId, callback);
             started.add(request.cueId);
+            if (failImmediately) { callback.onFailed(request.createdAtMs,"test_failure"); return false; }
             if (autoStartSpeech) callback.onStarted(request.createdAtMs);
+            if (autoFinishSpeech) callback.onFinished(request.createdAtMs, true);
             return true;
         }
         @Override public void stopSpeech() { stopped = true; }
@@ -94,6 +98,92 @@ public final class CueDispatcherTest {
         return new CueRequest("session", id, key, "TEST",
                 CueRequest.Category.PLAYER_STATE, priority, 0, expires,
                 CueRequest.CHANNEL_SPEECH, 4, 0, 0, "测试");
+    }
+
+    @Test public void synchronousCompletionStillReportsAcceptedSpeech() {
+        FakeRenderer renderer = new FakeRenderer(); renderer.autoFinishSpeech = true;
+        Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, new MutableClock());
+        assertTrue(dispatcher.submit(request("sync", "sync", 70, 10000)).audioQueued());
+        assertFalse(dispatcher.isSpeaking());
+        assertEquals(1, java.util.Collections.frequency(events.events, "sync:SPEECH:COMPLETED"));
+    }
+
+    @Test public void synchronousRendererFailureDoesNotAlsoReportUnavailable() {
+        FakeRenderer renderer=new FakeRenderer();renderer.failImmediately=true;
+        Events events=new Events();
+        CueDispatcher dispatcher=new CueDispatcher(renderer,new FakePolicy(),events,new MutableClock());
+        assertFalse(dispatcher.submit(request("failure","failure",70,10000)).audioQueued());
+        assertEquals(1,java.util.Collections.frequency(events.events,"failure:SPEECH:FAILED"));
+        assertFalse(events.events.contains("failure:SPEECH:UNAVAILABLE"));
+        assertFalse(dispatcher.isSpeaking());
+    }
+
+    @Test public void toneCallbackReportsOneStartAndOneTerminalWithoutDispatcherLock() {
+        FakeRenderer renderer=new FakeRenderer();Events events=new Events();
+        CueDispatcher dispatcher=new CueDispatcher(renderer,new FakePolicy(),events,new MutableClock());
+        dispatcher.submit(request("tone","tone","tone",CueRequest.Category.NEAR_ZONE,
+                CueRequest.CHANNEL_TONE,10000,""));
+        renderer.toneCallback.onStarted(1);renderer.toneCallback.onFinished(2,true);
+        renderer.toneCallback.onFinished(3,false);renderer.toneCallback.onStarted(4);
+        assertEquals(1,java.util.Collections.frequency(events.events,"tone:TONE:STARTED"));
+        assertEquals(1,java.util.Collections.frequency(events.events,"tone:TONE:COMPLETED"));
+        assertFalse(events.events.contains("tone:TONE:FAILED"));
+    }
+
+    @Test public void completedSpeechIgnoresRepeatedAndLateCallbacksWithoutBlockingNextCue() {
+        MutableClock clock = new MutableClock(); FakeRenderer renderer = new FakeRenderer();
+        Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+        dispatcher.submit(request("first", "first", 70, 10000));
+        CueDispatcher.PlaybackCallback old = renderer.callback;
+        old.onStarted(10);
+        old.onFinished(100, true);
+        clock.now = 1000;
+        dispatcher.submit(request("next", "next", 70, 10000));
+        old.onStarted(1001);
+        old.onFinished(1002, false);
+        assertEquals(1, java.util.Collections.frequency(events.events, "first:SPEECH:STARTED"));
+        assertEquals(1, java.util.Collections.frequency(events.events, "first:SPEECH:COMPLETED"));
+        assertFalse(events.events.contains("first:SPEECH:FAILED"));
+        assertTrue(dispatcher.isSpeaking());
+    }
+
+    @Test public void disabledSpeechCannotStartFromDelayedRendererCallback() {
+        FakeRenderer renderer = new FakeRenderer(); renderer.autoStartSpeech = false;
+        FakePolicy policy = new FakePolicy(); Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, policy, events, new MutableClock());
+        dispatcher.submit(request("disabled", "disabled", 70, 10000));
+        policy.channels = CueRequest.CHANNEL_VISUAL;
+        renderer.callback.onStarted(100);
+        renderer.callback.onFinished(101, true);
+        assertTrue(renderer.stopped);
+        assertTrue(events.events.contains("disabled:SPEECH:SETTINGS_DISABLED"));
+        assertFalse(events.events.contains("disabled:SPEECH:STARTED"));
+        assertFalse(events.events.contains("disabled:SPEECH:COMPLETED"));
+    }
+
+    @Test public void lifecycleClearsGiveActiveAndQueuedSpeechOneTerminalState() {
+        for (String operation : List.of("CLEAR_CATEGORY", "CLEAR_ALL", "PAUSED", "CLOSED")) {
+            FakeRenderer renderer = new FakeRenderer(); Events events = new Events();
+            MutableClock clock = new MutableClock();
+            CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+            dispatcher.submit(request("active", "active", 70, 10000));
+            CueDispatcher.PlaybackCallback old = renderer.callback;
+            clock.now = 600;
+            dispatcher.submit(request("queued", "queued", 70, 10000));
+            switch (operation) {
+                case "CLEAR_CATEGORY": dispatcher.clearCategory(CueRequest.Category.PLAYER_STATE); break;
+                case "CLEAR_ALL": dispatcher.clearAll(); break;
+                case "PAUSED": dispatcher.pause(); dispatcher.resume(); break;
+                default: dispatcher.close();
+            }
+            old.onStarted(700); old.onFinished(701, true); old.onFinished(702, false);
+            assertTrue(operation, events.events.contains("active:SPEECH:CANCELLED_" + operation));
+            assertTrue(operation, events.events.contains("queued:SPEECH:CANCELLED_" + operation));
+            assertFalse(events.events.contains("active:SPEECH:COMPLETED"));
+            assertFalse(renderer.started.contains("queued"));
+        }
     }
 
     private static CueRequest request(String id, String key, String kind,

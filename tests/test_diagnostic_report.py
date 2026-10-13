@@ -11,10 +11,79 @@ import pytest
 from mapassist.diagnostic_report import (
     analyze_diagnostic_zip,
     write_outputs,
+    _parse_cues,
+    _cue_items,
 )
 
 
 REAL_DIAGNOSTIC_DIR = Path("build/heat-diag-0.3.5-20261002")
+
+
+def _structured_cues(result="COMPLETED"):
+    # A synchronous renderer callback can be written before dispatch admission.
+    return [
+        {"type": "CuePlayback", "at_ms": 120, "data": {
+            "cue_id": "fixture:1", "event_key": "episode:1", "channel": "SPEECH", "at_ms": 105, "result": "STARTED"}},
+        {"type": "CueDispatch", "at_ms": 130, "data": {
+            "cue_id": "fixture:1", "event_key": "episode:1", "category": "NEAR_ZONE", "kind": "NEAR_ZONE",
+            "created_at_ms": 100, "expires_at_ms": 800, "requested_channels": 2, "accepted_channels": 2,
+            "outcome": "ACCEPTED", "reason": "none"}},
+        {"type": "CuePolicy", "at_ms": 131, "data": {
+            "cue_id": "fixture:1", "category_enabled": True, "enabled_channels": 7,
+            "near_two_word_enabled": False, "near_haptic_enabled": True}},
+        {"type": "CuePlayback", "at_ms": 140, "data": {
+            "cue_id": "fixture:1", "event_key": "episode:1", "channel": "SPEECH", "at_ms": 110, "result": result}},
+    ]
+
+
+@pytest.mark.parametrize("result,state", [
+    ("COMPLETED", "completed"), ("FAILED", "failed"), ("EXPIRED", "expired"),
+    ("SETTINGS_DISABLED", "settings_disabled"), ("QUEUE_REPLACED", "cancelled"),
+    ("CANCELLED_CLEAR_ALL", "cancelled"), ("CANCELLED_PAUSED", "cancelled"),
+    ("CANCELLED_CLOSED", "cancelled"),
+])
+def test_structured_cue_callbacks_use_request_clock_and_keep_terminal_reasons(result, state):
+    dispatch, callbacks, counts = _parse_cues(_structured_cues(result))
+    items, raw = _cue_items(dispatch, callbacks)
+    assert counts == {"CueDispatch": 1, "CuePlayback": 2}
+    assert raw == {"STARTED": 1, result: 1}
+    assert items[0]["channel_states"]["SPEECH"] == state
+    assert items[0]["callback_anomalies"] == []
+    assert items[0]["dispatch"]["policy_at_dispatch"]["near_two_word_enabled"] is False
+
+
+@pytest.mark.parametrize("mutation", ["before_request", "wrong_event", "expired_start", "not_admitted"])
+def test_cue_lifecycle_does_not_associate_invalid_callback_evidence(mutation):
+    events = _structured_cues()
+    if mutation == "before_request": events[0]["data"]["at_ms"] = 99
+    if mutation == "wrong_event": events[0]["data"]["event_key"] = "episode:2"
+    if mutation == "expired_start": events[0]["data"]["at_ms"] = 801
+    if mutation == "not_admitted": events[0]["data"]["channel"] = "TONE"
+    items, raw = _cue_items(*_parse_cues(events)[:2])
+    assert sum(raw.values()) == 2
+    assert items[0]["unassociated_callback_count"] == 1
+    assert items[0]["callback_anomalies"]
+
+
+def test_missing_and_duplicate_callbacks_remain_visible_without_physical_sound_claims():
+    events = _structured_cues()
+    events.append(events[-1])
+    items, raw = _cue_items(*_parse_cues(events)[:2])
+    assert raw["COMPLETED"] == 2
+    assert "duplicate_terminal:SPEECH" in items[0]["callback_anomalies"]
+    events = _structured_cues()[:2]
+    items, _ = _cue_items(*_parse_cues(events)[:2])
+    assert items[0]["channel_states"]["SPEECH"] == "started_without_terminal"
+    events = _structured_cues()[1:2]
+    items, _ = _cue_items(*_parse_cues(events)[:2])
+    assert items[0]["channel_states"]["SPEECH"] == "callback_missing"
+
+
+def test_invalid_structured_clock_is_not_coerced_to_a_number():
+    events = _structured_cues()
+    events[1]["data"]["created_at_ms"] = True
+    with pytest.raises(ValueError, match="integer"):
+        _parse_cues(events)
 
 
 def _archive_from_extracted_recording(

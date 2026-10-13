@@ -224,6 +224,7 @@ def workspace_candidates(root: Path) -> list[str]:
         "docs/development/match3-rules-validation.md",
         "docs/development/消消乐三局反馈修复_2026-10-13.md",
         "docs/development/match3-diagnostics-audit.md",
+        "docs/development/android-cue-diagnostics.md",
         "docs/plans/消消乐规则驱动最大价值改造.md",
         "docs/research/开心消消乐元素规则参考.md",
         "docs/plans/黑客松方案收敛与实施路线.md",

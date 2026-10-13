@@ -730,6 +730,36 @@ public final class Match3HintInstrumentedTest {
         }
     }
 
+    @Test public void latestPointReadCommandRunsBeforeQueuedCaptureWork() throws Exception {
+        overlayPermission("allow");
+        SyntheticGame[] game=new SyntheticGame[1];
+        CountDownLatch blocked=new CountDownLatch(1),release=new CountDownLatch(1),observed=new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<Throwable> failure=new java.util.concurrent.atomic.AtomicReference<>();
+        try(ActivityScenario<Match3AssistActivity> scenario=ActivityScenario.launch(Match3AssistActivity.class)) {
+            Object s=startProjection(scenario,game);
+            android.os.Handler worker=(android.os.Handler)get(Match3LiveService.testInstance(),"handler");
+            worker.post(()->{blocked.countDown();try {release.await(5,TimeUnit.SECONDS);}
+                catch(InterruptedException e){Thread.currentThread().interrupt();}});
+            assertTrue(blocked.await(3,TimeUnit.SECONDS));
+            worker.post(()->{
+                try {
+                    assertTrue("The latest point-read command precedes queued frame processing",(boolean)get(s,"exploreMode"));
+                    assertNull("The old exchange is cleared before another queued frame",get(s,"currentHint"));
+                } catch(Throwable e){failure.set(e);} finally {observed.countDown();}
+            });
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(()->{
+                Match3LiveService service=Match3LiveService.testInstance();
+                service.onStartCommand(new Intent().setAction(Match3LiveService.ACTION_EXPLORE_OFF),0,700);
+                service.onStartCommand(new Intent().setAction(Match3LiveService.ACTION_EXPLORE_ON),0,701);
+            });
+            release.countDown();assertTrue(observed.await(3,TimeUnit.SECONDS));assertNull(failure.get());
+            command(Match3LiveService.ACTION_EXPLORE_OFF);
+            await("A later OFF command restores normal recommendations",12000,()->get(s,"currentHint")!=null);
+        } finally {
+            release.countDown();context().stopService(new Intent(context(),Match3LiveService.class));
+        }
+    }
+
     @Test public void levelChangePointReadRotationAndFiveSecondExpiryCannotKeepOldPairs() throws Exception {
         overlayPermission("allow");
         GameProfile.settings(context()).edit().putBoolean("match3_hint_highlight_enabled", true).commit();

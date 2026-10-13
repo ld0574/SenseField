@@ -17,12 +17,14 @@ class Match3GateTests(unittest.TestCase):
             root=Path(directory)
             names=['android/app/src/main/java/Sampler.java','android/app/src/main/cpp/math.cpp',
                    'android/app/src/main/cpp/CMakeLists.txt','android/app/build.gradle',
-                   'android/app/proguard-rules.pro','scripts/verify_match3_regression.py']
+                   'android/app/proguard-rules.pro','scripts/verify_match3_regression.py',
+                   'android/app/src/main/assets/match3-board-feedback-v1.json',
+                   'native/src/mapassist.cpp','native/include/mapassist.h','native/CMakeLists.txt']
             for name in names:
                 path=root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(name)
-            with mock.patch.object(gate,'ROOT',root),mock.patch.object(gate,'__file__',str(root/names[-1])):
+            with mock.patch.object(gate,'ROOT',root),mock.patch.object(gate,'__file__',str(root/'scripts/verify_match3_regression.py')):
                 previous=gate.source_digest()
-                for name in names[1:3]:
+                for name in names[1:]:
                     (root/name).write_text('changed native implementation')
                     current=gate.source_digest();self.assertNotEqual(previous,current);previous=current
     def test_adb_zero_exit_does_not_make_a_failed_or_crashed_suite_pass(self):

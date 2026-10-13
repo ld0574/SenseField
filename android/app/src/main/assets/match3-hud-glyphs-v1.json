@@ -2,7 +2,7 @@
   "format": "match3-hud-glyphs-v1",
   "id": "match3-reviewed-hud-seven-20261011",
   "metadata": {
-    "fixed_catalog_sha256": "98cd97fbcb0c99b81c2f5deac874f7a72ab10d0b31dd8ef0dd4181ed44ed2b2b",
+    "fixed_catalog_sha256": "84ad215d12037e217b17f3cc84039ef73013e259457c1d308452757957c46f0d",
     "independent": false,
     "review_scope": "developer_visual_review",
     "sampling": "white_component_10x16_center"

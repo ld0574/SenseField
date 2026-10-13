@@ -58,6 +58,10 @@ def source_digest() -> str:
     digest = hashlib.sha256()
     paths = sorted((ROOT / "android/app/src").rglob("*.java"))
     paths += sorted((ROOT / "android/app/src/main/cpp").glob("*.cpp"))
+    paths += sorted((ROOT / "native/src").glob("*.cpp"))
+    paths += sorted((ROOT / "native/include").rglob("*.h"))
+    native_build=ROOT / "native/CMakeLists.txt"
+    if native_build.is_file(): paths.append(native_build)
     paths += [ROOT / "android/app/src/main/cpp/CMakeLists.txt"]
     paths += [ROOT / "android/app/build.gradle", ROOT / "android/app/proguard-rules.pro", Path(__file__)]
     catalog = ROOT / "android/app/src/main/assets/match3-fixed-ui-v1.json"
@@ -69,6 +73,8 @@ def source_digest() -> str:
     if covers.is_file():paths.append(covers)
     gray_covers=ROOT / "android/app/src/main/assets/match3-gray-v1.json"
     if gray_covers.is_file():paths.append(gray_covers)
+    board_feedback=ROOT / "android/app/src/main/assets/match3-board-feedback-v1.json"
+    if board_feedback.is_file():paths.append(board_feedback)
     hud_glyphs=ROOT / "android/app/src/main/assets/match3-hud-glyphs-v1.json"
     if hud_glyphs.is_file():paths.append(hud_glyphs)
     rules=ROOT / "android/app/src/main/assets/match3-rules-v1.json"

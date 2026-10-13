@@ -1344,16 +1344,16 @@ public final class CaptureService extends Service {
                     + " acceptedMask=" + result.acceptedChannels
                     + " outcome=" + result.outcome
                     + " dropReason=" + result.reason);
-            if (diagnostics != null) {
-                long dispatchAtMs = SystemClock.elapsedRealtime();
-                diagnostics.audit("CueDispatch cueId=" + request.cueId
-                    + " kind=" + request.kind + " category=" + request.category
-                    + " createdAtMs=" + request.createdAtMs
-                    + " dispatchAtMs=" + dispatchAtMs
-                    + " dispatchDelayMs=" + Math.max(0, dispatchAtMs - request.createdAtMs)
-                    + " requestedMask=" + request.requestedChannels
-                    + " acceptedMask=" + result.acceptedChannels
-                    + " outcome=" + result.outcome + " dropReason=" + result.reason);
+            DiagnosticRecorder recorder=diagnostics;
+            if (recorder != null && recorder.sessionId.equals(request.sessionId)) {
+                recorder.dispatch(request,result.outcome,result.reason,result.acceptedChannels);
+                CueSettings settings=cueSettings;
+                if(settings!=null)recorder.record("CuePolicy",DiagnosticRecorder.object(
+                        "cue_id",request.cueId,"category_enabled",settings.categoryEnabled(request.category),
+                        "enabled_channels",settings.enabledChannels(request.category),
+                        "near_two_word_enabled",GameProfile.settings(CaptureService.this)
+                                .getBoolean(PresentationAudioPolicy.PREF_NEAR_TWO_WORD,false),
+                        "near_haptic_enabled",settings.nearHapticEnabled()));
             }
         }
 
@@ -1364,10 +1364,9 @@ public final class CaptureService extends Service {
                     + " channel=" + channel
                     + " atMs=" + atMs
                     + " result=" + result);
-            if (diagnostics != null) diagnostics.audit("CuePlayback cueId=" + request.cueId
-                    + " channel=" + channel + " atMs=" + atMs
-                    + " playbackDelayMs=" + Math.max(0, atMs - request.createdAtMs)
-                    + " result=" + result);
+            DiagnosticRecorder recorder=diagnostics;
+            if (recorder != null && recorder.sessionId.equals(request.sessionId))
+                recorder.playback(request,channel,atMs,result);
             if (request.category == CueRequest.Category.ASSISTANT
                     && "SPEECH".equals(channel) && "EXPIRED".equals(result)) {
                 AssistantController current = assistant;

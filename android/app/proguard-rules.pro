@@ -328,9 +328,21 @@
 }
 -keep,allowobfuscation class com.openkhub.sensefield.NativeFrameResult {
     static *** empty();
+    static *** parse(int[],long);
+    int locatorState; int locatorScoreMilli;
+    android.graphics.RectF minimapRoi;
+    java.util.List entities;
+    com.openkhub.sensefield.NativeFrameResult$Relation relation;
+}
+# The sampled detector replay uses the same packet parser as the live service.
+# Retain only this cross-test-APK observation contract; parsing helpers shrink.
+-keep,allowobfuscation class com.openkhub.sensefield.NativeFrameResult$Relation {
+    int state; int event; boolean reliable;
 }
 -keep,allowobfuscation class com.openkhub.sensefield.DiagnosticSnapshot {
     static *** parse(long[]);
+    long engineAtMs;
+    long[][] observations;
 }
 # Activities/services and FileProvider entry points are retained by the manifest/default rules.
 # No whole-application keep rule: behavior tests must also exercise the minified artifact.
