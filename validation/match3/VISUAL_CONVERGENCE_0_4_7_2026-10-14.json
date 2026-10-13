@@ -1,0 +1,1523 @@
+{
+  "schema": "sensefield.match3-visual-convergence/1",
+  "created_utc": "2026-10-13T16:48:58.528486+00:00",
+  "baseline_commit": "9daea3fc931958b7075a54d124959ae5b2217377",
+  "source_sha256": "ee0b7c134fdcdec22867f7e50109edc14dd21f2a737c39215c8853016f5667a3",
+  "scope": "existing same-session developer-reviewed poses; not independent accuracy, live heat, actual audio or player outcome",
+  "review": {
+    "baseline_source_sha256": "7ac1502be293cfb9a9088efc63ca5784fd434ba37cbfc2b9937d7e2046f6dbcc",
+    "baseline_prediction_source_sha256": "c530474b8c282eb9cf0dfe094d7062ea5150e83fcda7b21b5ad866d42e89ee80",
+    "baseline_prediction_sha256": "314894acaacaa18772c92667ae0912705aa448631f9f9cb991bde4915407f622",
+    "baseline_apk_sha256": "1481f2cf071850e3213bb3748525e902ce91c9d6904c199bd934f309e6a96152",
+    "original_labels_sha256": "06c651cc7f1638d81b3bfa9e2445e2d13656ea4ee5a45749b94053040d1a34f2",
+    "new_training_samples": [
+      "recording-02-227.jpg:r7c3",
+      "recording-02-232.jpg:r6c4"
+    ],
+    "partitions": {
+      "train": 4,
+      "development_replay": 18
+    },
+    "fixture_sha256": "ed8a74c6161d09115eb3579fe02ac18df0d020e966a3b1b2b00d663a9806d2da",
+    "independent": false
+  },
+  "implementation": {
+    "production_entry_changed": "assets/match3-board-feedback-v1.json",
+    "all_classes_and_native_libraries_identical": true,
+    "entries": 22,
+    "bytes": 41903,
+    "sha256": "fd22cbc8b6f652057405e3fbe03b47b5bac5917d660ccba1016137fcb2191666",
+    "limits": {
+      "entries": 24,
+      "bytes": 65536
+    },
+    "maximum_error": 0.12,
+    "ambiguity_margin": 0.025,
+    "positive_direction_weight": 2,
+    "registration_pixels": 1,
+    "model_changed": false,
+    "rules_changed": false
+  },
+  "quality": {
+    "frames": 26,
+    "cells": 2106,
+    "changed_cells": 11,
+    "unchanged_cells": 2095,
+    "positive_counts": {
+      "before": {
+        "n": 22,
+        "correct": 11,
+        "miss": 11,
+        "swap_miss": 11,
+        "misclassify": 0,
+        "false_swap": 0
+      },
+      "after": {
+        "n": 22,
+        "correct": 22,
+        "miss": 0,
+        "swap_miss": 0,
+        "misclassify": 0,
+        "false_swap": 0
+      }
+    },
+    "partitions": {
+      "train": {
+        "n": 4,
+        "before": 2,
+        "after": 4
+      },
+      "development_replay": {
+        "n": 18,
+        "before": 9,
+        "after": 18
+      }
+    },
+    "changes": [
+      {
+        "id": "recording-02-230.jpg:r7c3",
+        "fields": {
+          "swap_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "ice": {
+            "before": -1,
+            "after": 0
+          },
+          "layers": {
+            "before": -1,
+            "after": 0
+          },
+          "match_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "activation_permission": {
+            "before": "NO",
+            "after": "YES"
+          },
+          "cover": {
+            "before": "UNKNOWN",
+            "after": "NONE"
+          },
+          "cover_layers": {
+            "before": -1,
+            "after": 0
+          },
+          "effect": {
+            "before": "UNKNOWN",
+            "after": "HORIZONTAL"
+          },
+          "gate": {
+            "before": "UNKNOWN",
+            "after": "OPEN"
+          },
+          "rule_id": {
+            "before": "unknown",
+            "after": "line_horizontal"
+          },
+          "special_damage_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          }
+        }
+      },
+      {
+        "id": "recording-02-227.jpg:r7c3",
+        "fields": {
+          "swap_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "ice": {
+            "before": -1,
+            "after": 0
+          },
+          "layers": {
+            "before": -1,
+            "after": 0
+          },
+          "match_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "activation_permission": {
+            "before": "NO",
+            "after": "YES"
+          },
+          "cover": {
+            "before": "UNKNOWN",
+            "after": "NONE"
+          },
+          "cover_layers": {
+            "before": -1,
+            "after": 0
+          },
+          "effect": {
+            "before": "UNKNOWN",
+            "after": "HORIZONTAL"
+          },
+          "gate": {
+            "before": "UNKNOWN",
+            "after": "OPEN"
+          },
+          "rule_id": {
+            "before": "unknown",
+            "after": "line_horizontal"
+          },
+          "special_damage_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          }
+        }
+      },
+      {
+        "id": "recording-02-228.jpg:r7c3",
+        "fields": {
+          "swap_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "ice": {
+            "before": -1,
+            "after": 0
+          },
+          "layers": {
+            "before": -1,
+            "after": 0
+          },
+          "match_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "activation_permission": {
+            "before": "NO",
+            "after": "YES"
+          },
+          "cover": {
+            "before": "UNKNOWN",
+            "after": "NONE"
+          },
+          "cover_layers": {
+            "before": -1,
+            "after": 0
+          },
+          "effect": {
+            "before": "UNKNOWN",
+            "after": "HORIZONTAL"
+          },
+          "gate": {
+            "before": "UNKNOWN",
+            "after": "OPEN"
+          },
+          "rule_id": {
+            "before": "unknown",
+            "after": "line_horizontal"
+          },
+          "special_damage_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          }
+        }
+      },
+      {
+        "id": "recording-02-229.jpg:r7c3",
+        "fields": {
+          "swap_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "ice": {
+            "before": -1,
+            "after": 0
+          },
+          "layers": {
+            "before": -1,
+            "after": 0
+          },
+          "match_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "activation_permission": {
+            "before": "NO",
+            "after": "YES"
+          },
+          "cover": {
+            "before": "UNKNOWN",
+            "after": "NONE"
+          },
+          "cover_layers": {
+            "before": -1,
+            "after": 0
+          },
+          "effect": {
+            "before": "UNKNOWN",
+            "after": "HORIZONTAL"
+          },
+          "gate": {
+            "before": "UNKNOWN",
+            "after": "OPEN"
+          },
+          "rule_id": {
+            "before": "unknown",
+            "after": "line_horizontal"
+          },
+          "special_damage_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          }
+        }
+      },
+      {
+        "id": "recording-02-231.jpg:r7c3",
+        "fields": {
+          "swap_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "ice": {
+            "before": -1,
+            "after": 0
+          },
+          "layers": {
+            "before": -1,
+            "after": 0
+          },
+          "match_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "activation_permission": {
+            "before": "NO",
+            "after": "YES"
+          },
+          "cover": {
+            "before": "UNKNOWN",
+            "after": "NONE"
+          },
+          "cover_layers": {
+            "before": -1,
+            "after": 0
+          },
+          "effect": {
+            "before": "UNKNOWN",
+            "after": "HORIZONTAL"
+          },
+          "gate": {
+            "before": "UNKNOWN",
+            "after": "OPEN"
+          },
+          "rule_id": {
+            "before": "unknown",
+            "after": "line_horizontal"
+          },
+          "special_damage_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          }
+        }
+      },
+      {
+        "id": "recording-02-232.jpg:r6c4",
+        "fields": {
+          "swap_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "ice": {
+            "before": -1,
+            "after": 0
+          },
+          "layers": {
+            "before": -1,
+            "after": 0
+          },
+          "match_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "activation_permission": {
+            "before": "NO",
+            "after": "YES"
+          },
+          "cover": {
+            "before": "UNKNOWN",
+            "after": "NONE"
+          },
+          "cover_layers": {
+            "before": -1,
+            "after": 0
+          },
+          "effect": {
+            "before": "UNKNOWN",
+            "after": "HORIZONTAL"
+          },
+          "gate": {
+            "before": "UNKNOWN",
+            "after": "OPEN"
+          },
+          "rule_id": {
+            "before": "unknown",
+            "after": "line_horizontal"
+          },
+          "special_damage_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          }
+        }
+      },
+      {
+        "id": "recording-02-232.jpg:r7c3",
+        "fields": {
+          "swap_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "ice": {
+            "before": -1,
+            "after": 0
+          },
+          "layers": {
+            "before": -1,
+            "after": 0
+          },
+          "match_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "activation_permission": {
+            "before": "NO",
+            "after": "YES"
+          },
+          "cover": {
+            "before": "UNKNOWN",
+            "after": "NONE"
+          },
+          "cover_layers": {
+            "before": -1,
+            "after": 0
+          },
+          "effect": {
+            "before": "UNKNOWN",
+            "after": "HORIZONTAL"
+          },
+          "gate": {
+            "before": "UNKNOWN",
+            "after": "OPEN"
+          },
+          "rule_id": {
+            "before": "unknown",
+            "after": "line_horizontal"
+          },
+          "special_damage_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          }
+        }
+      },
+      {
+        "id": "recording-02-233.jpg:r6c4",
+        "fields": {
+          "swap_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "ice": {
+            "before": -1,
+            "after": 0
+          },
+          "layers": {
+            "before": -1,
+            "after": 0
+          },
+          "match_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "activation_permission": {
+            "before": "NO",
+            "after": "YES"
+          },
+          "cover": {
+            "before": "UNKNOWN",
+            "after": "NONE"
+          },
+          "cover_layers": {
+            "before": -1,
+            "after": 0
+          },
+          "effect": {
+            "before": "UNKNOWN",
+            "after": "HORIZONTAL"
+          },
+          "gate": {
+            "before": "UNKNOWN",
+            "after": "OPEN"
+          },
+          "rule_id": {
+            "before": "unknown",
+            "after": "line_horizontal"
+          },
+          "special_damage_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          }
+        }
+      },
+      {
+        "id": "recording-02-233.jpg:r7c3",
+        "fields": {
+          "swap_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "ice": {
+            "before": -1,
+            "after": 0
+          },
+          "layers": {
+            "before": -1,
+            "after": 0
+          },
+          "match_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "activation_permission": {
+            "before": "NO",
+            "after": "YES"
+          },
+          "cover": {
+            "before": "UNKNOWN",
+            "after": "NONE"
+          },
+          "cover_layers": {
+            "before": -1,
+            "after": 0
+          },
+          "effect": {
+            "before": "UNKNOWN",
+            "after": "HORIZONTAL"
+          },
+          "gate": {
+            "before": "UNKNOWN",
+            "after": "OPEN"
+          },
+          "rule_id": {
+            "before": "unknown",
+            "after": "line_horizontal"
+          },
+          "special_damage_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          }
+        }
+      },
+      {
+        "id": "recording-02-234.jpg:r6c4",
+        "fields": {
+          "swap_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "ice": {
+            "before": -1,
+            "after": 0
+          },
+          "layers": {
+            "before": -1,
+            "after": 0
+          },
+          "match_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "activation_permission": {
+            "before": "NO",
+            "after": "YES"
+          },
+          "cover": {
+            "before": "UNKNOWN",
+            "after": "NONE"
+          },
+          "cover_layers": {
+            "before": -1,
+            "after": 0
+          },
+          "effect": {
+            "before": "UNKNOWN",
+            "after": "HORIZONTAL"
+          },
+          "gate": {
+            "before": "UNKNOWN",
+            "after": "OPEN"
+          },
+          "rule_id": {
+            "before": "unknown",
+            "after": "line_horizontal"
+          },
+          "special_damage_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          }
+        }
+      },
+      {
+        "id": "recording-02-234.jpg:r7c3",
+        "fields": {
+          "swap_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "ice": {
+            "before": -1,
+            "after": 0
+          },
+          "layers": {
+            "before": -1,
+            "after": 0
+          },
+          "match_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          },
+          "activation_permission": {
+            "before": "NO",
+            "after": "YES"
+          },
+          "cover": {
+            "before": "UNKNOWN",
+            "after": "NONE"
+          },
+          "cover_layers": {
+            "before": -1,
+            "after": 0
+          },
+          "effect": {
+            "before": "UNKNOWN",
+            "after": "HORIZONTAL"
+          },
+          "gate": {
+            "before": "UNKNOWN",
+            "after": "OPEN"
+          },
+          "rule_id": {
+            "before": "unknown",
+            "after": "line_horizontal"
+          },
+          "special_damage_permission": {
+            "before": "UNKNOWN",
+            "after": "YES"
+          }
+        }
+      }
+    ],
+    "rankings": [
+      {
+        "id": "recording-02-230.jpg",
+        "before_top3": [
+          {
+            "from_row": 3,
+            "from_col": 6,
+            "to_row": 4,
+            "to_col": 6,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 6
+          },
+          {
+            "from_row": 1,
+            "from_col": 0,
+            "to_row": 2,
+            "to_col": 0,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          },
+          {
+            "from_row": 2,
+            "from_col": 5,
+            "to_row": 2,
+            "to_col": 6,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          }
+        ],
+        "after_top3": [
+          {
+            "from_row": 3,
+            "from_col": 6,
+            "to_row": 4,
+            "to_col": 6,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 6
+          },
+          {
+            "from_row": 1,
+            "from_col": 0,
+            "to_row": 2,
+            "to_col": 0,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          },
+          {
+            "from_row": 2,
+            "from_col": 5,
+            "to_row": 2,
+            "to_col": 6,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          }
+        ],
+        "before_candidates": 28,
+        "after_candidates": 32
+      },
+      {
+        "id": "recording-02-227.jpg",
+        "before_top3": [
+          {
+            "from_row": 3,
+            "from_col": 6,
+            "to_row": 4,
+            "to_col": 6,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 6
+          },
+          {
+            "from_row": 1,
+            "from_col": 0,
+            "to_row": 2,
+            "to_col": 0,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          },
+          {
+            "from_row": 3,
+            "from_col": 7,
+            "to_row": 4,
+            "to_col": 7,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          }
+        ],
+        "after_top3": [
+          {
+            "from_row": 3,
+            "from_col": 6,
+            "to_row": 4,
+            "to_col": 6,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 6
+          },
+          {
+            "from_row": 1,
+            "from_col": 0,
+            "to_row": 2,
+            "to_col": 0,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          },
+          {
+            "from_row": 3,
+            "from_col": 7,
+            "to_row": 4,
+            "to_col": 7,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          }
+        ],
+        "before_candidates": 28,
+        "after_candidates": 33
+      },
+      {
+        "id": "recording-02-228.jpg",
+        "before_top3": [
+          {
+            "from_row": 3,
+            "from_col": 6,
+            "to_row": 4,
+            "to_col": 6,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 6
+          },
+          {
+            "from_row": 1,
+            "from_col": 0,
+            "to_row": 2,
+            "to_col": 0,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          },
+          {
+            "from_row": 2,
+            "from_col": 5,
+            "to_row": 2,
+            "to_col": 6,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          }
+        ],
+        "after_top3": [
+          {
+            "from_row": 3,
+            "from_col": 6,
+            "to_row": 4,
+            "to_col": 6,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 6
+          },
+          {
+            "from_row": 1,
+            "from_col": 0,
+            "to_row": 2,
+            "to_col": 0,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          },
+          {
+            "from_row": 2,
+            "from_col": 5,
+            "to_row": 2,
+            "to_col": 6,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          }
+        ],
+        "before_candidates": 31,
+        "after_candidates": 35
+      },
+      {
+        "id": "recording-02-229.jpg",
+        "before_top3": [
+          {
+            "from_row": 3,
+            "from_col": 6,
+            "to_row": 4,
+            "to_col": 6,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 6
+          },
+          {
+            "from_row": 1,
+            "from_col": 0,
+            "to_row": 2,
+            "to_col": 0,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          },
+          {
+            "from_row": 2,
+            "from_col": 5,
+            "to_row": 2,
+            "to_col": 6,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          }
+        ],
+        "after_top3": [
+          {
+            "from_row": 3,
+            "from_col": 6,
+            "to_row": 4,
+            "to_col": 6,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 6
+          },
+          {
+            "from_row": 1,
+            "from_col": 0,
+            "to_row": 2,
+            "to_col": 0,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          },
+          {
+            "from_row": 2,
+            "from_col": 5,
+            "to_row": 2,
+            "to_col": 6,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          }
+        ],
+        "before_candidates": 29,
+        "after_candidates": 34
+      },
+      {
+        "id": "recording-02-231.jpg",
+        "before_top3": [
+          {
+            "from_row": 3,
+            "from_col": 6,
+            "to_row": 4,
+            "to_col": 6,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 6
+          },
+          {
+            "from_row": 1,
+            "from_col": 0,
+            "to_row": 2,
+            "to_col": 0,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          },
+          {
+            "from_row": 2,
+            "from_col": 5,
+            "to_row": 2,
+            "to_col": 6,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          }
+        ],
+        "after_top3": [
+          {
+            "from_row": 3,
+            "from_col": 6,
+            "to_row": 4,
+            "to_col": 6,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 6
+          },
+          {
+            "from_row": 1,
+            "from_col": 0,
+            "to_row": 2,
+            "to_col": 0,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          },
+          {
+            "from_row": 2,
+            "from_col": 5,
+            "to_row": 2,
+            "to_col": 6,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          }
+        ],
+        "before_candidates": 29,
+        "after_candidates": 34
+      },
+      {
+        "id": "recording-02-232.jpg",
+        "before_top3": [
+          {
+            "from_row": 1,
+            "from_col": 0,
+            "to_row": 2,
+            "to_col": 0,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          },
+          {
+            "from_row": 2,
+            "from_col": 5,
+            "to_row": 2,
+            "to_col": 6,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          },
+          {
+            "from_row": 3,
+            "from_col": 7,
+            "to_row": 4,
+            "to_col": 7,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          }
+        ],
+        "after_top3": [
+          {
+            "from_row": 1,
+            "from_col": 0,
+            "to_row": 2,
+            "to_col": 0,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          },
+          {
+            "from_row": 2,
+            "from_col": 5,
+            "to_row": 2,
+            "to_col": 6,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          },
+          {
+            "from_row": 3,
+            "from_col": 7,
+            "to_row": 4,
+            "to_col": 7,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          }
+        ],
+        "before_candidates": 24,
+        "after_candidates": 32
+      },
+      {
+        "id": "recording-02-233.jpg",
+        "before_top3": [
+          {
+            "from_row": 0,
+            "from_col": 2,
+            "to_row": 1,
+            "to_col": 2,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          },
+          {
+            "from_row": 0,
+            "from_col": 4,
+            "to_row": 1,
+            "to_col": 4,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          },
+          {
+            "from_row": 3,
+            "from_col": 1,
+            "to_row": 3,
+            "to_col": 2,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          }
+        ],
+        "after_top3": [
+          {
+            "from_row": 0,
+            "from_col": 2,
+            "to_row": 1,
+            "to_col": 2,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          },
+          {
+            "from_row": 0,
+            "from_col": 4,
+            "to_row": 1,
+            "to_col": 4,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          },
+          {
+            "from_row": 3,
+            "from_col": 1,
+            "to_row": 3,
+            "to_col": 2,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          }
+        ],
+        "before_candidates": 15,
+        "after_candidates": 26
+      },
+      {
+        "id": "recording-02-234.jpg",
+        "before_top3": [
+          {
+            "from_row": 1,
+            "from_col": 7,
+            "to_row": 2,
+            "to_col": 7,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 6
+          },
+          {
+            "from_row": 5,
+            "from_col": 2,
+            "to_row": 6,
+            "to_col": 2,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 6
+          },
+          {
+            "from_row": 1,
+            "from_col": 7,
+            "to_row": 1,
+            "to_col": 8,
+            "action_type": "SWAP",
+            "rule_id": "ordinary_uncovered_animal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 3
+          }
+        ],
+        "after_top3": [
+          {
+            "from_row": 5,
+            "from_col": 4,
+            "to_row": 6,
+            "to_col": 4,
+            "action_type": "LINE_SWAP",
+            "rule_id": "line_horizontal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 9
+          },
+          {
+            "from_row": 6,
+            "from_col": 3,
+            "to_row": 6,
+            "to_col": 4,
+            "action_type": "LINE_SWAP",
+            "rule_id": "line_horizontal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 9
+          },
+          {
+            "from_row": 6,
+            "from_col": 3,
+            "to_row": 7,
+            "to_col": 3,
+            "action_type": "LINE_SWAP",
+            "rule_id": "line_horizontal",
+            "direct_units": 0,
+            "all_targets_finish": false,
+            "physical_clear_lower_bound": 9
+          }
+        ],
+        "before_candidates": 27,
+        "after_candidates": 35
+      }
+    ],
+    "checks": {
+      "debug_historical_unchanged": true,
+      "debug_three-game_unchanged": true,
+      "debug_honor_semantics_unchanged": true,
+      "release_historical_unchanged": true,
+      "release_three-game_unchanged": true,
+      "release_honor_semantics_unchanged": true,
+      "debug_release_visual_identical": true,
+      "debug_release_historical_identical": true,
+      "debug_release_three-game_identical": true,
+      "debug_release_honor_semantics": true
+    },
+    "legacy": {
+      "frames": 10,
+      "cells": 743,
+      "correct": 699,
+      "miss": 25,
+      "misclassify": 2,
+      "false_swap": 1,
+      "swap_miss": 4,
+      "unchanged": true
+    },
+    "all_targets_finish_claimed": false
+  },
+  "cost": {
+    "protocol": {
+      "kind": "functional",
+      "workload": "fixed-repeat-v1",
+      "source_baseline_commit": "9daea3fc931958b7075a54d124959ae5b2217377",
+      "manifest_sha256": "24ac7044b44760a081097a981d154d64ee66f24ef9b8287eecf917dc365567fb",
+      "frames": 26,
+      "warmups": 6,
+      "measured_batches": 15,
+      "repeats_per_frame": 3,
+      "samples_per_execution": 1170,
+      "pairs": 3,
+      "orders": [
+        "A/B",
+        "B/A",
+        "A/B"
+      ],
+      "each_pair_wall_and_worker_p95_increase_limit_percent": 10,
+      "cpu_improvement_requirement": false,
+      "same_producer": true,
+      "quality_comparison_sha256": "6dd3c18bb6f3184ef69ac91811e1c463ecbe05ba83ae9eedff1dc05c5298f4bc",
+      "scope": "visual-functional sampled fixed JPEG processing; geometry is prepared before measured samples; excludes capture, decoding, UI, audio, recorder and game heat; not the fourth-round 64-frame dynamic CPU test"
+    },
+    "packages": {
+      "baseline": {
+        "source_sha256": "7ac1502be293cfb9a9088efc63ca5784fd434ba37cbfc2b9937d7e2046f6dbcc",
+        "app_sha256": "1481f2cf071850e3213bb3748525e902ce91c9d6904c199bd934f309e6a96152",
+        "app_bytes": 24587425,
+        "producer_sha256": "bc9378e13be5731c753b5ea5614c01b324abb602d6b279fe48471ed999c7f7c3"
+      },
+      "candidate": {
+        "source_sha256": "ee0b7c134fdcdec22867f7e50109edc14dd21f2a737c39215c8853016f5667a3",
+        "app_sha256": "4ede1aef79adc2848a630cce8771bd32ccffc592637c38162b6b232489077cb6",
+        "app_bytes": 24589117,
+        "producer_sha256": "bc9378e13be5731c753b5ea5614c01b324abb602d6b279fe48471ed999c7f7c3"
+      }
+    },
+    "pairs": [
+      {
+        "baseline_wall_p95_ms": 2.579583,
+        "candidate_wall_p95_ms": 2.63025,
+        "wall_p95_change_percent": 1.964154671510876,
+        "baseline_worker_p95_ms": 2.511209,
+        "candidate_worker_p95_ms": 2.522583,
+        "worker_p95_change_percent": 0.4529292464307,
+        "baseline_process_cpu_ms": 1538,
+        "candidate_process_cpu_ms": 1590,
+        "process_cpu_change_percent": 3.3810143042912966,
+        "pair": 1,
+        "order": [
+          "baseline",
+          "candidate"
+        ]
+      },
+      {
+        "baseline_wall_p95_ms": 2.496375,
+        "candidate_wall_p95_ms": 2.547666,
+        "wall_p95_change_percent": 2.054619197836871,
+        "baseline_worker_p95_ms": 2.446626,
+        "candidate_worker_p95_ms": 2.489167,
+        "worker_p95_change_percent": 1.7387618704288954,
+        "baseline_process_cpu_ms": 1497,
+        "candidate_process_cpu_ms": 1527,
+        "process_cpu_change_percent": 2.004008016032066,
+        "pair": 2,
+        "order": [
+          "candidate",
+          "baseline"
+        ]
+      },
+      {
+        "baseline_wall_p95_ms": 2.514583,
+        "candidate_wall_p95_ms": 2.562792,
+        "wall_p95_change_percent": 1.9171767247293081,
+        "baseline_worker_p95_ms": 2.488875,
+        "candidate_worker_p95_ms": 2.518875,
+        "worker_p95_change_percent": 1.2053638692180124,
+        "baseline_process_cpu_ms": 1517,
+        "candidate_process_cpu_ms": 1540,
+        "process_cpu_change_percent": 1.5161502966380969,
+        "pair": 3,
+        "order": [
+          "baseline",
+          "candidate"
+        ]
+      }
+    ],
+    "median_process_cpu_change_percent": 2.004008016032066,
+    "median_wall_p95_change_percent": 1.964154671510876,
+    "passed": true,
+    "all_samples_retained": true,
+    "old_dynamic_cpu_result_extended_to_this_package": false
+  },
+  "engineering": {
+    "jvm": {
+      "tests": 616,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "python": {
+      "passed": 45,
+      "subtests_passed": 8
+    },
+    "lint": {
+      "Warning": 31
+    },
+    "debug_suite": [
+      {
+        "name": "instrumentation",
+        "instrumentation": {
+          "executed": 118,
+          "skipped": 0
+        },
+        "log_sha256": "7c730e35cc5da5b4bd403f603e5ad18d2b8adb755d00e00ed8a85bf6e609ccfc"
+      }
+    ],
+    "debug_replays": [
+      {
+        "name": "visual",
+        "instrumentation": {
+          "executed": 1,
+          "skipped": 0
+        },
+        "log_sha256": "a6c75c8d34ddd4781bab4f0949fca5f5601f1afbeca848e52c3e3d6fb478a2f9"
+      },
+      {
+        "name": "historical",
+        "instrumentation": {
+          "executed": 1,
+          "skipped": 0
+        },
+        "log_sha256": "5c67f15b59eb8425337b849a076b23514108162ee5f372a9be3c0c217c303943"
+      },
+      {
+        "name": "three-game",
+        "instrumentation": {
+          "executed": 1,
+          "skipped": 0
+        },
+        "log_sha256": "cdef7d222a904085db06cce32cf885a113a9cfd86f3912e8c9d8c7a0562fb0cd"
+      },
+      {
+        "name": "honor",
+        "instrumentation": {
+          "executed": 1,
+          "skipped": 0
+        },
+        "log_sha256": "d6ac48d2719a4743aaea81605abca7c32b35f968b8793f14f8cc5edee52b70ee"
+      }
+    ],
+    "release_suite_and_replays": [
+      {
+        "name": "instrumentation",
+        "instrumentation": {
+          "executed": 84,
+          "skipped": 0
+        },
+        "log_sha256": "f2706210ef64b3743ea1c062eb3d107e1821ba83219090bc70394f345dba815b"
+      },
+      {
+        "name": "visual",
+        "instrumentation": {
+          "executed": 1,
+          "skipped": 0
+        },
+        "log_sha256": "1667dcf1edcf39139c349224bbfb87af2c4f35221e67d92abbe0a1fd3d15a935"
+      },
+      {
+        "name": "historical",
+        "instrumentation": {
+          "executed": 1,
+          "skipped": 0
+        },
+        "log_sha256": "d8d5a759b843d5025501327bdd1969dc503b27c38216b2e81c8f323a99b70748"
+      },
+      {
+        "name": "three-game",
+        "instrumentation": {
+          "executed": 1,
+          "skipped": 0
+        },
+        "log_sha256": "da4837b10b08e0eb05db68ec9f6ef5e102f6a0edbf8283f3bfc2bf69ef52c152"
+      },
+      {
+        "name": "honor",
+        "instrumentation": {
+          "executed": 1,
+          "skipped": 0
+        },
+        "log_sha256": "2ffc793ec604d835f1a2a3c65f69d23b175928f70656b2add194c8a5aa7fa225"
+      }
+    ],
+    "debug_packages": {
+      "app-debug.apk": {
+        "sha256": "f0c1d031ff0ea788878db40420b77f664177a9b4007c346d66f97e295325fb56",
+        "bytes": 29338127
+      },
+      "app-debug-androidTest.apk": {
+        "sha256": "41f1aee139f6bfec73ae3fd2b36d1b2b79e5b4c13575472dd6ac591ab184a42f",
+        "bytes": 25002704
+      }
+    },
+    "release_packages": {
+      "app-release.apk": {
+        "sha256": "4ede1aef79adc2848a630cce8771bd32ccffc592637c38162b6b232489077cb6",
+        "bytes": 24589117
+      },
+      "app-release-androidTest.apk": {
+        "sha256": "c7ed770209a9595199fe6216f1a8d87bcd7846cc69245711ccbff54f62c6bc99",
+        "bytes": 24746840
+      }
+    },
+    "installed_release": {
+      "app": {
+        "sha256": "4ede1aef79adc2848a630cce8771bd32ccffc592637c38162b6b232489077cb6",
+        "bytes": 24589117
+      },
+      "test": {
+        "sha256": "c7ed770209a9595199fe6216f1a8d87bcd7846cc69245711ccbff54f62c6bc99",
+        "bytes": 24746840
+      }
+    },
+    "release_package": {
+      "sha256": "4ede1aef79adc2848a630cce8771bd32ccffc592637c38162b6b232489077cb6",
+      "bytes": 24589117,
+      "certificate_sha256": "5a42a53a8f06850e89c46ea193931e9853e3ce7cff99551b42e8b414a1eaaf68",
+      "version_name": "0.4.6",
+      "version_code": 23,
+      "debuggable": false,
+      "audio_files": 856,
+      "extract_native_libs": true
+    },
+    "isolated_new_tests": {
+      "executed": 2,
+      "skipped": 0
+    },
+    "arrow_removed_controls": 22,
+    "initial_positive_reproduction": {
+      "tests": 2,
+      "failures": 1,
+      "positive_admitted": 11,
+      "expected": 22,
+      "preserved": true
+    },
+    "initial_build_error": "missing release testBuildType property; no tests executed; corrected build and frozen final packages",
+    "initial_debug_directory_cleanup": {
+      "suite_tests": 118,
+      "suite_failures": 0,
+      "orchestration_passed": false,
+      "error": "emulator directory root ownership denied shell cleanup",
+      "repair": "emulator-only adbd root; resume four replays; completed suite not repeated",
+      "source_unchanged_at_final_verification": true
+    }
+  },
+  "private_receipt_sha256": {
+    "frozen-review.json": "da6b2018198f3f6ccd8195723290608383ddc709ca8aa92994961098a929ba4b",
+    "quality-comparison.json": "6dd3c18bb6f3184ef69ac91811e1c463ecbe05ba83ae9eedff1dc05c5298f4bc",
+    "functional-cost-release/receipt.json": "c66dd7934eca8bbf7cafeaaf19be9501eccaf942f1abb8ccb0553fdfddad3649",
+    "cost-protocol.json": "7a2da96cf405f16f569a89533653ae702dcb6c49b18f12d8b5305fb6e6ea411e",
+    "jvm-lint-summary.json": "9a7b63e6a0bce52ea517e735ebc63fba714412369e0faafb4cee4dd7128da408",
+    "debug-validation/vision-debug-gate.json": "309289065353b0b2b201a0f80fd25b6513c3358a73ee121e2910c5bd4048e8e2",
+    "debug-replay-validation/vision-debug-gate.json": "0d27db5679c7e5bbfc166982a60d029af35d320f9a7dd1b2b485c5ab164676be",
+    "release-validation/vision-release-gate.json": "e09006cbf30d957ac8730a2fb0c1e35e4b52f8e171cc1763ce3a219b05094383",
+    "release-verification.json": "c1d1aefba8b40d919b2c118e559d8846f67c63f0b26fc3ff35bf16f237b9d2cd",
+    "final-installed-release.json": "0c16dfdba2d863ba0415c667284bfe56bec90db974b553fac8c4896c70fa3089",
+    "app-entry-differences.json": "26c38f74dcc9954a720f1e5fc21a2d62671e6095e3c30c6982f4cefd8309cedf",
+    "candidate-line-tests.json": "13c2c66a7bc19bcc9a53e93365b65e7462fb1c12995e20d05a5110ee2e5ac6aa",
+    "baseline-line-tests.json": "10e30adee6ea3dcfdceea4dde1e5009b56c6fcde01dccb47db1ca35d34355847",
+    "python-tests.txt": "9a135f8814557a27ff2b86bc6e414fd5be99fb82a681974d701cbc8ad6ff9a3d",
+    "functional-cost-release/pair-1-baseline.json": "b3b6f17075b8ef81c3b2c2a4f2dc5885079622d6f47b19bda810c45c5513546a",
+    "functional-cost-release/pair-1-candidate.json": "f11e0baa5d4fb44f72f0f16e7160efe5c003dfb58af9bcb3fda8d7e8808e4cce",
+    "functional-cost-release/pair-2-baseline.json": "ef603f3882e8ce605aceb03f401acc18f59ffecb172553b87d9fe88d5a07c10d",
+    "functional-cost-release/pair-2-candidate.json": "25a3db9b15427c87bdfdfb84a56058ebccbb764684164a22f23bd5e25809741d",
+    "functional-cost-release/pair-3-baseline.json": "9ae596d40c65d6e00c67eab313beeaefc64fa98d54712fd9d93f2cfbf7860d57",
+    "functional-cost-release/pair-3-candidate.json": "374f628fccf629536019e081f578b73afee736ff52dfff0820822866d688e881"
+  },
+  "published_new_release": false,
+  "independent_accuracy_passed": false,
+  "thermal_gate_passed": false
+}
