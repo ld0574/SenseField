@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in emulator package pairs; fixed processing workload, not phone heat."""
+"""Opt-in emulator package pairs; declared processing workload, not phone heat."""
 from __future__ import annotations
 
 import argparse
@@ -34,7 +34,17 @@ def pair_result(baseline: dict, candidate: dict) -> dict:
             raise ValueError("Profiled or legacy measurements cannot enter this gate")
         if report.get("warmup_rounds") != 6 or report.get("measured_rounds") != 15:
             raise ValueError("Workload must retain six warmups and 15 measured batches")
-        expected = report["frames"] * 3 * 15
+        workload = report.get("workload", "fixed-repeat-v1")
+        if workload not in ("fixed-repeat-v1", "sequence-v1", "honor-sequence-v2"):
+            raise ValueError("Unknown workload")
+        repeats = 3 if workload == "fixed-repeat-v1" else 1
+        if workload == "sequence-v1" and (report.get("repeats_per_frame") != 1
+                or len(report.get("outputs", [])) != report["frames"]):
+            raise ValueError("Incomplete sequence or changed frame repetition")
+        if workload == "honor-sequence-v2" and (len(report.get("observations", [])) != report["frames"]
+                or report.get("inferences", -1) + report.get("cache_reuses", -1) != report["frames"] * 15):
+            raise ValueError("Incomplete inference workload")
+        expected = report["frames"] * repeats * 15
         if (not expected or report["repeats"] != expected
                 or len(report["wall_ns"]) != expected or len(report["worker_cpu_ns"]) != expected
                 or len(report["process_cpu_batches_ms"]) != 15 or len(report["batches"]) != 15):
@@ -43,6 +53,16 @@ def pair_result(baseline: dict, candidate: dict) -> dict:
             raise ValueError("Require measured process CPU")
     if baseline["manifest_sha256"] != candidate["manifest_sha256"] or baseline["frames"] != candidate["frames"]:
         raise ValueError("Paired inputs differ")
+    if baseline.get("workload", "fixed-repeat-v1") != candidate.get("workload", "fixed-repeat-v1"):
+        raise ValueError("Cannot compare fixed repeated images with a sequence")
+    if baseline.get("workload") == "sequence-v1" and baseline["outputs"] != candidate["outputs"]:
+        raise ValueError("Sequence semantic or gate/coordinate/timing outputs changed")
+    if baseline.get("workload") == "honor-sequence-v2":
+        for key in ("model_bin_sha256", "profile_version", "locator_enabled", "input_size", "inferences", "cache_reuses"):
+            if baseline[key] != candidate[key]:
+                raise ValueError("Detector configuration or actual work differs")
+        if honor_semantics(baseline) != honor_semantics(candidate):
+            raise ValueError("Detector, tracking or event output changed")
     out = {}
     for metric, key in (("wall", "wall_ns"), ("worker", "worker_cpu_ns")):
         before, after = p95(baseline[key]), p95(candidate[key])
@@ -88,6 +108,7 @@ def main() -> int:
     parser.add_argument("--inputs", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--kind", choices=("control", "optimization", "functional"), required=True)
+    parser.add_argument("--workload", choices=("fixed-repeat-v1", "sequence-v1", "honor-sequence-v2"), default="fixed-repeat-v1")
     args = parser.parse_args()
     assert_emulator(args.serial)
     out = args.output.resolve()
@@ -99,7 +120,18 @@ def main() -> int:
         raise ValueError("Require the same measurement producer APK")
     manifest_path = args.inputs / "manifest.json"
     manifest_sha = sha(manifest_path)
-    entries = json.loads(manifest_path.read_text())["frames"]
+    manifest = json.loads(manifest_path.read_text())
+    if args.workload == "sequence-v1":
+        validate_sequence(manifest)
+    elif "workload" in manifest:
+        raise ValueError("Sequence inputs require an explicit sequence workload")
+    entries = manifest["frames"]
+    directory, producer, output_name = {
+        "fixed-repeat-v1": ("match3-holdout", "Match3PerceptionCostInstrumentedTest", "perception-cost.json"),
+        "sequence-v1": ("match3-sequence", "Match3SequenceCostInstrumentedTest", "perception-cost.json"),
+        "honor-sequence-v2": ("honor-development-replay", "HonorPerceptionReplayInstrumentedTest", "perception.json"),
+    }[args.workload]
+    remote = REMOTE.replace("match3-holdout", directory)
     names = [f["file"] for f in entries]
     if not names or len(names) != len(set(names)):
         raise ValueError("Require unique explicit frozen frames")
@@ -108,8 +140,8 @@ def main() -> int:
         if not frame.is_relative_to(args.inputs.resolve()) or sha(frame) != entry["sha256"]:
             raise ValueError("Frozen input bytes differ")
     command_prefix = [str(args.adb), "-s", args.serial]
-    report = {"scope": "installed_emulator_APK_fixed_input_processing; excludes_capture_audio_io_and_game_heat",
-              "kind": args.kind, "started_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+    report = {"scope": "installed_emulator_APK_declared_processing_workload; excludes_capture_audio_io_and_game_heat",
+              "kind": args.kind, "workload": args.workload, "started_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
               "packages": receipts, "manifest_sha256": manifest_sha, "steps": [], "pairs": [], "passed": False}
 
     def save():
@@ -157,18 +189,30 @@ def main() -> int:
                 filters = re.findall(r"\[status=([^\]]+)\]", dump)
                 if filters != ["verify" if package["variant"] == "debug" else "speed"]:
                     raise ValueError("Unexpected compilation state: " + str(filters))
-                run(name + "-clear", ["shell", "rm", "-rf", REMOTE])
-                run(name + "-inputs", ["push", str(args.inputs.resolve()), REMOTE])
+                run(name + "-clear", ["shell", "rm", "-rf", remote])
+                run(name + "-inputs", ["push", str(args.inputs.resolve()), remote])
                 text = run(name + "-measure", ["shell", "am", "instrument", "-w", "-r", "-e", "match3SourceSha256",
-                    package["source_sha256"], "-e", "class", "com.openkhub.sensefield.Match3PerceptionCostInstrumentedTest",
+                    package["source_sha256"], "-e", "class", "com.openkhub.sensefield." + producer,
                     PACKAGE + ".test/androidx.test.runner.AndroidJUnitRunner"])
                 if instrumentation_summary(text) != {"executed": 1, "skipped": 0}:
                     raise ValueError("Measurement did not execute completely")
                 data_path = out / (name + ".json")
-                run(name + "-report", ["pull", REMOTE + "/perception-cost.json", str(data_path)])
+                run(name + "-report", ["pull", remote + "/" + output_name, str(data_path)])
                 data = json.loads(data_path.read_text())
                 if data["manifest_sha256"] != manifest_sha or data["source_sha256"] != package["source_sha256"] or data["frames"] != len(entries):
                     raise ValueError("Measurement binding differs")
+                if data.get("workload", "fixed-repeat-v1") != args.workload:
+                    raise ValueError("Producer workload differs")
+                if args.workload == "sequence-v1":
+                    for entry, output in zip(entries, data["outputs"], strict=True):
+                        for key in ("file", "sequence", "observed_at_ms"):
+                            if entry[key] != output[key]:
+                                raise ValueError("Producer changed the input timeline")
+                if args.workload == "honor-sequence-v2":
+                    for entry, output in zip(entries, data["observations"], strict=True):
+                        if (entry["file"] != output["file"]
+                                or entry["observed_at_ms"] + 1000000 != output["observed_at_ms"]):
+                            raise ValueError("Producer changed the detector timeline")
                 observations[mode] = data
             result = pair_result(observations["baseline"], observations["candidate"])
             result.update(pair=pair, order=order)
@@ -183,6 +227,63 @@ def main() -> int:
         save()
     print(json.dumps({k: v for k, v in report.items() if k not in ("steps", "packages")}, indent=2))
     return 0 if report["passed"] else 1
+
+
+def validate_sequence(manifest: dict) -> None:
+    """Reject reordered, repeated or silently gap-filled images before any install."""
+    if (manifest.get("schema") != "sensefield.match3-sequence/1"
+            or manifest.get("workload") != "sequence-v1" or manifest.get("frozen") is not True
+            or manifest.get("independent") is not False or manifest.get("warmup_rounds") != 6
+            or manifest.get("measured_rounds") != 15 or manifest.get("repeats_per_frame") != 1):
+        raise ValueError("Require the frozen development sequence protocol")
+    previous = None
+    seen = set()
+    for frame in manifest["frames"]:
+        at, index, sequence = frame["observed_at_ms"], frame["frame_index"], frame["sequence"]
+        if type(at) is not int or at < 0 or type(index) is not int or index < 1 or not sequence:
+            raise ValueError("Require original nonnegative observation time and frame index")
+        reset = previous is None or sequence != previous["sequence"]
+        if frame["reset_before"] is not reset:
+            raise ValueError("Reset must coincide with the start of a sequence window")
+        if reset:
+            if sequence in seen or frame["delta_ms"] is not None or frame["missing_logged_frames_before"] is not None:
+                raise ValueError("Interleaved windows or fabricated initial gap")
+            seen.add(sequence)
+        elif (at <= previous["observed_at_ms"] or index <= previous["frame_index"]
+                or frame["delta_ms"] != at - previous["observed_at_ms"]
+                or frame["missing_logged_frames_before"] != index - previous["frame_index"] - 1):
+            raise ValueError("Reordered, repeated or gap-filled sequence")
+        previous = frame
+    if previous is None:
+        raise ValueError("Empty sequence")
+
+
+def honor_semantics(report: dict) -> list[dict]:
+    """Compare all payload semantics; retain measured clocks in the raw reports.
+
+    Native packet v2 slot 8 is wall cost; entity slot 10 is freshness derived
+    from engine time. Removing these for comparison must not remove transitions,
+    last-seen timestamps, detector evidence or relation/event decisions.
+    """
+    outputs = []
+    for original in report["observations"]:
+        row = {k: v for k, v in original.items() if k not in ("engine_age_ms", "native_packet")}
+        packet = original["native_packet"].copy()
+        if len(packet) < 24 or packet[:4] != [0x4e465231, 2, 24, 16] or not 0 <= packet[15] <= 16:
+            raise ValueError("Unexpected detector packet schema")
+        if len(packet) < 24 + packet[15] * 16 or original["engine_age_ms"] < 0:
+            raise ValueError("Incomplete detector packet or missing engine clock")
+        packet[8] = 0
+        for i in range(packet[15]):
+            base = 24 + i * 16
+            last_seen = (packet[base + 13] & 0xffffffff) | ((packet[base + 14] & 0xffffffff) << 32)
+            expected = original["observed_at_ms"] + original["engine_age_ms"] - last_seen
+            if packet[base + 10] != expected:
+                raise ValueError("Freshness is not explained by the recorded engine clock")
+            packet[base + 10] = 0
+        row["semantic_packet"] = packet
+        outputs.append(row)
+    return outputs
 
 
 if __name__ == "__main__":

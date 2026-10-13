@@ -62,14 +62,16 @@ public final class HonorPerceptionReplayInstrumentedTest {
                 life!=null,life==null?null:life.roiAndThresholds,life==null?0:life.maxDhashDistance,
                 life==null?null:life.hashes,life==null?null:life.states,life==null?null:life.luma,life==null?null:life.chroma);
         assertTrue(session!=0);
-        JSONArray outputs=new JSONArray(),wall=new JSONArray(),worker=new JSONArray(),process=new JSONArray();
+        JSONArray outputs=new JSONArray(),wall=new JSONArray(),worker=new JSONArray(),process=new JSONArray(),batches=new JSONArray();
         long[] stages=new long[4];long memoryStart=Debug.getNativeHeapAllocatedSize();
+        long inferences=0,reuses=0;
         try {
             if(p.relation!=null)assertTrue(NativeBridge.nativeConfigureRelation(session,p.relation.floats,p.relation.ints));
-            for(int round=-3;round<5;round++) {
+            for(int round=-6;round<15;round++) {
                 NativeBridge.nativeReset(session);
                 long[] before=NativeBridge.nativeReadWorkStats(session);assertEquals(2,before[0]);
                 long processAt=Process.getElapsedCpuTime();
+                long batchWallAt=SystemClock.elapsedRealtimeNanos();
                 for(int i=0;i<pixels.length;i++) {
                     long at=1000000L+entries.getJSONObject(i).getLong("observed_at_ms");
                     long wallAt=SystemClock.elapsedRealtimeNanos(),cpuAt=Debug.threadCpuTimeNanos();
@@ -82,6 +84,7 @@ public final class HonorPerceptionReplayInstrumentedTest {
                         JSONArray observations=new JSONArray();for(long[] row:raw.observations)observations.put(new JSONArray(row));
                         outputs.put(new JSONObject().put("file",entries.getJSONObject(i).getString("file"))
                                 .put("observed_at_ms",at).put("raw_observations",observations)
+                                .put("native_packet",new JSONArray(packed))
                                 .put("engine_age_ms",raw.engineAtMs-at).put("locator_state",frame.locatorState)
                                 .put("locator_score_milli",frame.locatorScoreMilli)
                                 .put("minimap_roi_xywh",new JSONArray(new float[]{frame.minimapRoi.left,frame.minimapRoi.top,frame.minimapRoi.width(),frame.minimapRoi.height()}))
@@ -90,8 +93,13 @@ public final class HonorPerceptionReplayInstrumentedTest {
                     }
                 }
                 if(round>=0) {
-                    process.put(Process.getElapsedCpuTime()-processAt);
+                    long elapsedCpu=Process.getElapsedCpuTime()-processAt;
+                    process.put(elapsedCpu);
                     long[] after=NativeBridge.nativeReadWorkStats(session);
+                    inferences+=after[1]-before[1];reuses+=after[2]-before[2];
+                    batches.put(new JSONObject().put("round",round).put("process_cpu_ms",elapsedCpu)
+                            .put("wall_ns",SystemClock.elapsedRealtimeNanos()-batchWallAt)
+                            .put("inferences",after[1]-before[1]).put("cache_reuses",after[2]-before[2]));
                     stages[0]+=after[7]-before[7];stages[1]+=after[5]-before[5];stages[2]+=after[8]-before[8];
                     stages[3]+=after[3]-before[3]+after[4]-before[4];
                 }
@@ -103,6 +111,10 @@ public final class HonorPerceptionReplayInstrumentedTest {
                     .put("model_bin_sha256",p.minimapYoloxBinSha256).put("profile_version",p.version)
                     .put("locator_enabled",p.minimapLocatorEnabled).put("input_size",p.yoloxInputSize)
                     .put("independent",false).put("frames",pixels.length).put("observations",outputs)
+                    .put("workload","honor-sequence-v2").put("profiling",false)
+                    .put("warmup_rounds",6).put("measured_rounds",15)
+                    .put("inferences",inferences).put("cache_reuses",reuses)
+                    .put("repeats",pixels.length*15).put("batches",batches)
                     .put("wall_ns",wall).put("worker_cpu_ns",worker).put("process_cpu_batches_ms",process)
                     .put("stage_wall_total_us",new JSONArray(stages)).put("stage_order",new JSONArray(new String[]{"prepare","forward","decode","cache_compare_and_store"}))
                     .put("native_heap_start_bytes",memoryStart).put("native_heap_end_bytes",Debug.getNativeHeapAllocatedSize());

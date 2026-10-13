@@ -254,6 +254,102 @@
 -keep,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3CellConfirmation$Snapshot {
     com.openkhub.sensefield.Match3Position position;
 }
+# Sequence processing tests use the same production clocks, motion and gates.
+# Retain only the separate test APK boundary, with ordinary internal shrinking.
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3Sampler {
+    boolean frameMotion();
+}
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3CellConfirmation {
+    void reset();
+}
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3CellConfirmation$Snapshot {
+    boolean quiet; int unconfirmed;
+}
+-keep,allowobfuscation class com.openkhub.sensefield.Match3GoalConfirmation {
+    <init>();
+    com.openkhub.sensefield.Match3Goals accept(com.openkhub.sensefield.Match3Goals,long);
+    void clear();
+}
+-keep,allowobfuscation class com.openkhub.sensefield.Match3GeometryConfirmation {
+    <init>();
+    com.openkhub.sensefield.BoardGeometry accept(com.openkhub.sensefield.BoardGeometry);
+    void reset();
+}
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3Board {
+    static java.util.List findRuns(char[][]);
+}
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3HintOverlay {
+    static float[][] probes(com.openkhub.sensefield.Match3Hint);
+}
+# Paired cost measurements install one test APK over two independently shrunk
+# apps. Preserve names/descriptors of this narrow observation boundary so a
+# private helper class cannot shift its ABI. Internal helpers still optimize,
+# shrink and obfuscate; applying a whole previous R8 mapping is not safe.
+-keep,allowoptimization class com.openkhub.sensefield.Match3Sampler {
+    <init>(android.content.Context,com.openkhub.sensefield.BoardGeometry);
+    static com.openkhub.sensefield.BoardGeometry autoDetectGeometry(android.graphics.Bitmap);
+    com.openkhub.sensefield.Match3Position samplePosition(android.graphics.Bitmap,long);
+    boolean frameMotion();
+    public void close();
+}
+-keep,allowoptimization class com.openkhub.sensefield.BoardGeometry {
+    <init>(int,int,int,int,int,int,int,int);
+    int frameWidth; int frameHeight; int left; int top; int right; int bottom; int rows; int cols;
+    boolean sameGrid(com.openkhub.sensefield.BoardGeometry);
+}
+-keep,allowoptimization class com.openkhub.sensefield.Match3Position {
+    int rows; int cols;
+    com.openkhub.sensefield.Match3Position$Cell cell(int,int);
+    char[][] matrix();
+    boolean sameCells(com.openkhub.sensefield.Match3Position);
+}
+-keep,allowoptimization class com.openkhub.sensefield.Match3Position$Cell { <fields>; }
+-keep,allowoptimization class com.openkhub.sensefield.Match3CellConfirmation {
+    <init>();
+    com.openkhub.sensefield.Match3CellConfirmation$Snapshot accept(com.openkhub.sensefield.Match3Position,long);
+    void reset();
+}
+-keep,allowoptimization class com.openkhub.sensefield.Match3CellConfirmation$Snapshot {
+    com.openkhub.sensefield.Match3Position position; boolean quiet; int unconfirmed;
+}
+-keep,allowoptimization class com.openkhub.sensefield.Match3GoalConfirmation {
+    <init>();
+    com.openkhub.sensefield.Match3Goals accept(com.openkhub.sensefield.Match3Goals,long);
+    void clear();
+}
+-keep,allowoptimization class com.openkhub.sensefield.Match3GeometryConfirmation {
+    <init>();
+    com.openkhub.sensefield.BoardGeometry accept(com.openkhub.sensefield.BoardGeometry);
+    void reset();
+}
+-keep,allowoptimization class com.openkhub.sensefield.Match3HudReader {
+    <init>(android.content.Context);
+    com.openkhub.sensefield.Match3Goals read(android.graphics.Bitmap,com.openkhub.sensefield.BoardGeometry,long);
+    java.lang.String status(); void clear(); public void close();
+}
+-keep,allowoptimization class com.openkhub.sensefield.Match3Goals {
+    boolean hudVerified;
+    java.lang.String key();
+}
+-keep,allowoptimization class com.openkhub.sensefield.Match3Board {
+    static java.util.List findRuns(char[][]);
+}
+-keep,allowoptimization class com.openkhub.sensefield.Match3Board$Swap
+-keep,allowoptimization class com.openkhub.sensefield.Match3MoveValue {
+    com.openkhub.sensefield.Match3Board$Swap swap;
+}
+-keep,allowoptimization class com.openkhub.sensefield.Match3MoveRanker {
+    static java.util.List rankedMoves(com.openkhub.sensefield.Match3Position,com.openkhub.sensefield.Match3Goals);
+}
+-keep,allowoptimization class com.openkhub.sensefield.Match3RuleDiagnostics {
+    static org.json.JSONObject action(com.openkhub.sensefield.Match3MoveValue);
+}
+-keep,allowoptimization class com.openkhub.sensefield.Match3Hint {
+    <init>(java.lang.String,long,long,com.openkhub.sensefield.BoardGeometry,com.openkhub.sensefield.Match3Board$Swap);
+}
+-keep,allowoptimization class com.openkhub.sensefield.Match3HintOverlay {
+    static float[][] probes(com.openkhub.sensefield.Match3Hint);
+}
 -keepclassmembers,allowoptimization,allowobfuscation class com.openkhub.sensefield.Match3MoveRanker {
     static java.util.List rankedMoves(com.openkhub.sensefield.Match3Position,com.openkhub.sensefield.Match3Goals);
 }
