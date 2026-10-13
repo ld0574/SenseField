@@ -438,8 +438,14 @@ public final class Match3HintInstrumentedTest {
                 observedRevision = currentRevision;
             }
             assertTrue("A seven-second utterance reaches its normal completion", completed.await(2, TimeUnit.SECONDS));
+            // Capture completes on another worker. The 7.5-second artwork
+            // exercise checks speech/hint lifetime, not Debug capture FPS.
+            // Still require six actual new frames and a valid original hint.
+            await("Actual projection processes six new frames", 5000,
+                    () -> (long) get(session, "processedFrames") >= startedFrames + 6);
+            assertSame("The original exchange survives the observed frames; "
+                    + DiagnosticRecorder.current.stateForDiagnostics(), hint, get(session, "currentHint"));
             assertEquals("No software cancellation during idle animation", 0, stopped.get());
-            assertTrue((long) get(session, "processedFrames") >= startedFrames + 6);
             assertNotNull(((Match3HintOverlay) get(session, "overlay")).renderedHint());
             java.io.File directory = context().getExternalFilesDir("match3-release-capture");
             assertNotNull(directory); directory.mkdirs();

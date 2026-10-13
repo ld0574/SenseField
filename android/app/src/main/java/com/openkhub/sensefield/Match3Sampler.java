@@ -1058,6 +1058,19 @@ final class Match3Sampler implements AutoCloseable {
     private static boolean[][] boardMask(Bitmap frame, int step, int cols, int rows) {
         boolean[][] mask = new boolean[rows][cols];
         int width = frame.getWidth();
+        if (Match3NativeMath.AVAILABLE) {
+            int rowPixels = width * step;
+            int[] band = rowPixels <= GRID_BAND_PIXELS ? geometryBand.get() : new int[rowPixels];
+            int bandRows = Math.min(rows, band.length / rowPixels);
+            boolean[] pooled = new boolean[bandRows * cols];
+            for (int start = 0; start < rows; start += bandRows) {
+                int count = Math.min(bandRows, rows - start);
+                frame.getPixels(band, 0, width, 0, start * step, width, count * step);
+                Match3NativeMath.boardOccupancy(band, width, count * step, step, pooled);
+                for (int r = 0; r < count; r++) System.arraycopy(pooled, r * cols, mask[start + r], 0, cols);
+            }
+            return mask;
+        }
         int[] band = new int[width * step];
         for (int r = 0; r < rows; r++) {
             // Occupancy pooling preserves borders thinner than the coarse mask.
@@ -1255,23 +1268,8 @@ final class Match3Sampler implements AutoCloseable {
         // decimated. Keep their spatial samples; brightness keeps its old path.
         int stride = edges?1:Math.max(1, length / 240), n = length / stride;
         if (n < 30) return -1;
-        double[] profile = new double[n];
-        int[] line = new int[length];
-        int samples = 0;
-        // V is exactly max(R,G,B)/255; no per-pixel HSV conversion is necessary.
-        for (int at = 0; at < cross; at += 2) {
-            if (vertical) frame.getPixels(line, 0, 1, x0 + at, y0, 1, ch);
-            else frame.getPixels(line, 0, cw, x0, y0 + at, cw, 1);
-            samples++;
-            for (int c = 0; c < n; c++) {
-                int rgb = line[c * stride];
-                if(edges) {
-                    int next=line[Math.min(length-1,c*stride+stride)];
-                    profile[c]+=(Math.abs(Color.red(rgb)-Color.red(next))+Math.abs(Color.green(rgb)-Color.green(next))
-                            +Math.abs(Color.blue(rgb)-Color.blue(next)))/765.0;
-                } else profile[c] += Math.max(Color.red(rgb), Math.max(Color.green(rgb), Color.blue(rgb))) / 255.0;
-            }
-        }
+        double[] profile = gridProfile(frame, box, vertical, edges);
+        int samples = (cross + 1) / 2;
         double mean = 0, variance = 0;
         for (int c = 0; c < n; c++) { profile[c] /= samples; mean += profile[c]; }
         mean /= n;
@@ -1286,6 +1284,48 @@ final class Match3Sampler implements AutoCloseable {
             if (score > best) { best = score; bestD = d; }
         }
         return bestD>=0 && (!edges || best>0)?bestD*stride:-1;
+    }
+
+    // A bounded workspace belongs to the calling worker, never to a frame.
+    // Every band is overwritten with current Bitmap.getPixels ARGB values;
+    // bitmap storage's alpha premultiplication cannot change the colour domain.
+    private static final int GRID_BAND_PIXELS = 65536;
+    private static final ThreadLocal<int[]> geometryBand = ThreadLocal.withInitial(() -> new int[GRID_BAND_PIXELS]);
+
+    static double[] gridProfile(Bitmap frame, int[] box, boolean vertical, boolean edges) {
+        int x0 = box[0], y0 = box[1], cw = box[2] - x0, ch = box[3] - y0;
+        int length = vertical ? ch : cw, cross = vertical ? cw : ch;
+        int stride = edges ? 1 : Math.max(1, length / 240);
+        double[] profile = new double[length / stride];
+        if (Match3NativeMath.AVAILABLE) {
+            int[] band = length * 2 <= GRID_BAND_PIXELS ? geometryBand.get() : new int[length * 2];
+            // Even band boundaries preserve the original at=0,2,4,... order,
+            // including the final odd cross-axis sample and the last edge pixel.
+            int bandCross = Math.max(2, band.length / length / 2 * 2);
+            for (int at = 0; at < cross; at += bandCross) {
+                int size = Math.min(bandCross, cross - at);
+                int width = vertical ? size : cw, height = vertical ? ch : size;
+                frame.getPixels(band, 0, width, x0 + (vertical ? at : 0),
+                        y0 + (vertical ? 0 : at), width, height);
+                Match3NativeMath.accumulateGridProfile(band, width, height, vertical, edges, stride, profile);
+            }
+            return profile;
+        }
+        int[] line = new int[length];
+        // V is exactly max(R,G,B)/255; no per-pixel HSV conversion is necessary.
+        for (int at = 0; at < cross; at += 2) {
+            if (vertical) frame.getPixels(line, 0, 1, x0 + at, y0, 1, ch);
+            else frame.getPixels(line, 0, cw, x0, y0 + at, cw, 1);
+            for (int c = 0; c < profile.length; c++) {
+                int rgb = line[c * stride];
+                if(edges) {
+                    int next=line[Math.min(length-1,c*stride+stride)];
+                    profile[c]+=(Math.abs(Color.red(rgb)-Color.red(next))+Math.abs(Color.green(rgb)-Color.green(next))
+                            +Math.abs(Color.blue(rgb)-Color.blue(next)))/765.0;
+                } else profile[c] += Math.max(Color.red(rgb), Math.max(Color.green(rgb), Color.blue(rgb))) / 255.0;
+            }
+        }
+        return profile;
     }
 
     /* ---------- 特殊棋子模板存取（app 私有目录 special_templates/） ---------- */

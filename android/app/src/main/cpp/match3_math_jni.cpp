@@ -86,6 +86,68 @@ float bodyAligned(const jint* observed,const jint* reference,int dx,int dy,const
 }
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_openkhub_sensefield_Match3NativeMath_boardOccupancy(
+        JNIEnv* env,jclass,jintArray input,jint width,jint height,jint step,jbooleanArray output) {
+    if(!input || !output || width<1 || height<1 || step<1 || height%step!=0
+            || static_cast<int64_t>(width)*height>env->GetArrayLength(input)
+            || static_cast<int64_t>(width/step)*(height/step)>env->GetArrayLength(output)) {
+        jclass errorClass=env->FindClass("java/lang/IllegalArgumentException");
+        if(errorClass)env->ThrowNew(errorClass,"Board occupancy dimensions");
+        return;
+    }
+    jboolean* pooled=env->GetBooleanArrayElements(output,nullptr);if(!pooled)return;
+    jint* band=env->GetIntArrayElements(input,nullptr);
+    if(!band){env->ReleaseBooleanArrayElements(output,pooled,JNI_ABORT);return;}
+    int rows=height/step,cols=width/step;
+    for(int row=0;row<rows;row++)for(int col=0;col<cols;col++) {
+        bool supported=false;
+        for(int y=0;y<step && !supported;y++)for(int x=0;x<step;x++) {
+            jint pixel=band[(row*step+y)*width+col*step+x];
+            int r=pixel>>16&255,g=pixel>>8&255,b=pixel&255;
+            // Exact integer equivalent of Java's .45f * 255f brightness
+            // boundary and inclusive 170..300 degree blue-board hue predicate.
+            if(std::max(r,std::max(g,b))<115 && !(r==g && g==b)
+                    && b>=r && (b>=g || 6*(b-r)>=5*(g-r))) {supported=true;break;}
+        }
+        pooled[row*cols+col]=supported;
+    }
+    env->ReleaseIntArrayElements(input,band,JNI_ABORT);
+    env->ReleaseBooleanArrayElements(output,pooled,0);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_openkhub_sensefield_Match3NativeMath_accumulateGridProfile(
+        JNIEnv* env,jclass,jintArray input,jint width,jint height,jboolean vertical,
+        jboolean edges,jint stride,jdoubleArray output) {
+    // Keep each division and addition in Java's order; do not reassociate or
+    // contract floating-point expressions in this numerical boundary.
+#pragma clang fp contract(off)
+    int length=vertical?height:width,cross=vertical?width:height;
+    if(!input || !output || width<1 || height<1 || stride<1
+            || static_cast<int64_t>(width)*height>env->GetArrayLength(input)
+            || env->GetArrayLength(output)!=length/stride) {
+        jclass errorClass=env->FindClass("java/lang/IllegalArgumentException");
+        if(errorClass)env->ThrowNew(errorClass,"Grid profile dimensions");
+        return;
+    }
+    jdouble* profile=env->GetDoubleArrayElements(output,nullptr);if(!profile)return;
+    jint* band=env->GetIntArrayElements(input,nullptr);
+    if(!band){env->ReleaseDoubleArrayElements(output,profile,JNI_ABORT);return;}
+    int n=length/stride;
+    for(int at=0;at<cross;at+=2)for(int c=0;c<n;c++) {
+        int position=c*stride;
+        jint pixel=band[vertical?position*width+at:at*width+position];
+        if(edges) {
+            int next=std::min(length-1,position+stride);
+            jint other=band[vertical?next*width+at:at*width+next];
+            profile[c]+=error(pixel,other)/765.0;
+        } else profile[c]+=std::max(pixel>>16&255,std::max(pixel>>8&255,pixel&255))/255.0;
+    }
+    env->ReleaseIntArrayElements(input,band,JNI_ABORT);
+    env->ReleaseDoubleArrayElements(output,profile,0);
+}
+
 // The live callers compare at most one 432x200 HUD or a 16x16 tile. Pin only
 // for the bounded memcmp; no allocation, I/O or other work holds these arrays.
 extern "C" JNIEXPORT jboolean JNICALL

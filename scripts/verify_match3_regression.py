@@ -34,6 +34,8 @@ DEBUG_CLASSES += ("Match3AudioRecoveryInstrumentedTest",)
 RELEASE_CLASSES += ("Match3AudioRecoveryInstrumentedTest",)
 DEBUG_CLASSES += ("Match3GeometryInstrumentedTest",)
 RELEASE_CLASSES += ("Match3GeometryInstrumentedTest",)
+DEBUG_CLASSES += ("Match3GridProfileInstrumentedTest",)
+RELEASE_CLASSES += ("Match3GridProfileInstrumentedTest",)
 DEBUG_CLASSES += ("Match3CalibrationInstrumentedTest",)
 
 

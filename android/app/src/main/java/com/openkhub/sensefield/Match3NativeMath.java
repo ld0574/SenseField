@@ -16,6 +16,9 @@ final class Match3NativeMath {
         return AVAILABLE?equalPixels(first,second):java.util.Arrays.equals(first,second);
     }
     static native boolean equalPixels(int[] first,int[] second);
+    static native void accumulateGridProfile(int[] pixels,int width,int height,boolean vertical,
+                                            boolean edges,int stride,double[] profile);
+    static native void boardOccupancy(int[] pixels,int width,int height,int step,boolean[] pooled);
     static native float bodyDifference(int[] observed,int[] reference,boolean[] background);
     static native boolean prepareBodyDescriptor(java.nio.ByteBuffer descriptor,int[] pixels);
     static native float preparedBodyDifference(java.nio.ByteBuffer observed,java.nio.ByteBuffer reference);

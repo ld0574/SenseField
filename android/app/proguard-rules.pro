@@ -238,6 +238,10 @@
 }
 
 -keep class com.openkhub.sensefield.Match3NativeMath { static boolean AVAILABLE; native <methods>; }
+# Bit-exact geometry arithmetic oracle in the separately shrunk test APK.
+-keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3Sampler {
+    static double[] gridProfile(android.graphics.Bitmap,int[],boolean,boolean);
+}
 -keepclassmembers,allowobfuscation class com.openkhub.sensefield.Match3AnimalAppearance$Body {
     float differenceJava(com.openkhub.sensefield.Match3AnimalAppearance$Body);
 }
