@@ -289,7 +289,10 @@
         }
       ]
     },
-    "production_assets_and_native_libraries_unchanged_vs_visual_revision": true
+    "production_assets_and_native_libraries_unchanged_vs_visual_revision": true,
+    "handoff_public_allowlist_python": {
+      "passed": 15
+    }
   },
   "quality": {
     "independent": false,
@@ -531,7 +534,12 @@
     ],
     "gradle_initial_selection": "Release testBuildType exposes Release JVM task; first combined Debug request did not run; variants subsequently built separately",
     "initial_entry_assertion": "overly narrow comparison omitted generated baseline.prof; final complete entry diff retained",
-    "prior_failures_retained": true
+    "prior_failures_retained": true,
+    "main_source_guide_missing": {
+      "first_commit": "804d29d340943e7d4ddd552a2cb78b9eb3116731",
+      "reason": "installation-guide source file was ignored by docs allowlist and absent from main",
+      "repair": "track the already-tested source guide and synchronize public allowlists; APK bytes unchanged"
+    }
   },
   "private_receipt_sha256": {
     "protocol.json": "a4caad407c90c735515030091c9fb04a6304ccf29cb097a19391c7a3e3ed5375",
