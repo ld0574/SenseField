@@ -12,6 +12,7 @@
 | 当前手机包 | 三局反馈修订 `ead5e38a…`；本轮王者日志来自该包，两字关闭选择在导出时确认为 false |
 | 已记录的公开版本 | 0.4.6／code23，2026-10-13 GitHub 普通 Release、Latest；0.4.5／code22 的附件与公网清单历史核对保留 |
 | 唯一分发材料 | `output/releases/0.4.6/` 中 APK、使用说明、清单和校验单与 GitHub 四个附件字节一致；发布说明在 `publishing/`，当前源码回执在 `validation/current-package/`；本轮公网清单由用户上传并核对后生效 |
+| 下一版本规划 | [0.4.7](../docs/plans/0.4.7版本规划.md)拟用 code24，改进两款游戏提示稳定性、视觉感知与发热；尚无新 APK，原验证结论保持 |
 
 [GitHub 0.4.6 发布记录](releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)：标签 `v0.4.6` 指向合入主线的 `29cb75b8e1cc154c903570f7d8213e33279c6ba6`，四个附件摘要核对一致；APK 公开下载 HTTP 200、SHA 与已测包一致。GitHub 分发完成，手机主包仍为旧修订；本轮 Gitee 附件与公网清单由用户同步。
 

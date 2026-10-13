@@ -12,16 +12,18 @@
 | [发热与性能](performance/README.md) | 13 | 负载、像素复制、推理缓存、真机发热与对照试验 |
 | [AI 助手与部署](assistant/README.md) | 13 | ASR、视觉模型、回复时效、取消、默认开关与部署 |
 | [Android 与界面](android/README.md) | 10 | 授权、模拟器、真机冒烟、说明学习与大字布局 |
-| [升级与发布验收](releases/README.md) | 6 | 自动更新、CDN、Gitee 分发与 GitHub 发布核对 |
+| [升级与发布验收](releases/README.md) | 11 | 自动更新、CDN、Gitee 分发与 GitHub 发布核对、撤回候选归档 |
 | [模型与数据证据](models/README.md) | 17 | 开发集、标注、定位、导出与 parity；含两个固定入口 |
 | [验证方法与试用工具](protocols/README.md) | 7 | 真机记录模板、实声门禁、诊断工具与玩家试用 |
 | [历史状态快照](archive/README.md) | 1 | 原状态页的完整批次记录 |
 
 ## 当前入口
 
+- [0.4.7 版本规划：提示稳定性、视觉感知与发热](../docs/plans/0.4.7版本规划.md)
+
 - [0.4.6 魔力鸟／饼干同版本交付](match3/MATCH3_COOKIE_BIRD_SAME_VERSION_0_4_6_2026-10-12.md)
 
-- [0.4.7 魔力鸟与剩余饼干识别／策略修订](match3/MATCH3_COOKIE_BIRD_STRATEGY_0_4_7_2026-10-12.md)
+- [已撤回 0.4.7 候选的魔力鸟／饼干工程记录](match3/MATCH3_COOKIE_BIRD_STRATEGY_0_4_7_2026-10-12.md) · [三份原说明归档](releases/ANDROID_WITHDRAWN_0_4_7_2026-10-12.md)
 
 - [0.4.5 新元素可信识别与有界诊断](match3/MATCH3_ELEMENT_EVIDENCE_0_4_5_2026-10-10.md)
 - [0.4.5 跨布局识别与局部推荐](match3/MATCH3_CROSS_LEVEL_0_4_5_2026-10-10.md)

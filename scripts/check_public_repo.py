@@ -227,6 +227,7 @@ def workspace_candidates(root: Path) -> list[str]:
         "docs/plans/消消乐规则驱动最大价值改造.md",
         "docs/research/开心消消乐元素规则参考.md",
         "docs/plans/黑客松方案收敛与实施路线.md",
+        "docs/plans/0.4.7版本规划.md",
         "docs/plans/符合度改造方案.md",
         "docs/plans/符合度重新评估_2026-10-13.md",
         "docs/plans/符合度丢分项改进Goal_2026-10-13.md",
