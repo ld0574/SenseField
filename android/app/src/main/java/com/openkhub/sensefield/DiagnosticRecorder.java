@@ -433,7 +433,10 @@ final class DiagnosticRecorder {
                 return;
             }
             boolean manual = markerPending;
-            boolean event = f.relation.event == NearZoneRouting.EVENT_NEAR_ENTER;
+            boolean event = f.relation.event == NearZoneRouting.EVENT_NEAR_ENTER
+                    || f.relation.event == NearZoneRouting.EVENT_APPROACH;
+            String relationReason = f.relation.event == NearZoneRouting.EVENT_APPROACH
+                    ? "enemy_approach" : "near_enter";
             String match3Reason=match3ContextReason;
             long match3Revision=match3ContextRevision;
             match3ContextReason=null;
@@ -477,13 +480,13 @@ final class DiagnosticRecorder {
                 if (periodic || event || manual || match3Accepted) {
                     ImageSample clearFrame = copyImageSample(f, pixels, width, height, rowStride,
                             sequence, observedAtMs, 960, 768);
-                    enqueueImageLocked(clearFrame, event ? "near_enter" : manual ? "user_marker" : match3Accepted?match3Reason:"periodic",
+                    enqueueImageLocked(clearFrame, event ? relationReason : manual ? "user_marker" : match3Accepted?match3Reason:"periodic",
                             currentWindowId);
                     nextImageAtMs = completedAtMs + IMAGE_PERIOD_MS;
                 }
                 if (event || manual || match3Reason!=null) {
                     markerPending = false;
-                    exportWindowLocked(triggered, manual ? "user_marker_frame" : event?"near_enter":match3Reason, completedAtMs, false);
+                    exportWindowLocked(triggered, manual ? "user_marker_frame" : event?relationReason:match3Reason, completedAtMs, false);
                     if(match3Reason!=null)record("Match3HintImageContext",object("hint_revision",match3Revision,
                             "window_id",triggered.id,"status",triggered.status.name(),"reason",match3Reason,
                             "action_evidence","not_observed","scope","sampled_images_not_touch_tracking"));

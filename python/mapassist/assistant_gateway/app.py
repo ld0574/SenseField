@@ -25,6 +25,8 @@ from .glm import GlmVisionClient
 from .compatible import CompatibleVisionClient
 from .test_text_trace import TestTextTraceRecorder
 from .request_trace import visual_request_context
+from .prompts import load_vision_prompt
+from .validation import is_immediate_combat_question
 from .validation import (
     UNKNOWN_ANSWER,
     InvalidRequest,
@@ -218,18 +220,22 @@ async def _vision_call(vision_client: Any, visual_request: VisualRequest) -> Any
 
 
 def _vision_call_with_context(vision_client: Any, visual_request: VisualRequest) -> Any:
+    if is_immediate_combat_question(visual_request.question):
+        async def redirect_to_local_warning() -> str:
+            return json.dumps({"kind": "ui_text", "answer": "团战请听本地预警。我可以帮你选人或规划后续出装。", "uncertain": False}, ensure_ascii=False)
+        return redirect_to_local_warning()
     context_images = tuple(frame.image.jpeg_base64 for frame in visual_request.context_frames)
     question = visual_request.question
     if context_images:
-        context_ages = ", ".join(
-            f"context frame {index} is {frame.frame_age_ms} ms before the primary frame"
+        context_ages = "，".join(
+            f"背景截图{index}已过去{frame.frame_age_ms}毫秒"
             for index, frame in enumerate(visual_request.context_frames, start=1)
         )
         question = (
             f"{question}\n\n"
-            "[Frame timing metadata, separate from the user question: "
-            f"{context_ages}; the primary frame is {visual_request.frame_age_ms} ms old. "
-            "Attached images follow this chronological order, with the primary frame last.]"
+            "【以下为截图时间信息，与用户问题区分："
+            f"{context_ages}；当前主截图已过去{visual_request.frame_age_ms}毫秒。"
+            "图片按时间从早到晚排列，最后一张是当前主截图。】"
         )
         # Keep the legacy no-context call shape intact for third-party clients
         # and existing adapters that only accept question and image_base64.
@@ -267,8 +273,10 @@ def create_app(
                 base_url=settings.vision_base_url,
                 model=settings.vision_model,
                 max_tokens=settings.vision_max_tokens,
+                disable_thinking=settings.vision_disable_thinking,
                 concurrency=settings.account_concurrency,
                 timeout_seconds=settings.request_timeout_seconds,
+                system_prompt=load_vision_prompt(settings.vision_prompt_file),
             )
         elif settings.vision_provider == "zhipu" and settings.zhipu_api_key:
             vision_client = GlmVisionClient(
@@ -276,6 +284,7 @@ def create_app(
                 model=settings.zhipu_model,
                 concurrency=settings.account_concurrency,
                 timeout_seconds=settings.request_timeout_seconds,
+                system_prompt=load_vision_prompt(settings.vision_prompt_file),
             )
 
     public_quota = PublicVisionQuota(settings.public_quota_db,
@@ -553,6 +562,8 @@ def create_app(
                 "uncertain": answer.uncertain,
                 "elapsed_ms": max(0, int((time.monotonic() - started) * 1000)),
             }
+            if answer.decision_scene:
+                result["decision_scene"] = answer.decision_scene
             if text_trace is not None:
                 text_trace.record(
                     "validated_response",

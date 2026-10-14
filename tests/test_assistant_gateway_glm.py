@@ -57,14 +57,14 @@ def test_glm_direct_stream_uses_pinned_request_shape_and_raw_base64_image() -> N
     assert body["max_tokens"] == 256
     assert body["thinking"] == {"type": "disabled"}
     assert "response_format" not in body
-    assert "Simplified Chinese" in body["messages"][0]["content"]
+    assert "简体中文" in body["messages"][0]["content"]
     system = body["messages"][0]["content"]
-    assert "hud for match/lineup/board-dependent advice" in system
-    assert "ui_text for stable menu text" in system
-    assert "Never invent hero/icon identities, hidden enemies, cooldowns" in system
-    assert "Do not substitute gold, timer" in system
-    assert "王者荣耀 versus 开心消消乐" in system
-    assert "FIRST sentence" in system
+    assert "游戏搭子" in system and "低视力用户" in system
+    assert "本局、阵容或棋盘" in system and "稳定菜单文字" in system
+    assert "不要猜英雄或装备身份" in system
+    assert "不要用金币、计时和装饰信息代替建议" in system
+    assert "王者荣耀还是开心消消乐" in system
+    assert "第一句话先说选择" in system
     assert body["messages"][0]["content"] == SYSTEM_PROMPT
     image = body["messages"][1]["content"][1]["image_url"]["url"]
     assert image == "/9j/RAWBASE64"
@@ -98,9 +98,9 @@ def test_context_images_precede_current_image_and_get_labels() -> None:
     content = context_body["messages"][1]["content"]
     assert [item.get("text") for item in content if item["type"] == "text"] == [
         "What build fits this hero? [context frame 1 is 5000 ms before current]",
-        "Earlier context frame 1, oldest first.",
-        "Earlier context frame 2, oldest first.",
-        "Current primary frame.",
+        "较早的背景截图1，按时间从早到晚排列。",
+        "较早的背景截图2，按时间从早到晚排列。",
+        "当前主截图。",
     ]
     images = [item["image_url"]["url"] for item in content if item["type"] == "image_url"]
     assert images == ["OLDEST", "NEWER", "CURRENT"]

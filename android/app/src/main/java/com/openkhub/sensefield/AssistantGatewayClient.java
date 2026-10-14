@@ -56,7 +56,7 @@ final class AssistantGatewayClient implements AutoCloseable {
     private final AssistantSettings settings;
     private final Listener listener;
     private final OkHttpClient http = new OkHttpClient.Builder().connectTimeout(3, TimeUnit.SECONDS)
-            .callTimeout(8, TimeUnit.SECONDS).readTimeout(8, TimeUnit.SECONDS).build();
+            .callTimeout(14, TimeUnit.SECONDS).readTimeout(14, TimeUnit.SECONDS).build();
     private final OkHttpClient audioHttp = new OkHttpClient.Builder().connectTimeout(3, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.MILLISECONDS).pingInterval(25, TimeUnit.SECONDS).build();
     private WebSocket socket;
@@ -226,6 +226,8 @@ final class AssistantGatewayClient implements AutoCloseable {
                         }
                     }
                 } catch (Exception ignoredError) { failure = "invalid_response"; }
+                if (!response.isSuccessful()) failure = AssistantVisualFailure.code(
+                        status, source, upstreamStatus, failure);
                 release();
                 if (!response.isSuccessful()) listener.visualDiagnostic(requestId, status,
                         source, providerCode, upstreamStatus, retryAfter);

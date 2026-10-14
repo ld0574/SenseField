@@ -103,6 +103,38 @@ cd /data/wwwroot/sf
 
 健康状态应为 `production` / `vision_only`，`asr_ready=false`、`public_vision_access=true`。公开模式验收自动使用随机安装标识，不读取或填写连接码；无标识请求仍返回401。默认验收不请求模型；需要实际验证视觉 API 时，在公网验收命令末尾加 `--visual`，会上传一张合成测试图，可能产生一次模型费用。
 
+### 所有页面都提示画面理解不可用
+
+先查看诊断中的 `AssistantVisual event=HTTP_ERROR`。若为 `httpStatus=502 source=provider upstreamHttpStatus=401`，表示手机已经到达网关，模型服务拒绝了服务端访问；换页面不会改变结果。新网关会返回 `vision_provider_auth_failed`，模型返回 403 时为 `vision_provider_access_denied`。手机到网关自身的 HTTP 401 是另一类连接认证问题，不能混为同一故障。
+
+先检查提供商账户余额、套餐和模型权限，再由负责人在服务器私有配置 `/etc/sensefield-assistant/gateway.json` 中核对 `ASSISTANT_GATEWAY_VISION_BASE_URL`、`ASSISTANT_GATEWAY_VISION_MODEL` 与 `ASSISTANT_GATEWAY_VISION_API_KEY`。部分中转站也用 HTTP 401 表示账户或额度不可用，仅凭这个状态不能断定密钥错误。本次 Hero 反馈由负责人确认是账户余额耗尽。若选择 GLM 后端，则核对其 `ZHIPU_API_KEY`。根据提供商后台结果修正实际错误项，保留其他配置和文件权限，随后重启听野网关。不要将密钥发给玩家或写进 APK、日志和仓库。
+
+更换中转站时，在私有配置中成套替换接口地址、模型和密钥；兼容接口继续选择 `ASSISTANT_GATEWAY_VISION_PROVIDER=compatible`。手机仍连接听野网关，模型密钥留在服务器。用合成文字图核查新接口确实接受图片、能读出文字，并记录响应耗时；模型名称或普通文本接口成功不代表视觉可用。团战提前提醒由本地轨迹处理，云视觉用于按需读屏与解释，响应速度以实际请求测量为准。
+
+修复后运行一次完整的合成读图验收：
+
+```sh
+bash deploy/assistant/start.sh restart
+.venv/bin/python deploy/assistant/verify.py \
+  --config /etc/sensefield-assistant/gateway.json --visual
+```
+
+若使用 systemd，由该部署方式重启服务。验收必须实际收到 HTTP 200 并读出测试文字；`/health` 的 `vision_ready=true` 只表明客户端初始化完成，没有向模型提供商验证账户与访问权限。新手机候选在访问被拒绝后暂停本次会话的自动读屏，手动读屏仍可用于验证修复，收到正常响应后恢复自动观察；本地游戏预警继续运行。
+
+### 选人、出装与中文提示词
+
+视觉模型以“正在为低视力用户服务的游戏搭子”为身份，优先回答选人和后续出装这类能等待的决策。默认依据当前画面、用户问题、位置偏好和可见阵容生成建议，没有固定英雄榜单或出装表；即时团战提示由手机本地预警处理。默认只传当前截图，用户明确要求比较近期变化时才加入最多两张近期缩图。
+
+默认提示词全部以中文书写，位于 [vision_prompt.txt](../../python/mapassist/assistant_gateway/vision_prompt.txt)，身份、交流方式、两个场景的关注点和输出协议集中维护。部署者可把它复制为服务器上的文本文件，在私有配置中设置 `ASSISTANT_GATEWAY_VISION_PROMPT_FILE` 指向该文件；修改后重启服务即可生效，不必改 Python 代码或重打 APK。文件为 UTF-8、非空、不超过 32 KiB；路径无效或文件无效时启动明确失败，不静默改用另一份提示词。保留文件末尾的响应字段约定。
+
+本次中转实测建议先用 `Kimi-K3`，兼容地址为 `https://www.tokens1688.com/v1`，参数名是 `ASSISTANT_GATEWAY_VISION_PROVIDER`。详见[速度对照](../../validation/assistant/VISION_RELAY_BENCHMARK_2026-10-14.md)。`glm-5.3` 的当前路由拒绝图片，模型列表中的标签不足以证明能用；不要默认给所有模型发送关闭思考扩展参数。
+
+这家中转的 Kimi-K3 已接受关闭思考参数，可在其私有配置中显式设置 `ASSISTANT_GATEWAY_VISION_DISABLE_THINKING=1`。其他模型保留默认 `0`，更换提供商后重新验证：Kimi-K2.6 实测拒绝该参数，Flash 也没有稳定执行。使用中文搭子提示词后的两张合成决策图实际回答约 5.2／7.2 秒；默认思考探测中的格式失败和超时保留。明确询问“现在团战怎么操作”时，网关直接说明本地预警的职责，不调用视觉模型；“团战容易死，接下来怎么出装”仍走出装规划。
+
+当前服务默认模型等待预算为 12 秒，可用 `ASSISTANT_GATEWAY_VISION_TIMEOUT_SECONDS` 调整；0.4.7 手机请求上限为 14 秒，Nginx 示例读取上限为 16 秒。两个决策场景在新协议中附带 `decision_scene`，手机保持最近画面观测且未发现持续明显页面变化时，最多允许截图后 20 秒内使用该建议；计时不从回答抵达时重新开始。旧版本手机仍按原 `hud` 规则处理。截图哈希只提供粗粒度页面变化检查，不能证明微小阵容或装备变更都被发现，回答仍明确引用刚才截图。
+
+服务器配置尚未自动切换；重启后的完整公网合成读图和最终手机体验继续按实际结果登记。
+
 ## 已使用旧部署包
 
 覆盖解压新包后改用 `bash deploy/assistant/start.sh`。旧包根目录的 `start.sh`、`start.py`、`serve.py`、`verify.py` 不再使用；确认它们来自旧听野部署包并停止旧进程后，可删除这四个文件。原 `.venv` 和 `/etc/sensefield-assistant/` 私有配置继续保留。

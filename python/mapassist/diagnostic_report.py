@@ -558,7 +558,7 @@ def _contexts_and_markers(events: list[dict[str, Any]], images: list[dict[str, A
         reason = context.get("reason")
         trigger_candidates: list[dict[str, Any]] = []
         trigger_match_method = None
-        if reason in {"near_enter", "user_marker_frame"} and requested_at is not None:
+        if reason in {"near_enter", "enemy_approach", "user_marker_frame"} and requested_at is not None:
             # These records are exported after the triggering frame completes.
             # requested_at_ms therefore identifies that frame even when an
             # active/coalesced window retains an older start_observed_at_ms.
@@ -570,13 +570,13 @@ def _contexts_and_markers(events: list[dict[str, Any]], images: list[dict[str, A
             if len(trigger_candidates) == 1:
                 trigger_match_method = "exact_observed_frame"
         if (not trigger_candidates and start_observed is not None
-                and not (reason in {"near_enter", "user_marker_frame"} and requested_at is not None)):
+                and not (reason in {"near_enter", "enemy_approach", "user_marker_frame"} and requested_at is not None)):
             trigger_candidates = frames_by_observed.get(start_observed, [])
             if len(trigger_candidates) == 1:
                 trigger_match_method = "start_frame_fallback"
         trigger_frame_index = trigger_candidates[0]["frame_index"] if len(trigger_candidates) == 1 else None
         trigger_observed_at_ms = trigger_candidates[0].get("observed_at_ms") if len(trigger_candidates) == 1 else None
-        trigger_reasons = {"near_enter", "user_marker", "user_marker_frame"}
+        trigger_reasons = {"near_enter", "enemy_approach", "user_marker", "user_marker_frame"}
         trigger_images = [image for image in image_frames.get(trigger_frame_index, [])
                           if image.get("reason") in trigger_reasons] if trigger_frame_index is not None else []
         pre_context_images = [image for frame_index in pre_frames
@@ -664,8 +664,9 @@ def _contexts_and_markers(events: list[dict[str, Any]], images: list[dict[str, A
             continue
         at_ms = _nonnegative_int(event.get("at_ms"))
         event_name = fields.get("event")
-        if event_name != "NEAR_ENTER":
+        if event_name not in {"NEAR_ENTER", "APPROACH"}:
             continue
+        trigger_reason = "enemy_approach" if event_name == "APPROACH" else "near_enter"
         near_marker_index += 1
         dispatch_candidates = [dispatch for dispatch in dispatch_by_id.values()
                                if dispatch.get("kind", "").upper() == "NEAR_ZONE"
@@ -685,13 +686,13 @@ def _contexts_and_markers(events: list[dict[str, Any]], images: list[dict[str, A
         if dispatch is not None:
             matched_dispatches[cue_id] += 1
             exact_contexts = [position for position, ctx in enumerate(context_rows)
-                              if ctx.get("reason") == "near_enter"
+                              if ctx.get("reason") == trigger_reason
                               and ctx.get("trigger_frame_index") in {
                                   frame["frame_index"] for frame in frames_by_observed.get(dispatch["created_at_ms"], [])
                               }]
             if not exact_contexts:
                 exact_contexts = [position for position, ctx in enumerate(context_rows)
-                                  if ctx.get("reason") == "near_enter"
+                                  if ctx.get("reason") == trigger_reason
                                   and ctx.get("trigger_frame_index") is None
                                   and ctx.get("requested_at_ms") is None
                                   and ctx.get("start_observed_at_ms") == dispatch["created_at_ms"]]
@@ -702,7 +703,7 @@ def _contexts_and_markers(events: list[dict[str, Any]], images: list[dict[str, A
             frame_matches = frames_by_observed.get(dispatch["created_at_ms"], [])
             trigger_frame = frame_matches[0]["frame_index"] if len(frame_matches) == 1 else None
             trigger_ids = [image["image_id"] for image in image_frames.get(trigger_frame, [])
-                           if image.get("reason") == "near_enter"] if trigger_frame is not None else []
+                           if image.get("reason") == trigger_reason] if trigger_frame is not None else []
             marker_item = (_marker_from_context(
                 f"event-{near_marker_index}", "event", at_ms, context,
                 settings_pre, settings_post, cue_id=cue_id,
@@ -710,7 +711,7 @@ def _contexts_and_markers(events: list[dict[str, Any]], images: list[dict[str, A
                 "marker_id": f"event-{near_marker_index}", "kind": "event", "at_ms": at_ms,
                 "cue_id": cue_id, "context_status": None, "window_id": None,
                 "pre_frame_indices": [], "pre_image_ids": [], "post_image_ids": [],
-                "evidence_gap": "Cue 的创建时间没有精确匹配的 near_enter 截图上下文",
+                "evidence_gap": "Cue 的创建时间没有精确匹配的事件截图上下文",
             })
             marker_item["trigger_image_ids"] = trigger_ids
             marker_item["dispatch_at_ms"] = dispatch["dispatch_at_ms"]
@@ -719,13 +720,13 @@ def _contexts_and_markers(events: list[dict[str, Any]], images: list[dict[str, A
             if len(dispatch_candidates) != 1:
                 marker_item["evidence_gap"] = "NearZoneEvent 与 CueDispatch 时间匹配不唯一"
             elif not trigger_ids:
-                marker_item["evidence_gap"] = "已关联 Cue，但创建帧没有 near_enter 清晰截图"
+                marker_item["evidence_gap"] = "已关联 Cue，但创建帧没有事件清晰截图"
             markers.append(marker_item)
             continue
 
         outcome = fields.get("outcome")
         context_candidates = [position for position, ctx in enumerate(context_rows)
-                              if ctx.get("reason") == "near_enter"
+                              if ctx.get("reason") == trigger_reason
                               and position not in used_contexts
                               and outcome == "CATEGORY_DISABLED"
                               and at_ms is not None
@@ -753,7 +754,7 @@ def _contexts_and_markers(events: list[dict[str, Any]], images: list[dict[str, A
     # A context may be recorded even when its audit event is missing. Preserve
     # those rows as evidence too; do not create a false event match.
     for index, context in enumerate(context_rows, start=1):
-        if context.get("reason") not in {"near_enter", "user_marker", "user_marker_frame"}:
+        if context.get("reason") not in {"near_enter", "enemy_approach", "user_marker", "user_marker_frame"}:
             continue
         if index - 1 not in used_contexts:
             markers.append(_marker_from_context(

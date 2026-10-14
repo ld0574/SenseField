@@ -14,7 +14,7 @@ KIND_BY_CODE = {1: "main_enemy", 2: "minimap_enemy", 3: "danger_ping",
                 4: "player_dead", 5: "player_alive",
                 7: "near_zone", 8: "radar_status"}
 NEAR_ZONE_STATES = {"UNKNOWN", "CLEAR", "PENDING", "OCCUPIED", "REARM"}
-NEAR_ZONE_EVENTS = {"NEAR_ENTER", "RADAR_PAUSED", "RADAR_RESUMED", "SUPPRESSED"}
+NEAR_ZONE_EVENTS = {"NEAR_ENTER", "APPROACH", "RADAR_PAUSED", "RADAR_RESUMED", "SUPPRESSED"}
 NEAR_ZONE_OUTCOMES = {"ACCEPTED", "DROPPED", "CATEGORY_DISABLED", "SUPPRESSED"}
 NEAR_ZONE_SUPPRESSIONS = {"none", "rearm_pending", "short_gap"}
 NEAR_ZONE_SUMMARY_FIELDS = (
@@ -531,7 +531,7 @@ def _near_zone_section(state_records: list[dict[str, str]],
         cue_id = _required(values, "cueId", "NearZoneEvent")
         if outcome in {"ACCEPTED", "DROPPED"}:
             cue = cue_by_id.get(cue_id)
-            expected_kind = "near_zone" if event == "NEAR_ENTER" else "radar_status"
+            expected_kind = "near_zone" if event in {"NEAR_ENTER", "APPROACH"} else "radar_status"
             if cue is None or cue["kind"] != expected_kind:
                 raise ValueError(f"NearZoneEvent {cue_id!r} does not match a {expected_kind} CueEvent")
         counted[event] += 1
@@ -554,6 +554,8 @@ def _near_zone_section(state_records: list[dict[str, str]],
                 f"NearZoneSummary.{key}={frames[key]} does not match {counted[event]} events"
             )
     total = sum(frames[key] for key in NEAR_ZONE_SUMMARY_FIELDS[:5])
+    if "approaches" in summaries[0] and _integer(summaries[0], "approaches", "NearZoneSummary") != counted["APPROACH"]:
+        raise ValueError("NearZoneSummary.approaches does not match APPROACH events")
     minutes = session_summary["durationMs"] / 60000.0
     return {
         "transitions": transitions,
@@ -561,6 +563,7 @@ def _near_zone_section(state_records: list[dict[str, str]],
         "state_frames": {key: frames[key] for key in NEAR_ZONE_SUMMARY_FIELDS[:5]},
         "coverage": round((total - frames["unknownFrames"]) / total, 4) if total else None,
         "near_enters": counted["NEAR_ENTER"],
+        "approaches": counted["APPROACH"],
         "near_enter_per_minute": round(counted["NEAR_ENTER"] / minutes, 3) if minutes else None,
         "suppressions": suppressions,
         "radar_pauses": counted["RADAR_PAUSED"],

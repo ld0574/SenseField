@@ -23,6 +23,11 @@ final class NearZoneCuePolicy {
     /** Fixed near-zone request parameters; not evidence of physical sound or perception. */
     static String presentationAudit(CueRequest request, int sector, boolean dense,
                                     boolean preferTwoWord) {
+        return presentationAudit(request, sector, dense, preferTwoWord, NearZoneRouting.EVENT_NEAR_ENTER);
+    }
+
+    static String presentationAudit(CueRequest request, int sector, boolean dense,
+                                    boolean preferTwoWord, int event) {
         int speechChars = request.speech.codePointCount(0, request.speech.length());
         return "NearZonePresentation cueId=" + request.cueId
                 + " policy=saved_speech_style_v2 dense=" + dense
@@ -33,6 +38,7 @@ final class NearZoneCuePolicy {
                 + " panMilli=" + (request.hasPan() ? Math.round(request.pan * 1000f) : "unknown")
                 + " distanceMilli=" + (Float.isFinite(request.distance)
                 ? Math.round(request.distance * 1000f) : "unknown")
-                + " priority=" + request.priority + " freshEnemies=" + request.freshEnemyCount;
+                + " priority=" + request.priority + " freshEnemies=" + request.freshEnemyCount
+                + " trigger=" + NearZoneRouting.eventName(event);
     }
 }

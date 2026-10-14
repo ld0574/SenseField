@@ -209,6 +209,30 @@ def test_structured_tactical_answer_is_not_rejected_by_a_keyword_filter() -> Non
     assert response.json()["uncertain"] is False
 
 
+def test_selection_metadata_survives_gateway_without_changing_legacy_kind() -> None:
+    advice = FakeVision('{"kind":"hud","answer":"补对抗路，当前队友缺前排。","uncertain":false,"decision_scene":"hero_selection"}')
+    with TestClient(create_app(_settings(), recognizer=FakeRecognizer(), vision_client=advice)) as client:
+        payload = _visual_payload()
+        payload["question"] = "当前选人界面我选哪个？"
+        response = client.post("/v1/visual", json=payload, headers={"Authorization": f"Bearer {TOKEN}"})
+    assert response.status_code == 200
+    assert response.json()["kind"] == "hud"
+    assert response.json()["decision_scene"] == "hero_selection"
+
+
+def test_immediate_combat_request_does_not_wait_for_or_call_cloud_model() -> None:
+    class MustNotCall:
+        async def complete(self, **kwargs):
+            raise AssertionError("Instant combat advice must not call the vision model")
+    with TestClient(create_app(_settings(), recognizer=FakeRecognizer(), vision_client=MustNotCall())) as client:
+        payload = _visual_payload()
+        payload["question"] = "现在团战我应该立即怎么操作？"
+        response = client.post("/v1/visual", json=payload, headers={"Authorization": f"Bearer {TOKEN}"})
+    assert response.status_code == 200
+    assert "本地预警" in response.json()["answer"]
+    assert "decision_scene" not in response.json()
+
+
 @pytest.mark.parametrize(
     "answer",
     [
@@ -469,7 +493,9 @@ def test_context_images_are_forwarded_in_order_and_redacted_audit_has_only_scala
         .image.jpeg_base64,
     )
     assert primary_image == validate_visual_request(_visual_payload(image_base64=payload["image_base64"])).image.jpeg_base64
-    assert "5000 ms before" in question and "2000 ms before" in question and "100 ms old" in question
+    assert "背景截图1已过去5000毫秒" in question
+    assert "背景截图2已过去2000毫秒" in question
+    assert "当前主截图已过去100毫秒" in question
     assert "PRIVATE_USER_QUESTION" not in " ".join(record.getMessage() for record in caplog.records)
     audit = " ".join(record.getMessage() for record in caplog.records)
     assert "event=request_accepted" in audit and "event=response_validated" in audit

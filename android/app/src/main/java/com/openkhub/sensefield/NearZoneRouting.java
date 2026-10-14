@@ -9,7 +9,7 @@ package com.openkhub.sensefield;
  */
 final class NearZoneRouting {
     /** Included in diagnostics because same-version CDN builds can differ. */
-    static final String EVENT_POLICY = "confirmed_absence_v2";
+    static final String EVENT_POLICY = "confirmed_absence_approach_v3";
     static final int KIND_NEAR_ZONE = 7;
     static final int KIND_RADAR_STATUS = 8;
 
@@ -25,6 +25,7 @@ final class NearZoneRouting {
     static final int EVENT_RADAR_PAUSED = 2;
     static final int EVENT_RADAR_RESUMED = 3;
     static final int EVENT_SUPPRESSED = 4;
+    static final int EVENT_APPROACH = 5;
 
     // CuePlayer sample ids for the three relation sounds.
     static final int TONE_NEAR = 7;
@@ -133,6 +134,7 @@ final class NearZoneRouting {
         if (event == EVENT_RADAR_PAUSED) return "RADAR_PAUSED";
         if (event == EVENT_RADAR_RESUMED) return "RADAR_RESUMED";
         if (event == EVENT_SUPPRESSED) return "SUPPRESSED";
+        if (event == EVENT_APPROACH) return "APPROACH";
         return "NONE";
     }
 

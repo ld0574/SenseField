@@ -9,6 +9,23 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 public final class NearZoneRoutingTest {
+    @Test public void approachPreservesEveryConfiguredNearChannelAndSpeechStyle() {
+        NativeFrameResult.Relation approach = new NativeFrameResult.Relation(
+                NearZoneRouting.STATE_OCCUPIED, NearZoneRouting.EVENT_APPROACH,
+                4, -.707f, .25f, 9, 0, true);
+        for (boolean twoWord : new boolean[] {false, true}) {
+            CueRequest request = NearZoneCuePolicy.request("s", "early", 3,
+                    approach, null, 1000, 7, twoWord);
+            assertEquals(7, request.requestedChannels);
+            assertEquals(NearZoneRouting.speech(4, twoWord), request.speech);
+            assertEquals(1, request.hapticCode);
+            assertEquals(-.707f, request.pan, 1e-6f);
+            assertTrue(BundledSpeechCatalog.isFixed(request.speech));
+            assertTrue(NearZoneCuePolicy.presentationAudit(request, 4, false, twoWord,
+                    approach.event).contains("trigger=APPROACH"));
+        }
+        assertEquals("APPROACH", NearZoneRouting.eventName(5));
+    }
     @Test public void speechNamesEightMinimapSectorsFactually() {
         assertEquals("右方有敌人", NearZoneRouting.speech(1));
         assertEquals("上方有敌人", NearZoneRouting.speech(3));

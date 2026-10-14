@@ -171,6 +171,7 @@ public final class CaptureService extends Service {
     private long nativeResetGeneration;
     // Near-zone relation layer state for routing and the session audit.
     private boolean nearZoneActive;
+    private long nearZoneApproaches;
     private boolean nearCategoryWasEnabled = true;
     private int lastRelationState = Integer.MIN_VALUE;
     private final int[] nearZoneStateFrames = new int[5];
@@ -1150,6 +1151,10 @@ public final class CaptureService extends Service {
             lastRelationState = relation.state;
         }
         switch (relation.event) {
+            case NearZoneRouting.EVENT_APPROACH:
+                nearZoneApproaches++;
+                dispatchNearZoneCue(relation, observedAtMs, combat);
+                break;
             case NearZoneRouting.EVENT_NEAR_ENTER:
                 nearZoneEnters++;
                 dispatchNearZoneCue(relation, observedAtMs, combat);
@@ -1189,7 +1194,7 @@ public final class CaptureService extends Service {
                 nativeResetGeneration, relation, combat, observedAtMs, channels,
                 preferTwoWord);
         String presentation = NearZoneCuePolicy.presentationAudit(request, relation.sector,
-                combat != null && combat.dense, preferTwoWord);
+                combat != null && combat.dense, preferTwoWord, relation.event);
         Log.i(TAG, presentation);
         if (diagnostics != null) diagnostics.audit(presentation);
         submitRelationCue(request, NearZoneRouting.KIND_NEAR_ZONE, relation, observedAtMs,
@@ -1542,6 +1547,7 @@ public final class CaptureService extends Service {
             lastFrameLandscape = false;
             visionMemoryEnabled = false;
             nearZoneActive = false;
+            nearZoneApproaches = 0;
             nearCategoryWasEnabled = true;
             lastRelationState = Integer.MIN_VALUE;
             java.util.Arrays.fill(nearZoneStateFrames, 0);
@@ -1630,6 +1636,7 @@ public final class CaptureService extends Service {
                     + " occupiedFrames=" + nearZoneStateFrames[3]
                     + " rearmFrames=" + nearZoneStateFrames[4]
                     + " nearEnters=" + nearZoneEnters
+                    + " approaches=" + nearZoneApproaches
                     + " suppressed=" + nearZoneSuppressed
                     + " radarPauses=" + radarPauses
                     + " radarResumes=" + radarResumes);
@@ -1637,7 +1644,8 @@ public final class CaptureService extends Service {
                     + nearZoneStateFrames[0] + " clearFrames=" + nearZoneStateFrames[1]
                     + " pendingFrames=" + nearZoneStateFrames[2] + " occupiedFrames="
                     + nearZoneStateFrames[3] + " rearmFrames=" + nearZoneStateFrames[4]
-                    + " nearEnters=" + nearZoneEnters + " suppressed=" + nearZoneSuppressed
+                    + " nearEnters=" + nearZoneEnters + " approaches=" + nearZoneApproaches
+                    + " suppressed=" + nearZoneSuppressed
                     + " radarPauses=" + radarPauses + " radarResumes=" + radarResumes);
         }
         Log.i(TAG, "SessionSummary sessionId=" + auditSessionId

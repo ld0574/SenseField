@@ -35,6 +35,74 @@ public class AssistantControlsInstrumentedTest {
     }
     private static final String EXPIRED_FRAME_PROMPT = "画面返回太慢，旧画面已丢弃。";
 
+    private static AssistantPolicy policy(AssistantController controller) throws Exception {
+        Field field = AssistantController.class.getDeclaredField("policy");
+        field.setAccessible(true);
+        return (AssistantPolicy) field.get(controller);
+    }
+
+    @Test public void modelAuthFailureExplainsManualRequestAndStopsAutomaticCallsUntilRecovery() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "synthetic-auth",
+                new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller);
+            String turn = session.newTurn();
+            FrameSnapshot frame = staleHudFrame(991, SystemClock.elapsedRealtime(), session.generation());
+            installVisualTask(controller, 991, turn, frame, false);
+            controller.visualFailure(991, AssistantVisualFailure.code(502, "provider", 401,
+                    "vision_upstream_unavailable"));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(1, host.spoken);
+            assertTrue(host.last.answer.contains("模型服务拒绝了访问"));
+            assertTrue(host.last.answer.contains("账户余额和接入配置"));
+            long at = SystemClock.elapsedRealtime() + AssistantPolicy.WINDOW_MS;
+            assertFalse(policy(controller).automaticDue(at, FrameProcessingPolicy.Mode.NORMAL,
+                    false, false, -1, 2));
+            assertTrue(policy(controller).manualAllowed(at, FrameProcessingPolicy.Mode.NORMAL));
+            controller.question("附近情况", false);
+            assertEquals(2, host.spoken);
+            turn = session.newTurn();
+            frame = staleHudFrame(992, SystemClock.elapsedRealtime(), session.generation());
+            installVisualTask(controller, 992, turn, frame, false);
+            controller.visualResult(992, visualResult(session, session.generation(), turn, 992,
+                    "当前是合成测试画面。"));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertTrue(policy(controller).automaticDue(at, FrameProcessingPolicy.Mode.NORMAL,
+                    false, false, -1, 3));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void automaticAuthFailureStaysSilentAndStaleFailureCannotPauseRecoveredService() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "synthetic-auto-auth",
+                new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller);
+            String turn = session.newTurn();
+            FrameSnapshot frame = staleHudFrame(993, SystemClock.elapsedRealtime(), session.generation());
+            installVisualTask(controller, 993, turn, frame, true);
+            controller.visualFailure(993, "vision_provider_auth_failed");
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(0, host.spoken);
+            assertTrue(host.status.contains("模型服务拒绝了访问"));
+            assertTrue(host.status.contains("自动读屏已暂停"));
+            assertEquals(1, countAudit(host, "event=AUTOMATIC_PAUSED reason=vision_provider_auth_failed"));
+            policy(controller).serviceRecovered();
+            turn = session.newTurn();
+            frame = staleHudFrame(994, SystemClock.elapsedRealtime(), session.generation());
+            installVisualTask(controller, 994, turn, frame, true);
+            session.newTurn(); // The request no longer owns the active question.
+            controller.visualFailure(994, "vision_provider_auth_failed");
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertTrue(policy(controller).automaticDue(SystemClock.elapsedRealtime(),
+                    FrameProcessingPolicy.Mode.NORMAL, false, false, -1, 4));
+            assertEquals(1, countAudit(host, "event=AUTOMATIC_PAUSED reason=vision_provider_auth_failed"));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
     private static SharedPreferences preferences(Context context) {
         SharedPreferences preferences = context.getSharedPreferences("assistant-control-test", Context.MODE_PRIVATE);
         preferences.edit().clear().putBoolean(AssistantSettings.ENABLED, true)
@@ -613,6 +681,41 @@ public class AssistantControlsInstrumentedTest {
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             assertEquals("Expired proactive playback remains silent", 1, host.spoken);
             assertEquals(1, countAudit(host, "AssistantVisual event=EXPIRED stage=playback"));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void tenSecondSelectionResultRemainsPlayableWhileCapturedPageIsObserved() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context);
+        Host host = new Host();
+        AssistantController controller = new AssistantController(context, "decision-wait-test",
+                new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller);
+            String turn = session.newTurn();
+            long capturedAt = SystemClock.elapsedRealtime() - 10_000;
+            FrameSnapshot frame = staleHudFrame(120, capturedAt, session.generation());
+            installVisualTask(controller, 120, turn, frame, false);
+            controller.offerFrame(ByteBuffer.allocate(64 * 36 * 4), 64, 36, 64 * 4,
+                    121, SystemClock.elapsedRealtime());
+            JSONObject result = visualResult(session, session.generation(), turn, 120, "补对抗路，当前队友缺前排。")
+                    .put("decision_scene", "hero_selection");
+            controller.visualResult(120, result);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(1, host.spoken);
+            assertTrue(host.last.answer.contains("补对抗路"));
+            assertEquals("hero_selection", host.last.decisionScene);
+            assertTrue(controller.allows(host.last));
+            ByteBuffer changed = ByteBuffer.allocate(64 * 36 * 4);
+            for (int y = 0; y < 36; y++) for (int x = 0; x < 64; x++) {
+                int value = x < 32 ? 255 : 0;
+                changed.put((byte) value).put((byte) value).put((byte) value).put((byte) 255);
+            }
+            changed.rewind();
+            controller.offerFrame(changed, 64, 36, 64 * 4, 122, SystemClock.elapsedRealtime());
+            Thread.sleep(120);
+            controller.offerFrame(changed, 64, 36, 64 * 4, 123, SystemClock.elapsedRealtime());
+            assertFalse("A changed page cannot play the old selection again", controller.allows(host.last));
         } finally { controller.close(); preferences.edit().clear().commit(); }
     }
 

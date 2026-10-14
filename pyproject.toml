@@ -75,4 +75,4 @@ mapassist-assistant-gateway-smoke = "mapassist.assistant_gateway.smoke:main"
 where = ["python"]
 
 [tool.setuptools.package-data]
-mapassist = ["annotation_web/*.html", "annotation_web/*.css", "annotation_web/*.js", "annotation_web/*.png", "assistant_gateway/*.json"]
+mapassist = ["annotation_web/*.html", "annotation_web/*.css", "annotation_web/*.js", "annotation_web/*.png", "assistant_gateway/*.json", "assistant_gateway/vision_prompt.txt"]

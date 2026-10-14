@@ -68,6 +68,14 @@ _NON_WORD_RE = re.compile(r"[\s\d０-９.,，:：;；!！?？。+\-/]+")
 UNKNOWN_ANSWER = "无法从清晰可见的界面文字中可靠确认。"
 
 
+def is_immediate_combat_question(question: str) -> bool:
+    # Routing scope, not a hero/item recommendation or an instruction sent to a model.
+    if re.search(r"出装|配装|装备|选人|选英雄|选择英雄", question):
+        return False
+    return bool(re.search(r"团战|打架|战斗", question)
+                and re.search(r"现在|立即|马上|怎么操作|躲避|技能时机", question))
+
+
 class InvalidRequest(ValueError):
     pass
 
@@ -97,6 +105,7 @@ class VisualAnswer:
     kind: str
     answer: str
     uncertain: bool
+    decision_scene: str = ""
 
 
 def _require_id(value: Any, field_name: str) -> str:
@@ -190,7 +199,9 @@ def _requires_live_hud(question: str | None) -> bool:
 
 def _is_stable_menu_overview(question: str | None, answer: str) -> bool:
     """Keep only an explicit stable-menu description out of the HUD expiry bucket."""
-    if question not in {_SCREEN_OVERVIEW_QUESTION, _AUTOMATIC_OVERVIEW_QUESTION}:
+    if question not in {_SCREEN_OVERVIEW_QUESTION, _AUTOMATIC_OVERVIEW_QUESTION,
+                        "请分析当前页面，给一条有依据的下一步选择建议。",
+                        "当前画面是否有需要我重新考虑的选择？没有可靠依据就保持安静。"}:
         return False
     return bool(
         _STABLE_MENU_ANSWER_RE.search(answer)
@@ -236,11 +247,16 @@ def parse_visual_answer(raw: str, *, question: str | None = None) -> VisualAnswe
         value = json.loads(content)
     except json.JSONDecodeError as exc:
         raise InvalidRequest("model response was not valid JSON") from exc
-    if not isinstance(value, dict) or set(value) != {"kind", "answer", "uncertain"}:
+    if not isinstance(value, dict) or set(value) not in (
+        {"kind", "answer", "uncertain"}, {"kind", "answer", "uncertain", "decision_scene"}
+    ):
         raise InvalidRequest("model response must be a JSON object with exactly the required keys")
     kind = value.get("kind")
     answer = value.get("answer")
     uncertain = value.get("uncertain")
+    decision_scene = value.get("decision_scene", "")
+    if not isinstance(decision_scene, str) or decision_scene not in {"", "equipment", "hero_selection"}:
+        raise InvalidRequest("unsupported decision_scene")
     if (
         not isinstance(kind, str)
         or kind not in {"hud", "ui_text", "unknown"}
@@ -260,4 +276,8 @@ def parse_visual_answer(raw: str, *, question: str | None = None) -> VisualAnswe
         kind == "ui_text" and _is_stable_menu_overview(question, answer)
     ):
         kind = "hud"
-    return VisualAnswer(kind, answer, uncertain)
+    if decision_scene and not uncertain:
+        kind = "hud"  # Older phone clients keep their original conservative expiry.
+    else:
+        decision_scene = ""
+    return VisualAnswer(kind, answer, uncertain, decision_scene)

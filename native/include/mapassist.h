@@ -298,7 +298,7 @@ void ma_engine_clear_minimap_tracks(ma_engine *engine);
  * Minimap near-zone relation layer.
  *
  * Reads the confirmed entity snapshot after ma_engine_step() and reports when
- * a visible enemy marker enters the neighbourhood of the local player's own
+ * a visible enemy marker enters or approaches the neighbourhood of the local player's own
  * minimap marker. Distances are measured in units of the map body's short
  * edge in pixels; bearings are minimap-relative (screen up is up) and centred
  * on the player marker, not on hero facing or attack range.
@@ -314,6 +314,13 @@ void ma_engine_clear_minimap_tracks(ma_engine *engine);
  * Continuously visible targets leaving/re-entering the radius remain announced;
  * they do not rearm on a radius timer. There is no global cue cooldown. Confirmed
  * simultaneous appearances coalesce into at most one event per call.
+ * Three simultaneous fresh player/enemy sightings with consistent relative
+ * closing motion may announce APPROACH before entry (0.5..1.5s linear projection).
+ * Cached sightings, stale records, identity/layout changes and observation gaps
+ * cannot extend motion evidence. This is visible relative motion, not prediction
+ * of hidden enemies, hero intent, skills, attack range or death. An approach cue
+ * consumes the same appearance opportunity; ordinary near confirmation remains
+ * the fallback when motion evidence is insufficient.
  */
 enum ma_relation_state {
     MA_RELATION_UNKNOWN = 0,   /* self or map unreliable beyond the grace gap */
@@ -329,7 +336,8 @@ enum ma_relation_event {
     MA_RELATION_EVENT_RADAR_PAUSED = 2,
     MA_RELATION_EVENT_RADAR_RESUMED = 3,
     /* A would-be cue that the rules suppressed; for audit logs only. */
-    MA_RELATION_EVENT_SUPPRESSED = 4
+    MA_RELATION_EVENT_SUPPRESSED = 4,
+    MA_RELATION_EVENT_APPROACH = 5
 };
 
 enum ma_relation_suppression {

@@ -24,11 +24,13 @@ class GatewaySettings:
     vision_model: str = ""
     vision_api_key: str = field(default="", repr=False)
     vision_max_tokens: int = 256
+    vision_prompt_file: Path | None = None
+    vision_disable_thinking: bool = False
     model_cache_dir: Path | None = None
     asr_backend: str = "paraformer_streaming"
     sensevoice_model_dir: Path | None = None
     account_concurrency: int = 1
-    request_timeout_seconds: float = 8.0
+    request_timeout_seconds: float = 12.0
     require_tls: bool = True
     local_tls_proxy: bool = False
     mode: str = "production"
@@ -55,6 +57,10 @@ class GatewaySettings:
         if (isinstance(self.vision_max_tokens, bool) or not isinstance(self.vision_max_tokens, int)
                 or not 64 <= self.vision_max_tokens <= 1024):
             raise ValueError("ASSISTANT_GATEWAY_VISION_MAX_TOKENS must be between 64 and 1024")
+        if (isinstance(self.request_timeout_seconds, bool)
+                or not isinstance(self.request_timeout_seconds, (int, float))
+                or not 2 <= self.request_timeout_seconds <= 30):
+            raise ValueError("ASSISTANT_GATEWAY_VISION_TIMEOUT_SECONDS must be between 2 and 30")
         if self.vision_provider == "compatible":
             url = urlsplit(self.vision_base_url)
             if (url.scheme != "https" or not url.hostname or url.username or url.password
@@ -92,9 +98,16 @@ class GatewaySettings:
             vision_max_tokens = int(os.environ.get("ASSISTANT_GATEWAY_VISION_MAX_TOKENS", "256"))
         except ValueError as exc:
             raise ValueError("ASSISTANT_GATEWAY_VISION_MAX_TOKENS must be an integer") from exc
+        try:
+            vision_timeout = float(os.environ.get("ASSISTANT_GATEWAY_VISION_TIMEOUT_SECONDS", "12"))
+        except ValueError as exc:
+            raise ValueError("ASSISTANT_GATEWAY_VISION_TIMEOUT_SECONDS must be a number") from exc
         public_raw = os.environ.get("ASSISTANT_GATEWAY_PUBLIC_ACCESS", "0")
         if public_raw not in {"0", "1"}:
             raise ValueError("ASSISTANT_GATEWAY_PUBLIC_ACCESS must be 0 or 1")
+        thinking_raw = os.environ.get("ASSISTANT_GATEWAY_VISION_DISABLE_THINKING", "0")
+        if thinking_raw not in {"0", "1"}:
+            raise ValueError("ASSISTANT_GATEWAY_VISION_DISABLE_THINKING must be 0 or 1")
         quota_path = os.environ.get("ASSISTANT_GATEWAY_PUBLIC_QUOTA_DB", "").strip()
         return cls(
             public_access=public_raw == "1",
@@ -110,6 +123,10 @@ class GatewaySettings:
             vision_model=os.environ.get("ASSISTANT_GATEWAY_VISION_MODEL", "").strip(),
             vision_api_key=os.environ.get("ASSISTANT_GATEWAY_VISION_API_KEY", "").strip(),
             vision_max_tokens=vision_max_tokens,
+            vision_disable_thinking=thinking_raw == "1",
+            request_timeout_seconds=vision_timeout,
+            vision_prompt_file=Path(os.environ["ASSISTANT_GATEWAY_VISION_PROMPT_FILE"]).expanduser()
+                if os.environ.get("ASSISTANT_GATEWAY_VISION_PROMPT_FILE", "").strip() else None,
             model_cache_dir=Path(cache).expanduser() if cache else None,
             asr_backend=os.environ.get("ASSISTANT_GATEWAY_ASR_BACKEND", "paraformer_streaming").strip(),
             sensevoice_model_dir=Path(sensevoice_dir).expanduser() if sensevoice_dir else None,

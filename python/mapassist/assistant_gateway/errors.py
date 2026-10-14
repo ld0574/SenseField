@@ -91,6 +91,18 @@ class VisionTimeout(GatewayError):
         super().__init__("vision_timeout", "The vision request timed out.", http_status=504)
 
 
+class VisionProviderAuthError(VisionUpstreamError):
+    """The gateway reached the model provider, which rejected its access."""
+
+    def __init__(self, *, upstream_http_status: int, provider_code: str | int | None = None):
+        super().__init__(source="provider", upstream_http_status=upstream_http_status,
+                         provider_code=provider_code)
+        self.code = ("vision_provider_auth_failed" if upstream_http_status == 401
+                     else "vision_provider_access_denied")
+        self.message = "The vision provider rejected server access. Check the provider account and access configuration."
+        self.args = (self.message,)
+
+
 def _safe_http_status(value: int | None) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int) or not 100 <= value <= 599:
         return None

@@ -433,3 +433,22 @@ def test_coalesced_context_matches_its_own_trigger_frame_and_post_window(tmp_pat
     assert coalesced["post_image_ids"] == ["image-0007", "image-0008"]
     assert accepted["evidence_gap"] is None
     assert coalesced["evidence_gap"] is None
+
+
+def test_approach_context_keeps_its_own_trigger_and_callback_evidence(tmp_path: Path) -> None:
+    original = _write_coalesced_context_zip(tmp_path / "near.zip")
+    archive = tmp_path / "approach.zip"
+    with zipfile.ZipFile(original) as source, zipfile.ZipFile(archive, "w") as target:
+        for name in source.namelist():
+            body = source.read(name)
+            if name == "events.jsonl":
+                body = body.replace(b"event=NEAR_ENTER", b"event=APPROACH").replace(
+                    b'"near_enter"', b'"enemy_approach"')
+            target.writestr(name, body)
+    report, _ = analyze_diagnostic_zip(archive)
+    markers = [m for m in report["image_evidence"]["markers"] if m["kind"] == "event"]
+    assert len(markers) == 2
+    assert [m["trigger_frame_index"] for m in markers] == [1, 3]
+    assert markers[1]["trigger_image_ids"] == ["image-0005", "image-0006"]
+    assert all(m["context_match_method"] == "exact_created_at_frame" for m in markers)
+    assert all(m["evidence_gap"] is None for m in markers)

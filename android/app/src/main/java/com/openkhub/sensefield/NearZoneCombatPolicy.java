@@ -54,7 +54,8 @@ final class NearZoneCombatPolicy {
 
         NativeFrameResult.Relation relation = frame == null ? null : frame.relation;
         boolean nearEvent = relation != null
-                && relation.event == NearZoneRouting.EVENT_NEAR_ENTER;
+                && (relation.event == NearZoneRouting.EVENT_NEAR_ENTER
+                || relation.event == NearZoneRouting.EVENT_APPROACH);
         if (nearEvent) {
             nearEventTimes.addLast(observedAtMs);
             while (nearEventTimes.size() > DENSE_TARGET_COUNT) nearEventTimes.removeFirst();
