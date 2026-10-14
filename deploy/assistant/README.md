@@ -2,6 +2,47 @@
 
 推荐直接在后台启动 Python 后端，无需 Docker，也无需先安装 systemd 服务。公网 HTTPS 使用服务器现有的 Nginx 和证书，后端仅监听 `http://127.0.0.1:18765`；不需要 `backend.crt`。服务器不运行 ASR 或视觉模型，手机负责语音识别，后端转发画面请求到配置的模型 API。
 
+## 已有部署更新：0.4.7 需要配套更新 Python 服务端
+
+**本轮中文游戏搭子提示词、选人／出装响应和模型访问错误处理都包含服务端改动。安装 APK 不会更新服务器；需要更新 Python 源码、核对私有配置并重启服务。** 本地交付部署包也不会自动上传或重启生产服务器。
+
+以下使用已有的 `/data/wwwroot/sf` 直接后台部署。先停止现有服务，再选择一种源码更新方式：
+
+```sh
+cd /data/wwwroot/sf
+bash deploy/assistant/start.sh stop
+```
+
+- **Git 部署**：在服务器的 `main` 检出中执行 `git pull --ff-only origin main`。
+- **ZIP 部署**：核对随包 `SHA256SUMS.txt`，将源码包上传到服务器 `/tmp/`，执行 `unzip -o /tmp/sensefield-assistant-0.4.7-20261014.zip -d /data/wwwroot/sf`。ZIP 顶层直接包含 `pyproject.toml`、`python/`、`deploy/`，包括新的 `python/mapassist/assistant_gateway/vision_prompt.txt`。
+
+保留原 `.venv`、`deploy/assistant/runtime/` 和 `/etc/sensefield-assistant/gateway.json`；不要重新运行首次初始化或清空额度数据库。部署包只含已提交源码与说明，不含这些私有或运行时文件。
+
+如切换到本次验证的中转模型，在现有私有 JSON 中合并以下字段，值均为字符串，保留其他配置：
+
+```json
+{
+  "ASSISTANT_GATEWAY_VISION_PROVIDER": "compatible",
+  "ASSISTANT_GATEWAY_VISION_BASE_URL": "https://www.tokens1688.com/v1",
+  "ASSISTANT_GATEWAY_VISION_MODEL": "Kimi-K3",
+  "ASSISTANT_GATEWAY_VISION_DISABLE_THINKING": "1",
+  "ASSISTANT_GATEWAY_VISION_TIMEOUT_SECONDS": "12"
+}
+```
+
+同时在私有配置中更新对应的 `ASSISTANT_GATEWAY_VISION_API_KEY`，保留仅所有者可读的文件权限。接口地址不加 `/chat/completions`，客户端会自行追加。默认加载随源码交付的中文提示词；若已有 `ASSISTANT_GATEWAY_VISION_PROMPT_FILE` 指向旧文件，需更新该自定义文件，或移除此字段以使用新默认文件。检查现有 Nginx `/v1/visual` 的 `proxy_read_timeout` 至少为 `16s`；若修改反代，执行 `sudo nginx -t` 成功后再重载。
+
+完成后启动并实际验收一次公网读图：
+
+```sh
+cd /data/wwwroot/sf
+bash deploy/assistant/start.sh start
+.venv/bin/python deploy/assistant/verify.py \
+  --config /etc/sensefield-assistant/gateway.json --visual
+```
+
+验收会调用模型一次；应得到 HTTP 200 并读出合成图文字 `SYNTHETIC GATEWAY TEST`。仅 `/health` 正常不能证明新中转账户或图片能力可用。原本由 systemd 或面板管理的服务继续用原管理器停启；Docker 部署则更新源码后重建镜像，参见对应部署说明。确认失败时先查网关和反代日志，未完成该步骤前不能记为生产恢复。
+
 ## 1. 准备服务器与源码
 
 需要 Python 3.10–3.13 及对应的 venv 支持。Ubuntu/Debian 可安装：
