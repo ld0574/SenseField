@@ -82,8 +82,10 @@ def test_qwen_flash_uses_its_documented_thinking_flag_on_the_wire(model, disable
     assert "thinking" not in seen and "extra_body" not in seen
     if disable_thinking:
         assert seen["enable_thinking"] is False
+        assert seen["response_format"] == {"type": "json_object"}
     else:
         assert "enable_thinking" not in seen
+        assert "response_format" not in seen
 
 
 @pytest.mark.parametrize("model", ["Kimi-K3", "MiniMax-M3", "glm-5.3-flash",
@@ -95,6 +97,7 @@ def test_qwen_flash_parameter_does_not_change_other_models(model) -> None:
         body = client._request_body(question="q", image_base64="a")
         assert body["thinking"] == {"type": "disabled"}
         assert "enable_thinking" not in body
+        assert "response_format" not in body
     finally:
         asyncio.run(client.close())
 

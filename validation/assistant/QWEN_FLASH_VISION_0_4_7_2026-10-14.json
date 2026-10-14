@@ -1,0 +1,987 @@
+{
+  "date": "2026-10-14",
+  "provider": "https://maas.qianwenaiapi.com/compatible-mode/v1",
+  "model": "qwen3.8-flash",
+  "measurement": "direct_provider_with_gateway_stream_transport_and_validator",
+  "production_changed": false,
+  "phone_changed": false,
+  "phone_ocr_added": false,
+  "phone_live_playback_test": false,
+  "independent_accuracy_sample": false,
+  "strategy_optimality_verified": false,
+  "full_answer_target_ms": 5000,
+  "timeout_seconds": 17,
+  "total_requests": 22,
+  "production_token_limit_changed": false,
+  "reasoning_text_saved": false,
+  "private_receipts": [
+    {
+      "name": "direct-qwen-20261014T144324Z.json",
+      "sha256": "8cce7630f22dccce8e1f9b81acfdcd764cf34147a8b2ae246a9e3e9921a2b4cd"
+    },
+    {
+      "name": "direct-qwen-20261014T145107Z.json",
+      "sha256": "1041f7616214d02385392e50c16337bcaf7a83d01e2face1f576a1c78005fd21"
+    },
+    {
+      "name": "thinking-qwen-20261014T151059Z.json",
+      "sha256": "8011c8eceb6718554d05d08bf9f5d33407755402a0689729bf705a4ddc7082fa"
+    },
+    {
+      "name": "thinking-control-20261014T151415Z.json",
+      "sha256": "643d3197f9ccf347076394e6c67fca13758d618527b66ac56c01b70ea75e171d"
+    }
+  ],
+  "source_bindings": {
+    "no_json": {
+      "source_commit": "8f7f8dccceff1d4837d472d5d71d716bac6f9028",
+      "prompts": {
+        "production": {
+          "chars": 1966,
+          "sha256": "8dfc7a58ebe7777b3354c867603caf2a72aa63f8d024472fab5567ecca1dd526"
+        }
+      }
+    },
+    "json_and_candidate": {
+      "source_commit": "8f7f8dccceff1d4837d472d5d71d716bac6f9028",
+      "working_tree_modified": true,
+      "code_sha256": {
+        "python/mapassist/assistant_gateway/compatible.py": "5a9955f5646bd1dfd13470946e15b4fe57d980c942ddd10ef56d924482bd9d14",
+        "python/mapassist/assistant_gateway/vision_prompt.txt": "d389542a5ecbfbfd105ac9d43b893cee018fb565ec0e8c5d8d4a46f102abd507",
+        "python/mapassist/assistant_gateway/images.py": "b3916bc1983fd227de78f94b8ed5bc8388aa22c3ab730d1f4dcb130c16f19d16",
+        "python/mapassist/assistant_gateway/validation.py": "8c1d87319f3f07ce74d62320626f2cfbe817fe7f681895e0ac44526c8012f0ba"
+      },
+      "prompts": {
+        "production": {
+          "chars": 1971,
+          "sha256": "0b8ed4b5f78ad44b8977ee64489b01cbc4f829f4a8b3832d9c9bde6059735c2a"
+        },
+        "question_grounded_candidate": {
+          "chars": 1503,
+          "sha256": "eb3cdd89205ff0dd2e2078e993666eb8304bf031cfdbd6b4a13dcd5ad711a64e"
+        }
+      }
+    },
+    "thinking": {
+      "source_commit": "8f7f8dccceff1d4837d472d5d71d716bac6f9028",
+      "working_tree_modified": true,
+      "code_sha256": {
+        "python/mapassist/assistant_gateway/compatible.py": "5a9955f5646bd1dfd13470946e15b4fe57d980c942ddd10ef56d924482bd9d14",
+        "python/mapassist/assistant_gateway/vision_prompt.txt": "d389542a5ecbfbfd105ac9d43b893cee018fb565ec0e8c5d8d4a46f102abd507",
+        "python/mapassist/assistant_gateway/images.py": "b3916bc1983fd227de78f94b8ed5bc8388aa22c3ab730d1f4dcb130c16f19d16",
+        "python/mapassist/assistant_gateway/glm.py": "e00fb5dcb2288fb9ae972ffee7595c7628bf614d4c5b0a1c9a875f3dbcac0880",
+        "python/mapassist/assistant_gateway/validation.py": "8c1d87319f3f07ce74d62320626f2cfbe817fe7f681895e0ac44526c8012f0ba"
+      },
+      "prompt_sha256": "0b8ed4b5f78ad44b8977ee64489b01cbc4f829f4a8b3832d9c9bde6059735c2a",
+      "script_sha256": "7e9f56e04bb46b83eeceb1e369a1dfc401e5a2cabacdfeb77905778f964ea0af",
+      "fixture_sha256": "c71644c917bf942cf5c90b69203742c8ca22812d1e7f978ab38c8214fd94c1bd"
+    },
+    "control": {
+      "prompt_sha256": "0b8ed4b5f78ad44b8977ee64489b01cbc4f829f4a8b3832d9c9bde6059735c2a",
+      "script_sha256": "aee05851f215601620fafd41ca4882947acaef6fdcef9338a52cc3f243fe5edd"
+    }
+  },
+  "cases": [
+    {
+      "case": "hero_selection",
+      "width": 960,
+      "height": 432,
+      "source_sha256": "bbd5fc1dbd4334642345c9c5728a9f1d71e74b7efd59d466099d636dca2b5b5e",
+      "upstream_sha256": "bbd5fc1dbd4334642345c9c5728a9f1d71e74b7efd59d466099d636dca2b5b5e",
+      "upstream_bytes": 48462,
+      "transcoded": false
+    },
+    {
+      "case": "scoreboard",
+      "width": 960,
+      "height": 432,
+      "source_sha256": "cc4c9c4e693c555c665ed5b504edff8e505ebea4da43da13785ac5b24b134df2",
+      "upstream_sha256": "cc4c9c4e693c555c665ed5b504edff8e505ebea4da43da13785ac5b24b134df2",
+      "upstream_bytes": 57790,
+      "transcoded": false
+    }
+  ],
+  "results": [
+    {
+      "round": 1,
+      "case": "hero_selection",
+      "full_reply_ms": 1790,
+      "metrics": {
+        "event_count": 19,
+        "choice_count": 19,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 43,
+        "first_content_ms": 1330,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 1789
+      },
+      "validation_error_type": "InvalidRequest",
+      "condition": "nonthinking_no_json",
+      "max_tokens": 256,
+      "enable_thinking": false,
+      "json_mode": false,
+      "protocol_valid": false,
+      "model_declared_uncertain": null,
+      "parsed_decision_scene": null,
+      "nonempty_certain_protocol_answer": false,
+      "complete_under_5s": false,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "protocol_failure_not_accepted_as_answer"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "round": 1,
+      "case": "scoreboard",
+      "full_reply_ms": 1452,
+      "metrics": {
+        "event_count": 25,
+        "choice_count": 25,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 50,
+        "first_content_ms": 821,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 1451
+      },
+      "validation_error_type": "InvalidRequest",
+      "condition": "nonthinking_no_json",
+      "max_tokens": 256,
+      "enable_thinking": false,
+      "json_mode": false,
+      "protocol_valid": false,
+      "model_declared_uncertain": null,
+      "parsed_decision_scene": null,
+      "nonempty_certain_protocol_answer": false,
+      "complete_under_5s": false,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "protocol_failure_not_accepted_as_answer"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "round": 2,
+      "case": "hero_selection",
+      "full_reply_ms": 1907,
+      "metrics": {
+        "event_count": 24,
+        "choice_count": 24,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 114,
+        "first_content_ms": 1303,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 1906
+      },
+      "condition": "nonthinking_no_json",
+      "max_tokens": 256,
+      "enable_thinking": false,
+      "json_mode": false,
+      "protocol_valid": true,
+      "model_declared_uncertain": false,
+      "parsed_decision_scene": "hero_selection",
+      "nonempty_certain_protocol_answer": true,
+      "complete_under_5s": true,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "recommended_names_and_missing_middle_label_visible",
+          "selectability_not_independently_confirmed"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "round": 2,
+      "case": "scoreboard",
+      "full_reply_ms": 2069,
+      "metrics": {
+        "event_count": 24,
+        "choice_count": 24,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 54,
+        "first_content_ms": 1416,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 2068
+      },
+      "validation_error_type": "InvalidRequest",
+      "condition": "nonthinking_no_json",
+      "max_tokens": 256,
+      "enable_thinking": false,
+      "json_mode": false,
+      "protocol_valid": false,
+      "model_declared_uncertain": null,
+      "parsed_decision_scene": null,
+      "nonempty_certain_protocol_answer": false,
+      "complete_under_5s": false,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "protocol_failure_not_accepted_as_answer"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "round": 1,
+      "case": "hero_selection",
+      "full_reply_ms": 2139,
+      "metrics": {
+        "event_count": 25,
+        "choice_count": 25,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 131,
+        "first_content_ms": 1509,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 2138
+      },
+      "condition": "nonthinking_json",
+      "max_tokens": 256,
+      "enable_thinking": false,
+      "json_mode": true,
+      "protocol_valid": true,
+      "model_declared_uncertain": false,
+      "parsed_decision_scene": "hero_selection",
+      "nonempty_certain_protocol_answer": true,
+      "complete_under_5s": true,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "recommended_names_and_missing_middle_label_visible",
+          "selectability_not_independently_confirmed"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "round": 1,
+      "case": "scoreboard",
+      "full_reply_ms": 1790,
+      "metrics": {
+        "event_count": 34,
+        "choice_count": 34,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 134,
+        "first_content_ms": 870,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 1789
+      },
+      "condition": "nonthinking_json",
+      "max_tokens": 256,
+      "enable_thinking": false,
+      "json_mode": true,
+      "protocol_valid": true,
+      "model_declared_uncertain": false,
+      "parsed_decision_scene": "game_decision",
+      "nonempty_certain_protocol_answer": true,
+      "complete_under_5s": true,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "ability_basis_unverified",
+          "economy_not_spendable_gold"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "round": 2,
+      "case": "hero_selection",
+      "full_reply_ms": 1847,
+      "metrics": {
+        "event_count": 25,
+        "choice_count": 25,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 120,
+        "first_content_ms": 990,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 1847
+      },
+      "condition": "nonthinking_json",
+      "max_tokens": 256,
+      "enable_thinking": false,
+      "json_mode": true,
+      "protocol_valid": true,
+      "model_declared_uncertain": false,
+      "parsed_decision_scene": "hero_selection",
+      "nonempty_certain_protocol_answer": true,
+      "complete_under_5s": true,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "recommended_names_and_missing_middle_label_visible",
+          "selectability_not_independently_confirmed"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "round": 2,
+      "case": "scoreboard",
+      "full_reply_ms": 1865,
+      "metrics": {
+        "event_count": 35,
+        "choice_count": 35,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 144,
+        "first_content_ms": 928,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 1864
+      },
+      "condition": "nonthinking_json",
+      "max_tokens": 256,
+      "enable_thinking": false,
+      "json_mode": true,
+      "protocol_valid": true,
+      "model_declared_uncertain": false,
+      "parsed_decision_scene": "game_decision",
+      "nonempty_certain_protocol_answer": true,
+      "complete_under_5s": true,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "visible_timer_contradiction"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "round": 1,
+      "case": "hero_selection",
+      "full_reply_ms": 2213,
+      "metrics": {
+        "event_count": 21,
+        "choice_count": 21,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 117,
+        "first_content_ms": 1612,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 2212
+      },
+      "condition": "rewritten_prompt",
+      "max_tokens": 256,
+      "enable_thinking": false,
+      "json_mode": true,
+      "protocol_valid": true,
+      "model_declared_uncertain": false,
+      "parsed_decision_scene": "hero_selection",
+      "nonempty_certain_protocol_answer": true,
+      "complete_under_5s": true,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "recommended_names_and_missing_middle_label_visible",
+          "selectability_not_independently_confirmed"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "round": 1,
+      "case": "scoreboard",
+      "full_reply_ms": 3547,
+      "metrics": {
+        "event_count": 36,
+        "choice_count": 36,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 137,
+        "first_content_ms": 2519,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 3547
+      },
+      "condition": "rewritten_prompt",
+      "max_tokens": 256,
+      "enable_thinking": false,
+      "json_mode": true,
+      "protocol_valid": true,
+      "model_declared_uncertain": false,
+      "parsed_decision_scene": "game_decision",
+      "nonempty_certain_protocol_answer": true,
+      "complete_under_5s": true,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "hero_identity_contradiction",
+          "question_reframed_to_skill_upgrade"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "round": 2,
+      "case": "hero_selection",
+      "full_reply_ms": 2258,
+      "metrics": {
+        "event_count": 22,
+        "choice_count": 22,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 112,
+        "first_content_ms": 1646,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 2257
+      },
+      "condition": "rewritten_prompt",
+      "max_tokens": 256,
+      "enable_thinking": false,
+      "json_mode": true,
+      "protocol_valid": true,
+      "model_declared_uncertain": false,
+      "parsed_decision_scene": "hero_selection",
+      "nonempty_certain_protocol_answer": true,
+      "complete_under_5s": true,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "recommended_names_and_missing_middle_label_visible",
+          "selectability_not_independently_confirmed"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "round": 2,
+      "case": "scoreboard",
+      "full_reply_ms": 2063,
+      "metrics": {
+        "event_count": 29,
+        "choice_count": 29,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 127,
+        "first_content_ms": 1236,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 2063
+      },
+      "condition": "rewritten_prompt",
+      "max_tokens": 256,
+      "enable_thinking": false,
+      "json_mode": true,
+      "protocol_valid": true,
+      "model_declared_uncertain": false,
+      "parsed_decision_scene": "game_decision",
+      "nonempty_certain_protocol_answer": true,
+      "complete_under_5s": true,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "lane_pairing_not_established_by_image"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "round": 1,
+      "case": "hero_selection",
+      "full_reply_ms": 12422,
+      "metrics": {
+        "event_count": 265,
+        "choice_count": 265,
+        "reasoning_content_present": true,
+        "reasoning_content_chars": 815,
+        "content_chars": 98,
+        "first_content_ms": 11995,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 12421
+      },
+      "condition": "light_512",
+      "max_tokens": 8192,
+      "enable_thinking": true,
+      "json_mode": true,
+      "thinking_budget_requested": 512,
+      "protocol_valid": true,
+      "model_declared_uncertain": false,
+      "parsed_decision_scene": "hero_selection",
+      "nonempty_certain_protocol_answer": true,
+      "complete_under_5s": false,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "recommended_names_and_missing_middle_label_visible",
+          "selectability_not_independently_confirmed"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "round": 1,
+      "case": "scoreboard",
+      "full_reply_ms": 12407,
+      "metrics": {
+        "event_count": 279,
+        "choice_count": 279,
+        "reasoning_content_present": true,
+        "reasoning_content_chars": 791,
+        "content_chars": 114,
+        "first_content_ms": 11644,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 12405
+      },
+      "condition": "light_512",
+      "max_tokens": 8192,
+      "enable_thinking": true,
+      "json_mode": true,
+      "thinking_budget_requested": 512,
+      "protocol_valid": true,
+      "model_declared_uncertain": false,
+      "parsed_decision_scene": "equipment",
+      "nonempty_certain_protocol_answer": true,
+      "complete_under_5s": false,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "question_reframed_to_equipment",
+          "specific_item_basis_unverified"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "round": 1,
+      "case": "hero_selection",
+      "full_reply_ms": 12193,
+      "metrics": {
+        "event_count": 389,
+        "choice_count": 389,
+        "reasoning_content_present": true,
+        "reasoning_content_chars": 1285,
+        "content_chars": 104,
+        "first_content_ms": 11733,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 12192
+      },
+      "condition": "default_thinking",
+      "max_tokens": 8192,
+      "enable_thinking": true,
+      "json_mode": true,
+      "protocol_valid": true,
+      "model_declared_uncertain": false,
+      "parsed_decision_scene": "hero_selection",
+      "nonempty_certain_protocol_answer": true,
+      "complete_under_5s": false,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "recommended_names_and_missing_middle_label_visible",
+          "selectability_not_independently_confirmed"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "round": 1,
+      "case": "scoreboard",
+      "full_reply_ms": 11309,
+      "metrics": {
+        "event_count": 341,
+        "choice_count": 341,
+        "reasoning_content_present": true,
+        "reasoning_content_chars": 1057,
+        "content_chars": 67,
+        "first_content_ms": 10907,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 11308
+      },
+      "condition": "default_thinking",
+      "max_tokens": 8192,
+      "enable_thinking": true,
+      "json_mode": true,
+      "protocol_valid": true,
+      "model_declared_uncertain": false,
+      "parsed_decision_scene": "",
+      "nonempty_certain_protocol_answer": true,
+      "complete_under_5s": false,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "delegated_equipment_inspection_to_user"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "round": 2,
+      "case": "hero_selection",
+      "full_reply_ms": 11742,
+      "metrics": {
+        "event_count": 366,
+        "choice_count": 366,
+        "reasoning_content_present": true,
+        "reasoning_content_chars": 1212,
+        "content_chars": 123,
+        "first_content_ms": 11168,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 11740
+      },
+      "condition": "default_thinking",
+      "max_tokens": 8192,
+      "enable_thinking": true,
+      "json_mode": true,
+      "protocol_valid": true,
+      "model_declared_uncertain": false,
+      "parsed_decision_scene": "hero_selection",
+      "nonempty_certain_protocol_answer": true,
+      "complete_under_5s": false,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "recommended_names_and_missing_middle_label_visible",
+          "selectability_not_independently_confirmed"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "round": 2,
+      "case": "scoreboard",
+      "full_reply_ms": 11610,
+      "metrics": {
+        "event_count": 361,
+        "choice_count": 361,
+        "reasoning_content_present": true,
+        "reasoning_content_chars": 994,
+        "content_chars": 118,
+        "first_content_ms": 10918,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 11609
+      },
+      "condition": "default_thinking",
+      "max_tokens": 8192,
+      "enable_thinking": true,
+      "json_mode": true,
+      "protocol_valid": true,
+      "model_declared_uncertain": false,
+      "parsed_decision_scene": "game_decision",
+      "nonempty_certain_protocol_answer": true,
+      "complete_under_5s": false,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "user_role_and_route_basis_unverified"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "round": 2,
+      "case": "hero_selection",
+      "full_reply_ms": 13303,
+      "metrics": {
+        "event_count": 245,
+        "choice_count": 245,
+        "reasoning_content_present": true,
+        "reasoning_content_chars": 755,
+        "content_chars": 119,
+        "first_content_ms": 12548,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 13302
+      },
+      "condition": "light_512",
+      "max_tokens": 8192,
+      "enable_thinking": true,
+      "json_mode": true,
+      "thinking_budget_requested": 512,
+      "protocol_valid": true,
+      "model_declared_uncertain": false,
+      "parsed_decision_scene": "hero_selection",
+      "nonempty_certain_protocol_answer": true,
+      "complete_under_5s": false,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "recommended_names_and_missing_middle_label_visible",
+          "selectability_not_independently_confirmed"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "round": 2,
+      "case": "scoreboard",
+      "full_reply_ms": 9516,
+      "metrics": {
+        "event_count": 259,
+        "choice_count": 259,
+        "reasoning_content_present": true,
+        "reasoning_content_chars": 797,
+        "content_chars": 116,
+        "first_content_ms": 8906,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 9515
+      },
+      "condition": "light_512",
+      "max_tokens": 8192,
+      "enable_thinking": true,
+      "json_mode": true,
+      "thinking_budget_requested": 512,
+      "protocol_valid": true,
+      "model_declared_uncertain": false,
+      "parsed_decision_scene": "game_decision",
+      "nonempty_certain_protocol_answer": true,
+      "complete_under_5s": false,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "delegated_visual_inspection_to_user"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "case": "hero_selection",
+      "full_reply_ms": 1501,
+      "metrics": {
+        "event_count": 28,
+        "choice_count": 28,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 126,
+        "first_content_ms": 794,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 1463
+      },
+      "condition": "no_thinking_equal_tokens",
+      "max_tokens": 8192,
+      "enable_thinking": false,
+      "json_mode": true,
+      "round": 1,
+      "protocol_valid": true,
+      "model_declared_uncertain": false,
+      "parsed_decision_scene": "hero_selection",
+      "nonempty_certain_protocol_answer": true,
+      "complete_under_5s": true,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "recommended_names_and_missing_middle_label_visible",
+          "selectability_not_independently_confirmed"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    },
+    {
+      "case": "scoreboard",
+      "full_reply_ms": 1646,
+      "metrics": {
+        "event_count": 28,
+        "choice_count": 28,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 117,
+        "first_content_ms": 908,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 1646
+      },
+      "condition": "no_thinking_equal_tokens",
+      "max_tokens": 8192,
+      "enable_thinking": false,
+      "json_mode": true,
+      "round": 1,
+      "protocol_valid": true,
+      "model_declared_uncertain": true,
+      "parsed_decision_scene": "",
+      "nonempty_certain_protocol_answer": false,
+      "complete_under_5s": true,
+      "visible_evidence_review": {
+        "independent_accuracy_label": false,
+        "strategy_optimality_verified": false,
+        "reason_codes": [
+          "hero_identity_contradiction",
+          "question_reframed_to_equipment",
+          "role_and_threat_basis_unverified"
+        ],
+        "overall_quality_gate_passed": false
+      }
+    }
+  ],
+  "user_console_feedback": {
+    "separately_reported": true,
+    "first_packet_ms": [
+      734,
+      719
+    ],
+    "total_ms": [
+      2000,
+      1000
+    ],
+    "original_uploads_or_parameters_saved": false,
+    "included_in_direct_measurement": false
+  },
+  "adopted": [
+    "qwen_nonthinking_json_mode",
+    "explicit_json_keyword_in_chinese_prompt"
+  ],
+  "not_adopted": [
+    "rewritten_grounding_prompt",
+    "two_stage_cloud_experiment",
+    "thinking_mode"
+  ],
+  "recommendation": "keep_candidate_nonthinking_quality_gate_not_passed"
+}

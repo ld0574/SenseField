@@ -68,6 +68,7 @@ class CompatibleVisionClient(GlmVisionClient):
             # Qwen's compatible API uses a top-level enable_thinking flag;
             # OpenAI SDK examples put it in extra_body to reach that same field.
             body["enable_thinking"] = False
+            body["response_format"] = {"type": "json_object"}
         elif self._disable_thinking or self._model.lower() == "minimax-m3":
             body["thinking"] = {"type": "disabled"}
         body["max_tokens"] = self._max_tokens
