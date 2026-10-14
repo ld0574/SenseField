@@ -63,7 +63,12 @@ class CompatibleVisionClient(GlmVisionClient):
         )
         # Vendor extension only for the known model or explicit server opt-in.
         body.pop("thinking", None)
-        if self._disable_thinking or self._model.lower() == "minimax-m3":
+        model_name = self._model.lower().rsplit("/", 1)[-1]
+        if self._disable_thinking and model_name == "qwen3.8-flash":
+            # Qwen's compatible API uses a top-level enable_thinking flag;
+            # OpenAI SDK examples put it in extra_body to reach that same field.
+            body["enable_thinking"] = False
+        elif self._disable_thinking or self._model.lower() == "minimax-m3":
             body["thinking"] = {"type": "disabled"}
         body["max_tokens"] = self._max_tokens
         return body
