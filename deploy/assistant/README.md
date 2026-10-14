@@ -18,20 +18,23 @@ bash deploy/assistant/start.sh stop
 
 保留原 `.venv`、`deploy/assistant/runtime/` 和 `/etc/sensefield-assistant/gateway.json`；不要重新运行首次初始化或清空额度数据库。部署包只含已提交源码与说明，不含这些私有或运行时文件。
 
-如切换到本次验证的中转模型，在现有私有 JSON 中合并以下字段，值均为字符串，保留其他配置：
+本轮试用 `qwen3.8-flash`，复用真实截图时关闭思考的完整回答约 1.5～2.1 秒；识别和建议依据仍需线上复验，详见 [千问实测](../../validation/assistant/QWEN_FLASH_VISION_0_4_7_2026-10-14.md)。先更新 Python 源码到包含 `b8348a1` 的 `main`，在现有私有 JSON 中合并以下字段，值均为字符串，保留其他配置：
 
 ```json
 {
   "ASSISTANT_GATEWAY_VISION_PROVIDER": "compatible",
-  "ASSISTANT_GATEWAY_VISION_BASE_URL": "https://www.tokens1688.com/v1",
-  "ASSISTANT_GATEWAY_VISION_MODEL": "Kimi-K3",
+  "ASSISTANT_GATEWAY_VISION_BASE_URL": "https://maas.qianwenaiapi.com/compatible-mode/v1",
+  "ASSISTANT_GATEWAY_VISION_MODEL": "qwen3.8-flash",
   "ASSISTANT_GATEWAY_VISION_DISABLE_THINKING": "1",
+  "ASSISTANT_GATEWAY_VISION_MAX_TOKENS": "256",
   "ASSISTANT_GATEWAY_VISION_TIMEOUT_SECONDS": "12",
   "ASSISTANT_GATEWAY_SNAPSHOT_TIMEOUT_SECONDS": "17"
 }
 ```
 
-已有 K3 配置时保留对应的 `ASSISTANT_GATEWAY_VISION_API_KEY` 及仅所有者可读的权限，无需更换密钥。接口地址不加 `/chat/completions`，客户端会自行追加。默认加载随源码交付的中文提示词；若已有 `ASSISTANT_GATEWAY_VISION_PROMPT_FILE` 指向旧文件，需更新该自定义文件，或移除此字段以使用新默认文件。检查现有 Nginx `/v1/visual` 的 `proxy_read_timeout`，本轮示例为 `21s`；旧 `16s` 会截断新的手动预算。只修改现有站点的对应超时项，执行 `sudo nginx -t` 成功后再用原管理器重载。
+同时在服务器私有配置中把 `ASSISTANT_GATEWAY_VISION_API_KEY` 换成与此接口对应的千问凭据，保留仅所有者可读的权限。K3 的旧凭据不能沿用到新渠道；备份原私有配置可用于回退，不要将备份放在站点公开目录或仓库中。接口地址不加 `/chat/completions`，客户端会自行追加。`DISABLE_THINKING=1` 表示关闭思考；新代码同时为此型号发送 JSON 模式，不必在配置中增加 `response_format` 或 `enable_thinking` 字段。
+
+默认加载随源码交付的中文提示词；若已有 `ASSISTANT_GATEWAY_VISION_PROMPT_FILE` 指向旧文件，需更新该自定义文件，或移除此字段以使用新默认文件。自定义提示词也须保留 JSON 输出要求。检查现有 Nginx `/v1/visual` 的 `proxy_read_timeout`，本轮示例为 `21s`；旧 `16s` 会截断新的手动预算。只修改现有站点的对应超时项，执行 `sudo nginx -t` 成功后再用原管理器重载。
 
 完成后启动并实际验收一次公网读图：
 
@@ -42,7 +45,7 @@ bash deploy/assistant/start.sh start
   --config /etc/sensefield-assistant/gateway.json --visual
 ```
 
-验收会调用模型一次；应得到 HTTP 200 并读出合成图文字 `SYNTHETIC GATEWAY TEST`。仅 `/health` 正常不能证明新中转账户或图片能力可用。原本由 systemd 或面板管理的服务继续用原管理器停启；Docker 部署则更新源码后重建镜像，参见对应部署说明。确认失败时先查网关和反代日志，未完成该步骤前不能记为生产恢复。
+验收会调用模型一次；应得到 HTTP 200 并读出合成图文字 `SYNTHETIC GATEWAY TEST`。`/health` 应显示 `vision_model=qwen3.8-flash`、`vision_disable_thinking=true`；仅健康状态正常不能证明新渠道账户或图片能力可用。原本由 systemd 或面板管理的服务继续用原管理器停启；Docker 部署则更新源码后重建镜像，参见对应部署说明。确认失败时先查网关和反代日志，未完成该步骤前不能记为生产恢复。
 
 ## 1. 准备服务器与源码
 
@@ -169,7 +172,7 @@ bash deploy/assistant/start.sh restart
 
 默认提示词全部以中文书写，位于 [vision_prompt.txt](../../python/mapassist/assistant_gateway/vision_prompt.txt)，身份、交流方式、可见证据边界和输出协议集中维护。部署者可把它复制为服务器上的文本文件，在私有配置中设置 `ASSISTANT_GATEWAY_VISION_PROMPT_FILE` 指向该文件；只调整提示词时，修改后重启服务即可生效，不必改 Python 代码或重打 APK。本轮新增的截图回答协议仍需要同步更新 Python 和 APK。文件为 UTF-8、非空、不超过 32 KiB；路径无效或文件无效时启动明确失败，不静默改用另一份提示词。保留文件末尾的响应字段约定。
 
-本次中转实测建议先用 `Kimi-K3`，兼容地址为 `https://www.tokens1688.com/v1`，参数名是 `ASSISTANT_GATEWAY_VISION_PROVIDER`。详见[速度对照](../../validation/assistant/VISION_RELAY_BENCHMARK_2026-10-14.md)。`glm-5.3` 的当前路由拒绝图片，模型列表中的标签不足以证明能用；不要默认给所有模型发送关闭思考扩展参数。
+当前试用候选为 `qwen3.8-flash`，接口和配置见本页开头，关闭思考且使用新源码的 JSON 适配。它在两张开发图上的完整回答明显快于此前 K3，但建议质量未通过完整验收。原 K3 中转的[速度对照](../../validation/assistant/VISION_RELAY_BENCHMARK_2026-10-14.md)和[真实截图对照](../../validation/assistant/REAL_GAME_VISION_LATENCY_0_4_7_2026-10-14.md)保留为历史记录；`glm-5.3` 的旧路由拒绝图片，模型列表中的标签不足以证明能用，不默认给所有模型发送关闭思考扩展参数。
 
 这家中转的 Kimi-K3 已接受关闭思考参数，可在其私有配置中显式设置 `ASSISTANT_GATEWAY_VISION_DISABLE_THINKING=1`。其他模型保留默认 `0`，更换提供商后重新验证：Kimi-K2.6 实测拒绝该参数，Flash 也没有稳定执行。使用中文搭子提示词后的两张合成决策图实际回答约 5.2／7.2 秒；默认思考探测中的格式失败和超时保留。明确询问“现在团战怎么操作”时，网关直接说明本地预警的职责，不调用视觉模型；“团战容易死，接下来怎么出装”仍走出装规划。
 
