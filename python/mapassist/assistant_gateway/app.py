@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import inspect
 import json
@@ -95,6 +96,7 @@ def _log_visual_event(
     kind: str | None = None,
     uncertain: bool | None = None,
     answer_chars: int | None = None,
+    include_image_metadata: bool = False,
 ) -> None:
     fields = [
         "assistant_gateway_visual",
@@ -119,6 +121,17 @@ def _log_visual_event(
         fields.append(f"uncertain={str(uncertain).lower()}")
     if answer_chars is not None:
         fields.append(f"answer_chars={answer_chars}")
+    if include_image_metadata:
+        image = visual_request.image
+        fields.extend((
+            f"image_width={image.width}",
+            f"image_height={image.height}",
+            f"image_bytes={len(image.jpeg_bytes)}",
+            f"image_sha256={hashlib.sha256(image.jpeg_bytes).hexdigest()}",
+            f"image_transcoded={str(image.transcoded).lower()}",
+            f"frame_age_ms={visual_request.frame_age_ms}",
+            f"context_count={len(visual_request.context_frames)}",
+        ))
     _AUDIT_LOGGER.info(" ".join(fields))
 
 
@@ -417,6 +430,7 @@ def create_app(
         _log_visual_event(
             "payload_validated", visual_request,
             stage="payload_validation", started_at=started,
+            include_image_metadata=True,
         )
         text_trace = request.app.state.test_text_trace
         if text_trace is not None:

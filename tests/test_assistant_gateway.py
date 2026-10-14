@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import io
 import json
 import logging
@@ -122,6 +123,29 @@ def test_health_and_visual_auth_and_response_ids() -> None:
     assert not body["uncertain"]
     assert vision.calls[0][1].startswith("/9j/")
     assert not vision.calls[0][1].startswith("data:")
+
+
+def test_screen_jpeg_reaches_vision_unchanged_and_logs_only_input_metadata(caplog) -> None:
+    output = io.BytesIO()
+    Image.new("RGB", (1280, 576), "navy").save(output, format="JPEG", quality=75)
+    source = output.getvalue()
+    encoded = base64.b64encode(source).decode("ascii")
+    vision = FakeVision()
+    caplog.set_level(logging.INFO, logger="mapassist.assistant_gateway.audit")
+    with TestClient(create_app(_settings(), recognizer=FakeRecognizer(), vision_client=vision)) as client:
+        response = client.post("/v1/visual", json=_visual_payload(
+            question="PRIVATE_USER_QUESTION", image_base64=encoded, snapshot_read=True,
+        ), headers={"Authorization": f"Bearer {TOKEN}"})
+    assert response.status_code == 200
+    assert vision.calls[0][1] == encoded
+    audit = "\n".join(record.getMessage() for record in caplog.records)
+    assert "image_width=1280 image_height=576" in audit
+    assert f"image_bytes={len(source)}" in audit
+    assert f"image_sha256={hashlib.sha256(source).hexdigest()}" in audit
+    assert "image_transcoded=false frame_age_ms=40 context_count=0" in audit
+    assert encoded not in audit and "PRIVATE_USER_QUESTION" not in audit
+    assert TOKEN not in audit and "弹药 24 发" not in audit
+    assert "image_sha256" not in response.json()
 
 
 def test_snapshot_request_is_optional_and_manual_only() -> None:
@@ -560,6 +584,7 @@ def test_context_images_are_forwarded_in_order_and_redacted_audit_has_only_scala
     audit = " ".join(record.getMessage() for record in caplog.records)
     assert "event=request_accepted" in audit and "event=response_validated" in audit
     assert "context_count=2" in audit and "answer_chars=7" in audit
+    assert "image_width=32 image_height=20" in audit and "image_transcoded=true" in audit
     assert "建议先补护甲" not in audit and _image_base64("red") not in audit
 
 

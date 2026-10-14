@@ -3,6 +3,7 @@
   "measurement": "direct_provider_with_production_compatible_client_and_validator",
   "provider": "https://www.tokens1688.com/v1",
   "production_changed": false,
+  "phone_ocr_direction": "rejected_by_user_due_to_compute_budget",
   "phone_live_playback_test": false,
   "independent_accuracy_sample": false,
   "source_commit_at_test": "e5ba0ac5380d33f763c43b8a03353dd818a4a2fc",

@@ -5,6 +5,7 @@
   "independent_accuracy_sample": false,
   "desktop_only": true,
   "android_implementation": false,
+  "phone_ocr_direction": "rejected_by_user_due_to_compute_budget",
   "production_changed": false,
   "target_complete_grounded_reply_ms": 5000,
   "full_answer_gate_passed": false,
