@@ -1,0 +1,740 @@
+{
+  "date": "2026-10-14",
+  "measurement": "direct_provider_with_production_compatible_client_and_validator",
+  "provider": "https://www.tokens1688.com/v1",
+  "production_changed": false,
+  "phone_live_playback_test": false,
+  "independent_accuracy_sample": false,
+  "source_commit_at_test": "e5ba0ac5380d33f763c43b8a03353dd818a4a2fc",
+  "production_code_sha256": {
+    "python/mapassist/assistant_gateway/compatible.py": "3e2211715f5a0271481cb11e700d4c4f1083936d3e5c1f98ee9b0c2d12aba3e4",
+    "python/mapassist/assistant_gateway/glm.py": "e00fb5dcb2288fb9ae972ffee7595c7628bf614d4c5b0a1c9a875f3dbcac0880",
+    "python/mapassist/assistant_gateway/validation.py": "8c1d87319f3f07ce74d62320626f2cfbe817fe7f681895e0ac44526c8012f0ba",
+    "python/mapassist/assistant_gateway/vision_prompt.txt": "68018884f5b8d17a9ebc04a378d40a946c25d513498acf4ebd16f28a332ab6b5"
+  },
+  "full_answer_target_ms": 5000,
+  "timeout_seconds": 17,
+  "primary_prompt_chars": 1966,
+  "compact_prompt_chars": 967,
+  "total_requests": 22,
+  "primary_summary": [
+    {
+      "model": "Kimi-K3",
+      "requests": 4,
+      "nonempty_reliable_answers": 3,
+      "reliable_under_5s": 1,
+      "successful_reply_median_ms": 12516,
+      "all_attempt_median_ms": 14247.5,
+      "all_attempt_range_ms": [
+        4595,
+        17003
+      ]
+    },
+    {
+      "model": "Kimi-K2.6",
+      "requests": 4,
+      "nonempty_reliable_answers": 3,
+      "reliable_under_5s": 0,
+      "successful_reply_median_ms": 15202,
+      "all_attempt_median_ms": 16073.0,
+      "all_attempt_range_ms": [
+        11845,
+        17001
+      ]
+    },
+    {
+      "model": "glm-5.3-flash",
+      "requests": 4,
+      "nonempty_reliable_answers": 2,
+      "reliable_under_5s": 2,
+      "successful_reply_median_ms": 2743.5,
+      "all_attempt_median_ms": 4898.0,
+      "all_attempt_range_ms": [
+        2715,
+        7829
+      ]
+    }
+  ],
+  "primary_results": [
+    {
+      "model": "Kimi-K3",
+      "round": 1,
+      "case": "hero_selection",
+      "disable_thinking_requested": true,
+      "full_reply_ms": 4595,
+      "nonempty_reliable_answer": true,
+      "reliable_under_5s": true,
+      "metrics": {
+        "event_count": 35,
+        "choice_count": 35,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 101,
+        "first_content_ms": 3609,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 4594
+      },
+      "visible_evidence_review": {
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false,
+        "visible_identity_contradiction": true,
+        "reason_code": "recommended_or_identified_hero_not_visible"
+      }
+    },
+    {
+      "model": "Kimi-K2.6",
+      "round": 1,
+      "case": "hero_selection",
+      "disable_thinking_requested": false,
+      "full_reply_ms": 17001,
+      "nonempty_reliable_answer": false,
+      "reliable_under_5s": false,
+      "metrics": {
+        "event_count": 27,
+        "choice_count": 27,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 44,
+        "first_content_ms": 15727,
+        "finish_reason": "none",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "interrupted",
+        "upstream_http_status": 200,
+        "elapsed_ms": 17001
+      },
+      "visible_evidence_review": {
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false
+      },
+      "error_type": "VisionTimeout",
+      "error_code": "vision_timeout"
+    },
+    {
+      "model": "glm-5.3-flash",
+      "round": 1,
+      "case": "hero_selection",
+      "disable_thinking_requested": true,
+      "full_reply_ms": 7024,
+      "nonempty_reliable_answer": false,
+      "reliable_under_5s": false,
+      "metrics": {
+        "event_count": 151,
+        "choice_count": 151,
+        "reasoning_content_present": true,
+        "reasoning_content_chars": 131,
+        "content_chars": 98,
+        "first_content_ms": 5062,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 7024
+      },
+      "visible_evidence_review": {
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false
+      },
+      "error_type": "InvalidRequest"
+    },
+    {
+      "model": "Kimi-K2.6",
+      "round": 1,
+      "case": "scoreboard",
+      "disable_thinking_requested": false,
+      "full_reply_ms": 15202,
+      "nonempty_reliable_answer": true,
+      "reliable_under_5s": false,
+      "metrics": {
+        "event_count": 54,
+        "choice_count": 54,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 112,
+        "first_content_ms": 13354,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 15202
+      },
+      "visible_evidence_review": {
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false,
+        "lane_matchup_not_established_by_this_image": true
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "round": 1,
+      "case": "scoreboard",
+      "disable_thinking_requested": true,
+      "full_reply_ms": 2715,
+      "nonempty_reliable_answer": true,
+      "reliable_under_5s": true,
+      "metrics": {
+        "event_count": 54,
+        "choice_count": 54,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 105,
+        "first_content_ms": 1083,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 2715
+      },
+      "visible_evidence_review": {
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false
+      }
+    },
+    {
+      "model": "Kimi-K3",
+      "round": 1,
+      "case": "scoreboard",
+      "disable_thinking_requested": true,
+      "full_reply_ms": 12516,
+      "nonempty_reliable_answer": true,
+      "reliable_under_5s": false,
+      "metrics": {
+        "event_count": 63,
+        "choice_count": 63,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 120,
+        "first_content_ms": 11881,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 12515
+      },
+      "visible_evidence_review": {
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false,
+        "visible_identity_contradiction": true,
+        "reason_code": "recommended_or_identified_hero_not_visible"
+      }
+    },
+    {
+      "model": "Kimi-K2.6",
+      "round": 2,
+      "case": "hero_selection",
+      "disable_thinking_requested": false,
+      "full_reply_ms": 16944,
+      "nonempty_reliable_answer": true,
+      "reliable_under_5s": false,
+      "metrics": {
+        "event_count": 59,
+        "choice_count": 59,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 121,
+        "first_content_ms": 14824,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 16943
+      },
+      "visible_evidence_review": {
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false,
+        "recommended_hero_name_visible": true,
+        "full_answer_over_5s": true
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "round": 2,
+      "case": "hero_selection",
+      "disable_thinking_requested": true,
+      "full_reply_ms": 7829,
+      "nonempty_reliable_answer": false,
+      "reliable_under_5s": false,
+      "metrics": {
+        "event_count": 169,
+        "choice_count": 169,
+        "reasoning_content_present": true,
+        "reasoning_content_chars": 162,
+        "content_chars": 71,
+        "first_content_ms": 6173,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 7829
+      },
+      "visible_evidence_review": {
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false,
+        "visible_missing_lane_claim_contradiction": true
+      },
+      "error_type": "InvalidRequest"
+    },
+    {
+      "model": "Kimi-K3",
+      "round": 2,
+      "case": "hero_selection",
+      "disable_thinking_requested": true,
+      "full_reply_ms": 17003,
+      "nonempty_reliable_answer": false,
+      "reliable_under_5s": false,
+      "metrics": {
+        "event_count": 1,
+        "choice_count": 1,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 0,
+        "first_content_ms": null,
+        "finish_reason": "none",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "interrupted",
+        "upstream_http_status": 200,
+        "elapsed_ms": 17002
+      },
+      "visible_evidence_review": {
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false
+      },
+      "error_type": "VisionTimeout",
+      "error_code": "vision_timeout"
+    },
+    {
+      "model": "glm-5.3-flash",
+      "round": 2,
+      "case": "scoreboard",
+      "disable_thinking_requested": true,
+      "full_reply_ms": 2772,
+      "nonempty_reliable_answer": true,
+      "reliable_under_5s": true,
+      "metrics": {
+        "event_count": 62,
+        "choice_count": 62,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 111,
+        "first_content_ms": 873,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 2771
+      },
+      "visible_evidence_review": {
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false
+      }
+    },
+    {
+      "model": "Kimi-K3",
+      "round": 2,
+      "case": "scoreboard",
+      "disable_thinking_requested": true,
+      "full_reply_ms": 15979,
+      "nonempty_reliable_answer": true,
+      "reliable_under_5s": false,
+      "metrics": {
+        "event_count": 56,
+        "choice_count": 56,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 113,
+        "first_content_ms": 15253,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 15978
+      },
+      "visible_evidence_review": {
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false
+      }
+    },
+    {
+      "model": "Kimi-K2.6",
+      "round": 2,
+      "case": "scoreboard",
+      "disable_thinking_requested": false,
+      "full_reply_ms": 11845,
+      "nonempty_reliable_answer": true,
+      "reliable_under_5s": false,
+      "metrics": {
+        "event_count": 56,
+        "choice_count": 56,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 112,
+        "first_content_ms": 9218,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 11845
+      },
+      "visible_evidence_review": {
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false,
+        "lane_matchup_not_established_by_this_image": true
+      }
+    }
+  ],
+  "exploratory_results": [
+    {
+      "label": "flash_production_json",
+      "model": "glm-5.3-flash",
+      "prompt": "production",
+      "json_mode": true,
+      "case": "hero_selection",
+      "full_reply_ms": 13733,
+      "nonempty_reliable_answer": false,
+      "reliable_under_5s": false,
+      "metrics": {
+        "event_count": 87,
+        "choice_count": 87,
+        "reasoning_content_present": true,
+        "reasoning_content_chars": 60,
+        "content_chars": 69,
+        "first_content_ms": 12100,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 13733
+      },
+      "visible_evidence_review": {
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false
+      },
+      "error_type": "InvalidRequest"
+    },
+    {
+      "label": "flash_compact_json",
+      "model": "glm-5.3-flash",
+      "prompt": "compact",
+      "json_mode": true,
+      "case": "hero_selection",
+      "full_reply_ms": 6141,
+      "nonempty_reliable_answer": false,
+      "reliable_under_5s": false,
+      "metrics": {
+        "event_count": 134,
+        "choice_count": 134,
+        "reasoning_content_present": true,
+        "reasoning_content_chars": 100,
+        "content_chars": 80,
+        "first_content_ms": 4124,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 6140
+      },
+      "visible_evidence_review": {
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false,
+        "visible_identity_contradiction": true,
+        "visible_missing_lane_claim_contradiction": true
+      },
+      "error_type": "InvalidRequest"
+    },
+    {
+      "label": "k3_compact",
+      "model": "Kimi-K3",
+      "prompt": "compact",
+      "json_mode": false,
+      "case": "hero_selection",
+      "full_reply_ms": 11432,
+      "nonempty_reliable_answer": true,
+      "reliable_under_5s": false,
+      "metrics": {
+        "event_count": 49,
+        "choice_count": 49,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 111,
+        "first_content_ms": 10649,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 11431
+      },
+      "visible_evidence_review": {
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false,
+        "recommended_hero_name_visible": true,
+        "claimed_missing_lane_visible": true,
+        "stated_list_position_visible": true
+      }
+    },
+    {
+      "label": "minimax_image_support",
+      "model": "MiniMax-M3",
+      "prompt": "production",
+      "json_mode": false,
+      "case": "hero_selection",
+      "full_reply_ms": 17002,
+      "nonempty_reliable_answer": false,
+      "reliable_under_5s": false,
+      "metrics": {},
+      "visible_evidence_review": {
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false
+      },
+      "error_type": "VisionTimeout",
+      "error_code": "vision_timeout"
+    },
+    {
+      "label": "minimax_image_support",
+      "model": "MiniMax-M3",
+      "prompt": "production",
+      "json_mode": false,
+      "case": "scoreboard",
+      "full_reply_ms": 9660,
+      "nonempty_reliable_answer": true,
+      "reliable_under_5s": false,
+      "metrics": {
+        "event_count": 67,
+        "choice_count": 67,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 125,
+        "first_content_ms": 5603,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 9659
+      },
+      "visible_evidence_review": {
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false,
+        "visible_identity_contradiction": true,
+        "reason_code": "opponent_claim_not_in_visible_roster"
+      }
+    },
+    {
+      "label": "k3_compact",
+      "model": "Kimi-K3",
+      "prompt": "compact",
+      "json_mode": false,
+      "case": "scoreboard",
+      "full_reply_ms": 5181,
+      "nonempty_reliable_answer": true,
+      "reliable_under_5s": false,
+      "metrics": {
+        "event_count": 55,
+        "choice_count": 55,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 105,
+        "first_content_ms": 3996,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 5180
+      },
+      "visible_evidence_review": {
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false
+      }
+    },
+    {
+      "label": "flash_compact_json",
+      "model": "glm-5.3-flash",
+      "prompt": "compact",
+      "json_mode": true,
+      "case": "scoreboard",
+      "full_reply_ms": 4656,
+      "nonempty_reliable_answer": false,
+      "reliable_under_5s": false,
+      "metrics": {
+        "event_count": 104,
+        "choice_count": 104,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 168,
+        "first_content_ms": 1965,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 4655
+      },
+      "visible_evidence_review": {
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false
+      },
+      "error_type": "InvalidRequest"
+    },
+    {
+      "label": "flash_production_json",
+      "model": "glm-5.3-flash",
+      "prompt": "production",
+      "json_mode": true,
+      "case": "scoreboard",
+      "full_reply_ms": 3203,
+      "nonempty_reliable_answer": true,
+      "reliable_under_5s": true,
+      "metrics": {
+        "event_count": 80,
+        "choice_count": 80,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 123,
+        "first_content_ms": 1399,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200,
+        "elapsed_ms": 3202
+      },
+      "visible_evidence_review": {
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false
+      }
+    },
+    {
+      "label": "flash_separate_format_note",
+      "model": "glm-5.3-flash",
+      "case": "hero_selection",
+      "full_reply_ms": 6442,
+      "nonempty_reliable_answer": false,
+      "metrics": {
+        "event_count": 173,
+        "choice_count": 173,
+        "reasoning_content_present": true,
+        "reasoning_content_chars": 94,
+        "content_chars": 205,
+        "first_content_ms": 3451,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200
+      },
+      "error_type": "InvalidRequest",
+      "visible_evidence_review": {
+        "recommended_hero_and_position_contradict_visible_list": true,
+        "strategy_optimality_verified": false,
+        "independent_accuracy_label": false
+      }
+    },
+    {
+      "label": "flash_separate_format_note",
+      "model": "glm-5.3-flash",
+      "case": "scoreboard",
+      "full_reply_ms": 3668,
+      "nonempty_reliable_answer": true,
+      "metrics": {
+        "event_count": 49,
+        "choice_count": 49,
+        "reasoning_content_present": false,
+        "reasoning_content_chars": 0,
+        "content_chars": 94,
+        "first_content_ms": 2146,
+        "finish_reason": "stop",
+        "malformed_events": 0,
+        "unexpected_events": 0,
+        "unexpected_framing": 0,
+        "provider_error_event": false,
+        "outcome": "success",
+        "upstream_http_status": 200
+      }
+    }
+  ],
+  "privacy": "No keys, raw images, questions, model prose, or player identifiers included.",
+  "limits": [
+    "Two nearby diagnostic development screenshots, each used repeatedly; not independent accuracy samples.",
+    "Direct provider times exclude production server queue, phone encoding, interaction, and audio.",
+    "A nonempty parsed answer and model uncertainty flag do not establish strategy correctness.",
+    "Timeout durations are capped measurements, not completed-answer durations.",
+    "Very small series supports current route triage, not reliable P95 or a service success-rate estimate.",
+    "Different prompt and JSON probes are separate conditions and must not be pooled as a prompt or model speed effect."
+  ],
+  "conclusion": {
+    "qualified_hero_selection_reply_within_5s_observed": false,
+    "fastest_current_prompt_scoreboard_route": "glm-5.3-flash",
+    "flash_current_prompt_scoreboard_ms": [
+      2715,
+      2772
+    ],
+    "flash_hero_selection_protocol_failures": 5,
+    "switch_recommended_from_this_evidence": false,
+    "production_model_retained": "Kimi-K3",
+    "compact_prompt_adopted": false,
+    "json_mode_adopted": false,
+    "first_content_or_reasoning_not_counted_as_a_usable_reply": true
+  },
+  "private_receipt_sha256": {
+    "game-models-20261014T100015Z.json": "077a6fb86fc011d7d8226de6feeb7e6551fa31cd9654399b963127206898996b",
+    "fast-options-20261014T100404Z.json": "a4d4d4cd8816925be949c58e39e53c8a392c5e6e09bfbb8e8c36f876e5fe0da4",
+    "flash-format-hint-20261014T100816Z.json": "29a4232535d0908f15cf6358fa39ad14d53491b918aa6626b6884870ba886e31"
+  }
+}
