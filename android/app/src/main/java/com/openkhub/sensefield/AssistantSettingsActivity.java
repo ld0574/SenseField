@@ -53,7 +53,7 @@ public final class AssistantSettingsActivity extends UiActivity {
         retryResources = button(assistantOptions, "准备语音资源／重试");
         retryResources.setOnClickListener(v -> prepareResources());
         consentSwitch(assistantOptions, "画面理解", AssistantSettings.VISION, AssistantSettings.IMAGE_CONSENT,
-                "听野作为游戏搭子，帮助低视力用户看清选项、选择英雄和规划后续出装。云端回答可能等待5～10秒，团战提醒由本地预警负责。默认只发送当前共享画面；明确要求比较近期变化时，才加最多两张近期缩图。画面和问题会发送到画面服务及其视觉模型，可能包含游戏聊天或系统通知，请留意共享范围。近期画面只缓存在内存，诊断截图由独立设置管理；第三方服务按其条款处理数据。", false);
+                "听野是为低视力用户服务的游戏搭子，结合共享画面回答游戏问题、解释可见信息并帮助判断。云端回答可能等待5～10秒，依据截取时的画面；即时敌人提醒由本地预警负责。默认只发送当前共享画面；明确要求比较近期变化时，才加最多两张近期缩图。画面和问题会发送到画面服务及其视觉模型，可能包含游戏聊天或系统通知，请留意共享范围。近期画面只缓存在内存，诊断截图由独立设置管理；第三方服务按其条款处理数据。", false);
         simpleSwitch(assistantOptions, "低频主动描述（需要画面理解）", AssistantSettings.PROACTIVE);
         UiKit.gap(assistantOptions, 4);
         Button overlayPermission = button(assistantOptions, "授权左侧小圆点");

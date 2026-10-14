@@ -159,7 +159,8 @@ final class AssistantGatewayClient implements AutoCloseable {
         JSONObject body = json("session_id", session.sessionId, "generation", frame.generation,
                 "turn_id", turn, "frame_id", primaryFrameId, "question", question,
                 "image_base64", primaryBase64,
-                "frame_age_ms", primaryAgeMs, "proactive", proactive);
+                "frame_age_ms", primaryAgeMs, "proactive", proactive,
+                "snapshot_read", !proactive);
         if (encodedContext.length() > 0) {
             try { body.put("context_frames", encodedContext); }
             catch (org.json.JSONException invalidContext) {

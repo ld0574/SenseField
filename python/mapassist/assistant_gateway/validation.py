@@ -42,6 +42,8 @@ _DYNAMIC_ADVICE_QUESTION_RE = re.compile(
     r"应该选|该选|要选|阵容|队伍搭配|团队搭配|"
     r"对战策略|对战打法|打法|战术|策略|怎么打|如何打|怎么应对|如何应对|怎么反制|如何反制|"
     r"该如何处理|下一步|走哪步|怎么走|"
+    r"(?:升级|加点|先升|主升|点满|加满).{0,16}(?:技能|二技|三技)|"
+    r"(?:技能|二技|三技).{0,16}(?:升级|加点|先升|主升)|"
     r"\b(?:build|loadout|buy|purchase|draft|pick|choose|strategy|tactics?|counter|"
     r"team composition|team comp|lineup|roster|item recommendation|gear recommendation|"
     r"what should i (?:buy|build|choose|pick|do)|how should i (?:play|choose)|how to play|next move|"
@@ -62,18 +64,32 @@ _DYNAMIC_STATE_ANSWER_RE = re.compile(
     r"血量|生命值|血条|弹药|护盾|蓝量|法力|能量|技能冷却|冷却|金币|金钱|经济|等级|"
     r"小地图|坐标|比分|击杀|死亡|助攻|倒计时|计时|时间|分钟|秒钟|"
     r"装备|购买|出装|选人|选英雄|选择英雄|英雄建议|英雄推荐|阵容搭配|"
-    r"打龙|推塔|撤退|反制|打法|战术|进攻|防守"
+    r"打龙|推塔|撤退|反制|打法|战术|进攻|防守|野区|草丛|河道|技能升级|加点"
 )
+_VOLATILE_OBSERVATION_QUESTION_RE = re.compile(
+    r"(?:野区|打野区域|小地图|附近|河道|草丛|敌人|敌方|对手|红点|血量|生命值|冷却)"
+    r"[^。！？\n]{0,24}(?:在哪|哪里|位置|有没有|有无|是否|多少|几个|还在|剩|好了|吗|没)|"
+    r"(?:有没有|有无|是否有)[^。！？\n]{0,12}(?:敌人|敌方|对手|红点)|"
+    r"(?:观察|看|查看|看看|检查)[^。！？\n]{0,12}(?:野区|打野区域|小地图|敌人|敌方)",
+)
+_CURRENT_SCREEN_QUESTION = "请根据当前截图，说明最值得注意的可见信息，或给一条有依据的游戏建议。看不清就说明。"
+_OVERVIEW_QUESTIONS = {
+    _SCREEN_OVERVIEW_QUESTION, _AUTOMATIC_OVERVIEW_QUESTION, _CURRENT_SCREEN_QUESTION,
+    "请分析当前页面，给一条有依据的下一步选择建议。",
+    "当前画面是否有需要我重新考虑的选择？没有可靠依据就保持安静。",
+}
 _NON_WORD_RE = re.compile(r"[\s\d０-９.,，:：;；!！?？。+\-/]+")
 UNKNOWN_ANSWER = "无法从清晰可见的界面文字中可靠确认。"
 
 
 def is_immediate_combat_question(question: str) -> bool:
     # Routing scope, not a hero/item recommendation or an instruction sent to a model.
-    if re.search(r"出装|配装|装备|选人|选英雄|选择英雄", question):
+    if (re.search(r"出装|配装|装备|选人|选英雄|选择英雄|升级|加点|先升|主升|下次|下波|以后", question)
+            or _VOLATILE_OBSERVATION_QUESTION_RE.search(question)):
         return False
     return bool(re.search(r"团战|打架|战斗", question)
-                and re.search(r"现在|立即|马上|怎么操作|躲避|技能时机", question))
+                and re.search(r"怎么操作|如何操作|怎么打|如何打|怎么办|躲避|技能时机|"
+                              r"(?:立即|马上).{0,12}(?:按|放|用|躲|走|撤|操作)", question))
 
 
 class InvalidRequest(ValueError):
@@ -98,6 +114,7 @@ class VisualRequest:
     proactive: bool
     image: NormalizedImage
     context_frames: tuple[ContextFrame, ...] = ()
+    snapshot_read: bool = False
 
 
 @dataclass(frozen=True)
@@ -129,6 +146,9 @@ def validate_visual_request(payload: Any) -> VisualRequest:
     proactive = payload.get("proactive")
     if not isinstance(proactive, bool):
         raise InvalidRequest("proactive must be a boolean")
+    snapshot_read = payload.get("snapshot_read", False)
+    if not isinstance(snapshot_read, bool) or (snapshot_read and proactive):
+        raise InvalidRequest("snapshot_read must be a boolean and is only valid for manual requests")
     question = payload.get("question")
     if not isinstance(question, str):
         raise InvalidRequest("question must be a string")
@@ -180,6 +200,7 @@ def validate_visual_request(payload: Any) -> VisualRequest:
         proactive,
         image,
         tuple(context_frames),
+        snapshot_read,
     )
 
 
@@ -194,14 +215,14 @@ def _is_progress_only_build_answer(answer: str, question: str | None) -> bool:
 
 
 def _requires_live_hud(question: str | None) -> bool:
-    return bool(question and _DYNAMIC_ADVICE_QUESTION_RE.search(question))
+    return bool(question and (question in _OVERVIEW_QUESTIONS
+                              or _DYNAMIC_ADVICE_QUESTION_RE.search(question)
+                              or _VOLATILE_OBSERVATION_QUESTION_RE.search(question)))
 
 
 def _is_stable_menu_overview(question: str | None, answer: str) -> bool:
     """Keep only an explicit stable-menu description out of the HUD expiry bucket."""
-    if question not in {_SCREEN_OVERVIEW_QUESTION, _AUTOMATIC_OVERVIEW_QUESTION,
-                        "请分析当前页面，给一条有依据的下一步选择建议。",
-                        "当前画面是否有需要我重新考虑的选择？没有可靠依据就保持安静。"}:
+    if question not in _OVERVIEW_QUESTIONS:
         return False
     return bool(
         _STABLE_MENU_ANSWER_RE.search(answer)
@@ -255,7 +276,7 @@ def parse_visual_answer(raw: str, *, question: str | None = None) -> VisualAnswe
     answer = value.get("answer")
     uncertain = value.get("uncertain")
     decision_scene = value.get("decision_scene", "")
-    if not isinstance(decision_scene, str) or decision_scene not in {"", "equipment", "hero_selection"}:
+    if not isinstance(decision_scene, str) or decision_scene not in {"", "equipment", "hero_selection", "game_decision"}:
         raise InvalidRequest("unsupported decision_scene")
     if (
         not isinstance(kind, str)
@@ -276,6 +297,9 @@ def parse_visual_answer(raw: str, *, question: str | None = None) -> VisualAnswe
         kind == "ui_text" and _is_stable_menu_overview(question, answer)
     ):
         kind = "hud"
+    if question and _VOLATILE_OBSERVATION_QUESTION_RE.search(question):
+        kind = "hud"
+        decision_scene = ""  # Snapshot enemy/health/cooldown facts never gain the planning lifetime.
     if decision_scene and not uncertain:
         kind = "hud"  # Older phone clients keep their original conservative expiry.
     else:

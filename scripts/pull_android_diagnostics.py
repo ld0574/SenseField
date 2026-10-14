@@ -80,9 +80,15 @@ def collect(args):
     services = run("services-before-export.txt", ["shell", "dumpsys", "activity", "services", PACKAGE])
     if ACTIVE_SERVICE.search(services):
         raise RuntimeError("Assistance is still active. Finish the assistance session before collecting records.")
-    if not args.test_apk.is_file():
-        raise RuntimeError("Build the signed Release test APK first (:app:assembleReleaseAndroidTest).")
-    run("helper-install.txt", ["install", "-r", str(args.test_apk.resolve())], timeout=60)
+    if getattr(args, "reuse_installed_helper", False):
+        registered = run("helper-registration.txt", ["shell", "pm", "list", "instrumentation"])
+        expected = PACKAGE + ".test/androidx.test.runner.AndroidJUnitRunner (target=" + PACKAGE + ")"
+        if expected not in registered:
+            raise RuntimeError("No compatible diagnostic helper is registered; no package was installed.")
+    else:
+        if not args.test_apk.is_file():
+            raise RuntimeError("Build the signed Release test APK first (:app:assembleReleaseAndroidTest).")
+        run("helper-install.txt", ["install", "-r", str(args.test_apk.resolve())], timeout=60)
     services = run("services-before-instrumentation.txt", ["shell", "dumpsys", "activity", "services", PACKAGE])
     if ACTIVE_SERVICE.search(services):
         raise RuntimeError("A new assistance session started. Collection is deferred to avoid interrupting it.")
@@ -133,6 +139,8 @@ def main():
     parser.add_argument("--watch-timeout", type=int, default=7200, help="Maximum watch window in seconds (default: 7200).")
     parser.add_argument("--test-apk", type=Path,
                         default=ROOT / "android/app/build/outputs/apk/androidTest/release/app-release-androidTest.apk")
+    parser.add_argument("--reuse-installed-helper", action="store_true",
+                        help="Reuse an already registered same-signature helper; never install an APK.")
     args = parser.parse_args()
     if args.watch_timeout <= 0:
         parser.error("--watch-timeout must be positive")

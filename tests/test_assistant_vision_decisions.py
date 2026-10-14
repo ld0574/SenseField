@@ -30,7 +30,7 @@ def test_empty_invalid_or_oversize_prompt_fails_explicitly(tmp_path, contents):
         load_vision_prompt(path)
 
 
-@pytest.mark.parametrize("scene", ["equipment", "hero_selection"])
+@pytest.mark.parametrize("scene", ["equipment", "hero_selection", "game_decision"])
 def test_decision_metadata_keeps_legacy_hud_kind(scene):
     answer = parse_visual_answer(json.dumps({"kind": "ui_text", "answer": "先补法术防御，当前主要威胁是法术伤害。",
         "uncertain": False, "decision_scene": scene}), question="接下来怎么选？")
@@ -71,6 +71,45 @@ def test_longer_term_build_question_is_not_mistaken_for_instant_combat_action():
     assert not is_immediate_combat_question("现在团战容易死，接下来怎么出装？")
     assert not is_immediate_combat_question("选人时应该选哪个英雄？")
     assert is_immediate_combat_question("现在团战怎么操作？")
+
+
+@pytest.mark.parametrize("question", [
+    "现在团战中，升级二技能还是三技能？",
+    "观察打野区域有没有敌人",
+    "现在团战旁边的野区有没有敌人？",
+    "帮我观察小地图",
+])
+def test_game_questions_are_not_replaced_with_the_combat_redirect(question):
+    assert not is_immediate_combat_question(question)
+
+
+@pytest.mark.parametrize("question", [
+    "观察打野区域有没有敌人", "野区敌人在哪里？", "二技能冷却好了吗？",
+    "帮我观察小地图", "血量还剩多少？",
+])
+@pytest.mark.parametrize("scene", ["", "game_decision", "equipment", "hero_selection"])
+def test_volatile_snapshot_questions_never_receive_the_long_planning_lifetime(question, scene):
+    answer = parse_visual_answer(json.dumps({"kind": "ui_text", "answer": "截图该区域未见可辨的敌人标记，视野外无法确认。",
+        "uncertain": False, "decision_scene": scene}), question=question)
+    assert answer.kind == "hud"
+    assert answer.decision_scene == ""
+
+
+def test_skill_upgrade_answer_keeps_the_original_question_and_planning_metadata():
+    answer = parse_visual_answer(json.dumps({"kind": "ui_text", "answer": "先升二技能，你这次更需要稳定清线。",
+        "uncertain": False, "decision_scene": "game_decision"}), question="升级二技能还是三技能？")
+    assert answer.kind == "hud"
+    assert answer.decision_scene == "game_decision"
+
+
+@pytest.mark.parametrize(("answer", "expected"), [
+    ("主菜单里有设置入口。", "ui_text"),
+    ("截图右侧野区有一个敌人标记。", "hud"),
+])
+def test_general_screen_reading_keeps_volatile_information_in_the_hud_bucket(answer, expected):
+    question = "请根据当前截图，说明最值得注意的可见信息，或给一条有依据的游戏建议。看不清就说明。"
+    parsed = parse_visual_answer(json.dumps({"kind": "ui_text", "answer": answer, "uncertain": False}), question=question)
+    assert parsed.kind == expected
 
 
 @pytest.mark.parametrize("value", ["nan", "inf", "0", "31", "bad"])

@@ -68,3 +68,20 @@ def test_active_assistance_blocks_even_helper_installation(tmp_path, monkeypatch
         diagnostics.collect(arguments(tmp_path))
     assert len(commands) == 1
     assert "install" not in commands[0]
+
+
+def test_reuse_missing_helper_stops_without_installing_a_package(tmp_path, monkeypatch):
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        return CompletedProcess(command, 0, "", "")
+
+    args = arguments(tmp_path)
+    args.reuse_installed_helper = True
+    monkeypatch.setattr(diagnostics.subprocess, "run", run)
+    with pytest.raises(RuntimeError, match="no package was installed"):
+        diagnostics.collect(args)
+    assert len(commands) == 2
+    assert commands[-1][-3:] == ["pm", "list", "instrumentation"]
+    assert all("install" not in command for command in commands)

@@ -24,6 +24,17 @@ public final class AssistantVisualFailureTest {
         assertFalse(AssistantVisualFailure.requiresServiceRepair("timeout"));
         assertFalse(AssistantVisualFailure.requiresServiceRepair("network_unavailable"));
     }
+    @Test public void gatewayTimeoutReportsItsCauseEvenWhenProxyBodyIsNotJson() {
+        for (String bodyCode : new String[] {"invalid_response", "vision_timeout", "vision_upstream_unavailable"}) {
+            String code = AssistantVisualFailure.code(504, "unknown", -1, bodyCode);
+            assertEquals("timeout", code);
+            assertEquals("画面读取超时，请重试。", AssistantVisualFailure.message(code));
+            assertFalse(AssistantVisualFailure.requiresServiceRepair(code));
+        }
+        assertEquals("画面读取超时，请重试。", AssistantVisualFailure.message("vision_timeout"));
+        assertEquals("vision_provider_auth_failed", AssistantVisualFailure.code(
+                504, "provider", 401, "invalid_response"));
+    }
 
     @Test public void authFailureStopsAutomaticCallsAcrossWindowsButManualRecoveryResumes() {
         AssistantPolicy policy = new AssistantPolicy();

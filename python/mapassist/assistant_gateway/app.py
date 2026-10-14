@@ -222,7 +222,7 @@ async def _vision_call(vision_client: Any, visual_request: VisualRequest) -> Any
 def _vision_call_with_context(vision_client: Any, visual_request: VisualRequest) -> Any:
     if is_immediate_combat_question(visual_request.question):
         async def redirect_to_local_warning() -> str:
-            return json.dumps({"kind": "ui_text", "answer": "团战请听本地预警。我可以帮你选人或规划后续出装。", "uncertain": False}, ensure_ascii=False)
+            return json.dumps({"kind": "ui_text", "answer": "团战即时提醒请听本地预警。我可以帮你读画面、分析游戏问题。", "uncertain": False}, ensure_ascii=False)
         return redirect_to_local_warning()
     context_images = tuple(frame.image.jpeg_base64 for frame in visual_request.context_frames)
     question = visual_request.question
@@ -564,6 +564,10 @@ def create_app(
             }
             if answer.decision_scene:
                 result["decision_scene"] = answer.decision_scene
+            if (visual_request.snapshot_read and not visual_request.proactive
+                    and answer.kind == "hud" and not answer.uncertain
+                    and not is_immediate_combat_question(visual_request.question)):
+                result["answer_scope"] = "snapshot"
             if text_trace is not None:
                 text_trace.record(
                     "validated_response",
@@ -571,10 +575,11 @@ def create_app(
                     answer=answer.answer,
                     kind=answer.kind,
                     uncertain=answer.uncertain,
+                    answer_scope=result.get("answer_scope", ""),
                     elapsed_ms=result["elapsed_ms"],
                 )
             _AUDIT_LOGGER.info(
-                "assistant_gateway_visual event=response_validated generation=%s turn_id=%s frame_id=%s context_count=%s proactive=%s stage=response_validation kind=%s uncertain=%s answer_chars=%s elapsed_ms=%s",
+                "assistant_gateway_visual event=response_validated generation=%s turn_id=%s frame_id=%s context_count=%s proactive=%s stage=response_validation kind=%s uncertain=%s answer_chars=%s elapsed_ms=%s answer_scope=%s",
                 visual_request.generation,
                 visual_request.turn_id,
                 visual_request.frame_id,
@@ -584,6 +589,7 @@ def create_app(
                 answer.uncertain,
                 len(answer.answer),
                 result["elapsed_ms"],
+                result.get("answer_scope", "legacy"),
             )
             _log_visual_event(
                 "success", visual_request,

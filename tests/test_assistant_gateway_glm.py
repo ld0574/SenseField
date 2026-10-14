@@ -64,7 +64,7 @@ def test_glm_direct_stream_uses_pinned_request_shape_and_raw_base64_image() -> N
     assert "不要猜英雄或装备身份" in system
     assert "不要用金币、计时和装饰信息代替建议" in system
     assert "王者荣耀还是开心消消乐" in system
-    assert "第一句话先说选择" in system
+    assert "第一句话先回答用户所问的信息或选择" in system
     assert body["messages"][0]["content"] == SYSTEM_PROMPT
     image = body["messages"][1]["content"][1]["image_url"]["url"]
     assert image == "/9j/RAWBASE64"

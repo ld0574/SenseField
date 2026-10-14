@@ -66,7 +66,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     private String currentStatus = "助手正在连接";
     private static final String EXPIRED_FRAME_PROMPT = "画面返回太慢，旧画面已丢弃。";
     static final long MANUAL_QUIET_MS = 60_000;
-    static final String SCREEN_QUESTION = "请分析当前页面，给一条有依据的下一步选择建议。";
+    static final String SCREEN_QUESTION = "请根据当前截图，说明最值得注意的可见信息，或给一条有依据的游戏建议。看不清就说明。";
     static final String AUTOMATIC_QUESTION = "当前画面是否有需要我重新考虑的选择？没有可靠依据就保持安静。";
     private static final class VisualTask {
         final long id; final String turn; final long generation; final FrameSnapshot frame;
@@ -471,7 +471,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
             sayLocal(turn, "我在。可以说读取画面，或附近情况。", false); return true;
         }
         if (command.matches("(听野|助手)?(你是谁|你叫什么|能做什么|你能做什么)")) {
-            sayLocal(turn, "我是听野，你的游戏搭子，可以帮你看清画面、选择英雄和规划出装。", false); return true;
+            sayLocal(turn, "我是听野，你的游戏搭子，可以帮你看清画面、解答游戏问题。", false); return true;
         }
         if (command.matches("(停止播报|别说了|停说|安静|暂停助手)")) {
             if (command.equals("暂停助手")) setVoicePaused(true); else setStatus("已停止助手播报"); return true;
@@ -506,7 +506,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         AssistantReply reply = new AssistantReply(session.generation(), turn, previous.frameId,
                 "local".equals(previous.kind) ? SystemClock.elapsedRealtime() : previous.capturedAtMs,
                 previous.kind, previous.answer, previous.uncertain, false,
-                previous.decisionScene, previous.decisionGuard);
+                previous.decisionScene, previous.decisionGuard, previous.snapshotRead);
         playReply(reply);
     }
     /** Called only after native processing has released its lock, while the Image is still owned. */
@@ -623,6 +623,8 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         String polite = "(请问|请|麻烦|能不能|能否|可以|能)?";
         String lead = "(?:我(能不能|能否|可以)|" + polite + "(你)?|(你)?" + polite + ")";
         String action = "(看|分析|推荐|建议|选|选择)";
+        if (compact.matches(lead + "(帮我|给我|替我)(看|读|分析|推荐|建议|选|选择|解释|比较|观察).+")) return true;
+        if (compact.matches(".*(升级|加点|先升|主升).*(还是|哪个|哪一个|哪项|更好|合适).*")) return true;
         String topic = "(出装|装备|阵容|英雄|对战策略|对战打法|打法|套路)";
         if (compact.matches(lead + "(帮我|给我)" + action + ".*" + topic + ".*")) return true;
         if (compact.matches(lead + action + ".*" + topic + ".*")) return true;
@@ -660,16 +662,23 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         policy.serviceRecovered();
         AssistantReply reply = new AssistantReply(task.frame.generation, task.turn, task.frame.frameId,
                 task.frame.capturedAtMs, kind, answer, uncertain, task.proactive,
-                result.optString("decision_scene", ""), task.decisionGuard);
+                result.optString("decision_scene", ""), task.decisionGuard,
+                !task.proactive && "snapshot".equals(result.optString("answer_scope", "")));
         long now = SystemClock.elapsedRealtime();
         if (!task.proactive) proactiveQuietUntilMs = Math.max(proactiveQuietUntilMs, now + MANUAL_QUIET_MS);
         if (!reply.freshAt(now)) {
-            host.audit("AssistantVisual event=DROPPED reason=expired_result frameId=" + task.frame.frameId);
+            host.audit("AssistantVisual event=DROPPED reason=expired_result requestId=" + id
+                    + " frameId=" + task.frame.frameId
+                    + " frameAgeMs=" + Math.max(0, now - reply.capturedAtMs)
+                    + " kind=" + reply.kind
+                    + " decisionScene=" + (reply.decisionScene.isEmpty() ? "none" : reply.decisionScene)
+                    + " snapshotRead=" + reply.snapshotRead
+                    + " expiryPassed=" + (now > reply.expiresAtMs()));
             if (!task.proactive && now > reply.expiresAtMs()) {
                 explainExpiredFrame(task.turn, task.frame.frameId,
                         task.frame.capturedAtMs, "result");
             } else {
-                setStatus("画面回答已过期，请重问");
+                reportManualFeedback(task, "frame_guard", "画面已经变化或观测中断，请重新提问。");
             }
             return;
         }
@@ -680,19 +689,13 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         }
         if (task.proactive && answer.equals(lastAutomaticAnswer)) return;
         if (task.proactive) lastAutomaticAnswer = answer;
-        if (now - reply.capturedAtMs > 2000) reply = new AssistantReply(reply.generation, reply.turnId,
-                reply.frameId, reply.capturedAtMs, reply.kind,
-                (!reply.decisionScene.isEmpty() ? ("hero_selection".equals(reply.decisionScene)
-                        ? "按刚才的选人画面，" : "按刚才的出装信息，")
-                        : "约" + ((now - reply.capturedAtMs) / 1000) + "秒前截图显示，") + answer,
-                false, task.proactive, reply.decisionScene, reply.decisionGuard);
-        if (task.proactive) reply = new AssistantReply(reply.generation, reply.turnId,
-                reply.frameId, reply.capturedAtMs, reply.kind, "画面变化，" + reply.answer, false, true,
-                reply.decisionScene, reply.decisionGuard);
-        lastReply = reply; append((task.proactive ? "主动观察：" : "听野：") + reply.answer); setStatus("助手可用"); playReply(reply);
+        lastReply = reply;
+        append((task.proactive ? "主动观察：" : "听野：") + reply.spokenAnswerAt(now));
+        setStatus("助手可用"); playReply(reply);
         host.audit("AssistantVisual event=RESULT requestId=" + id + " generation=" + reply.generation
                 + " turn=" + reply.turnId + " kind=" + reply.kind + " answerChars=" + reply.answer.length()
                 + " decisionScene=" + (reply.decisionScene.isEmpty() ? "none" : reply.decisionScene)
+                + " snapshotRead=" + reply.snapshotRead
                 + " monotonicMs=" + now + " frameId=" + task.frame.frameId + " frameAgeMs=" + (now - task.frame.capturedAtMs)
                 + " elapsedMs=" + result.optLong("elapsed_ms", -1) + " proactive=" + task.proactive);
     } }); }

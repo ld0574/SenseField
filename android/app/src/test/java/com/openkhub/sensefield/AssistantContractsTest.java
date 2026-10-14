@@ -180,6 +180,13 @@ public class AssistantContractsTest {
         assertFalse(AssistantController.isRequest("我刚刚跑过去了"));
         assertFalse(AssistantController.isRequest("他们刚刚聊到听野"));
     }
+    @Test public void spokenSkillComparisonIsAQuestionEvenWithoutAQuestionMark() {
+        assertTrue(AssistantController.isRequest("升级二技能还是三技能"));
+        assertTrue(AssistantController.isRequest("先升二技能还是三技能"));
+        assertTrue(AssistantController.isRequest("帮我观察小地图"));
+        assertFalse(AssistantController.isRequest("我已经升级二技能了"));
+        assertFalse(AssistantController.isRequest("我刚才观察了小地图"));
+    }
     @Test public void negatedQuantityCommentDoesNotReplaceAQuestionButRealQuantityQuestionsRemain() {
         assertFalse(AssistantController.isRequest("也没多少呀。"));
         assertFalse(AssistantController.isRequest("其实没有多少。"));
@@ -232,7 +239,9 @@ public class AssistantContractsTest {
         for (String question : Arrays.asList("帮我看下出装", "看一下这局出装", "帮我分析阵容",
                 "推荐装备", "帮我选英雄", "这局对战策略", "对战策略",
                 "你能不能帮我分析阵容", "能不能推荐装备", "我能不能推荐装备",
-                "装备购买建议", "选人建议", "英雄推荐", "自然之灵出装建议"))
+                "装备购买建议", "选人建议", "英雄推荐", "自然之灵出装建议",
+                "帮我比较二技能和三技能", "帮我观察打野区域", "观察打野区域有没有敌人",
+                "升级二技能还是三技能呢", "帮我解释这个技能"))
             assertTrue(question, AssistantController.isRequest(question));
         for (String statement : Arrays.asList("我选桑启", "选好了", "这一局我选择辅助", "我推荐装备"))
             assertFalse(statement, AssistantController.isRequest(statement));

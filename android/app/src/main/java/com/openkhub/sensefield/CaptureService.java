@@ -1388,9 +1388,10 @@ public final class CaptureService extends Service {
             AssistantController current = assistant;
             if (dispatcher == null || current == null || !current.allows(reply)) return;
             String cueId = auditSessionId + ":assistant:" + reply.turnId;
+            long now = SystemClock.elapsedRealtime();
             dispatcher.submit(new CueRequest(auditSessionId, cueId, cueId, "ASSISTANT",
-                    CueRequest.Category.ASSISTANT, 20, SystemClock.elapsedRealtime(), reply.expiresAtMs(),
-                    CueRequest.CHANNEL_SPEECH, 0, 0, 0, reply.answer, Float.NaN,
+                    CueRequest.Category.ASSISTANT, 20, now, reply.expiresAtMs(),
+                    CueRequest.CHANNEL_SPEECH, 0, 0, 0, reply.spokenAnswerAt(now), Float.NaN,
                     Float.NaN, 0f, -1, () -> assistant == current && current.allows(reply)));
         }
         @Override public void cancelSpeech() { CueDispatcher dispatcher = cueDispatcher; if (dispatcher != null) dispatcher.cancelAssistantSpeech(); }

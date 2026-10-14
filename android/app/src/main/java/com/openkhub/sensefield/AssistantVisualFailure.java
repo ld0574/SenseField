@@ -11,6 +11,7 @@ final class AssistantVisualFailure {
         }
         if (httpStatus == 401) return "gateway_auth_failed";
         if (httpStatus == 403) return "gateway_access_denied";
+        if (httpStatus == 504) return "timeout";
         return fallback;
     }
 
@@ -27,7 +28,7 @@ final class AssistantVisualFailure {
             return "画面模型服务拒绝了访问，请检查服务端账户与模型权限；本地预警继续运行。";
         if ("gateway_auth_failed".equals(code) || "gateway_access_denied".equals(code))
             return "画面服务拒绝了连接，请检查助手的服务设置；本地预警正常。";
-        if ("timeout".equals(code)) return "画面读取超时，请重试。";
+        if ("timeout".equals(code) || "vision_timeout".equals(code)) return "画面读取超时，请重试。";
         if ("provider_busy".equals(code) || "1305".equals(code))
             return "画面模型繁忙，请稍后重试；本地预警正常。";
         if ("public_quota_exceeded".equals(code))
