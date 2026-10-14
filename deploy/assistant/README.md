@@ -189,6 +189,24 @@ rg 'assistant_gateway_(vision_stream|vision_timeout|visual)' /data/wwwroot/sf/de
 
 服务器未安装 `rg` 时用 `grep -E` 替代。systemd 部署使用 `journalctl -u sensefield-assistant --since '2026-10-14 16:00' --no-pager`。这些阶段帮助定位下一次故障，现有旧日志不足以断定 K3 慢在哪里。
 
+### 新预算已显示，但请求仍在12秒返回HTML 504
+
+2026-10-14的配套复验中，客户端在12,079ms收到HTML 504，Python同一请求在12,049ms记录 `event=cancelled stage=client_disconnect`。测试客户端读取上限为20秒，Python没有触发自己的17秒超时。这证明断开发生在Python前面的链路；仍需检查具体代理配置，不能把这次504当作模型返回的错误。
+
+`/health` 显示17秒只验证Python预算。检查当前承接 `sf.888413.xyz` 的Nginx/OpenResty配置，定位实际匹配 `/v1/visual` 的 `location`。更内层的 `proxy_read_timeout` 会覆盖 `server` 或 `http` 层配置；只改上层21秒无法覆盖路径中的12秒。三份示例现在都在视觉路径内显式设置21秒。合入已有站点时，只在现有代理路径内修改这一项，保留原上游、证书、限流和其他设置：
+
+```nginx
+proxy_read_timeout 21s;
+```
+
+原生部署可用以下只读命令查看配置来源、站点、路径和读取超时；不用输出认证头或整份配置：
+
+```sh
+sudo nginx -T 2>/dev/null | grep -nE '^# configuration file|^[[:space:]]*server_name|^[[:space:]]*location|^[[:space:]]*proxy_read_timeout'
+```
+
+`nginx -T` 展示当前磁盘配置，不能证明正在运行的旧worker已经加载新配置。修改后先在同一套Nginx/OpenResty中执行配置检查，成功后用原管理器重载；面板或容器部署需在实际处理公网请求的服务中操作，不能只重启Python或重载另一套系统Nginx。若同一套代理确认重载后仍在12秒返回504，再检查它前面的额外反代或入口。当前手机和Python修订无需为这一步重新构建或部署。
+
 ## 已使用旧部署包
 
 覆盖解压新包后改用 `bash deploy/assistant/start.sh`。旧包根目录的 `start.sh`、`start.py`、`serve.py`、`verify.py` 不再使用；确认它们来自旧听野部署包并停止旧进程后，可删除这四个文件。原 `.venv` 和 `/etc/sensefield-assistant/` 私有配置继续保留。
