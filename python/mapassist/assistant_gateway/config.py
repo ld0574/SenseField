@@ -31,6 +31,7 @@ class GatewaySettings:
     sensevoice_model_dir: Path | None = None
     account_concurrency: int = 1
     request_timeout_seconds: float = 12.0
+    snapshot_timeout_seconds: float = 17.0
     require_tls: bool = True
     local_tls_proxy: bool = False
     mode: str = "production"
@@ -61,6 +62,10 @@ class GatewaySettings:
                 or not isinstance(self.request_timeout_seconds, (int, float))
                 or not 2 <= self.request_timeout_seconds <= 30):
             raise ValueError("ASSISTANT_GATEWAY_VISION_TIMEOUT_SECONDS must be between 2 and 30")
+        if (isinstance(self.snapshot_timeout_seconds, bool)
+                or not isinstance(self.snapshot_timeout_seconds, (int, float))
+                or not 2 <= self.snapshot_timeout_seconds <= 18):
+            raise ValueError("ASSISTANT_GATEWAY_SNAPSHOT_TIMEOUT_SECONDS must be between 2 and 18")
         if self.vision_provider == "compatible":
             url = urlsplit(self.vision_base_url)
             if (url.scheme != "https" or not url.hostname or url.username or url.password
@@ -102,6 +107,10 @@ class GatewaySettings:
             vision_timeout = float(os.environ.get("ASSISTANT_GATEWAY_VISION_TIMEOUT_SECONDS", "12"))
         except ValueError as exc:
             raise ValueError("ASSISTANT_GATEWAY_VISION_TIMEOUT_SECONDS must be a number") from exc
+        try:
+            snapshot_timeout = float(os.environ.get("ASSISTANT_GATEWAY_SNAPSHOT_TIMEOUT_SECONDS", "17"))
+        except ValueError as exc:
+            raise ValueError("ASSISTANT_GATEWAY_SNAPSHOT_TIMEOUT_SECONDS must be a number") from exc
         public_raw = os.environ.get("ASSISTANT_GATEWAY_PUBLIC_ACCESS", "0")
         if public_raw not in {"0", "1"}:
             raise ValueError("ASSISTANT_GATEWAY_PUBLIC_ACCESS must be 0 or 1")
@@ -125,6 +134,7 @@ class GatewaySettings:
             vision_max_tokens=vision_max_tokens,
             vision_disable_thinking=thinking_raw == "1",
             request_timeout_seconds=vision_timeout,
+            snapshot_timeout_seconds=snapshot_timeout,
             vision_prompt_file=Path(os.environ["ASSISTANT_GATEWAY_VISION_PROMPT_FILE"]).expanduser()
                 if os.environ.get("ASSISTANT_GATEWAY_VISION_PROMPT_FILE", "").strip() else None,
             model_cache_dir=Path(cache).expanduser() if cache else None,
@@ -170,6 +180,10 @@ def safe_configuration_status(settings: GatewaySettings, *, asr_ready: bool, vis
         "mode": settings.mode,
         "vision_provider": settings.vision_provider,
         "vision_max_tokens": settings.vision_max_tokens if settings.vision_provider == "compatible" else 256,
+        "vision_timeout_seconds": settings.request_timeout_seconds,
+        "snapshot_timeout_seconds": settings.snapshot_timeout_seconds,
+        "vision_disable_thinking": (settings.vision_provider == "zhipu"
+            or settings.vision_disable_thinking or settings.vision_model.lower() == "minimax-m3"),
         "vision_model": (settings.vision_model if settings.vision_api_key else None)
             if settings.vision_provider == "compatible" else (settings.zhipu_model if settings.zhipu_api_key else None),
     }

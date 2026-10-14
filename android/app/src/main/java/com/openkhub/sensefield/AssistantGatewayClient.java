@@ -56,7 +56,7 @@ final class AssistantGatewayClient implements AutoCloseable {
     private final AssistantSettings settings;
     private final Listener listener;
     private final OkHttpClient http = new OkHttpClient.Builder().connectTimeout(3, TimeUnit.SECONDS)
-            .callTimeout(14, TimeUnit.SECONDS).readTimeout(14, TimeUnit.SECONDS).build();
+            .callTimeout(19, TimeUnit.SECONDS).readTimeout(19, TimeUnit.SECONDS).build();
     private final OkHttpClient audioHttp = new OkHttpClient.Builder().connectTimeout(3, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.MILLISECONDS).pingInterval(25, TimeUnit.SECONDS).build();
     private WebSocket socket;
@@ -173,6 +173,7 @@ final class AssistantGatewayClient implements AutoCloseable {
         if (!settings.token.isEmpty()) request.header("Authorization", "Bearer " + settings.token);
         Call call = http.newCall(request.post(RequestBody.create(body.toString(),
                 MediaType.get("application/json; charset=utf-8"))).build());
+        call.timeout().timeout(proactive ? 14 : 19, TimeUnit.SECONDS);
         synchronized (this) {
             if (closed) { listener.visualFailure(requestId, "closed"); return; }
             // A newer question can arrive during JPEG/Base64 work, before cancelVisual sees
@@ -211,7 +212,8 @@ final class AssistantGatewayClient implements AutoCloseable {
                                 JSONObject error = parsed.optJSONObject("error");
                                 if (error != null) {
                                     String candidateSource = error.optString("source", "unknown");
-                                    if ("provider".equals(candidateSource) || "cooldown".equals(candidateSource) || "public_quota".equals(candidateSource))
+                                    if ("provider".equals(candidateSource) || "cooldown".equals(candidateSource)
+                                            || "public_quota".equals(candidateSource) || "gateway".equals(candidateSource))
                                         source = candidateSource;
                                     String candidateCode = error.optString("provider_code", "");
                                     if (candidateCode.matches("[0-9]{1,6}")) providerCode = candidateCode;

@@ -577,3 +577,68 @@ def test_total_timeout_is_bounded_and_safe() -> None:
             await http_client.aclose()
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("phase", ["upstream_headers", "first_content", "stream_end"])
+def test_timeout_reports_progress_without_exposing_provider_content(phase, caplog) -> None:
+    class WaitingStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            delta = ({"content": "PRIVATE_PARTIAL_ANSWER"} if phase == "stream_end"
+                     else {"reasoning_content": "PRIVATE_REASONING"})
+            yield ("data: " + json.dumps({"choices": [{"delta": delta, "finish_reason": None}]})
+                   + "\n\n").encode()
+            await asyncio.Event().wait()
+
+    async def handler(_request):
+        if phase == "upstream_headers":
+            await asyncio.Event().wait()
+        return httpx.Response(200, stream=WaitingStream())
+
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = GlmVisionClient("PRIVATE_KEY", http_client=http, timeout_seconds=0.025)
+            with pytest.raises(VisionTimeout) as caught:
+                await client.complete(question="PRIVATE_QUESTION", image_base64="PRIVATE_IMAGE")
+            metadata = caught.value.safe_metadata()
+            assert metadata["source"] == "gateway"
+            assert metadata["timeout_stage"] == phase
+            assert metadata["timeout_ms"] == 25
+            assert metadata["upstream_http_status"] == (None if phase == "upstream_headers" else 200)
+            assert metadata["content_chars"] == (len("PRIVATE_PARTIAL_ANSWER") if phase == "stream_end" else 0)
+            assert metadata["reasoning_content_chars"] == (len("PRIVATE_REASONING") if phase == "first_content" else 0)
+            assert "PRIVATE" not in repr(metadata)
+
+    caplog.set_level(logging.INFO, logger="mapassist.assistant_gateway.audit")
+    asyncio.run(scenario())
+    audit = "\n".join(record.getMessage() for record in caplog.records)
+    assert f"assistant_gateway_vision_timeout stage={phase}" in audit
+    assert "PRIVATE" not in audit
+
+
+def test_waiting_for_account_slot_has_a_distinct_timeout() -> None:
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+                lambda _request: pytest.fail("Queued request must not reach the provider"))) as http:
+            client = GlmVisionClient("test", http_client=http, timeout_seconds=0.02)
+            await client._semaphore.acquire()
+            try:
+                with pytest.raises(VisionTimeout) as caught:
+                    await client.complete(question="q", image_base64="a")
+                assert caught.value.safe_metadata()["timeout_stage"] == "account_slot"
+            finally:
+                client._semaphore.release()
+    asyncio.run(scenario())
+
+
+def test_per_request_budget_does_not_change_following_automatic_request() -> None:
+    async def handler(_request):
+        await asyncio.sleep(0.035)
+        return httpx.Response(200, content=_sse('{"kind":"hud","answer":"血量64","uncertain":false}'))
+
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = GlmVisionClient("test", http_client=http, timeout_seconds=0.01)
+            assert "64" in await client.complete(question="q", image_base64="a", timeout_seconds=0.2)
+            with pytest.raises(VisionTimeout):
+                await client.complete(question="q", image_base64="a")
+    asyncio.run(scenario())

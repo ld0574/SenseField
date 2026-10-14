@@ -87,8 +87,29 @@ class VisionUpstreamError(GatewayError):
 
 
 class VisionTimeout(GatewayError):
-    def __init__(self):
+    def __init__(self, *, stage: str = "unknown", timeout_ms: int | None = None,
+                 upstream_http_status: int | None = None, first_content_ms: int | None = None,
+                 content_chars: int = 0, reasoning_content_chars: int = 0):
         super().__init__("vision_timeout", "The vision request timed out.", http_status=504)
+        self.stage = stage if stage in {
+            "account_slot", "upstream_headers", "first_content", "stream_end",
+            "provider_error_body", "transport", "unknown",
+        } else "unknown"
+        self._metadata = {
+            "source": "gateway", "timeout_stage": self.stage,
+            "timeout_ms": _safe_count(timeout_ms),
+            "upstream_http_status": _safe_http_status(upstream_http_status),
+            "first_content_ms": _safe_count(first_content_ms),
+            "content_chars": _safe_count(content_chars),
+            "reasoning_content_chars": _safe_count(reasoning_content_chars),
+        }
+
+    def safe_metadata(self) -> dict[str, str | int | None]:
+        return dict(self._metadata)
+
+
+def _safe_count(value: int | None) -> int | None:
+    return value if type(value) is int and 0 <= value <= 2**31 - 1 else None
 
 
 class VisionProviderAuthError(VisionUpstreamError):

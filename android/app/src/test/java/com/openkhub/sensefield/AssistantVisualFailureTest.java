@@ -4,6 +4,14 @@ import static org.junit.Assert.*;
 import org.junit.Test;
 
 public final class AssistantVisualFailureTest {
+    @Test public void unknownReasonIsBoundedAndDoesNotRequestAnUnchangedRetry() {
+        assertEquals("invalid_output", AssistantVisualFailure.unknownReason("invalid_output", true));
+        assertEquals("empty_answer", AssistantVisualFailure.unknownReason("PRIVATE SERVER TEXT", true));
+        assertEquals("model_uncertain", AssistantVisualFailure.unknownReason("PRIVATE SERVER TEXT", false));
+        assertEquals("这张截图没能判断清楚。", AssistantVisualFailure.unknownMessage("model_uncertain"));
+        assertFalse(AssistantVisualFailure.unknownMessage("model_uncertain").contains("重新提问"));
+        assertTrue(AssistantVisualFailure.unknownMessage("invalid_output").contains("格式异常"));
+    }
     @Test public void heroOldGateway502RetainsUpstreamAuthAttribution() {
         String code = AssistantVisualFailure.code(502, "provider", 401, "vision_upstream_unavailable");
         assertEquals("vision_provider_auth_failed", code);

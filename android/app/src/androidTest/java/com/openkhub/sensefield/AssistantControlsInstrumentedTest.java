@@ -35,6 +35,52 @@ public class AssistantControlsInstrumentedTest {
     }
     private static final String EXPIRED_FRAME_PROMPT = "画面返回太慢，旧画面已丢弃。";
 
+    @Test public void unknownManualAnswerAfterSixSecondsExplainsOutcomeInsteadOfFrameExpiry() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "unknown-delayed-test",
+                new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller); String turn = session.newTurn();
+            FrameSnapshot frame = staleHudFrame(995, SystemClock.elapsedRealtime() - 6_500, session.generation());
+            installVisualTask(controller, 995, turn, frame, false);
+            JSONObject result = visualResult(session, session.generation(), turn, 995, "")
+                    .put("kind", "unknown").put("uncertain", true).put("unknown_reason", "model_uncertain");
+            controller.visualResult(995, result);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(1, host.spoken);
+            assertEquals("这张截图没能判断清楚。", host.last.answer);
+            assertEquals(0, countAudit(host, "event=EXPIRED"));
+            assertEquals(1, countAudit(host, "event=RESULT_UNKNOWN reason=model_uncertain"));
+            assertEquals("local", host.last.kind);
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void unknownAutomaticOrSupersededAnswerNeverSpeaks() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "unknown-silent-test",
+                new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller); String turn = session.newTurn();
+            FrameSnapshot frame = staleHudFrame(996, SystemClock.elapsedRealtime() - 6_500, session.generation());
+            installVisualTask(controller, 996, turn, frame, true);
+            controller.visualResult(996, visualResult(session, session.generation(), turn, 996, "")
+                    .put("kind", "unknown").put("uncertain", true));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(0, host.spoken);
+            turn = session.newTurn();
+            long generation = session.generation();
+            frame = staleHudFrame(997, SystemClock.elapsedRealtime() - 6_500, generation);
+            installVisualTask(controller, 997, turn, frame, false);
+            session.newTurn();
+            controller.visualResult(997, visualResult(session, generation, turn, 997, "")
+                    .put("kind", "unknown").put("uncertain", true));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(0, host.spoken);
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
     private static AssistantPolicy policy(AssistantController controller) throws Exception {
         Field field = AssistantController.class.getDeclaredField("policy");
         field.setAccessible(true);
@@ -252,7 +298,8 @@ public class AssistantControlsInstrumentedTest {
                     "先跟前排推进。"));
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             assertEquals(1, host.spoken);
-            assertTrue(host.last.answer.startsWith("画面变化，"));
+            assertEquals("先跟前排推进。", host.last.answer);
+            assertTrue(host.last.spokenAnswerAt(SystemClock.elapsedRealtime()).startsWith("画面变化，"));
             assertTrue(host.last.proactive);
             assertEquals(capturedAt, host.last.capturedAtMs);
             Field history = AssistantController.class.getDeclaredField("history");

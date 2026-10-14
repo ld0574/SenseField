@@ -7,7 +7,7 @@ import json
 import logging
 import math
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Callable, Mapping
@@ -57,6 +57,18 @@ class _StreamMetrics:
         if not self.event_count:
             return "empty"
         return "no_content"
+
+
+@dataclass
+class _CallProgress:
+    stage: str = "account_slot"
+    upstream_http_status: int | None = None
+    metrics: _StreamMetrics = field(default_factory=_StreamMetrics)
+
+    def timeout_stage(self) -> str:
+        if self.stage == "upstream_stream":
+            return "stream_end" if self.metrics.content_chars else "first_content"
+        return self.stage
 
 
 def _extract_provider_code(data: Any) -> str | None:
@@ -153,24 +165,43 @@ class GlmVisionClient:
         question: str,
         image_base64: str,
         context_images: tuple[str, ...] = (),
+        timeout_seconds: float | None = None,
     ) -> str:
         if self._closed:
             raise VisionUpstreamError(source="transport")
         if self._clock() < self._blocked_until:
             raise self._local_cooldown_error()
+        budget = self._timeout_seconds if timeout_seconds is None else timeout_seconds
+        if (isinstance(budget, bool) or not isinstance(budget, (int, float))
+                or not math.isfinite(budget) or not 0 < budget <= 30):
+            raise ValueError("Vision timeout must be positive and at most 30 seconds")
+        progress = _CallProgress()
+        started_at = self._clock()
         try:
             return await asyncio.wait_for(
                 self._complete_with_account_slot(
                     question=question,
                     image_base64=image_base64,
                     context_images=context_images,
+                    progress=progress,
                 ),
-                timeout=self._timeout_seconds,
+                timeout=budget,
             )
-        except asyncio.TimeoutError as exc:
-            raise VisionTimeout() from exc
-        except httpx.TimeoutException as exc:
-            raise VisionTimeout() from exc
+        except (asyncio.TimeoutError, httpx.TimeoutException) as exc:
+            error = VisionTimeout(stage=progress.timeout_stage(), timeout_ms=int(budget * 1000),
+                upstream_http_status=progress.upstream_http_status,
+                first_content_ms=progress.metrics.first_content_ms,
+                content_chars=progress.metrics.content_chars,
+                reasoning_content_chars=progress.metrics.reasoning_content_chars)
+            trace = visual_request_context.get() or ("none", -1, "none", "none")
+            _AUDIT_LOGGER.warning(
+                "assistant_gateway_vision_timeout stage=%s timeout_ms=%d elapsed_ms=%d "
+                "upstream_http_status=%s first_content_ms=%s content_chars=%d reasoning_content_chars=%d "
+                "session_id=%s generation=%s turn_id=%s frame_id=%s",
+                error.stage, int(budget * 1000), max(0, int((self._clock() - started_at) * 1000)),
+                progress.upstream_http_status, progress.metrics.first_content_ms,
+                progress.metrics.content_chars, progress.metrics.reasoning_content_chars, *trace)
+            raise error from exc
         except VisionRateLimited:
             raise
         except GatewayError:
@@ -184,14 +215,18 @@ class GlmVisionClient:
         question: str,
         image_base64: str,
         context_images: tuple[str, ...] = (),
+        progress: _CallProgress | None = None,
     ) -> str:
         async with self._semaphore:
             if self._clock() < self._blocked_until:
                 raise self._local_cooldown_error()
+            if progress is not None:
+                progress.stage = "upstream_headers"
             return await self._stream(
                 question=question,
                 image_base64=image_base64,
                 context_images=context_images,
+                progress=progress,
             )
 
     async def _stream(
@@ -200,9 +235,10 @@ class GlmVisionClient:
         question: str,
         image_base64: str,
         context_images: tuple[str, ...] = (),
+        progress: _CallProgress | None = None,
     ) -> str:
         started_at = self._clock()
-        metrics = _StreamMetrics()
+        metrics = progress.metrics if progress is not None else _StreamMetrics()
         body = self._request_body(
             question=question,
             image_base64=image_base64,
@@ -210,6 +246,9 @@ class GlmVisionClient:
         )
         headers = {"Authorization": f"Bearer {self._api_key}", "Accept": "text/event-stream"}
         async with self._client.stream("POST", self._request_url(), headers=headers, json=body) as response:
+            if progress is not None:
+                progress.upstream_http_status = response.status_code
+                progress.stage = "provider_error_body" if response.status_code >= 400 else "upstream_stream"
             if response.status_code >= 400:
                 provider_code = _parse_provider_code((await response.aread())[:16_384])
                 if response.status_code in {401, 403}:

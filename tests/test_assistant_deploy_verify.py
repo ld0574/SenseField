@@ -330,3 +330,17 @@ def test_public_health_uses_installation_header_without_reading_private_config(t
     assert opener.requests[1][0].get_header("X-sensefield-installation") is None
     assert opener.requests[2][0].get_header("X-sensefield-installation") is not None
     assert all(request.get_header("Authorization") is None for request, _ in opener.requests)
+
+
+def test_synthetic_visual_check_uses_paired_manual_snapshot_budget(tmp_path):
+    health = FakeResponse(b'{"status":"vision_only","asr_ready":false,"public_vision_access":true}')
+    visual = FakeResponse(b'{"kind":"ui_text","answer":"SYNTHETIC GATEWAY TEST","uncertain":false}')
+    opener = FakeOpener([health, _http_error(401), _http_error(422), _http_error(413), visual])
+    code, report = verify.execute(_args("--visual", "--config", str(tmp_path / "does-not-exist")),
+        opener=opener, context_factory=lambda **kwargs: object(), stderr=io.StringIO())
+    assert code == 0 and report["synthetic_visual_passed"]
+    request, timeout = opener.requests[-1]
+    payload = json.loads(request.data)
+    assert payload["snapshot_read"] is True and payload["proactive"] is False
+    assert timeout == 19
+    assert all(timeout == 12 for _, timeout in opener.requests[1:-1])

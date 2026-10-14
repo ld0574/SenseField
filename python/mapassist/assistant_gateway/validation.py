@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .images import NormalizedImage, normalize_image
@@ -123,6 +123,7 @@ class VisualAnswer:
     answer: str
     uncertain: bool
     decision_scene: str = ""
+    failure_reason: str = field(default="", compare=False)
 
 
 def _require_id(value: Any, field_name: str) -> str:
@@ -287,12 +288,14 @@ def parse_visual_answer(raw: str, *, question: str | None = None) -> VisualAnswe
         raise InvalidRequest("model response did not match the required schema")
     answer = _CONTROL_RE.sub("", answer).strip()
     if len(answer) > 100 or len(_SENTENCE_END_RE.findall(answer)) > 2:
-        return VisualAnswer("unknown", UNKNOWN_ANSWER, True)
+        return VisualAnswer("unknown", UNKNOWN_ANSWER, True, failure_reason="response_limits")
     if kind == "unknown":
-        return VisualAnswer("unknown", "", True)
-    if (not answer or _is_progress_only_build_answer(answer, question)
+        return VisualAnswer("unknown", "", True, failure_reason="model_uncertain")
+    if not answer:
+        return VisualAnswer("unknown", UNKNOWN_ANSWER, True, failure_reason="empty_answer")
+    if (_is_progress_only_build_answer(answer, question)
             or _is_transient_banner_only(answer, question)):
-        return VisualAnswer("unknown", UNKNOWN_ANSWER, True)
+        return VisualAnswer("unknown", UNKNOWN_ANSWER, True, failure_reason="unhelpful_answer")
     if _requires_live_hud(question) and not (
         kind == "ui_text" and _is_stable_menu_overview(question, answer)
     ):
@@ -304,4 +307,5 @@ def parse_visual_answer(raw: str, *, question: str | None = None) -> VisualAnswe
         kind = "hud"  # Older phone clients keep their original conservative expiry.
     else:
         decision_scene = ""
-    return VisualAnswer(kind, answer, uncertain, decision_scene)
+    return VisualAnswer(kind, answer, uncertain, decision_scene,
+                        failure_reason="model_uncertain" if uncertain else "")

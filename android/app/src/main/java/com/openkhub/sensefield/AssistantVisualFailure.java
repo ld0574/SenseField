@@ -4,6 +4,19 @@ package com.openkhub.sensefield;
 final class AssistantVisualFailure {
     private AssistantVisualFailure() { }
 
+    static String unknownReason(String reason, boolean empty) {
+        if ("invalid_output".equals(reason) || "response_limits".equals(reason)
+                || "model_uncertain".equals(reason) || "empty_answer".equals(reason)
+                || "unhelpful_answer".equals(reason)) return reason;
+        return empty ? "empty_answer" : "model_uncertain";
+    }
+
+    static String unknownMessage(String reason) {
+        if ("invalid_output".equals(reason) || "response_limits".equals(reason))
+            return "画面服务返回格式异常，没能读出答案。";
+        return "这张截图没能判断清楚。";
+    }
+
     static String code(int httpStatus, String source, int upstreamStatus, String fallback) {
         if ("provider".equals(source)) {
             if (upstreamStatus == 401) return "vision_provider_auth_failed";

@@ -292,6 +292,7 @@ def _synthetic_visual_payload() -> bytes:
         "question": "请只读出图中英文文字。",
         "frame_age_ms": 0,
         "proactive": False,
+        "snapshot_read": True,
         "image_base64": base64.b64encode(stream.getvalue()).decode(),
     }
     return json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -374,7 +375,7 @@ def execute(
                 data=body,
                 headers=headers,
                 expected_error_statuses=allowed,
-                timeout=12,
+                timeout=19 if stage == "visual" else 12,
                 maximum_bytes=1024 * 1024,
             )
 

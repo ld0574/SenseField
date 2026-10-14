@@ -4,7 +4,7 @@
 
 ## 已有部署更新：0.4.7 需要配套更新 Python 服务端
 
-**本轮中文游戏搭子提示词、通用游戏问题与手动截图回答协议都包含服务端改动。安装 APK 不会更新服务器；需要更新 Python 源码、核对私有配置并重启服务。** 10 月 14 日 14:22 已验证用户部署的 Kimi-K3 服务可读合成图；随后实局发现的时效问题属于后续修订，尚未安装或部署。本地交付部署包也不会自动上传或重启生产服务器。
+**本轮中文游戏搭子提示词、手动截图预算与超时阶段诊断都包含服务端改动。安装 APK 不会更新服务器；需要更新 Python 源码、核对私有配置和反代等待时间并重启服务。** 10 月 14 日合成图曾通过，但随后真实试用 7 次请求没有可用回答，详见[失败与修订记录](../../validation/assistant/SNAPSHOT_TIMEOUT_REPAIR_0_4_7_2026-10-14.md)。本地交付部署包不会自动上传或重启生产服务器。
 
 以下使用已有的 `/data/wwwroot/sf` 直接后台部署。先停止现有服务，再选择一种源码更新方式：
 
@@ -26,11 +26,12 @@ bash deploy/assistant/start.sh stop
   "ASSISTANT_GATEWAY_VISION_BASE_URL": "https://www.tokens1688.com/v1",
   "ASSISTANT_GATEWAY_VISION_MODEL": "Kimi-K3",
   "ASSISTANT_GATEWAY_VISION_DISABLE_THINKING": "1",
-  "ASSISTANT_GATEWAY_VISION_TIMEOUT_SECONDS": "12"
+  "ASSISTANT_GATEWAY_VISION_TIMEOUT_SECONDS": "12",
+  "ASSISTANT_GATEWAY_SNAPSHOT_TIMEOUT_SECONDS": "17"
 }
 ```
 
-同时在私有配置中更新对应的 `ASSISTANT_GATEWAY_VISION_API_KEY`，保留仅所有者可读的文件权限。接口地址不加 `/chat/completions`，客户端会自行追加。默认加载随源码交付的中文提示词；若已有 `ASSISTANT_GATEWAY_VISION_PROMPT_FILE` 指向旧文件，需更新该自定义文件，或移除此字段以使用新默认文件。检查现有 Nginx `/v1/visual` 的 `proxy_read_timeout` 至少为 `16s`；若修改反代，执行 `sudo nginx -t` 成功后再重载。
+已有 K3 配置时保留对应的 `ASSISTANT_GATEWAY_VISION_API_KEY` 及仅所有者可读的权限，无需更换密钥。接口地址不加 `/chat/completions`，客户端会自行追加。默认加载随源码交付的中文提示词；若已有 `ASSISTANT_GATEWAY_VISION_PROMPT_FILE` 指向旧文件，需更新该自定义文件，或移除此字段以使用新默认文件。检查现有 Nginx `/v1/visual` 的 `proxy_read_timeout`，本轮示例为 `21s`；旧 `16s` 会截断新的手动预算。只修改现有站点的对应超时项，执行 `sudo nginx -t` 成功后再用原管理器重载。
 
 完成后启动并实际验收一次公网读图：
 
@@ -174,11 +175,19 @@ bash deploy/assistant/start.sh restart
 
 如试用 Kimi-K2.6，需同时设置 `ASSISTANT_GATEWAY_VISION_MODEL=Kimi-K2.6` 与 `ASSISTANT_GATEWAY_VISION_DISABLE_THINKING=0`，再重启并执行真实读图验收；只改模型名会继续携带它拒绝的扩展参数。旧完整提示词每组3次的完整回答中位为 K3 2.27 秒、K2.6 4.09 秒，短提示词组中 K2.6 波动较小；这些结果不能保证当前中文提示词下的延迟或504故障率。先查超时来源，再按相同提示词和图片对照，不自动把本次未知来源504归因于K3。
 
-当前服务默认模型等待预算为 12 秒，可用 `ASSISTANT_GATEWAY_VISION_TIMEOUT_SECONDS` 调整；0.4.7 手机请求上限为 14 秒，Nginx 示例读取上限为 16 秒。可等待的决策附带 `decision_scene`：选人、出装或其他游戏决策；原受保护的建议最多使用截图后 20 秒，要求新鲜画面且未发生持续明显页面变化。截图哈希只提供粗粒度检查，不能证明微小阵容或装备变更都被发现。
+自动观察及未标记的旧请求默认模型等待预算为 12 秒，使用 `ASSISTANT_GATEWAY_VISION_TIMEOUT_SECONDS`。明确的手动 `snapshot_read` 请求单独使用 `ASSISTANT_GATEWAY_SNAPSHOT_TIMEOUT_SECONDS`，默认 17 秒、允许 2～18 秒；本轮手机手动／自动请求上限分别为 19／14 秒，Nginx 示例为 21 秒。旧手机的 14 秒上限不会随服务端更新而改变，因此要配套更新 APK。`/health` 返回两种有效预算与 `vision_disable_thinking`，不返回密钥。可等待的决策附带 `decision_scene`：选人、出装或其他游戏决策；原受保护的建议最多使用截图后 20 秒，要求新鲜画面且未发生持续明显页面变化。截图哈希只提供粗粒度检查，不能证明微小阵容或装备变更都被发现。
 
 新手机的手动请求明确发送 `snapshot_read=true`，网关仅对可靠的手动局内回答返回 `answer_scope=snapshot`。手机始终播报“约 N 秒前截图显示”，允许在原截图后 20 秒内使用已请求的截图信息，页面变化不抹掉这份历史信息；重复时重新计算截图年龄，不延长有效期。暂停、换问题、热保护及本地预警优先级继续有效。普通未标记 HUD 仍为 5 秒，稳定文字为 15 秒，自动观察不会取得截图范围。旧手机或旧网关没有新标记时沿用原规则。敌人位置等信息不能据此当成实时状态。
 
-[本次实局复盘](../../validation/assistant/USER_TRIAL_0_4_7_2026-10-14.md)记录了 6 次云请求、3 次保护丢弃和 1 次 HTTP 504。504 在手机端明确提示“画面读取超时”，来源仍需服务器日志确认；不将未知来源直接归因于 Nginx 或中转商。本轮修订还需要配套更新后的公网和手机验证，当前未自动部署或安装。
+[先前实局复盘](../../validation/assistant/USER_TRIAL_0_4_7_2026-10-14.md)与[本轮失败记录](../../validation/assistant/SNAPSHOT_TIMEOUT_REPAIR_0_4_7_2026-10-14.md)分别保留。新日志 `assistant_gateway_vision_timeout` 区分账户并发等待、响应头、首段正文及流结束；`unknown_reason` 区分模型不确定、空答案和协议异常。只记录阶段、计数和请求标识，不记录密钥、问题、图片或模型正文。手动空答案反馈先于截图过期检查，避免把模型弃权说成画面过期；自动观察仍保持安静。
+
+直接后台部署查看本轮相关行：
+
+```sh
+rg 'assistant_gateway_(vision_stream|vision_timeout|visual)' /data/wwwroot/sf/deploy/assistant/runtime/assistant.log | tail -n 60
+```
+
+服务器未安装 `rg` 时用 `grep -E` 替代。systemd 部署使用 `journalctl -u sensefield-assistant --since '2026-10-14 16:00' --no-pager`。这些阶段帮助定位下一次故障，现有旧日志不足以断定 K3 慢在哪里。
 
 ## 已使用旧部署包
 

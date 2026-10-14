@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import inspect
 import json
 import logging
 import time
@@ -210,22 +211,28 @@ def _secure_scheme(scope: dict[str, Any]) -> bool:
     return scope.get("scheme") in {"https", "wss"}
 
 
-async def _vision_call(vision_client: Any, visual_request: VisualRequest) -> Any:
+async def _vision_call(vision_client: Any, visual_request: VisualRequest,
+                       timeout_seconds: float | None = None) -> Any:
     token = visual_request_context.set((visual_request.session_id, visual_request.generation,
                                         visual_request.turn_id, visual_request.frame_id))
     try:
-        return await _vision_call_with_context(vision_client, visual_request)
+        return await _vision_call_with_context(vision_client, visual_request, timeout_seconds)
     finally:
         visual_request_context.reset(token)
 
 
-def _vision_call_with_context(vision_client: Any, visual_request: VisualRequest) -> Any:
+def _vision_call_with_context(vision_client: Any, visual_request: VisualRequest,
+                              timeout_seconds: float | None = None) -> Any:
     if is_immediate_combat_question(visual_request.question):
         async def redirect_to_local_warning() -> str:
             return json.dumps({"kind": "ui_text", "answer": "团战即时提醒请听本地预警。我可以帮你读画面、分析游戏问题。", "uncertain": False}, ensure_ascii=False)
         return redirect_to_local_warning()
     context_images = tuple(frame.image.jpeg_base64 for frame in visual_request.context_frames)
     question = visual_request.question
+    extra: dict[str, Any] = {}
+    if (timeout_seconds is not None
+            and "timeout_seconds" in inspect.signature(vision_client.complete).parameters):
+        extra["timeout_seconds"] = timeout_seconds
     if context_images:
         context_ages = "，".join(
             f"背景截图{index}已过去{frame.frame_age_ms}毫秒"
@@ -243,10 +250,12 @@ def _vision_call_with_context(vision_client: Any, visual_request: VisualRequest)
             question=question,
             image_base64=visual_request.image.jpeg_base64,
             context_images=context_images,
+            **extra,
         )
     return vision_client.complete(
         question=question,
         image_base64=visual_request.image.jpeg_base64,
+        **extra,
     )
 
 
@@ -445,7 +454,9 @@ def create_app(
                         generation=visual_request.generation,
                     )
                     active.upstream_task = asyncio.create_task(
-                        _vision_call(vision_client, visual_request)
+                        _vision_call(vision_client, visual_request,
+                            settings.snapshot_timeout_seconds if visual_request.snapshot_read
+                            and not visual_request.proactive else settings.request_timeout_seconds)
                     )
                     request.app.state.active_visual_requests[session_id] = active
                     owns_slot = True
@@ -530,7 +541,9 @@ def create_app(
                     active.proactive = False
                     active.generation = visual_request.generation
                     active.upstream_task = asyncio.create_task(
-                        _vision_call(vision_client, visual_request)
+                        _vision_call(vision_client, visual_request,
+                            settings.snapshot_timeout_seconds if visual_request.snapshot_read
+                            and not visual_request.proactive else settings.request_timeout_seconds)
                     )
                     owns_slot = True
 
@@ -551,6 +564,7 @@ def create_app(
                     "unknown",
                     UNKNOWN_ANSWER,
                     True,
+                    failure_reason="invalid_output",
                 )
             result = {
                 "session_id": visual_request.session_id,
@@ -564,6 +578,8 @@ def create_app(
             }
             if answer.decision_scene:
                 result["decision_scene"] = answer.decision_scene
+            if answer.failure_reason:
+                result["unknown_reason"] = answer.failure_reason
             if (visual_request.snapshot_read and not visual_request.proactive
                     and answer.kind == "hud" and not answer.uncertain
                     and not is_immediate_combat_question(visual_request.question)):
@@ -579,7 +595,7 @@ def create_app(
                     elapsed_ms=result["elapsed_ms"],
                 )
             _AUDIT_LOGGER.info(
-                "assistant_gateway_visual event=response_validated generation=%s turn_id=%s frame_id=%s context_count=%s proactive=%s stage=response_validation kind=%s uncertain=%s answer_chars=%s elapsed_ms=%s answer_scope=%s",
+                "assistant_gateway_visual event=response_validated generation=%s turn_id=%s frame_id=%s context_count=%s proactive=%s stage=response_validation kind=%s uncertain=%s answer_chars=%s elapsed_ms=%s answer_scope=%s unknown_reason=%s",
                 visual_request.generation,
                 visual_request.turn_id,
                 visual_request.frame_id,
@@ -590,6 +606,7 @@ def create_app(
                 len(answer.answer),
                 result["elapsed_ms"],
                 result.get("answer_scope", "legacy"),
+                answer.failure_reason or "none",
             )
             _log_visual_event(
                 "success", visual_request,

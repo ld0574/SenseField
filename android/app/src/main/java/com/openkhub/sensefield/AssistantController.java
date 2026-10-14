@@ -660,12 +660,22 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         }
         // A valid, owned response proves model access, even if the image is uncertain.
         policy.serviceRecovered();
+        long now = SystemClock.elapsedRealtime();
+        if (!task.proactive) proactiveQuietUntilMs = Math.max(proactiveQuietUntilMs, now + MANUAL_QUIET_MS);
+        // This feedback describes the request outcome, so no stale game advice is admitted.
+        // Do it before frame expiry: an unknown answer must not be blamed on the screenshot age.
+        if (uncertain || "unknown".equals(kind) || answer.isEmpty()) {
+            String reason = AssistantVisualFailure.unknownReason(
+                    result.optString("unknown_reason", ""), answer.isEmpty());
+            host.audit("AssistantVisual event=RESULT_UNKNOWN reason=" + reason
+                    + " frameId=" + task.frame.frameId);
+            reportManualFeedback(task, reason, AssistantVisualFailure.unknownMessage(reason));
+            return;
+        }
         AssistantReply reply = new AssistantReply(task.frame.generation, task.turn, task.frame.frameId,
                 task.frame.capturedAtMs, kind, answer, uncertain, task.proactive,
                 result.optString("decision_scene", ""), task.decisionGuard,
                 !task.proactive && "snapshot".equals(result.optString("answer_scope", "")));
-        long now = SystemClock.elapsedRealtime();
-        if (!task.proactive) proactiveQuietUntilMs = Math.max(proactiveQuietUntilMs, now + MANUAL_QUIET_MS);
         if (!reply.freshAt(now)) {
             host.audit("AssistantVisual event=DROPPED reason=expired_result requestId=" + id
                     + " frameId=" + task.frame.frameId
@@ -681,11 +691,6 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
                 reportManualFeedback(task, "frame_guard", "画面已经变化或观测中断，请重新提问。");
             }
             return;
-        }
-        if (uncertain || "unknown".equals(kind) || answer.isEmpty()) {
-            host.audit("AssistantVisual event=RESULT_UNKNOWN reason="
-                    + (answer.isEmpty() ? "empty_answer" : "uncertain") + " frameId=" + task.frame.frameId);
-            if (!task.proactive) sayLocal(task.turn, "没看清，请重新提问。", true); return;
         }
         if (task.proactive && answer.equals(lastAutomaticAnswer)) return;
         if (task.proactive) lastAutomaticAnswer = answer;

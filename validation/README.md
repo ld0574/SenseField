@@ -10,7 +10,7 @@
 | [王者荣耀](honor/README.md) | 4 | 操控期间漏报、敌人再出现、提醒频率与范围 |
 | [声音与提示呈现](audio/README.md) | 12 | 离线语音、TTS、音色、混音、声像、震感与听感 |
 | [发热与性能](performance/README.md) | 17 | 负载、像素复制、推理缓存、真机发热与对照试验 |
-| [AI 助手与部署](assistant/README.md) | 13 | ASR、视觉模型、回复时效、取消、默认开关与部署 |
+| [AI 助手与部署](assistant/README.md) | 17 | ASR、视觉模型、回复时效、取消、默认开关与部署 |
 | [Android 与界面](android/README.md) | 10 | 授权、模拟器、真机冒烟、说明学习与大字布局 |
 | [升级与发布验收](releases/README.md) | 11 | 自动更新、CDN、Gitee 分发与 GitHub 发布核对、撤回候选归档 |
 | [模型与数据证据](models/README.md) | 17 | 开发集、标注、定位、导出与 parity；含两个固定入口 |
@@ -18,6 +18,8 @@
 | [历史状态快照](archive/README.md) | 1 | 原状态页的完整批次记录 |
 
 ## 当前入口
+
+- [0.4.7 真实读图零有效回答与手动预算修订](assistant/SNAPSHOT_TIMEOUT_REPAIR_0_4_7_2026-10-14.md)
 
 - [实际公开 0.4.6 与冻结 0.4.7：质量和两款游戏各三组成对处理成本](performance/PUBLIC_APK_COMPARISON_0_4_7_2026-10-14.md)
 
