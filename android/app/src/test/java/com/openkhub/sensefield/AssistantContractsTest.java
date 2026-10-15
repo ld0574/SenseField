@@ -131,7 +131,7 @@ public class AssistantContractsTest {
         assertFalse(policy.automaticDue(30_000, FrameProcessingPolicy.Mode.WARM, false, false, -1, 6));
         assertTrue(policy.automaticDue(60_000, FrameProcessingPolicy.Mode.WARM, false, false, -1, 6));
         assertFalse(policy.automaticDue(60_000, FrameProcessingPolicy.Mode.HOT, false, false, -1, 6));
-        assertFalse(policy.manualAllowed(60_000, FrameProcessingPolicy.Mode.HOT));
+        assertTrue(policy.manualAllowed(60_000, FrameProcessingPolicy.Mode.HOT));
         assertFalse(policy.automaticDue(60_000, FrameProcessingPolicy.Mode.NORMAL, true, false, -1, 6));
         assertFalse(policy.automaticDue(60_000, FrameProcessingPolicy.Mode.NORMAL, false, true, -1, 6));
         assertFalse(policy.automaticDue(60_000, FrameProcessingPolicy.Mode.NORMAL, false, false, 58_000, 6));
@@ -143,10 +143,12 @@ public class AssistantContractsTest {
         assertEquals(60_000, policy.retryAfterMs(1000));
         assertEquals(1, policy.retryAfterMs(60_999));
         assertFalse(policy.manualAllowed(60_999, FrameProcessingPolicy.Mode.NORMAL));
+        assertFalse(policy.manualAllowed(60_999, FrameProcessingPolicy.Mode.HOT));
         assertTrue(policy.manualAllowed(61_000, FrameProcessingPolicy.Mode.NORMAL));
         assertEquals(0, policy.retryAfterMs(61_000));
         for (int i = 0; i < 120; i++) policy.started(61_000, false, i);
         assertFalse(policy.manualAllowed(61_000, FrameProcessingPolicy.Mode.NORMAL));
+        assertFalse(policy.manualAllowed(61_000, FrameProcessingPolicy.Mode.HOT));
         assertTrue(policy.manualAllowed(AssistantPolicy.WINDOW_MS + 60_999, FrameProcessingPolicy.Mode.NORMAL));
     }
     @Test public void shortGatewayResponseDoesNotRequireExactLength() throws IOException {
@@ -164,7 +166,7 @@ public class AssistantContractsTest {
         assertEquals(119_000, policy.retryAfterMs(13_000));
         assertFalse(policy.manualAllowed(131_999, FrameProcessingPolicy.Mode.NORMAL));
         assertTrue(policy.manualAllowed(132_000, FrameProcessingPolicy.Mode.NORMAL));
-        assertFalse(policy.manualAllowed(132_000, FrameProcessingPolicy.Mode.HOT));
+        assertTrue(policy.manualAllowed(132_000, FrameProcessingPolicy.Mode.HOT));
     }
     @Test public void responseLimitCountsUtf8Bytes() throws IOException {
         Buffer source = new Buffer().writeUtf8("听野听野");

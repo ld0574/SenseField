@@ -233,13 +233,14 @@ public class AssistantControlsInstrumentedTest {
         return host.audits.stream().filter(value -> value.contains(marker)).count();
     }
 
-    @Test public void speechStartReservesSixtySecondQuietWindowWithoutStartingCapture() throws Exception {
+    @Test public void hotSpeechStartReservesQuietWindowAndStillChecksLocalInput() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         SharedPreferences preferences = preferences(context);
         Host host = new Host();
         AssistantController controller = new AssistantController(context, "speech-quiet-test",
                 new AssistantSettings(preferences), host);
         try {
+            controller.thermal(FrameProcessingPolicy.Mode.HOT);
             long before = SystemClock.elapsedRealtime();
             java.lang.reflect.Method started = AssistantController.class.getDeclaredMethod("voiceStarted");
             started.setAccessible(true);
@@ -249,6 +250,7 @@ public class AssistantControlsInstrumentedTest {
             assertTrue(quiet.getLong(controller) >= before + 60_000);
             assertEquals(1, host.cancelled);
             assertEquals(0, host.spoken);
+            assertEquals(1, countAudit(host, "reason=asr_unavailable"));
         } finally { controller.close(); preferences.edit().clear().commit(); }
     }
 
@@ -546,10 +548,10 @@ public class AssistantControlsInstrumentedTest {
                             903, primaryAt, session.generation(), 0, null)).size());
 
             controller.thermal(FrameProcessingPolicy.Mode.HOT);
-            assertEquals(0, history.size());
+            assertEquals("Load reduction does not restart the capture session", 2, history.size());
 
             controller.thermal(FrameProcessingPolicy.Mode.NORMAL);
-            addHistoryPair(history, SystemClock.elapsedRealtime());
+            assertEquals("Cooling preserves the same capture history", 2, history.size());
             controller.pause(true);
             assertEquals(0, history.size());
 
@@ -615,7 +617,7 @@ public class AssistantControlsInstrumentedTest {
                 assertFalse(host.status.contains("已就绪"));
                 controller.thermal(FrameProcessingPolicy.Mode.HOT);
                 controller.localAsrReady();
-                assertTrue(host.status.contains("温度较高"));
+                assertTrue(host.status.startsWith(VoiceInputSafetyPolicy.InputState.PAUSED.status));
                 assertFalse(host.status.contains("已就绪"));
             } finally { controller.close(); preferences.edit().clear().commit(); }
         });
@@ -731,13 +733,14 @@ public class AssistantControlsInstrumentedTest {
         } finally { controller.close(); preferences.edit().clear().commit(); }
     }
 
-    @Test public void tenSecondSelectionResultRemainsPlayableWhileCapturedPageIsObserved() throws Exception {
+    @Test public void hotTenSecondSelectionReplyStillRequiresFreshPageObservation() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         SharedPreferences preferences = preferences(context);
         Host host = new Host();
         AssistantController controller = new AssistantController(context, "decision-wait-test",
                 new AssistantSettings(preferences), host);
         try {
+            controller.thermal(FrameProcessingPolicy.Mode.HOT);
             AssistantSession session = session(controller);
             String turn = session.newTurn();
             long capturedAt = SystemClock.elapsedRealtime() - 10_000;
@@ -763,6 +766,75 @@ public class AssistantControlsInstrumentedTest {
             Thread.sleep(120);
             controller.offerFrame(changed, 64, 36, 64 * 4, 123, SystemClock.elapsedRealtime());
             assertFalse("A changed page cannot play the old selection again", controller.allows(host.last));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void heatingKeepsManualQuestionReplyAndRepeatButBlocksAutomaticSpeech() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context);
+        Host host = new Host();
+        AssistantController controller = new AssistantController(context, "hot-manual-turn-test",
+                new AssistantSettings(preferences), host);
+        try {
+            controller.readScreen();
+            AssistantSession session = session(controller);
+            long generation = session.generation();
+            Field pending = AssistantController.class.getDeclaredField("pendingQuestion");
+            pending.setAccessible(true);
+            Field pendingTurn = AssistantController.class.getDeclaredField("pendingTurn");
+            pendingTurn.setAccessible(true);
+            String turn = (String) pendingTurn.get(controller);
+            int cancelled = host.cancelled;
+            controller.thermal(FrameProcessingPolicy.Mode.HOT);
+            assertEquals(AssistantController.SCREEN_QUESTION, pending.get(controller));
+            assertTrue(session.owns(generation, turn));
+            assertEquals(cancelled, host.cancelled);
+
+            FrameSnapshot frame = staleHudFrame(130, SystemClock.elapsedRealtime(), generation);
+            pending.set(controller, null); // The capture path has consumed this question.
+            installVisualTask(controller, 130, turn, frame, false);
+            controller.thermal(FrameProcessingPolicy.Mode.WARM);
+            controller.thermal(FrameProcessingPolicy.Mode.HOT);
+            controller.visualResult(130, visualResult(session, generation, turn, 130,
+                    "截图右侧有敌方标记。").put("answer_scope", "snapshot"));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(1, host.spoken);
+            assertTrue(controller.allows(host.last));
+            AssistantReply automatic = new AssistantReply(generation, turn, frame.frameId,
+                    frame.capturedAtMs, "hud", "自动观察。", false, true, "", null, false);
+            assertFalse("Hot mode still suppresses unattended speech", controller.allows(automatic));
+
+            controller.question("重复", false);
+            assertEquals(2, host.spoken);
+            assertEquals(frame.capturedAtMs, host.last.capturedAtMs);
+            controller.readScreen();
+            assertEquals(AssistantController.SCREEN_QUESTION, pending.get(controller));
+            assertEquals(0, countAudit(host, "AssistantVisual event=DENIED reason=hot"));
+            controller.pause(true);
+            assertFalse("User pause still revokes the reply", controller.allows(host.last));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void heatingKeepsAnAwaitedLocalVoiceFinalUsableAsAManualQuestion() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context);
+        Host host = new Host();
+        AssistantController controller = new AssistantController(context, "hot-asr-final-test",
+                new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller);
+            String turn = session.newCaptureTurn();
+            long generation = session.generation();
+            markAwaitingAsrResult(controller);
+            controller.thermal(FrameProcessingPolicy.Mode.HOT);
+            assertTrue(session.ownsCapture(generation, turn));
+            controller.onLocalAsrResult(generation, turn, "帮我看一下当前画面", 25);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            Field pending = AssistantController.class.getDeclaredField("pendingQuestion");
+            pending.setAccessible(true);
+            assertNotNull("A deliberate voice question remains available while hot", pending.get(controller));
+            assertEquals(0, host.spoken);
+            assertEquals(0, countAudit(host, "reason=hot"));
         } finally { controller.close(); preferences.edit().clear().commit(); }
     }
 

@@ -165,7 +165,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     }
     void feedRender(short[] frame) { AssistantVoiceInput input = voice; if (input != null) input.feedRender(frame); }
     private synchronized void voiceStarted() {
-        if (closed || paused || voicePaused || !voiceEnabled || mode == FrameProcessingPolicy.Mode.HOT) return;
+        if (closed || paused || voicePaused || !voiceEnabled) return;
         if (awaitingFinal || voiceTurnActive) {
             host.audit("AssistantVoice event=DROPPED reason=interrupted_by_user generation="
                     + audioGeneration + " monotonicMs=" + SystemClock.elapsedRealtime());
@@ -204,14 +204,6 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         userSpeaking = false;
         if (!voiceTurnActive) return;
         voiceTurnActive = false;
-        if (mode == FrameProcessingPolicy.Mode.HOT) {
-            awaitingFinal = false;
-            OnDeviceAsr localAsr = asr; if (localAsr != null) localAsr.invalidate();
-            session.invalidateCapture();
-            host.audit("AssistantVoice event=DROPPED reason=hot generation=" + audioGeneration
-                    + " monotonicMs=" + SystemClock.elapsedRealtime());
-            return;
-        }
         awaitingFinal = true;
         String turn = audioTurn; long generation = audioGeneration;
         OnDeviceAsr current = asr;
@@ -278,13 +270,11 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         if (localAsr != null) localAsr.close();
         setStatus(reason);
     }
-    /** Model readiness cannot clear the microphone, user-pause or thermal gates. */
+    /** Model readiness cannot clear microphone safety or the user's pause. */
     void localAsrReady() {
         if (closed || !voiceEnabled) return;
-        if (paused || voicePaused || mode == FrameProcessingPolicy.Mode.HOT) {
-            setStatus(mode == FrameProcessingPolicy.Mode.HOT
-                    ? "温度较高，助手输入暂停；本地预警继续"
-                    : VoiceInputSafetyPolicy.InputState.PAUSED.status);
+        if (paused || voicePaused) {
+            setStatus(VoiceInputSafetyPolicy.InputState.PAUSED.status);
         } else if (inputState != null && inputState != VoiceInputSafetyPolicy.InputState.READY) {
             setStatus(inputState.status);
         } else {
@@ -315,7 +305,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         invalidate("audio_input_" + state.auditKey);
         main.post(() -> {
             if (closed || inputState != state) return;
-            if (paused || voicePaused || mode == FrameProcessingPolicy.Mode.HOT) localAsrReady();
+            if (paused || voicePaused) localAsrReady();
             else setStatus(state.status);
         });
     }
@@ -323,7 +313,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         if (!voiceEnabled) { setStatus("连续语音尚未开启"); return; }
         voicePaused = value; invalidate("voice_pause");
         if (overlay != null) overlay.voicePaused(value);
-        if (voice != null) voice.pause(paused || value || mode == FrameProcessingPolicy.Mode.HOT);
+        if (voice != null) voice.pause(paused || value);
         setStatus(value ? "助手语音已暂停，预警继续" : "助手语音已恢复");
     }
     /** Revocation is immediate; enabling new capabilities requires a fresh, foreground start. */
@@ -358,7 +348,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     void pause(boolean value) {
         paused = value; invalidate("capture_pause");
         if (value) clearFrameHistory();
-        if (voice != null) voice.pause(value || voicePaused || mode == FrameProcessingPolicy.Mode.HOT);
+        if (voice != null) voice.pause(value || voicePaused);
         setStatus(value ? "助手已暂停" : "助手已恢复");
     }
     void invalidate(String reason) {
@@ -371,12 +361,11 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     }
     void thermal(FrameProcessingPolicy.Mode value) {
         boolean changed = mode != value; mode = value;
-        if (changed && value == FrameProcessingPolicy.Mode.HOT) {
-            AssistantVoiceInput input = voice; if (input != null) input.pause(true);
-            captureInvalidated("hot"); main.post(() -> setStatus("温度较高，语音和画面理解暂停；本地预警继续"));
-        } else if (changed) {
-            AssistantVoiceInput input = voice; if (input != null) input.pause(paused || voicePaused);
-        }
+        // The capture scheduler already reduces local work. Keep deliberate
+        // voice/visual turns alive; only unattended observation is suspended.
+        if (changed) host.audit("AssistantThermal mode=" + value
+                + " automaticObservation=" + (value == FrameProcessingPolicy.Mode.HOT ? "paused" : "scheduled")
+                + " manualVisual=allowed monotonicMs=" + SystemClock.elapsedRealtime());
     }
     /** Atomic invalidation under the capture lock; controls execute later outside it. */
     void captureInvalidated(String reason) {
@@ -439,11 +428,9 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         }
         if (!policy.manualAllowed(SystemClock.elapsedRealtime(), mode)) {
             long retryMs = policy.retryAfterMs(SystemClock.elapsedRealtime());
-            String reason = mode == FrameProcessingPolicy.Mode.HOT ? "hot"
-                    : retryMs > 0 ? "rate_limited" : "session_budget";
+            String reason = retryMs > 0 ? "rate_limited" : "session_budget";
             host.audit("AssistantVisual event=DENIED reason=" + reason + " retryAfterMs=" + retryMs);
-            sayLocal(turn, mode == FrameProcessingPolicy.Mode.HOT ? "温度较高，画面理解暂时暂停。"
-                    : retryMs > 0 ? "画面服务暂时繁忙，请在" + ((retryMs + 999) / 1000) + "秒后重试。"
+            sayLocal(turn, retryMs > 0 ? "画面服务暂时繁忙，请在" + ((retryMs + 999) / 1000) + "秒后重试。"
                     : "本次会话的画面问答次数已用完，请稍后再试。", false); return;
         }
         if (overlay != null && overlay.isExpanded()) overlay.setExpanded(false);
@@ -511,7 +498,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     }
     /** Called only after native processing has released its lock, while the Image is still owned. */
     void offerFrame(ByteBuffer rgba, int width, int height, int stride, long frameId, long capturedAt) {
-        if (closed || paused || !visionEnabled || mode == FrameProcessingPolicy.Mode.HOT) return;
+        if (closed || paused || !visionEnabled) return;
         long now = SystemClock.elapsedRealtime(); latestFrameAtMs = capturedAt;
         if (now < capturedAt || now - capturedAt > 1000 || capturedAt < captureFrameNotBeforeMs) return;
         long captureEpoch = frameHistory.epoch();
@@ -577,7 +564,8 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
             long sentAt = SystemClock.elapsedRealtime();
             long primaryAgeMs = sentAt - frame.capturedAtMs;
             if (!visionEnabled || (proactive && !proactiveEnabled) || !session.owns(generation, turn)
-                    || mode == FrameProcessingPolicy.Mode.HOT || primaryAgeMs < 0 || primaryAgeMs > 1000) {
+                    || (proactive && mode == FrameProcessingPolicy.Mode.HOT)
+                    || primaryAgeMs < 0 || primaryAgeMs > 1000) {
                 visualFailure(id, "frame_unavailable"); return;
             }
             ArrayList<AssistantGatewayClient.ContextImage> contextImages = new ArrayList<>(FrameHistory.CAPACITY);
@@ -817,8 +805,9 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     }
     boolean allows(AssistantReply reply) { return !closed && !paused && !userSpeaking && !awaitingFinal
             && (voiceEnabled || visionEnabled) && session.owns(reply.generation, reply.turnId)
-            && reply.freshAt(SystemClock.elapsedRealtime()) && ("local".equals(reply.kind) || mode != FrameProcessingPolicy.Mode.HOT)
-            && (!reply.proactive || (!userSpeaking && !awaitingFinal && (overlay == null || !overlay.isExpanded())
+            && reply.freshAt(SystemClock.elapsedRealtime())
+            && (!reply.proactive || (mode != FrameProcessingPolicy.Mode.HOT
+                && !userSpeaking && !awaitingFinal && (overlay == null || !overlay.isExpanded())
                 && (host.lastAlertAtMs() < 0 || SystemClock.elapsedRealtime() - host.lastAlertAtMs() >= AssistantPolicy.ALERT_QUIET_MS))); }
     private void append(String line) { while (history.size() >= 12) history.removeFirst(); history.addLast(line);
         if (overlay != null) overlay.history(String.join("\n\n", history)); }

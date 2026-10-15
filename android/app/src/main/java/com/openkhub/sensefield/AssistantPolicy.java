@@ -27,7 +27,8 @@ final class AssistantPolicy {
     }
     synchronized boolean manualAllowed(long now, FrameProcessingPolicy.Mode mode) {
         refreshWindow(now);
-        return mode != FrameProcessingPolicy.Mode.HOT && now >= throttledUntil && totalCalls < 120;
+        // Heat reduces unattended observation, not a deliberate one-shot request.
+        return now >= throttledUntil && totalCalls < 120;
     }
     synchronized long retryAfterMs(long now) { return Math.max(0, throttledUntil - now); }
     /** Stop unattended failures; a deliberate manual request can verify service recovery. */
