@@ -222,6 +222,7 @@ def workspace_candidates(root: Path) -> list[str]:
         "docs/development/assistant-gateway-test-deployment.md",
         "docs/development/match3-rules.md",
         "docs/development/match3-rules-validation.md",
+        "docs/development/adaptive-audio-context-survey_2026-10-15.md",
         "docs/development/消消乐三局反馈修复_2026-10-13.md",
         "docs/development/match3-diagnostics-audit.md",
         "docs/development/android-cue-diagnostics.md",

@@ -1,5 +1,7 @@
 # AAC（自适应音频上下文）任务 0 代码库梳理
 
+> 0.4.7 最终收尾补记：下文为任务 0 的历史判断，后续分支已补充 VoiceActivityGate、AudioContextLevel 与 HapticSemantics 单测并合入主线。噪声分档和触觉语义表仍未接入实际播放，不能据此声称本版自动调整音量或振动。
+
 > 本文件是《Adaptive Audio Context / 环境底噪自适应调节》方案（v1.1 储备）的任务 0 调研结论，
 > 从 PROGRESS.md 中单独摘出，便于后续启动时直接引用、避免重复调研。
 > 配套阻塞理由与接口预留见仓库根目录 `BLOCKED.md` 第 6 节。
