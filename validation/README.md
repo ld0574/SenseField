@@ -19,7 +19,9 @@
 
 ## 当前入口
 
-- [0.4.7 高温问答修复与同版本发布](releases/GITHUB_RELEASE_0_4_7_THERMAL_2026-10-15.md)
+- [0.4.7 移除语音问法白名单与最新同版本分发](releases/GITHUB_RELEASE_0_4_7_OPEN_CONVERSATION_2026-10-15.md)
+
+- [0.4.7 高温问答修复与历史包发布](releases/GITHUB_RELEASE_0_4_7_THERMAL_2026-10-15.md)
 
 - [0.4.7 真实读图零有效回答与手动预算修订](assistant/SNAPSHOT_TIMEOUT_REPAIR_0_4_7_2026-10-14.md)
 

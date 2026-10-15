@@ -1,5 +1,7 @@
 # 0.4.7 高温问答同版本发布与旧包清理
 
+本记录保留 09:47 高温修订的发布状态与原包摘要；当前修订和普通 Release／Latest 状态见[最新分发记录](GITHUB_RELEASE_0_4_7_OPEN_CONVERSATION_2026-10-15.md)。下文六附件及 Pre-release 是当时状态。
+
 2026-10-15 09:47（Asia/Shanghai），按用户要求保留 0.4.7／code24，更新现有 [GitHub v0.4.7](https://github.com/ld0574/SenseField/releases/tag/v0.4.7)。仍为 Pre-release，普通 Release、Latest 仍为 v0.4.6。Gitee 和固定网站清单由用户手动同步，本次未操作它们。
 
 ## 修订与源码

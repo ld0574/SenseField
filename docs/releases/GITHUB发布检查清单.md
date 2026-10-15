@@ -4,9 +4,9 @@
 
 ## 交付状态与构建版本
 
-2026-10-15 公开 [0.4.7／code24 体验版](https://github.com/ld0574/SenseField/releases/tag/v0.4.7)（Pre-release），随后按用户明确要求同版本修复高温问答并替换六个附件，当前 APK 为 `2b7f7c9f…`。源码已推送 `main`，[本次发布记录](../../validation/releases/GITHUB_RELEASE_0_4_7_THERMAL_2026-10-15.md)登记摘要、验证范围与旧包清理。普通 Release、Latest 仍为 0.4.6，Gitee 与公网清单由用户同步。
+2026-10-15 当前 [0.4.7／code24](https://github.com/ld0574/SenseField/releases/tag/v0.4.7) 为普通 Release、Latest；本次同版本移除语音问法白名单，保留高温主动问答，APK 为 `5f65b2bb…`。源码已推送 main，APK 与使用说明两个附件保留原集合并替换核对，[本次记录](../../validation/releases/GITHUB_RELEASE_0_4_7_OPEN_CONVERSATION_2026-10-15.md)登记工程和分发范围。Gitee 与公网清单由用户同步。
 
-2026-10-13 当前 [0.4.6／code23](0.4.6/RELEASE_NOTES.md)已合入并推送 `main`，[GitHub v0.4.6](https://github.com/ld0574/SenseField/releases/tag/v0.4.6) 当前为普通 Release、Latest，标签及四个附件核对见[发布记录](../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。唯一交付目录为 `output/releases/0.4.6/`，旧包和重复交付已[清理](../../validation/releases/ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)。[听野 0.4.5](https://github.com/ld0574/SenseField/releases/tag/v0.4.5)（`versionCode 22`，2026-10-10 发布）的原标签、附件及公网清单历史核对保留。本轮 Gitee 同版本附件和公网清单由用户同步。历史主线 `v0.4.3-main` 和消消乐独立发布保留，完整历史见[发布索引](README.md)。公开分发不自动改变 `verified`／`release_ready`，版本名称继续使用 `a.b.c`。
+2026-10-13 发布的 [0.4.6／code23](0.4.6/RELEASE_NOTES.md)已合入并推送 `main`，[GitHub v0.4.6](https://github.com/ld0574/SenseField/releases/tag/v0.4.6) 发布时为普通 Release、Latest，标签及四个附件核对见[发布记录](../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。唯一交付目录为 `output/releases/0.4.6/`，旧包和重复交付已[清理](../../validation/releases/ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)。[听野 0.4.5](https://github.com/ld0574/SenseField/releases/tag/v0.4.5)（`versionCode 22`，2026-10-10 发布）的原标签、附件及公网清单历史核对保留。本轮 Gitee 同版本附件和公网清单由用户同步。历史主线 `v0.4.3-main` 和消消乐独立发布保留，完整历史见[发布索引](README.md)。公开分发不自动改变 `verified`／`release_ready`，版本名称继续使用 `a.b.c`。
 
 发布前核对 `android/app/build.gradle`、`scripts/build_android_preview.sh` 和实际 APK 的版本、升级序号与签名，准备新版本交付时同步配置与脚本。发布说明必须对应实际 APK 和该版本的验证证据。历史 [0.3.0-alpha.1 发布说明](0.3.0-alpha.1/RELEASE_NOTES.md)与[检查记录](0.3.0-alpha.1/CHECKLIST.md)保留原始信息。
 

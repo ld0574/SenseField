@@ -4,9 +4,9 @@
 
 [验证总索引](../README.md) · [当前状态](../STATUS.md)
 
-当前 0.4.7／code24 已完成[同版本热修订发布](GITHUB_RELEASE_0_4_7_THERMAL_2026-10-15.md)，唯一最新 APK 为 `2b7f7c9f…`。高温保留主动问答，GitHub 六个附件及公开下载核对一致，Gitee 与公网清单由用户同步。5 个旧 APK 已删除，旧源码／摘要／诊断和失败回执保留。先前各候选的成本、持续运行和工程成绩均保持原包绑定。
+当前 0.4.7／code24 已完成[移除问法白名单的同版本分发](GITHUB_RELEASE_0_4_7_OPEN_CONVERSATION_2026-10-15.md)，唯一最新 APK 为 `5f65b2bb…`，GitHub 保持普通 Release、Latest 及 APK／使用说明两个附件。完整非空语音消息进入对话，空结果不打断待答问题；保留高温主动问答。Gitee 与公网清单由用户同步，旧源码、摘要和失败回执保留。先前候选的成本、持续运行和工程成绩均保持原包绑定。
 
-当前公开修订见[王者实局与两字开关更正](../protocols/COMPLIANCE_IMPROVEMENT_2026-10-13.md)，继承[三局反馈修复](../../docs/development/消消乐三局反馈修复_2026-10-13.md)；版本递增与历史手机核对见[0.4.6 候选记录](ANDROID_CANDIDATE_0_4_6_2026-10-11.md)。当前 GitHub 普通 Release、Latest 见[0.4.6 发布记录](GITHUB_RELEASE_0_4_6_2026-10-13.md)，唯一交付目录及旧包清理见[制品整理](ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)；[0.4.5](GITHUB_RELEASE_0_4_5_2026-10-10.md)及[0.4.4](GITHUB_RELEASE_0_4_4_2026-10-08.md)历史记录继续保留。各记录保持原制品摘要。
+[0.4.6 发布记录](GITHUB_RELEASE_0_4_6_2026-10-13.md)、[制品整理](ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)、[0.4.5](GITHUB_RELEASE_0_4_5_2026-10-10.md)及[0.4.4](GITHUB_RELEASE_0_4_4_2026-10-08.md)历史记录继续保留；历史版本当时的 Latest 状态不代表当前状态。
 
 ## 记录索引
 
@@ -14,6 +14,7 @@
 
 | 日期 | 记录 |
 | --- | --- |
+| 2026-10-15 | [0.4.7 移除语音问法白名单、普通 Latest 发布与二进制清理](GITHUB_RELEASE_0_4_7_OPEN_CONVERSATION_2026-10-15.md) |
 | 2026-10-15 | [0.4.7 高温问答同版本发布、附件核对与旧包清理](GITHUB_RELEASE_0_4_7_THERMAL_2026-10-15.md) |
 | 2026-10-15 | [0.4.7 首次 GitHub 体验版发布记录](GITHUB_RELEASE_0_4_7_2026-10-15.md) |
 | 2026-10-14 | [0.4.7 Hero反馈、接近提醒、中文选人／出装搭子与最新候选](../honor/HERO_FEEDBACK_2026-10-14.md) |

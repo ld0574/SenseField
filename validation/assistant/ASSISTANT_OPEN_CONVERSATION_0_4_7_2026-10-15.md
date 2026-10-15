@@ -20,4 +20,4 @@
 
 机器日志保存在本地 `output/validation/assistant-open-conversation-0.4.7-20261015/`，用户素材和私有配置不上传。
 
-最终 APK 为 0.4.7／code24，24,591,309 bytes，SHA-256 `5f65b2bb849c772f03739f01943ce6ad8545bf7c3bf7c89fb0740f561bcaf78a`。签名、不可调试、856 份语音资源及 native 对齐核对通过；安装与公开分发结果另记发布回执。
+最终 APK 为 0.4.7／code24，24,591,309 bytes，SHA-256 `5f65b2bb849c772f03739f01943ce6ad8545bf7c3bf7c89fb0740f561bcaf78a`。签名、不可调试、856 份语音资源及 native 对齐核对通过；手机覆盖安装回读一致；普通 Latest 发布与附件核对见[发布回执](../releases/GITHUB_RELEASE_0_4_7_OPEN_CONVERSATION_2026-10-15.md)。

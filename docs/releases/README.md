@@ -1,12 +1,12 @@
 # 发布与交付索引
 
-2026-10-15 按用户要求更新 [0.4.7 体验版](0.4.7/RELEASE_NOTES.md)（`versionCode 24`）：[GitHub v0.4.7](https://github.com/ld0574/SenseField/releases/tag/v0.4.7) 保持 Pre-release，同版本替换为高温问答修订，源码已推送 `main`。当前唯一 APK 为 24,592,049 bytes，SHA-256 `2b7f7c9f21e481669b1c23b4953321179dd9802c3b74db751b700a345fbc95e9`，可覆盖同证书旧 0.4.7，保留数据。已安装旧 0.4.7 的用户需手动下载覆盖安装，应用内不会提示同 code 更新。[本次发布核对](../../validation/releases/GITHUB_RELEASE_0_4_7_THERMAL_2026-10-15.md)与[首版记录](../../validation/releases/GITHUB_RELEASE_0_4_7_2026-10-15.md)分别保留。
+2026-10-15 按用户要求更新 [0.4.7 体验版](0.4.7/RELEASE_NOTES.md)（versionCode 24），同版本移除语音问法白名单。当前 [GitHub v0.4.7](https://github.com/ld0574/SenseField/releases/tag/v0.4.7) 为普通 Release、Latest，保留 APK 与使用说明两个附件，源码已推送 main。唯一当前 APK 为 24,591,309 bytes，SHA-256 `5f65b2bb849c772f03739f01943ce6ad8545bf7c3bf7c89fb0740f561bcaf78a`；可覆盖同证书旧 0.4.7，保留数据。同 code 不会触发应用内版本更新，需手动下载安装。[本次分发核对](../../validation/releases/GITHUB_RELEASE_0_4_7_OPEN_CONVERSATION_2026-10-15.md)与各历史修订分别保留。
 
-本次高温仅暂停自动观察和历史采样，主动语音提问、读画面、在途回答和复述继续可用；本地降载与截图过期保护保留。Debug／Release JVM 各 634 项、Release lint、模拟器 32 项助手控制器及相关 Python 30 项通过，手机安装回读一致。软件高温模拟不等于受控温升或自然实局通过，整体成本、独立准确率和策略收益继续待验。此前消消乐、王者和游戏搭子改进保留。
+完整、非空的识别文字作为消息原文交给游戏搭子理解，暂停、复述等本地指令继续处理；空结果不打断待答问题，新消息替换上一轮。高温只暂停自动观察和历史采样，主动问答与本地降载保留。Debug／Release JVM 各 630 项、Release lint、模拟器 37 项控制器检查通过，手机安装回读一致；独立准确率、真实策略收益、实际发声、受控温升与整体成本继续待验。
 
-当前服务使用 Qwen3.8-Flash，关闭思考；温控修复只需更新 APK，不需要再次部署服务器。唯一 APK、清单和 Gitee ZIP 在 `output/releases/0.4.7/`，GitHub 六个附件摘要一致，APK 与 ZIP 公开下载均核对通过。Gitee 附件与公网 `latest.json` 由用户同步，需同时替换大小、SHA 并刷新缓存。已清理 5 个旧 0.4.7 APK，保留原源码、摘要与验证记录。
+唯一 APK、清单和 Gitee ZIP 在 output/releases/0.4.7/。GitHub 两个附件 digest 及匿名下载摘要与本地一致；Gitee 附件和公网 latest.json 由用户同步，先核对下载字节再更新清单及缓存。本次仅更新 Android，无需再次部署 Python；此前中文提示词配套仍保留原部署说明。旧二进制清理不删除源码、摘要、失败回执或诊断。
 
-普通 Release、Latest 仍为 [GitHub v0.4.6](https://github.com/ld0574/SenseField/releases/tag/v0.4.6)（`versionCode 23`）；其源码标签、附件与历史验证范围见[0.4.6 发布记录](../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。旧包及重复交付清理见[归档记录](../../validation/releases/ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)。本轮发布与完整验收分别登记，[版本规划](../plans/0.4.7版本规划.md)及[当前状态](../../validation/STATUS.md)保留历史失败与剩余条件。
+[0.4.6](0.4.6/RELEASE_NOTES.md)（code23）为历史普通 Release、发布时为 Latest，其标签和原验证范围见[发布记录](../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。当前分发以 0.4.7 为准；[版本规划](../plans/0.4.7版本规划.md)与[当前状态](../../validation/STATUS.md)保留未完成验收。
 
 2026-10-10 公开发布记录：当时主线为[0.4.5](0.4.5/RELEASE_NOTES.md)（`versionCode 22`），消消乐代码已完整合入 `main`，包含两款游戏入口、离线固定语音与默认关闭的助手。[GitHub v0.4.5](https://github.com/ld0574/SenseField/releases/tag/v0.4.5) 已发布为普通 Release、Latest，源码标签指向 `859e672f9505e380d8af7b2ca216fbaf0477d7a6`；附件和下载入口见[发布核对](../../validation/releases/GITHUB_RELEASE_0_4_5_2026-10-10.md)。此前负责人已上传 Gitee APK 与固定网站清单，两处使用同一份已测字节。
 
@@ -20,8 +20,8 @@
 
 | 版本 | 日期 | versionCode | 交付状态 | 主要内容与说明 |
 | --- | --- | ---: | --- | --- |
-| [0.4.7](0.4.7/RELEASE_NOTES.md) | 2026-10-15 | 24 | GitHub 公开 Pre-release，源码已推送 main；Gitee 与公网清单由用户同步 | 同版本高温问答修复，主动语音／读图保持可用，后台自动降载；温升、独立准确率与策略收益待验 |
-| [0.4.6](0.4.6/RELEASE_NOTES.md) | 2026-10-13 | 23 | 已合入 main、GitHub 普通 Release、Latest；唯一交付在版本根目录，本轮 Gitee 附件和公网清单由用户同步 | 王者两字开关遵循选择，保留灰毛球、末块雪块、魔力鸟组合与识别开销修复 |
+| [0.4.7](0.4.7/RELEASE_NOTES.md) | 2026-10-15 | 24 | GitHub 普通 Release、Latest；源码已推送 main，Gitee 与公网清单由用户同步 | 移除语音问法白名单，保留高温主动问答；完整物理和独立验收待验 |
+| [0.4.6](0.4.6/RELEASE_NOTES.md) | 2026-10-13 | 23 | 历史普通 Release，发布时为 Latest；唯一交付在版本根目录，Gitee 附件和公网清单由用户同步 | 王者两字开关遵循选择，保留灰毛球、末块雪块、魔力鸟组合与识别开销修复 |
 | [0.4.5](0.4.5/RELEASE_NOTES.md) | 2026-10-10 | 22 | 历史 GitHub 普通 Release，发布时为 Latest；Gitee APK 与线上清单此前核对一致 | 稀疏整盘定位、确认的一步任务收益排序与交换高亮、最后目标准备建议；消消乐仍为体验版，最新试用问题继续整改 |
 | [0.4.4](0.4.4/RELEASE_NOTES.md) | 2026-10-08 | 21 | 历史 GitHub 普通 Release，发布时为 Latest | 默认游戏解说男声／可选游戏向导女声、离线完整说明、连续试听修复、24.22MB 正式包；受控温升待测 |
 | [0.4.3](0.4.3/RELEASE_NOTES.md) | 2026-10-07 | 20 | 历史主线普通 Release，独立标签 `v0.4.3-main` | 大字与导航改进、消消乐最新已验证合并、离线中文检查和方位缓存、内置音效自动试听、首次说明可随时跳过 |
