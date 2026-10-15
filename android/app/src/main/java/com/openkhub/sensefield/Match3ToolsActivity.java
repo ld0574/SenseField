@@ -447,7 +447,7 @@ public final class Match3ToolsActivity extends UiActivity {
         for (Match3MoveValue value : moves) {
             Match3Board.Swap s=value.swap;
             if (spoken++ >= 5) break;
-            String speech=Match3Coach.swapSpeechWithQuadrant(s,position.rows,position.cols)
+            String speech=Match3Coach.swapSpeechWithDirection(s,position.rows,position.cols,position)
                     +(value.reason.isEmpty()?"":"，"+value.reason)+"。";
             sb.append("  ").append(speech).append('\n');
             // A single complete suggestion replaces the old burst of five QUEUE_FLUSH requests.

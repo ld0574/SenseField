@@ -77,14 +77,15 @@ public final class Match3GeometryTest {
         assertEquals(193, smaller.right); assertEquals(321, smaller.bottom);
         assertNull(source.scaledTo(0, 480));
     }
-    @Test public void horizontalAndVerticalSpeechNameBothAxesWithoutRenumberingRegions() {
+    @Test public void manualCoordinatesRemainAvailableButLiveHintsUseDirections() {
         assertEquals("第 5 行，第 4 列和第 5 列交换",
                 Match3Board.swapSpeech(new Match3Board.Swap(4, 3, 4, 4, 1)));
         assertEquals("第 2 行和第 3 行，第 6 列交换",
                 Match3Board.swapSpeech(new Match3Board.Swap(1, 5, 2, 5, 1)));
         Match3Hint hint = new Match3Hint("s", 3, 100, geometry(7, 7),
                 new Match3Board.Swap(4, 3, 4, 4, 1));
-        assertEquals("右下区域，第 5 行，第 4 列和第 5 列交换。", hint.speech);
+        assertEquals("中间可以消除，亮框内两颗左右交换。", hint.speech);
+        assertFalse(hint.speech.contains("行")); assertFalse(hint.speech.contains("列"));
         assertFalse(hint.speech.contains("个"));
     }
 }

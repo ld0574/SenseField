@@ -418,6 +418,8 @@ public final class Match3HintInstrumentedTest {
             // after the first utterance finishes. Pin the utterance under test;
             // the renderer's latest request may already belong to that repeat.
             CueRequest initialSpoken = spoken.get();
+            assertTrue(initialSpoken.speech.contains("可以消除"));
+            assertFalse(initialSpoken.speech.contains("行")); assertFalse(initialSpoken.speech.contains("列"));
             Object session = get(service, "active");
             Match3Hint hint = (Match3Hint) get(session, "currentHint"); assertNotNull(hint);
             long boardRevision = (long) get(session, "boardRevision");
@@ -631,10 +633,19 @@ public final class Match3HintInstrumentedTest {
             assertNotNull(directory);directory.mkdirs();
             java.nio.file.Files.write(new java.io.File(directory,"overlay-retention-first.json").toPath(),
                     DiagnosticRecorder.current.stateForDiagnostics().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            // Ten 800ms samples plus emulator scheduling; this is a correctness
-            // check, not a production latency benchmark. The frame count is unchanged.
-            await("Capture keeps producing frames under the persistent window", 20000,
-                    () -> (long) get(s, "processedFrames") >= startedFrames + 10);
+            await("The initial pair is attached", 2500, () -> {
+                Match3HintOverlay shown = (Match3HintOverlay) get(s, "overlay");
+                return shown != null && shown.renderedHint() == firstHint;
+            });
+            long visibleFrom = SystemClock.elapsedRealtime();
+            await("The same highlight stays visible for a slow thirty-second search", 45000, () -> {
+                assertSame("An unchanged board must not replace the pair", firstHint, get(s, "currentHint"));
+                Match3HintOverlay shown = (Match3HintOverlay) get(s, "overlay");
+                assertNotNull(shown);
+                assertSame("The pair must not blink off between capture samples", firstHint, shown.renderedHint());
+                return SystemClock.elapsedRealtime() - visibleFrom >= 30000
+                        && (long) get(s, "processedFrames") >= startedFrames + 30;
+            });
             await("The unchanged board remains valid", 3500, () -> (boolean) get(s, "boardValid"));
             assertNotNull(get(s, "currentHint"));
             assertSame("Our drawing must not create another board revision; "+DiagnosticRecorder.current.stateForDiagnostics(), firstHint, get(s, "currentHint"));
@@ -644,7 +655,7 @@ public final class Match3HintInstrumentedTest {
             assertTrue("The real compositor returned the overlay, and its pixels were filtered",
                     (long) get(s, "filteredOverlayFrames") > 0);
             java.io.File record = new java.io.File(context().getExternalFilesDir(null), "match3-0.4.5-capture-mode.txt");
-            String mode = "non-secure hint stayed visible for 10 capture samples; current-frame overlay removal preserved recognition\n";
+            String mode = "non-secure hint stayed visible for at least 30 seconds and 30 capture samples; current-frame overlay removal preserved recognition\n";
             java.nio.file.Files.write(record.toPath(), mode.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         } finally {
             DiagnosticRecorder recorder=DiagnosticRecorder.current;
@@ -674,21 +685,134 @@ public final class Match3HintInstrumentedTest {
                 tile.setColor(palette[(r + c) % palette.length]);
                 base.drawCircle(geometry.centerX(c), geometry.centerY(r), 32, tile);
             }
-            Match3Board.Swap swap = new Match3Board.Swap(2, 2, 2, 3, 3);
+            Match3Board.Swap swap = new Match3Board.Swap(0, 0, 0, 1, 3);
             Match3Hint hint = new Match3Hint("filter", 1, 1, geometry, swap);
             captured = game.copy(Bitmap.Config.ARGB_8888, true);
             Canvas canvas = new Canvas(captured);
             Match3HintOverlay.HintView drawing = new Match3HintOverlay.HintView(context()); drawing.hint = hint;
-            int layer = canvas.saveLayerAlpha(70, 250, 630, 810, 191);
+            int layer = canvas.saveLayerAlpha(70, 250, 630, 810, 204);
             canvas.translate(70, 250); drawing.drawHint(canvas); canvas.restoreToCount(layer);
             Match3OverlayCaptureFilter filter = new Match3OverlayCaptureFilter(context());
-            assertTrue(filter.clean(captured, hint, .75f));
+            assertTrue(filter.clean(captured, hint, .8f));
             assertArrayEquals(Match3Sampler.sample(game, geometry, null), Match3Sampler.sample(captured, geometry, null));
-            for (int r = 0; r < 7; r++) for (int c = 0; c < 7; c++)
-                assertEquals("Cell centers must never be replaced with old content", game.getPixel(geometry.centerX(c), geometry.centerY(r)),
-                        captured.getPixel(geometry.centerX(c), geometry.centerY(r)));
-            assertFalse("A frame without our probe is never modified", filter.clean(game, hint, .75f));
+            for (int r = 0; r < 7; r++) for (int c = 0; c < 7; c++) {
+                int expected = game.getPixel(geometry.centerX(c), geometry.centerY(r));
+                int actual = captured.getPixel(geometry.centerX(c), geometry.centerY(r));
+                // Reversing an 80%-opaque 8-bit composite has bounded rounding error.
+                assertTrue("Cell centres retain this frame's source colour", Math.abs(Color.red(expected) - Color.red(actual)) <= 5
+                        && Math.abs(Color.green(expected) - Color.green(actual)) <= 5
+                        && Math.abs(Color.blue(expected) - Color.blue(actual)) <= 5);
+            }
+            assertFalse("A frame without our probe is never modified", filter.clean(game, hint, .8f));
         } finally { game.recycle(); if (captured != null) captured.recycle(); }
+    }
+
+    @Test public void prominentFramesAndGuideStayInBoundsAndKeepTheirTargetCentersClear() {
+        android.content.res.Configuration config = new android.content.res.Configuration(context().getResources().getConfiguration());
+        config.densityDpi = 480;
+        Context phone = context().createConfigurationContext(config);
+        for (int width : new int[]{432, 1080, 1220}) {
+            int height = Math.round(width * 20f / 9);
+            BoardGeometry g = new BoardGeometry(width, height, width / 20, height / 3,
+                    width * 19 / 20, height / 3 + width * 9 / 10, 9, 9);
+            for (Match3Board.Swap swap : new Match3Board.Swap[]{
+                    new Match3Board.Swap(0, 0, 0, 1, 3), new Match3Board.Swap(7, 8, 8, 8, 3)}) {
+                Match3Hint hint = new Match3Hint("contrast", 1, 1, g, swap);
+                Match3HintGuide guide = Match3HintGuide.forHint(hint);
+                android.graphics.Rect bounds = Match3HintOverlay.captureBounds(hint);
+                Bitmap mask = Match3HintOverlay.captureMask(phone, hint, 0, 0, width, height);
+                try {
+                    int yellowPixels = 0, whitePixels = 0;
+                    int[] pixels = new int[width * height];
+                    mask.getPixels(pixels, 0, width, 0, 0, width, height);
+                    for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) {
+                        int color = pixels[y * width + x];
+                        if (Color.alpha(color) == 0) continue;
+                        int[] cell = g.cellAt(x, y);
+                        assertNotNull("The drawing stays inside the board", cell);
+                        assertTrue("Every drawn pixel is inside the capture-removal mask", bounds.contains(x, y));
+                        boolean target = cell[0] == swap.fromRow && cell[1] == swap.fromCol
+                                || cell[0] == swap.toRow && cell[1] == swap.toCol;
+                        if (!target) {
+                            assertNotNull("Only the centre guide may cross other cells", guide);
+                            float dx = guide.endX - guide.startX, dy = guide.endY - guide.startY;
+                            float t = Math.max(0, Math.min(1, ((x - guide.startX) * dx + (y - guide.startY) * dy) / (dx * dx + dy * dy)));
+                            assertTrue("The guide stays within its narrow corridor",
+                                    Math.hypot(x - guide.startX - t * dx, y - guide.startY - t * dy)
+                                            <= Math.min(g.cellWidth(), g.cellHeight()) * .5f);
+                        }
+                        if (Color.red(color) > 240 && Color.green(color) > 210 && Color.blue(color) < 40)
+                            yellowPixels++;
+                        if (Color.red(color) > 240 && Color.green(color) > 240 && Color.blue(color) > 240)
+                            whitePixels++;
+                    }
+                    assertTrue("A substantial bright band is visible", yellowPixels > g.cellWidth() * g.cellHeight() * .12f);
+                    assertTrue("The centre guide is visibly drawn", guide == null || whitePixels > g.cellWidth() * g.cellHeight() * .12f);
+                    for (int[] cell : new int[][]{{swap.fromRow, swap.fromCol}, {swap.toRow, swap.toCol}})
+                        assertEquals("The animal's centre stays unobscured", 0,
+                                Color.alpha(mask.getPixel(g.centerX(cell[1]), g.centerY(cell[0]))));
+                } finally { mask.recycle(); }
+            }
+        }
+    }
+
+    @Test public void queuedWindowFramesAreCleanedAfterReplacementOrRemoval() {
+        Bitmap game = Bitmap.createBitmap(700, 1100, Bitmap.Config.ARGB_8888);
+        new Canvas(game).drawColor(0xff274b75);
+        BoardGeometry g = new BoardGeometry(700, 1100, 70, 250, 630, 810, 7, 7);
+        Match3Hint old = new Match3Hint("queue", 1, 1, g, new Match3Board.Swap(0, 0, 0, 1, 3));
+        Match3Hint next = new Match3Hint("queue", 2, 2, g, new Match3Board.Swap(0, 1, 0, 2, 3));
+        Match3OverlayCaptureFilter filter = new Match3OverlayCaptureFilter(context());
+        try {
+            filter.remember(old, .8f); filter.remember(next, .8f);
+            Bitmap queued = withHint(game, old);
+            try {
+                assertTrue("An older queued frame uses its own drawing, even when one endpoint is shared", filter.clean(queued));
+                assertRecoveredPixels(game, queued);
+            } finally { queued.recycle(); }
+            filter.retire();
+            queued = withHint(game, next);
+            try {
+                assertTrue("Removal still cleans a frame captured before the window disappeared", filter.clean(queued));
+                assertRecoveredPixels(game, queued);
+            } finally { queued.recycle(); }
+            Bitmap plain = game.copy(Bitmap.Config.ARGB_8888, true);
+            try {
+                assertFalse("An unmarked frame completes retirement", filter.clean(plain));
+                assertRecoveredPixels(game, plain);
+            } finally { plain.recycle(); }
+            filter.remember(next, .8f);
+            queued = withHint(game, old);
+            Bitmap unchanged = queued.copy(Bitmap.Config.ARGB_8888, false);
+            try {
+                assertFalse("One shared endpoint cannot authenticate another drawing", filter.clean(queued));
+                assertTrue("An unproven drawing never alters captured pixels", queued.sameAs(unchanged));
+            } finally { queued.recycle(); unchanged.recycle(); }
+        } finally { game.recycle(); filter.clear(); }
+    }
+
+    private static Bitmap withHint(Bitmap game, Match3Hint hint) {
+        Bitmap captured = game.copy(Bitmap.Config.ARGB_8888, true);
+        Canvas canvas = new Canvas(captured); BoardGeometry g = hint.geometry;
+        int layer = canvas.saveLayerAlpha(g.left, g.top, g.right, g.bottom, 204);
+        canvas.translate(g.left, g.top);
+        Match3HintOverlay.HintView drawing = new Match3HintOverlay.HintView(context()); drawing.hint = hint;
+        drawing.drawHint(canvas); canvas.restoreToCount(layer);
+        return captured;
+    }
+
+    private static void assertRecoveredPixels(Bitmap expected, Bitmap actual) {
+        int[] a = new int[expected.getWidth() * expected.getHeight()], b = new int[a.length];
+        expected.getPixels(a, 0, expected.getWidth(), 0, 0, expected.getWidth(), expected.getHeight());
+        actual.getPixels(b, 0, actual.getWidth(), 0, 0, actual.getWidth(), actual.getHeight());
+        int maximum = 0;
+        for (int i = 0; i < a.length; i++) {
+            maximum = Math.max(maximum, Math.abs(Color.red(a[i]) - Color.red(b[i])));
+            maximum = Math.max(maximum, Math.abs(Color.green(a[i]) - Color.green(b[i])));
+            maximum = Math.max(maximum, Math.abs(Color.blue(a[i]) - Color.blue(b[i])));
+        }
+        // Includes antialiased premultiplication as well as 80% compositor quantisation.
+        assertTrue("Only bounded 8-bit rounding may remain, maximum=" + maximum, maximum <= 8);
     }
 
     @Test public void stoppingCaptureCannotInvalidateAnImageStillOwnedByTheWorker() throws Exception {
@@ -703,9 +827,13 @@ public final class Match3HintInstrumentedTest {
             ((android.os.Handler) get(service, "handler")).post(() -> {
                 android.media.Image image = null; Bitmap bitmap = null;
                 try {
-                    // Let the synthetic screen deliver a fresh image while callbacks queue behind us.
-                    SystemClock.sleep(200);
-                    image = source.acquireLatestImage();
+                    // Wait for an actual compositor buffer instead of assuming a
+                    // frame always arrives within 200ms on a loaded emulator.
+                    long until = SystemClock.elapsedRealtime() + 2000;
+                    do {
+                        image = source.acquireLatestImage();
+                        if (image == null) SystemClock.sleep(25);
+                    } while (image == null && SystemClock.elapsedRealtime() < until);
                     assertNotNull("A real captured image is held across stop", image);
                     acquired.countDown();
                     assertTrue(continueCopy.await(5, TimeUnit.SECONDS));

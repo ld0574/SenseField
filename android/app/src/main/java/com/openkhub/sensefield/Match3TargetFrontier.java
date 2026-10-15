@@ -108,6 +108,7 @@ final class Match3TargetFrontier {
         if (kind == Match3Goals.Kind.EGG) return "靠近鸡蛋";
         if (kind == Match3Goals.Kind.LOCK) return "靠近藤蔓";
         if (kind == Match3Goals.Kind.GRAY_FURBALL) return "靠近灰毛球";
+        if (kind == Match3Goals.Kind.POISON) return "靠近毒液";
         return "靠近目标";
     }
 }

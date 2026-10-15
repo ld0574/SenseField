@@ -172,6 +172,8 @@ bash deploy/assistant/start.sh restart
 
 默认提示词全部以中文书写，位于 [vision_prompt.txt](../../python/mapassist/assistant_gateway/vision_prompt.txt)，身份、交流方式、可见证据边界和输出协议集中维护。部署者可把它复制为服务器上的文本文件，在私有配置中设置 `ASSISTANT_GATEWAY_VISION_PROMPT_FILE` 指向该文件；只调整提示词时，修改后重启服务即可生效，不必改 Python 代码或重打 APK。本轮新增的截图回答协议仍需要同步更新 Python 和 APK。文件为 UTF-8、非空、不超过 32 KiB；路径无效或文件无效时启动明确失败，不静默改用另一份提示词。保留文件末尾的响应字段约定。
 
+更新 `app.py` 和 `glm.py` 后，内置的智谱和兼容适配器会在 `/health` 返回 `vision_prompt_sha256`。该值绑定模型客户端启动时实际加载的提示词，UTF-8 BOM、首尾空白按现有加载规则归一化；它不是磁盘文件原始字节的摘要。只覆盖文件而没有重启，健康接口仍返回旧值；使用自定义提示词时，应与那份有效文件的加载文本核对。接口不返回提示词、文件路径或凭据，外部注入适配器不冒报默认提示词摘要。此项只能核对加载版本，不能证明模型判断正确；[旧图对照复盘](../../validation/assistant/ASSISTANT_VISUAL_GROUNDING_AUDIT_0_4_7_2026-10-15.md)记录了尚未通过的事实及策略检查。
+
 当前试用候选为 `qwen3.8-flash`，接口和配置见本页开头，关闭思考且使用新源码的 JSON 适配。它在两张开发图上的完整回答明显快于此前 K3，但建议质量未通过完整验收。原 K3 中转的[速度对照](../../validation/assistant/VISION_RELAY_BENCHMARK_2026-10-14.md)和[真实截图对照](../../validation/assistant/REAL_GAME_VISION_LATENCY_0_4_7_2026-10-14.md)保留为历史记录；`glm-5.3` 的旧路由拒绝图片，模型列表中的标签不足以证明能用，不默认给所有模型发送关闭思考扩展参数。
 
 这家中转的 Kimi-K3 已接受关闭思考参数，可在其私有配置中显式设置 `ASSISTANT_GATEWAY_VISION_DISABLE_THINKING=1`。其他模型保留默认 `0`，更换提供商后重新验证：Kimi-K2.6 实测拒绝该参数，Flash 也没有稳定执行。使用中文搭子提示词后的两张合成决策图实际回答约 5.2／7.2 秒；默认思考探测中的格式失败和超时保留。明确询问“现在团战怎么操作”时，网关直接说明本地预警的职责，不调用视觉模型；“团战容易死，接下来怎么出装”仍走出装规划。

@@ -81,10 +81,23 @@ final class Match3Coach {
         return "右下";
     }
 
-    /** 带象限的可消除播报文案。 */
-    static String swapSpeechWithQuadrant(Match3Board.Swap s, int rows, int cols) {
-        return quadrantOf(s.fromRow, s.fromCol, rows, cols) + "区域，"
-                + Match3Board.swapSpeech(s);
+    /** 用棋盘方位和操作方向报点，不要求玩家数行列。 */
+    static String swapSpeechWithDirection(Match3Board.Swap s, int rows, int cols, Match3Position position) {
+        String location = Match3HintGuide.direction(s, rows, cols) + "可以消除，";
+        if (s.actionType == Match3Action.Type.ACTIVATE)
+            return location + "点击" + (position == null ? "亮框内的棋子" : actionPieceName(position.cell(s.fromRow, s.fromCol)));
+        String pieces = position == null ? "亮框内两颗" : actionPieceName(position.cell(s.fromRow, s.fromCol))
+                + "和" + actionPieceName(position.cell(s.toRow, s.toCol));
+        return location + pieces + (s.fromRow == s.toRow ? "左右交换" : "上下交换");
+    }
+
+    private static String actionPieceName(Match3Position.Cell cell) {
+        if (cell.kind == Match3Position.Kind.BIRD) return "魔力鸟";
+        if (cell.kind == Match3Position.Kind.STAR_BOTTLE) return "星星瓶";
+        if (cell.kind == Match3Position.Kind.DYE_BABY) return "染色宝宝";
+        if (cell.kind == Match3Position.Kind.ANIMAL)
+            return (cell.effect == Match3Position.Effect.NONE ? "" : "特效") + pieceName(cell.color);
+        return "棋子";
     }
 
     /* ---------- 任意子区域内容摘要（自由框选） ---------- */

@@ -11,7 +11,7 @@ from .images import NormalizedImage, normalize_image
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
-_SENTENCE_END_RE = re.compile(r"[.!?。！？]+")
+_MAX_ANSWER_UTF16_UNITS = 400  # Matches the Android transport bound, not a writing rule.
 _BUILD_QUESTION_RE = re.compile(
     r"\b(?:build|item|items|equipment|loadout|gear|buy|purchase)\b|出装|配装|装备|"
     r"买什么|买啥|买哪些|买哪件|购买什么|购买哪件|先买|出什么|推荐(?:什么)?装备|怎么出|怎么配装",
@@ -94,6 +94,12 @@ def is_immediate_combat_question(question: str) -> bool:
 
 class InvalidRequest(ValueError):
     pass
+
+
+class InvalidModelOutput(InvalidRequest):
+    def __init__(self, message: str, reason: str):
+        super().__init__(message)
+        self.reason = reason
 
 
 @dataclass(frozen=True)
@@ -261,33 +267,41 @@ def _is_transient_banner_only(answer: str, question: str | None) -> bool:
 
 def parse_visual_answer(raw: str, *, question: str | None = None) -> VisualAnswer:
     if not isinstance(raw, str):
-        raise InvalidRequest("model response must be text")
+        raise InvalidModelOutput("model response must be text", "non_text")
+    if len(raw) > 8_192:
+        raise InvalidModelOutput("model response exceeded the protocol budget", "output_budget")
     content = raw.strip()
     if content.startswith("```") and content.endswith("```"):
         content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content, flags=re.IGNORECASE).strip()
     try:
         value = json.loads(content)
     except json.JSONDecodeError as exc:
-        raise InvalidRequest("model response was not valid JSON") from exc
-    if not isinstance(value, dict) or set(value) not in (
-        {"kind", "answer", "uncertain"}, {"kind", "answer", "uncertain", "decision_scene"}
-    ):
-        raise InvalidRequest("model response must be a JSON object with exactly the required keys")
+        raise InvalidModelOutput("model response was not valid JSON", "invalid_json") from exc
+    if not isinstance(value, dict) or not {"kind", "answer", "uncertain"}.issubset(value):
+        raise InvalidModelOutput("model response must contain the required keys", "missing_fields")
     kind = value.get("kind")
     answer = value.get("answer")
     uncertain = value.get("uncertain")
     decision_scene = value.get("decision_scene", "")
     if not isinstance(decision_scene, str) or decision_scene not in {"", "equipment", "hero_selection", "game_decision"}:
-        raise InvalidRequest("unsupported decision_scene")
+        # An optional hint cannot invalidate a readable answer or grant it a
+        # longer lifetime. Unrecognized fields are never forwarded to the phone.
+        decision_scene = ""
     if (
         not isinstance(kind, str)
         or kind not in {"hud", "ui_text", "unknown"}
         or not isinstance(answer, str)
         or not isinstance(uncertain, bool)
     ):
-        raise InvalidRequest("model response did not match the required schema")
+        raise InvalidModelOutput("model response did not match the required schema", "invalid_types")
     answer = _CONTROL_RE.sub("", answer).strip()
-    if len(answer) > 100 or len(_SENTENCE_END_RE.findall(answer)) > 2:
+    # Do not drop a usable answer for style, or truncate off a qualification or
+    # negation. The prompt asks for brevity; the transport still has a hard bound.
+    try:
+        answer_units = len(answer.encode("utf-16-le")) // 2
+    except UnicodeEncodeError as exc:
+        raise InvalidModelOutput("model response contained invalid Unicode", "invalid_types") from exc
+    if answer_units > _MAX_ANSWER_UTF16_UNITS:
         return VisualAnswer("unknown", UNKNOWN_ANSWER, True, failure_reason="response_limits")
     if kind == "unknown":
         return VisualAnswer("unknown", "", True, failure_reason="model_uncertain")

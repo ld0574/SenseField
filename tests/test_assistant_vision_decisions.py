@@ -7,7 +7,7 @@ pytest.importorskip("httpx")
 from mapassist.assistant_gateway.compatible import CompatibleVisionClient
 from mapassist.assistant_gateway.config import GatewaySettings
 from mapassist.assistant_gateway.prompts import load_vision_prompt
-from mapassist.assistant_gateway.validation import InvalidRequest, parse_visual_answer, is_immediate_combat_question
+from mapassist.assistant_gateway.validation import parse_visual_answer, is_immediate_combat_question
 
 
 def test_configured_chinese_prompt_is_sent_without_provider_specific_rewriting(tmp_path, monkeypatch):
@@ -40,9 +40,12 @@ def test_decision_metadata_keeps_legacy_hud_kind(scene):
 
 @pytest.mark.parametrize("scene", [None, [], {}, "combat", "draft", 1, True])
 def test_invalid_scene_never_grants_a_longer_answer_lifetime(scene):
-    with pytest.raises(InvalidRequest):
-        parse_visual_answer(json.dumps({"kind": "hud", "answer": "先撤退。", "uncertain": False,
-                                       "decision_scene": scene}))
+    answer = parse_visual_answer(json.dumps({"kind": "hud", "answer": "先撤退。", "uncertain": False,
+                                             "decision_scene": scene}))
+    assert answer.kind == "hud"
+    assert answer.answer == "先撤退。"
+    assert answer.uncertain is False
+    assert answer.decision_scene == ""
 
 
 @pytest.mark.parametrize("kind,uncertain", [("unknown", True), ("hud", True)])

@@ -21,6 +21,7 @@ from mapassist.assistant_gateway.app import create_app
 from mapassist.assistant_gateway.audio import GenerationHighWater, _merge_recognized_text
 from mapassist.assistant_gateway.config import GatewaySettings
 from mapassist.assistant_gateway.errors import AsrBusy, VisionTimeout
+from mapassist.assistant_gateway.compatible import CompatibleVisionClient
 from mapassist.assistant_gateway.validation import (
     UNKNOWN_ANSWER,
     InvalidRequest,
@@ -125,6 +126,61 @@ def test_health_and_visual_auth_and_response_ids() -> None:
     assert not vision.calls[0][1].startswith("data:")
 
 
+@pytest.mark.parametrize("compatible", [False, True])
+def test_health_fingerprints_the_loaded_prompt_without_exposing_private_configuration(
+    tmp_path, compatible,
+) -> None:
+    original = "你是游戏搭子，正在为低视力用户服务。PRIVATE_PROMPT_CONTENT"
+    path = tmp_path / "private-prompt.txt"
+    path.write_text(original, encoding="utf-8")
+    settings = GatewaySettings(
+        device_tokens=(TOKEN,), zhipu_api_key="PRIVATE_PROVIDER_KEY",
+        vision_provider="compatible" if compatible else "zhipu",
+        vision_api_key="PRIVATE_PROVIDER_KEY",
+        vision_base_url="https://private-provider.example/v1",
+        vision_model="qwen3.8-flash", vision_prompt_file=path,
+        require_tls=False, mode="test", asr_backend="disabled",
+    )
+    with TestClient(create_app(settings)) as client:
+        before = client.get("/health")
+        path.write_text("磁盘文件已经更改，但运行中的模型仍使用原提示词。", encoding="utf-8")
+        after = client.get("/health")
+    assert before.status_code == after.status_code == 200
+    assert before.json()["vision_prompt_sha256"] == hashlib.sha256(original.encode()).hexdigest()
+    assert after.json()["vision_prompt_sha256"] == before.json()["vision_prompt_sha256"]
+    for private in (str(path), original, "PRIVATE_PROVIDER_KEY", TOKEN, settings.vision_base_url):
+        assert private not in before.text
+        assert private not in after.text
+    with TestClient(create_app(settings)) as restarted:
+        assert restarted.get("/health").json()["vision_prompt_sha256"] == hashlib.sha256(
+            path.read_text().encode()
+        ).hexdigest()
+
+
+def test_injected_vision_health_reports_its_actual_prompt_instead_of_settings_file(tmp_path) -> None:
+    from dataclasses import replace
+
+    settings_prompt = tmp_path / "unused-prompt.txt"
+    settings_prompt.write_text("This file was not used by the injected adapter.")
+    actual_prompt = "正在使用的中文提示词。"
+    adapter = CompatibleVisionClient(
+        "test-key", base_url="https://provider.example/v1", model="qwen3.8-flash",
+        system_prompt=actual_prompt,
+    )
+    with TestClient(create_app(
+        replace(_settings(), vision_prompt_file=settings_prompt),
+        recognizer=FakeRecognizer(), vision_client=adapter,
+    )) as client:
+        assert client.get("/health").json()["vision_prompt_sha256"] == hashlib.sha256(
+            actual_prompt.encode()
+        ).hexdigest()
+
+
+def test_external_adapter_health_does_not_claim_a_default_prompt_fingerprint() -> None:
+    with TestClient(create_app(_settings(), recognizer=FakeRecognizer(), vision_client=FakeVision())) as client:
+        assert "vision_prompt_sha256" not in client.get("/health").json()
+
+
 def test_screen_jpeg_reaches_vision_unchanged_and_logs_only_input_metadata(caplog) -> None:
     output = io.BytesIO()
     Image.new("RGB", (1280, 576), "navy").save(output, format="JPEG", quality=75)
@@ -187,7 +243,8 @@ def test_model_cannot_assign_snapshot_scope_to_a_legacy_request() -> None:
     with TestClient(create_app(_settings(), recognizer=FakeRecognizer(), vision_client=vision)) as client:
         response = client.post("/v1/visual", json=_visual_payload(), headers={"Authorization": f"Bearer {TOKEN}"})
     assert response.status_code == 200
-    assert response.json()["uncertain"] is True
+    assert response.json()["uncertain"] is False
+    assert response.json()["answer"] == "敌人标记。"
     assert "answer_scope" not in response.json()
 
 
@@ -473,23 +530,75 @@ def test_dynamic_question_does_not_reclassify_unknown() -> None:
 
 @pytest.mark.parametrize(
     "answer",
-    ["这是一段很长的回答。" * 20, "第一句。第二句。第三句。"],
+    ["这是一段很长的回答。" * 20, "第一句。第二句。第三句。",
+     "先不要进攻。" + "只有确认队友到齐且看清敌方位置时才考虑推进。" * 5,
+     "距离为3.5，装备价为1.2。不要把小数点当成多句话。"],
 )
-def test_answer_length_and_sentence_bounds_remain_enforced(answer: str) -> None:
+def test_writing_style_does_not_discard_or_truncate_an_otherwise_usable_answer(answer: str) -> None:
     parsed = parse_visual_answer(
         '{"kind":"ui_text","answer":' + json.dumps(answer, ensure_ascii=False) + ',"uncertain":false}'
     )
-    assert parsed.kind == "unknown"
-    assert parsed.answer == UNKNOWN_ANSWER
+    assert parsed.kind == "ui_text"
+    assert parsed.answer == answer
+    assert parsed.uncertain is False
 
 
-def test_output_boundary_and_exact_schema_remain_enforced() -> None:
+def test_output_boundary_and_required_schema_remain_enforced() -> None:
     with pytest.raises(InvalidRequest, match="valid JSON"):
         parse_visual_answer('Here is the answer: {"kind":"ui_text","answer":"建议先出防具。","uncertain":false}')
-    with pytest.raises(InvalidRequest, match="exactly the required keys"):
-        parse_visual_answer(
-            '{"kind":"ui_text","answer":"建议先出防具。","uncertain":false,"debug":"private"}'
-        )
+    with pytest.raises(InvalidRequest, match="required keys"):
+        parse_visual_answer('{"kind":"ui_text","answer":"建议先出防具。"}')
+
+
+def test_optional_metadata_and_fences_cannot_invalidate_or_extend_a_readable_answer() -> None:
+    parsed = parse_visual_answer(
+        '```json\n{"kind":"ui_text","answer":"先确认队友选择，再补阵容缺口。",'
+        '"uncertain":false,"decision_scene":"future_hint","extra":{"anything":1}}\n```'
+    )
+    assert parsed.answer == "先确认队友选择，再补阵容缺口。"
+    assert parsed.uncertain is False
+    assert parsed.decision_scene == ""
+
+
+@pytest.mark.parametrize("answer", ["字" * 401, "😀" * 201])
+def test_answer_budget_matches_android_utf16_units_without_unsafe_truncation(answer: str) -> None:
+    parsed = parse_visual_answer(json.dumps({"kind": "hud", "answer": answer, "uncertain": False}))
+    assert parsed.kind == "unknown"
+    assert parsed.failure_reason == "response_limits"
+
+
+@pytest.mark.parametrize("payload", [
+    {"kind": "hud", "answer": "能看清", "uncertain": "false"},
+    {"kind": "unsupported", "answer": "能看清", "uncertain": False},
+    {"kind": "hud", "answer": ["能看清"], "uncertain": False},
+    {"kind": "hud", "answer": "\ud800", "uncertain": False},
+])
+def test_protocol_tolerance_does_not_weaken_answer_types_or_certainty(payload: dict) -> None:
+    with pytest.raises(InvalidRequest):
+        parse_visual_answer(json.dumps(payload))
+
+
+def test_gateway_only_forwards_validated_fields_when_model_adds_metadata() -> None:
+    raw = json.dumps({"kind": "ui_text", "answer": "请先确认阵容缺口。不要重复选择已有位置。需要补充队友信息。",
+                      "uncertain": False, "notes": "not-for-the-phone"}, ensure_ascii=False)
+    with TestClient(create_app(_settings(), vision_client=FakeVision(raw), recognizer=FakeRecognizer())) as client:
+        response = client.post("/v1/visual", json=_visual_payload(),
+                               headers={"Authorization": f"Bearer {TOKEN}"})
+    assert response.status_code == 200
+    assert response.json()["uncertain"] is False
+    assert response.json()["answer"] == json.loads(raw)["answer"]
+    assert "notes" not in response.json()
+
+
+def test_malformed_model_output_logs_reason_without_its_text(caplog) -> None:
+    with caplog.at_level(logging.INFO), TestClient(create_app(
+            _settings(), vision_client=FakeVision("not-json-SYNTHETIC_PRIVATE_TEXT"),
+            recognizer=FakeRecognizer())) as client:
+        response = client.post("/v1/visual", json=_visual_payload(),
+                               headers={"Authorization": f"Bearer {TOKEN}"})
+    assert response.json()["unknown_reason"] == "invalid_output"
+    assert "validation_issue=invalid_json" in caplog.text
+    assert "SYNTHETIC_PRIVATE_TEXT" not in caplog.text
 
 
 def test_context_frames_are_optional_and_sorted_oldest_first() -> None:

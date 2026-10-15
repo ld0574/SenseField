@@ -60,7 +60,8 @@ final class Match3MoveValue {
                     :mode==Match3Goals.Mode.UNLOCK?"解除"+spoken.name
                     :spoken.color!='\0'?"收集"+spoken.name:spoken==Match3Goals.Kind.COIN?"收集银币"
                     :spoken==Match3Goals.Kind.ICE?"消除冰层":spoken==Match3Goals.Kind.ICEFLOWER?"消除冰花"
-                    :spoken==Match3Goals.Kind.HONEY?"消除蜜罐":spoken==Match3Goals.Kind.GRAY_FURBALL?"消除灰毛球":"清除障碍";
+                    :spoken==Match3Goals.Kind.HONEY?"消除蜜罐":spoken==Match3Goals.Kind.GRAY_FURBALL?"消除灰毛球"
+                    :spoken==Match3Goals.Kind.POISON?"清理毒液":"清除障碍";
         } else if(relevant>0)baseReason=goals.active(Match3Goals.Kind.STAR_BOTTLE) && goals.mode(Match3Goals.Kind.STAR_BOTTLE)==Match3Goals.Mode.CHARGE
                 && result.preparation(Match3Goals.Kind.STAR_BOTTLE,Match3Goals.Mode.CHARGE)>0?"准备充能星星瓶"
                 :goals.active(Match3Goals.Kind.GOLD_POD) && channelProgress(result,Match3Goals.Kind.GOLD_POD)>0?"打通金豆荚通道"
@@ -71,7 +72,8 @@ final class Match3MoveValue {
                 :goals.active(Match3Goals.Kind.COOKIE) && hits[Match3Goals.Kind.COOKIE.ordinal()]>0
                 ?action.type==Match3Action.Type.BIRD_COLOR || action.type==Match3Action.Type.BIRD_PAIR || action.type==Match3Action.Type.BIRD_LINE
                 ?"用魔力鸟清理饼干周边":"靠近饼干"
-                :related!=null && related.color!='\0'?"优先"+related.name:related==Match3Goals.Kind.ICE?"优先消冰":"清理障碍";
+                :related!=null && related.color!='\0'?"优先"+related.name:related==Match3Goals.Kind.ICE?"优先消冰"
+                :related==Match3Goals.Kind.POISON?"清理毒液":"清理障碍";
         else baseReason=poisonRemoved>0 && goals.steps!=1?"清理毒液":frontier.reason();
         reason=action.type==Match3Action.Type.BIRD_LINE?"魔力鸟组合"+(baseReason.isEmpty()?"":"，"+baseReason):baseReason;
     }

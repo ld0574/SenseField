@@ -747,9 +747,10 @@ final class Match3Sampler implements AutoCloseable {
         BoardGeometry geometry = b == null ? null : verifiedGeometry(frame, b);
         if (geometry != null) return completeEdgeFragments(frame, geometry, edgeFragments);
         int step = Math.max(1, Math.min(frame.getWidth(), frame.getHeight()) / 160);
-        if (fragments.size() >= 2) {
+        if (!fragments.isEmpty()) {
             for (int i = 0; i < fragments.size(); i++) fragments.set(i, refineBoardBounds(frame, fragments.get(i), step));
-            geometry = separatedGeometry(frame, fragments);
+            geometry = fragments.size() >= 2 ? separatedGeometry(frame, fragments) : null;
+            if (geometry == null) geometry = detachedShortIslandGeometry(frame, fragments, edgeFragments);
             if (geometry != null) return completeEdgeFragments(frame, geometry, edgeFragments);
         }
         // A stored rectangle must pass the same current-fragment completion;
@@ -857,6 +858,55 @@ final class Match3Sampler implements AutoCloseable {
                 && Math.abs(union.left + (col + island.cols) * pitchX - island.right) <= 2 * step
                 && Math.abs(union.top + row * pitchY - island.top) <= 2 * step
                 && Math.abs(union.top + (row + island.rows) * pitchY - island.bottom) <= 2 * step;
+    }
+
+    /** A wide five-row island can share a lattice with a detached short row.
+     * Both components need their own current boundaries; the gap is empty cells,
+     * never compressed rows. This bounded fallback also handles the transpose. */
+    private static BoardGeometry detachedShortIslandGeometry(Bitmap frame, List<int[]> anchors, List<int[]> edges) {
+        int step=Math.max(1,Math.min(frame.getWidth(),frame.getHeight())/160);
+        BoardGeometry accepted=null;
+        for(int[] anchorBox:anchors) {
+            BoardGeometry anchor=fragmentGeometry(frame,anchorBox,step);
+            if(anchor==null)continue;
+            float pitchX=(anchor.right-anchor.left)/(float)anchor.cols,pitchY=(anchor.bottom-anchor.top)/(float)anchor.rows;
+            for(int[] pooled:edges) {
+                // Reject large components before any additional edge-band reads.
+                int approximateRows=Math.round((pooled[3]-pooled[1])*step/pitchY);
+                int approximateCols=Math.round((pooled[2]-pooled[0])*step/pitchX);
+                if(Math.min(approximateRows,approximateCols)!=1
+                        || Math.max(approximateRows,approximateCols)<3 || Math.max(approximateRows,approximateCols)>5)continue;
+                int[] box=refineBoardBounds(frame,pooled,step);
+                int cols=Math.round((box[2]-box[0])/pitchX),rows=Math.round((box[3]-box[1])/pitchY);
+                int col=Math.round((box[0]-anchor.left)/pitchX),row=Math.round((box[1]-anchor.top)/pitchY);
+                boolean shortRow=anchor.cols>=6 && rows==1 && cols>=3 && cols<=5 && col>=0 && col+cols<=anchor.cols
+                        && (row+rows<=0 || row>=anchor.rows);
+                boolean shortColumn=anchor.rows>=6 && cols==1 && rows>=3 && rows<=5 && row>=0 && row+rows<=anchor.rows
+                        && (col+cols<=0 || col>=anchor.cols);
+                if(!shortRow && !shortColumn
+                        || !fragmentAxisSupported(frame,box,false,cols,step)
+                        || !fragmentAxisSupported(frame,box,true,rows,step))continue;
+                int firstRow=Math.min(0,row),firstCol=Math.min(0,col);
+                int totalRows=Math.max(anchor.rows,row+rows)-firstRow,totalCols=Math.max(anchor.cols,col+cols)-firstCol;
+                if(totalRows<6 || totalRows>9 || totalCols<6 || totalCols>9)continue;
+                // Measure the shared extent from both current envelopes. A short
+                // row's outer border is a larger fraction of its height; do not
+                // extrapolate that padding across the empty rows from one island.
+                int[] union={Math.min(anchor.left,box[0]),Math.min(anchor.top,box[1]),
+                        Math.max(anchor.right,box[2]),Math.max(anchor.bottom,box[3])};
+                if(union[0]<0 || union[1]<0 || union[2]>frame.getWidth() || union[3]>frame.getHeight()
+                        || Math.max(union[2]-union[0],union[3]-union[1])*5L<Math.min(frame.getWidth(),frame.getHeight())*4L
+                        || !squareGrid(frame,union,totalRows,totalCols)
+                        || !boundaryPhaseSupported(frame,union,false,totalCols,step)
+                        || !boundaryPhaseSupported(frame,union,true,totalRows,step))continue;
+                BoardGeometry candidate=new BoardGeometry(frame.getWidth(),frame.getHeight(),union[0],union[1],union[2],union[3],totalRows,totalCols);
+                BoardGeometry shortIsland=new BoardGeometry(frame.getWidth(),frame.getHeight(),box[0],box[1],box[2],box[3],rows,cols);
+                if(!alignedIsland(candidate,anchor,step) || !alignedIsland(candidate,shortIsland,step))continue;
+                if(accepted!=null && !accepted.sameGrid(candidate))return null;
+                accepted=candidate;
+            }
+        }
+        return accepted;
     }
 
     private static BoardGeometry fragmentGeometry(Bitmap frame, int[] box, int step) {

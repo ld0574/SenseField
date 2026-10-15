@@ -390,6 +390,10 @@ def create_app(
             asr_ready=request.app.state.asr_ready,
             vision_ready=request.app.state.vision_ready,
         )
+        if isinstance(vision_client, GlmVisionClient):
+            # The running adapter hashes its loaded prompt. Do not report the
+            # current file's hash: editing a file does not reload this process.
+            result["vision_prompt_sha256"] = vision_client.prompt_sha256
         status_code = 200 if result["status"] in {"ready", "vision_only", "asr_only", "development_mock"} else 503
         return JSONResponse(result, status_code=status_code)
 
@@ -573,7 +577,12 @@ def create_app(
                 text_trace.record("model_response", visual_request, raw_answer=raw_answer)
             try:
                 answer = parse_visual_answer(raw_answer, question=visual_request.question)
-            except InvalidRequest:
+            except InvalidRequest as invalid_output:
+                _AUDIT_LOGGER.info(
+                    "assistant_gateway_visual event=response_rejected generation=%s turn_id=%s frame_id=%s validation_issue=%s",
+                    visual_request.generation, visual_request.turn_id, visual_request.frame_id,
+                    getattr(invalid_output, "reason", "invalid_output"),
+                )
                 answer = VisualAnswer(
                     "unknown",
                     UNKNOWN_ANSWER,

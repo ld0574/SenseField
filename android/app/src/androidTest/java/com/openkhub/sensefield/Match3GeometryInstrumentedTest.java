@@ -67,6 +67,32 @@ public final class Match3GeometryInstrumentedTest {
         } finally {frame.recycle();}
     }
 
+    @Test public void aDetachedShortRowNeedsItsOwnPitchAndPreservesTheMissingRows() {
+        Bitmap frame=Bitmap.createBitmap(432,960,Bitmap.Config.ARGB_8888);
+        try {
+            for(boolean transpose:new boolean[]{false,true}) {
+                frame.eraseColor(0xff00ccee);
+                if(!transpose) {island(frame,24,400,5,9,40);island(frame,144,280,1,3,40);}
+                else {island(frame,144,280,9,5,40);island(frame,24,400,3,1,40);}
+                BoardGeometry g=Match3Sampler.autoDetectGeometry(frame);
+                assertNotNull("Detached short component transpose="+transpose,g);
+                assertEquals(transpose?9:8,g.rows);assertEquals(transpose?8:9,g.cols);
+                assertEquals(24,g.left);assertEquals(280,g.top);
+                assertEquals(transpose?344:384,g.right);assertEquals(transpose?640:600,g.bottom);
+            }
+            for(int invalid=0;invalid<4;invalid++) {
+                frame.eraseColor(0xff00ccee);
+                island(frame,24,400,5,9,40);
+                if(invalid==0)island(frame,164,280,1,3,40); // half-cell shifted
+                if(invalid==1)island(frame,144,280,1,3,34); // different pitch
+                if(invalid==2)for(int y=280;y<320;y++)for(int x=144;x<264;x++)frame.setPixel(x,y,0xff203050);
+                if(invalid==3) {frame.eraseColor(0xff00ccee);island(frame,40,400,5,9,30);island(frame,130,310,1,3,30);}
+                assertNull("Shifted, flat, different-pitch or preview components cannot form a board: "+invalid,
+                        Match3Sampler.autoDetectGeometry(frame));
+            }
+        } finally {frame.recycle();}
+    }
+
     @Test public void disconnectedPartialBottomRowExtendsTheCurrentGridWithoutBorrowingDecor() {
         Bitmap frame = Bitmap.createBitmap(432, 960, Bitmap.Config.ARGB_8888);
         try {

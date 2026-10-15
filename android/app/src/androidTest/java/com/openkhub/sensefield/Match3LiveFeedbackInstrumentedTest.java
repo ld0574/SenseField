@@ -27,9 +27,11 @@ public final class Match3LiveFeedbackInstrumentedTest {
         try(in) { return BitmapFactory.decodeStream(in); }
     }
     @Test public void theSameRealBoardKeepsItsIdentityUnderOurDrawingAtPhoneDensity() throws Exception {
+        for(int width:new int[]{432,1080,1220}) {
         Bitmap original=load("screen-284-2285557292.jpg");
-        Bitmap game=Bitmap.createScaledBitmap(original,1220,2712,true);
-        BoardGeometry g=new BoardGeometry(1220,2712,35,909,1185,2060,9,9);
+        int height=width==1220?2712:Math.round(width*960f/432);
+        Bitmap game=Bitmap.createScaledBitmap(original,width,height,true);
+        BoardGeometry g=Match3Sampler.autoDetectGeometry(game);assertNotNull(g);
         Configuration config=new Configuration(context().getResources().getConfiguration()); config.densityDpi=480;
         Context phone=context().createConfigurationContext(config);
         try(Match3Sampler sampler=new Match3Sampler(phone,g)) {
@@ -40,9 +42,9 @@ public final class Match3LiveFeedbackInstrumentedTest {
                     Match3Hint hint=new Match3Hint("fault",1,1,g,swap);
                     Canvas canvas=new Canvas(captured);
                     Match3HintOverlay.HintView drawing=new Match3HintOverlay.HintView(phone);drawing.hint=hint;
-                    int layer=canvas.saveLayerAlpha(g.left,g.top,g.right,g.bottom,191);
+                    int layer=canvas.saveLayerAlpha(g.left,g.top,g.right,g.bottom,204);
                     canvas.translate(g.left,g.top);drawing.drawHint(canvas);canvas.restoreToCount(layer);
-                    assertTrue(new Match3OverlayCaptureFilter(phone).clean(captured,hint,.75f));
+                    assertTrue(new Match3OverlayCaptureFilter(phone).clean(captured,hint,.8f));
                     Match3Position after=sampler.samplePosition(captured);
                     List<String> changed=new ArrayList<>();
                     for(int r=0;r<9;r++)for(int c=0;c<9;c++)if(!baseline.cell(r,c).equals(after.cell(r,c)))
@@ -51,6 +53,7 @@ public final class Match3LiveFeedbackInstrumentedTest {
                 } finally {captured.recycle();}
             }
         } finally {game.recycle();original.recycle();}
+        }
     }
     @Test public void newJarsAndFrozenFlowersAreNotExchangeableAnimals() throws Exception {
         Bitmap frame=load("screen-50-2285367442.jpg");

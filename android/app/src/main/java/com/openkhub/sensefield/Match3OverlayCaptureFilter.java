@@ -3,11 +3,15 @@ package com.openkhub.sensefield;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.graphics.Rect;
 
 /** Removes only this window's known translucent drawing from a current captured frame. */
 final class Match3OverlayCaptureFilter {
     private final Context context;
     private Match3Hint maskedHint;
+    private Match3Hint expectedHint, previousHint;
+    private float expectedAlpha, previousAlpha;
+    private boolean drawingExpected;
     private int left, top, width, height;
     private int[] drawing, row;
     private int[] first, last;
@@ -16,9 +20,29 @@ final class Match3OverlayCaptureFilter {
 
     void clear() {
         maskedHint = null; drawing = row = first = last = null;
+        expectedHint = previousHint = null; drawingExpected = false;
     }
 
-    /** Returns true only when the two-colour signature proves that the window is in this frame. */
+    void remember(Match3Hint hint, float alpha) {
+        if (expectedHint != hint) {
+            previousHint = expectedHint; previousAlpha = expectedAlpha;
+            expectedHint = hint;
+        }
+        expectedAlpha = alpha; drawingExpected = true;
+    }
+
+    /** Window removal does not remove pixels from buffers already in the capture queue. */
+    void retire() { drawingExpected = false; }
+
+    boolean clean(Bitmap frame) {
+        boolean cleaned = clean(frame, expectedHint, expectedAlpha);
+        if (cleaned) previousHint = null;
+        else if (previousHint != null) cleaned = clean(frame, previousHint, previousAlpha);
+        if (!cleaned && !drawingExpected) clear();
+        return cleaned;
+    }
+
+    /** Returns true only when every endpoint signature agrees with this drawing. */
     boolean clean(Bitmap frame, Match3Hint hint, float windowAlpha) {
         if (hint == null || frame.getWidth() != hint.geometry.frameWidth
                 || frame.getHeight() != hint.geometry.frameHeight || !Float.isFinite(windowAlpha)
@@ -44,11 +68,8 @@ final class Match3OverlayCaptureFilter {
     }
 
     private void prepare(Match3Hint hint) {
-        BoardGeometry g = hint.geometry; Match3Board.Swap swap = hint.swap;
-        left = (int) Math.floor(g.cellLeft(Math.min(swap.fromCol, swap.toCol)));
-        top = (int) Math.floor(g.cellTop(Math.min(swap.fromRow, swap.toRow)));
-        width = (int) Math.ceil(g.cellLeft(Math.max(swap.fromCol, swap.toCol) + 1)) - left;
-        height = (int) Math.ceil(g.cellTop(Math.max(swap.fromRow, swap.toRow) + 1)) - top;
+        Rect bounds = Match3HintOverlay.captureBounds(hint);
+        left = bounds.left; top = bounds.top; width = bounds.width(); height = bounds.height();
         Bitmap mask = Match3HintOverlay.captureMask(context, hint, left, top, width, height);
         try {
             drawing = new int[width * height]; row = new int[width];
@@ -65,7 +86,7 @@ final class Match3OverlayCaptureFilter {
     }
 
     // Use this captured frame's values, never a previous board or cached game pixels.
-    // 0.75 window opacity leaves recoverable source color; 8-bit rounding is at most a few levels.
+    // At most 0.8 window opacity leaves recoverable current-frame source color.
     private static int unblend(int captured, int overlay, float alpha) {
         return Math.max(0, Math.min(255, Math.round((captured - alpha * overlay) / (1 - alpha))));
     }
@@ -74,10 +95,10 @@ final class Match3OverlayCaptureFilter {
         for (float[] probe : Match3HintOverlay.probes(hint)) {
             int x = Math.round(probe[0] * frame.getWidth());
             int y = Math.round(probe[1] * frame.getHeight());
-            if (near(frame, x - 2, y, 255, 0, 255, alpha)
-                    && near(frame, x + 2, y, 0, 255, 0, alpha)) return true;
+            if (!near(frame, x - 2, y, 255, 0, 255, alpha)
+                    || !near(frame, x + 2, y, 0, 255, 0, alpha)) return false;
         }
-        return false;
+        return true;
     }
 
     private static boolean near(Bitmap frame, int x, int y, int red, int green, int blue, float alpha) {

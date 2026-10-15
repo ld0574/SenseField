@@ -489,7 +489,7 @@ final class Match3VisualCatalog {
         }
     }
     /** One fixed 64KiB board feedback sidecar: at most 24 reviewed foreground
-     * exemplars and four ordinary envelopes. Separate from the existing cover
+     * exemplars, two poison goal icons and four ordinary envelopes. Separate from the existing cover
      * budget; every pattern still competes at the unchanged decision thresholds.
      * Invalid feedback leaves both earlier galleries fully intact. */
     static Match3VisualCatalog withBoardFeedback(JSONObject base,byte[] gallery,List<byte[]> supplements,
@@ -508,8 +508,20 @@ final class Match3VisualCatalog {
             JSONArray bodies=json.optJSONArray("ordinary_envelopes");
             if(cells.length()<1 || cells.length()>24 || bodies!=null && bodies.length()>4)
                 throw new IllegalArgumentException("Board feedback entry budget");
-            for(String key:new String[]{"goals","large_objects","ice_surfaces"})
+            for(String key:new String[]{"large_objects","ice_surfaces"})
                 if(json.has(key) && json.getJSONArray(key).length()>0)throw new IllegalArgumentException("Board feedback scope");
+            JSONArray goals=json.optJSONArray("goals");
+            if(goals!=null) {
+                if(goals.length()>2)throw new IllegalArgumentException("Board feedback goal budget");
+                for(int i=0;i<goals.length();i++) {
+                    JSONObject item=goals.getJSONObject(i);
+                    if(!"POISON".equals(item.getString("kind")) || !"reviewed_goal_icon".equals(item.getString("rule"))
+                            || !Boolean.TRUE.equals(item.get("reviewed")) || !item.getString("source_sha256").matches("[0-9a-f]{64}")
+                            || !item.getString("mask_bits").matches("1{128}0{128}")
+                            || !"CLEAR".equals(item.getJSONObject("goal_binding").getString("event_mode")))
+                        throw new IllegalArgumentException("Board feedback poison goal review");
+                }
+            }
             JSONObject bindings=json.getJSONObject("state_bindings");
             for(int i=0;i<cells.length();i++) {
                 JSONObject item=cells.getJSONObject(i);
@@ -518,6 +530,8 @@ final class Match3VisualCatalog {
                 Match3Position.Cell state=Match3StateBinding.parse(bindings.getJSONObject(item.getString("rule_binding_ref")));
                 if(state.kind!=Match3Position.Kind.BIRD && !(state.kind==Match3Position.Kind.SNOW && state.layers==-1)
                         && !(state.kind==Match3Position.Kind.UNKNOWN && state.cover==Match3Position.Cover.GRAY_FURBALL)
+                        && !(state.kind==Match3Position.Kind.POISON && state.layers==1
+                            && state.cover==Match3Position.Cover.NONE && state.gate==Match3Position.Gate.OPEN)
                         && !(state.kind==Match3Position.Kind.ANIMAL && Match3Action.line(state)))
                     throw new IllegalArgumentException("Board feedback state scope");
                 if(state.kind==Match3Position.Kind.ANIMAL && !item.has("effect_evidence_mask_bits"))

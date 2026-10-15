@@ -29,16 +29,18 @@ final class AssistantTtsPipeline {
         final int chars;
         /** Characters intentionally omitted to keep the queued reply bounded. */
         final int droppedChars;
+        final String droppedText;
 
-        Plan(List<Segment> segments, int chars, int droppedChars) {
+        Plan(List<Segment> segments, int chars, int droppedChars, String droppedText) {
             this.segments = Collections.unmodifiableList(new ArrayList<>(segments));
             this.chars = chars;
             this.droppedChars = droppedChars;
+            this.droppedText = droppedText;
         }
     }
 
     static Plan split(String speech) {
-        if (speech == null || speech.isEmpty()) return new Plan(Collections.emptyList(), 0, 0);
+        if (speech == null || speech.isEmpty()) return new Plan(Collections.emptyList(), 0, 0, "");
         List<Sentence> sentences = sentences(speech);
         List<Segment> result = new ArrayList<>();
         int acceptedChars = 0;
@@ -62,10 +64,9 @@ final class AssistantTtsPipeline {
         }
         // Every cut above occurs after sentence/clause punctuation. Any tail that does not fit is
         // omitted whole; never manufacture a mid-word, numeric, or emoji boundary to hit the cap.
-        int droppedChars = bounded && droppedStart >= 0
-                ? trim(speech.substring(droppedStart)).codePointCount(0,
-                trim(speech.substring(droppedStart)).length()) : 0;
-        return new Plan(result, acceptedChars, droppedChars);
+        String droppedText = bounded && droppedStart >= 0 ? trim(speech.substring(droppedStart)) : "";
+        int droppedChars = droppedText.codePointCount(0, droppedText.length());
+        return new Plan(result, acceptedChars, droppedChars, droppedText);
     }
 
     private static List<Sentence> sentences(String text) {
@@ -327,7 +328,7 @@ final class AssistantTtsPipeline {
             phase = Phase.NONE;
             if (nextIndex < plan.segments.size()) return next();
             terminal = true;
-            return finish(true, emptyDrop());
+            return finish(plan.droppedChars == 0, emptyDrop());
         }
 
         /** Drop the active not-yet-started segment and all its tail at a fresh expiry check. */
@@ -337,7 +338,18 @@ final class AssistantTtsPipeline {
             activeIndex = -1;
             phase = Phase.NONE;
             terminal = true;
-            return finish(started, dropped);
+            return finish(false, dropped);
+        }
+
+        /** Replay the current sentence whole; already completed sentences stay retired. */
+        synchronized String speechToResume() {
+            if (cancelled || terminal) return "";
+            int from = activeIndex >= 0 ? activeIndex : nextIndex;
+            StringBuilder remaining = new StringBuilder();
+            for (int i = from; i < plan.segments.size(); i++)
+                remaining.append(plan.segments.get(i).text);
+            remaining.append(plan.droppedText);
+            return remaining.toString();
         }
 
         synchronized Transition failed(int index) {

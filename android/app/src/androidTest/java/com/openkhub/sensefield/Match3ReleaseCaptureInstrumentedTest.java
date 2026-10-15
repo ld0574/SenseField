@@ -156,7 +156,7 @@ public final class Match3ReleaseCaptureInstrumentedTest {
         }
     }
 
-    @Test public void signedReleaseRetainsAHintThroughTenActualCaptureSamples() throws Exception {
+    @Test public void signedReleaseRetainsAHintForThirtySecondsOfActualCapture() throws Exception {
         assertTrue("The pre-authorized overlay permission is required", android.provider.Settings.canDrawOverlays(context()));
         android.content.SharedPreferences prefs = GameProfile.settings(context());
         boolean hadHighlight = prefs.contains("match3_hint_highlight_enabled");
@@ -181,12 +181,19 @@ public final class Match3ReleaseCaptureInstrumentedTest {
             assertTrue("The pair is actually attached", first.optBoolean("highlight_visible"));
             assertEquals(7, first.getInt("rows")); assertEquals(7, first.getInt("cols"));
             long frame = first.getLong("processed_frames"), revision = first.getLong("board_revision");
-            until = SystemClock.elapsedRealtime() + 12000;
+            long visibleFrom = SystemClock.elapsedRealtime();
+            until = visibleFrom + 45000;
             JSONObject later = state();
-            while (later.optLong("processed_frames") < frame + 10 && SystemClock.elapsedRealtime() < until) {
+            while ((SystemClock.elapsedRealtime() - visibleFrom < 30000
+                    || later.optLong("processed_frames") < frame + 30) && SystemClock.elapsedRealtime() < until) {
+                assertTrue("The pair must stay visible throughout the search", later.optBoolean("highlight_visible"));
+                assertEquals("The same hint stays in place", first.getJSONObject("hint").getLong("revision"),
+                        later.getJSONObject("hint").getLong("revision"));
                 SystemClock.sleep(100); later = state();
             }
-            assertTrue("Ten new samples arrived", later.getLong("processed_frames") >= frame + 10);
+            assertTrue("Thirty new samples arrived", later.getLong("processed_frames") >= frame + 30);
+            assertTrue("The user has at least thirty seconds to locate the pair",
+                    SystemClock.elapsedRealtime() - visibleFrom >= 30000);
             assertTrue("The highlight continuously remains attached", later.getBoolean("highlight_visible"));
             assertFalse("No visual fallback is allowed in this check", later.getBoolean("highlight_suppressed"));
             assertTrue("Current-frame removal is exercised", later.getLong("overlay_capture_filtered_frames") > 0);
@@ -219,6 +226,7 @@ public final class Match3ReleaseCaptureInstrumentedTest {
                 screenshot.compress(Bitmap.CompressFormat.PNG, 100, output);
             } finally { screenshot.recycle(); }
             later.put("game_pixels", "synthetic_fixture"); later.put("acoustic_validation", false);
+            later.put("highlight_observed_ms", SystemClock.elapsedRealtime() - visibleFrom);
             try (FileOutputStream output = new FileOutputStream(new File(directory, "capture.json"))) {
                 output.write(later.toString(2).getBytes(StandardCharsets.UTF_8));
             }

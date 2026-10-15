@@ -38,6 +38,10 @@ DEBUG_CLASSES += ("Match3GridProfileInstrumentedTest",)
 RELEASE_CLASSES += ("Match3GridProfileInstrumentedTest",)
 DEBUG_CLASSES += ("Match3LineAppearanceInstrumentedTest",)
 RELEASE_CLASSES += ("Match3LineAppearanceInstrumentedTest",)
+DEBUG_CLASSES += ("Match3PoisonInstrumentedTest",)
+RELEASE_CLASSES += ("Match3PoisonInstrumentedTest",)
+DEBUG_CLASSES += ("Match3DetachedRowInstrumentedTest",)
+RELEASE_CLASSES += ("Match3DetachedRowInstrumentedTest",)
 DEBUG_CLASSES += ("Match3CalibrationInstrumentedTest",)
 
 

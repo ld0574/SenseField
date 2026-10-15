@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import math
@@ -143,6 +144,7 @@ class GlmVisionClient:
             raise ValueError("ZHIPU_API_KEY is required; vision fallback is disabled")
         self._api_key = api_key
         self._system_prompt = system_prompt if system_prompt is not None else SYSTEM_PROMPT
+        self._prompt_sha256 = hashlib.sha256(self._system_prompt.encode("utf-8")).hexdigest()
         self._model = model
         self._semaphore = asyncio.Semaphore(concurrency)
         self._timeout_seconds = timeout_seconds
@@ -153,6 +155,11 @@ class GlmVisionClient:
         self._blocked_until = 0.0
         self._blocked_retry_after_source = "gateway_backoff"
         self._closed = False
+
+    @property
+    def prompt_sha256(self) -> str:
+        """Fingerprint the text loaded by this client, not the current disk file."""
+        return self._prompt_sha256
 
     async def close(self) -> None:
         if not self._closed and self._owns_client:

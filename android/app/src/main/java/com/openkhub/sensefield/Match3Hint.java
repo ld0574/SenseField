@@ -2,7 +2,7 @@ package com.openkhub.sensefield;
 
 /** Immutable recommendation shared by speech, drawing and diagnostics. */
 final class Match3Hint {
-    static final String NUMBERING = "整个棋盘左上角为起点，行从上往下数，列从左往右数，都从1开始。区域名称不代表重新编号。";
+    static final String DIRECTION_GUIDANCE = "方向以整个棋盘为准。中心引导箭头指向推荐位置，亮黄框标出要操作的棋子；语音会说左上方、右侧等方位，再说左右交换、上下交换或点击，无需数格子。";
     final String sessionId;
     final long revision, frameAtMs;
     final BoardGeometry geometry;
@@ -28,7 +28,8 @@ final class Match3Hint {
         this.sessionId = sessionId; this.revision = revision; this.frameAtMs = frameAtMs;
         this.geometry = geometry; this.swap = swap;
         this.value=value;this.goalKey=goalKey;
-        speech = Match3Coach.swapSpeechWithQuadrant(swap, geometry.rows, geometry.cols)
+        speech = Match3Coach.swapSpeechWithDirection(swap, geometry.rows, geometry.cols,
+                value == null ? null : value.result.before)
                 + (value!=null && !value.reason.isEmpty()?"，"+value.reason:"")+"。";
     }
 }

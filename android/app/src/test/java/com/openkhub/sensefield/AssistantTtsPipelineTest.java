@@ -167,11 +167,66 @@ public final class AssistantTtsPipelineTest {
         AssistantTtsPipeline.Transition expired = group.expiredBeforePlayback(second.index);
 
         assertEquals(AssistantTtsPipeline.Action.FINISH, expired.action);
-        assertTrue(expired.success);
+        assertFalse(expired.success);
         assertEquals(2, expired.dropped.segments);
         assertEquals(1, expired.dropped.index);
         assertTrue(group.claimFinishCallback());
         assertFalse(group.claimFinishCallback());
+    }
+
+    @Test public void yieldingReplaysTheInterruptedSentenceAndRetiresCompletedSentences() {
+        AssistantTtsPipeline.Group group = group("先给结论。只有对方法伤较多才补魔抗。否则先补护甲。");
+        AssistantTtsPipeline.Segment first = group.reserveNext();
+        group.synthesisReady(first.index);
+        group.markFirstWrite(first.index);
+        group.playbackCompleted(first.index);
+        AssistantTtsPipeline.Segment second = group.reserveNext();
+        group.synthesisReady(second.index);
+        group.markFirstWrite(second.index);
+        assertEquals("只有对方法伤较多才补魔抗。否则先补护甲。", group.speechToResume());
+        group.cancel();
+        assertEquals("", group.speechToResume());
+        assertFalse(group.synthesisReady(second.index));
+        assertEquals(AssistantTtsPipeline.Action.IGNORED, group.playbackCompleted(second.index).action);
+    }
+
+    @Test public void yieldingDuringSynthesisOrBetweenSegmentsKeepsTheWholeUnstartedTail() {
+        AssistantTtsPipeline.Group group = group("先给结论。再说依据。");
+        AssistantTtsPipeline.Segment first = group.reserveNext();
+        assertEquals("先给结论。再说依据。", group.speechToResume());
+        group.synthesisReady(first.index);
+        group.markFirstWrite(first.index);
+        group.playbackCompleted(first.index);
+        assertEquals("再说依据。", group.speechToResume());
+        AssistantTtsPipeline.Segment second = group.reserveNext();
+        group.synthesisReady(second.index);
+        group.markFirstWrite(second.index);
+        group.playbackCompleted(second.index);
+        assertEquals("", group.speechToResume());
+    }
+
+    @Test public void segmentLimitCannotTurnADiscardedTailIntoFullCompletion() {
+        AssistantTtsPipeline.Group group = group("第一句。第二句。第三句。第四句。第五句。");
+        AssistantTtsPipeline.Transition last = null;
+        for (AssistantTtsPipeline.Segment segment = group.reserveNext(); segment != null;
+                segment = group.reserveNext()) {
+            group.synthesisReady(segment.index);
+            group.markFirstWrite(segment.index);
+            last = group.playbackCompleted(segment.index);
+        }
+        assertNotNull(last);
+        assertEquals(AssistantTtsPipeline.Action.FINISH, last.action);
+        assertFalse(last.success);
+        assertTrue(group.plan.droppedChars > 0);
+    }
+
+    @Test public void resumingALimitedPlanCannotSilentlyForgetItsOriginalTail() {
+        AssistantTtsPipeline.Group group = group("第一句。第二句。第三句。第四句。第五句。");
+        AssistantTtsPipeline.Segment first = group.reserveNext();
+        group.synthesisReady(first.index);
+        group.markFirstWrite(first.index);
+        group.playbackCompleted(first.index);
+        assertEquals("第二句。第三句。第四句。第五句。", group.speechToResume());
     }
 
     private static AssistantTtsPipeline.Group group(String speech) {

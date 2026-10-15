@@ -106,6 +106,13 @@ final class CueRequest {
         return Float.isFinite(pan);
     }
 
+    /** A yielded answer keeps the original ownership guard and absolute expiry. */
+    CueRequest withSpeech(String remainingSpeech) {
+        return new CueRequest(sessionId, cueId, eventKey, kind, category, priority,
+                createdAtMs, expiresAtMs, requestedChannels, toneKind, direction, hapticCode,
+                remainingSpeech, pan, distance, urgency, freshEnemyCount, playbackAllowed);
+    }
+
     /** Re-evaluate expiration and the caller's freshness condition at playback start. */
     boolean playbackAllowedAt(long atMs) {
         if (atMs > expiresAtMs) return false;

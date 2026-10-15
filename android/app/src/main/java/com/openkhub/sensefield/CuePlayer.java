@@ -1287,7 +1287,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
         if (plan.segments.isEmpty()) {
             if (plan.droppedChars > 0)
                 logAssistantDrop(request.cueId, 0, 0, plan.droppedChars, "limit");
-            callback.onFinished(SystemClock.elapsedRealtime(), false);
+            callback.onIncomplete(SystemClock.elapsedRealtime(), "LIMIT");
             return true;
         }
         String groupId = "assistant:" + request.cueId + ":" + System.nanoTime();
@@ -1340,7 +1340,8 @@ final class CuePlayer implements CueDispatcher.Renderer {
                 logAssistantDrop(reply.request.cueId, transition.dropped.index,
                         transition.dropped.segments, transition.dropped.chars,
                         setupFailed ? "failed" : "expired");
-            if (!setupFailed || !initial) finishAssistantReply(reply, transition.success);
+            if (!setupFailed) finishExpiredAssistantReply(reply);
+            else if (!initial) finishAssistantReply(reply, false);
             return !setupFailed;
         }
         if (utterance == null || voice == null) return !initial;
@@ -1388,7 +1389,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
             if (!expired.dropped.isEmpty())
                 logAssistantDrop(reply.request.cueId, expired.dropped.index,
                         expired.dropped.segments, expired.dropped.chars, "expired");
-            finishAssistantReply(reply, expired.success);
+            finishExpiredAssistantReply(reply);
             return true;
         }
         if (result == TextToSpeech.SUCCESS) return true;
@@ -1641,13 +1642,27 @@ final class CuePlayer implements CueDispatcher.Renderer {
         if (transition.action == AssistantTtsPipeline.Action.NEXT) {
             startAssistantSegment(reply, false);
         } else {
-            finishAssistantReply(reply, transition.success);
+            if ("expired".equals(dropReason)) finishExpiredAssistantReply(reply);
+            else if (!transition.success && reply.group.plan.droppedChars > 0
+                    && transition.dropped.isEmpty())
+                finishAssistantReply(reply, false, "PARTIAL_LIMIT");
+            else finishAssistantReply(reply, transition.success);
         }
     }
 
+    private void finishExpiredAssistantReply(AssistantReply reply) {
+        finishAssistantReply(reply, false, reply.group.started() ? "PARTIAL_EXPIRED" : "EXPIRED");
+    }
+
     private void finishAssistantReply(AssistantReply reply, boolean success) {
-        if (reply.group.claimFinishCallback())
-            reply.callback.onFinished(SystemClock.elapsedRealtime(), success);
+        finishAssistantReply(reply, success, null);
+    }
+
+    private void finishAssistantReply(AssistantReply reply, boolean success, String outcome) {
+        if (!reply.group.claimFinishCallback()) return;
+        if (outcome != null)
+            reply.callback.onIncomplete(SystemClock.elapsedRealtime(), outcome);
+        else reply.callback.onFinished(SystemClock.elapsedRealtime(), success);
     }
 
     private static void logAssistantSegment(String event, AssistantUtterance utterance) {
@@ -1880,19 +1895,36 @@ final class CuePlayer implements CueDispatcher.Renderer {
     }
 
     @Override public void cancelAssistantSpeech() {
+        stopAssistantSpeech(null);
+    }
+
+    @Override public String yieldAssistantSpeech(CueRequest request) {
+        return stopAssistantSpeech(request);
+    }
+
+    private String stopAssistantSpeech(CueRequest yielding) {
         TextToSpeech voice;
         AudioTrack track;
         boolean hadAssistant;
+        String remaining = "";
         List<AssistantDropEvent> dropped;
         synchronized (audioLock) {
             hadAssistant = !assistantGroups.isEmpty() || !assistantUtterances.isEmpty()
                     || assistantTrack != null;
-            dropped = cancelAssistantGroupsLocked("cancelled");
+            if (yielding != null) {
+                for (AssistantReply reply : assistantGroups.values())
+                    if (reply.request.cueId.equals(yielding.cueId))
+                        remaining = reply.group.speechToResume();
+            }
+            dropped = cancelAssistantGroupsLocked(yielding == null ? "cancelled" : "yielded");
             track = assistantTrack;
             assistantTrack = null;
             voice = tts;
         }
-        logAssistantDrops(dropped);
+        if (yielding == null) logAssistantDrops(dropped);
+        else auditAudio("AssistantTts event=yielded cueId=" + yielding.cueId
+                + " remainingChars=" + remaining.codePointCount(0, remaining.length())
+                + " monotonicMs=" + SystemClock.elapsedRealtime());
         if (hadAssistant && voice != null) {
             synchronized (assistantTtsSubmissionLock) {
                 try { voice.stop(); }
@@ -1902,6 +1934,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
             }
         }
         stopAssistantTrack(track);
+        return remaining;
     }
 
     private static void stopAssistantTrack(AudioTrack track) {

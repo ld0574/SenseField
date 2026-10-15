@@ -353,12 +353,9 @@ public class Match3LiveService extends Service {
             s.frame = bitmap;
             bitmap = null;
             s.frameAt = observedAt;
-            Match3HintOverlay currentOverlay = s.overlay;
-            Match3Hint renderedHint = currentOverlay == null ? null : currentOverlay.renderedHint();
-            if (renderedHint != null) {
-                if (s.overlayFilter == null) s.overlayFilter = new Match3OverlayCaptureFilter(this);
+            if (s.overlayFilter != null) {
                 long started = SystemClock.elapsedRealtimeNanos();
-                boolean filtered = s.overlayFilter.clean(s.frame, renderedHint, currentOverlay.alpha());
+                boolean filtered = s.overlayFilter.clean(s.frame);
                 s.overlayFilterMicros += (SystemClock.elapsedRealtimeNanos() - started) / 1000;
                 if (filtered && ++s.filteredOverlayFrames == 1)
                     s.diagnostics.audit("Match3VisualCapture mode=current_frame_unblend secure=false");
@@ -405,6 +402,7 @@ public class Match3LiveService extends Service {
                             "origin", "board_top_left_one_based"),
                     "highlight_suppressed", s.visualSuppressed,
                     "highlight_visible", s.overlay != null && s.overlay.renderedHint() != null,
+                    "highlight_visible_ms", s.overlay == null ? 0 : s.overlay.visibleDurationMs(),
                     "overlay_capture_filtered_frames", s.filteredOverlayFrames,
                     "overlay_capture_filter_micros", s.overlayFilterMicros));
             if (isCurrent(s)) {
@@ -745,13 +743,15 @@ public class Match3LiveService extends Service {
 
     private void invalidateHint(Session s, String reason) {
         Match3Hint old = s.currentHint;
+        long visibleMs = s.overlay == null ? 0 : s.overlay.visibleDurationMs();
         s.currentHint = null;
         s.hintPosition=null;s.hintGoals=null;
         String cueId = s.hintCueId; s.hintCueId = null;
         if (dispatcher != null && cueId != null) dispatcher.cancelCue(cueId, reason);
         if (s.overlay != null) s.overlay.clear();
-        if (s.overlayFilter != null) s.overlayFilter.clear();
-        if (old != null) s.diagnostics.audit("Match3HintCleared revision=" + old.revision + " reason=" + reason);
+        if (s.overlayFilter != null) s.overlayFilter.retire();
+        if (old != null) s.diagnostics.audit("Match3HintCleared revision=" + old.revision
+                + " reason=" + reason + " highlight_visible_ms=" + visibleMs);
         if(old!=null && ("BOARD_MOTION".equals(reason) || "HINT_EVIDENCE_CHANGED".equals(reason)))
             s.diagnostics.match3HintContext(old.revision,true);
     }
@@ -774,7 +774,7 @@ public class Match3LiveService extends Service {
     private void closeOverlay(Session s) {
         if (s != null && s.overlay != null) {
             s.overlay.close(); s.overlay = null; s.blackMonitor.reset();
-            if (s.overlayFilter != null) s.overlayFilter.clear();
+            if (s.overlayFilter != null) s.overlayFilter.retire();
         }
     }
 
@@ -783,6 +783,8 @@ public class Match3LiveService extends Service {
                 || !GameProfile.settings(this).getBoolean("match3_hint_highlight_enabled", true)) return;
         if (s.overlay == null) s.overlay = Match3HintOverlay.create(this);
         if (s.overlay != null && !s.overlay.isClosed()) {
+            if (s.overlayFilter == null) s.overlayFilter = new Match3OverlayCaptureFilter(this);
+            s.overlayFilter.remember(hint, s.overlay.alpha());
             s.overlay.update(hint, () -> active == s && !s.projectionStopped && s.currentHint == hint);
         } else if (!s.overlayHintAnnounced) {
             s.overlayHintAnnounced = true;

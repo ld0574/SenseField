@@ -51,4 +51,29 @@ public final class Match3BoardFeedbackTest {
             assertEquals(previous.coverCatalogSha256,rejected.coverCatalogSha256);assertEquals(previous.gallerySha256,rejected.gallerySha256);
         }
     }
+    @Test public void addingPoisonKeepsExistingMissionAndAnimalIdentitiesDistinct() throws Exception {
+        Match3VisualCatalog previous=load(null),candidate=load(asset("match3-board-feedback-v1.json"));
+        assertEquals("loaded",candidate.boardFeedbackStatus);
+        for(Match3VisualCatalog.Pattern pattern:previous.goals) {
+            String identity=Match3VisualCatalog.recognize(previous.goals,pattern.pixels,.14f,.025f);
+            if(identity!=null)assertEquals(identity,Match3VisualCatalog.recognize(candidate.goals,pattern.pixels,.14f,.025f));
+        }
+        for(Match3VisualCatalog.Pattern pattern:previous.animals) {
+            Match3Position.Cell classified=candidate.classifyObstacle(pattern.pixels);
+            assertTrue("An animal descriptor cannot become poison",classified==null || classified.kind!=Match3Position.Kind.POISON);
+        }
+    }
+    @Test public void poisonGoalNeedsItsOwnReviewAndCannotUseCounterPixelsAsIdentity() throws Exception {
+        byte[] bytes=asset("match3-board-feedback-v1.json");
+        for(int failure=0;failure<5;failure++) {
+            JSONObject extra=new JSONObject(new String(bytes,StandardCharsets.UTF_8));
+            JSONObject goal=extra.getJSONArray("goals").getJSONObject(0);
+            if(failure==0)goal.put("kind","COOKIE");
+            if(failure==1)goal.put("mask_bits","1".repeat(256));
+            if(failure==2)goal.remove("source_sha256");
+            if(failure==3)goal.getJSONObject("goal_binding").put("reviewed",false);
+            if(failure==4)goal.getJSONObject("goal_binding").put("event_mode","CHARGE");
+            assertTrue(load(extra.toString().getBytes(StandardCharsets.UTF_8)).boardFeedbackStatus.startsWith("rejected:"));
+        }
+    }
 }

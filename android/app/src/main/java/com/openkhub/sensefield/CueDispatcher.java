@@ -28,6 +28,8 @@ final class CueDispatcher implements AutoCloseable {
         void onStarted(long atMs);
         void onFinished(long atMs, boolean success);
         default void onFailed(long atMs, String reason) { onFinished(atMs, false); }
+        /** An intentional partial/expired delivery is not a successful full answer. */
+        default void onIncomplete(long atMs, String outcome) { onFinished(atMs, false); }
     }
     interface Renderer {
         boolean playTone(CueRequest request, PlaybackCallback callback);
@@ -40,6 +42,11 @@ final class CueDispatcher implements AutoCloseable {
                 PlaybackCallback speech) { return false; }
         /** Cancel only conversational speech when the user starts talking. */
         default void cancelAssistantSpeech() { stopSpeech(); }
+        /** Return whole uncompleted sentences to replay after a spoken alert. */
+        default String yieldAssistantSpeech(CueRequest request) {
+            cancelAssistantSpeech();
+            return request.speech;
+        }
         default void cancelPendingTone() {}
         default void cancelPendingTone(CueRequest.Category category) {}
     }
@@ -70,6 +77,7 @@ final class CueDispatcher implements AutoCloseable {
         final long sequence;
         boolean admitted = true;
         boolean terminalReported;
+        boolean resumed;
         Pending(CueRequest request, long sequence) {
             this.request = request;
             this.sequence = sequence;
@@ -97,7 +105,7 @@ final class CueDispatcher implements AutoCloseable {
     private final AtomicLongArray toneCategoryEpoch =
             new AtomicLongArray(CueRequest.Category.values().length);
     private final PriorityQueue<Pending> speechQueue = new PriorityQueue<>(
-            Comparator.<Pending>comparingInt(value -> value.request.priority).reversed()
+            Comparator.<Pending>comparingInt(value -> speechPriority(value.request)).reversed()
                     .thenComparingLong(value -> value.sequence));
     private long sequence;
     private CueRequest speaking;
@@ -129,9 +137,9 @@ final class CueDispatcher implements AutoCloseable {
             return report(request, 0, "DROPPED", "deduplicated");
 
         if (preemptsAssistant(request.category)
-                && (accepted & (CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH
-                | CueRequest.CHANNEL_HAPTIC)) != 0) {
-            preemptAssistantForAlert();
+                && (accepted & CueRequest.CHANNEL_SPEECH) != 0
+                && request.speech != null && !request.speech.isEmpty()) {
+            yieldAssistantForAlert();
         }
 
         int rendered = accepted & CueRequest.CHANNEL_VISUAL;
@@ -140,7 +148,7 @@ final class CueDispatcher implements AutoCloseable {
                 && (accepted & (CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH))
                 == (CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH)
                 && request.speech != null && !request.speech.isEmpty()
-                && speaking == null && speechQueue.isEmpty()
+                && speaking == null && !hasQueuedLocalSpeech()
                 && renderer.hasPreparedSpeech(request) && startSynchronized(request);
         if (synchronizedAudio) {
             rendered |= CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH;
@@ -185,6 +193,8 @@ final class CueDispatcher implements AutoCloseable {
             lastAccepted.put(request.eventKey, now);
             acceptedCategories.put(request.eventKey, request.category);
         }
+        // A failed/suppressed alert voice must not strand the answer it yielded.
+        drainSpeech();
         return report(request, rendered, rendered == 0 ? "DROPPED" : "ACCEPTED", reason);
     }
 
@@ -219,11 +229,11 @@ final class CueDispatcher implements AutoCloseable {
         if (speechQueue.size() >= MAX_PENDING) {
             Pending worst = null;
             for (Pending candidate : speechQueue) {
-                if (worst == null || candidate.request.priority < worst.request.priority ||
-                        (candidate.request.priority == worst.request.priority &&
+                if (worst == null || speechPriority(candidate.request) < speechPriority(worst.request) ||
+                        (speechPriority(candidate.request) == speechPriority(worst.request) &&
                                 candidate.sequence < worst.sequence)) worst = candidate;
             }
-            if (worst != null && worst.request.priority < request.priority) {
+            if (worst != null && speechPriority(worst.request) < speechPriority(request)) {
                 speechQueue.remove(worst);
                 listener.onPlayback(worst.request, "SPEECH", clock.nowMs(), "QUEUE_EVICTED");
             } else return false;
@@ -242,20 +252,38 @@ final class CueDispatcher implements AutoCloseable {
                 || category == CueRequest.Category.DANGER;
     }
 
-    private void preemptAssistantForAlert() {
-        // Assistant answers are tied to the question and current scene. An
-        // alert invalidates both an active answer and any answer waiting
-        // behind another utterance, even if speech is disabled for that cue.
-        discardQueuedAssistant("PREEMPTED");
+    private static int speechPriority(CueRequest request) {
+        // A yielded or not-yet-started answer never jumps ahead of a local cue,
+        // including an alert whose numerical urgency happens to be low.
+        return request.category == CueRequest.Category.ASSISTANT ? Integer.MIN_VALUE : request.priority;
+    }
+
+    private boolean hasQueuedLocalSpeech() {
+        for (Pending pending : speechQueue)
+            if (pending.request.category != CueRequest.Category.ASSISTANT) return true;
+        return false;
+    }
+
+    private void yieldAssistantForAlert() {
+        // Sensory alerts can coexist with the answer. A spoken alert gets the
+        // channel immediately, but queued answers retain their original guards.
         if (speaking != null && speaking.category == CueRequest.Category.ASSISTANT) {
-            CueRequest preempted = speaking;
-            cancelledSpeech.add(preempted.cueId);
+            CueRequest previous = speaking;
+            cancelledSpeech.add(previous.cueId);
             speechEpoch++;
-            renderer.cancelAssistantSpeech();
             speaking = null;
-            listener.onPlayback(preempted, "SPEECH", clock.nowMs(), "PREEMPTED");
+            String remaining = renderer.yieldAssistantSpeech(previous);
+            if (remaining != null && !remaining.isEmpty()
+                    && previous.playbackAllowedAt(clock.nowMs())
+                    && speechQueue.size() < MAX_PENDING) {
+                Pending continuation = new Pending(previous.withSpeech(remaining), sequence++);
+                continuation.resumed = true;
+                speechQueue.add(continuation);
+                listener.onPlayback(previous, "SPEECH", clock.nowMs(), "YIELDED");
+            } else {
+                listener.onPlayback(previous, "SPEECH", clock.nowMs(), "PREEMPTED");
+            }
         }
-        drainSpeech();
     }
 
     private void discardQueuedAssistant(String result) {
@@ -361,16 +389,20 @@ final class CueDispatcher implements AutoCloseable {
                     started[0] = true;
                     lastSpeechStarted.put(request.category, atMs);
                     if (isAlert(request.category)) lastAlertAtMs = atMs;
-                    listener.onPlayback(request, "SPEECH", atMs, "STARTED");
+                    listener.onPlayback(request, "SPEECH", atMs,
+                            pending != null && pending.resumed ? "RESUMED" : "STARTED");
                 }
             }
             @Override public void onFinished(long atMs, boolean success) {
-                finish(atMs, success, null);
+                finish(atMs, success, null, null);
             }
             @Override public void onFailed(long atMs, String reason) {
-                finish(atMs, false, reason);
+                finish(atMs, false, reason, null);
             }
-            private void finish(long atMs, boolean success, String reason) {
+            @Override public void onIncomplete(long atMs, String outcome) {
+                finish(atMs, false, null, outcome);
+            }
+            private void finish(long atMs, boolean success, String reason, String outcome) {
                 synchronized (CueDispatcher.this) {
                     boolean cancelled = cancelledSpeech.remove(request.cueId);
                     if (finished[0] || speaking != request || cancelled) return;
@@ -379,7 +411,8 @@ final class CueDispatcher implements AutoCloseable {
                     if (pending != null) pending.terminalReported = true;
                     if (speaking == request) speaking = null;
                     listener.onPlayback(request, "SPEECH", atMs,
-                            !started[0] && !request.playbackAllowedAt(atMs) ? "EXPIRED"
+                            outcome != null ? outcome
+                                    : !started[0] && !request.playbackAllowedAt(atMs) ? "EXPIRED"
                                     : success ? "COMPLETED" : "FAILED");
                     if (reason != null) listener.onPlaybackFailure(request, atMs, reason);
                     drainSpeech();

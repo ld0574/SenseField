@@ -58,17 +58,17 @@ public final class Match3SettingsActivity extends UiActivity {
                     .setAction(Match3LiveService.ACTION_REFRESH_VISUAL));
         });
         UiKit.add(hints, highlight, 8);
-        UiKit.add(hints, UiKit.hint(this, "框出两颗棋子和交换方向，局面变化后更新。"), 12);
+        UiKit.add(hints, UiKit.hint(this, "从棋盘中心沿箭头找亮黄框，按语音说的方向交换或点击。有效提示持续显示，方便慢慢找；局面变化后撤下。"), 12);
         overlayPermission = UiKit.navigationRow(this, "允许显示高亮", "开启悬浮显示权限；语音仍可单独使用", () -> {
             try { startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:" + getPackageName()))); }
             catch (RuntimeException unavailable) { toast("请在系统设置中允许听野悬浮显示"); }
         });
         UiKit.add(hints, overlayPermission, 12);
-        LinearLayout numbering = UiKit.details(this, "行列编号说明", Match3Hint.NUMBERING);
+        LinearLayout numbering = UiKit.details(this, "提示方向说明", Match3Hint.DIRECTION_GUIDANCE);
         LinearLayout numberingBody = numbering.findViewWithTag("ui_details_body");
-        listen = UiKit.button(this, "听行列说明", false);
-        listen.setOnClickListener(v -> readNumbering());
+        listen = UiKit.button(this, "听提示说明", false);
+        listen.setOnClickListener(v -> readGuidance());
         numberingBody.addView(listen);
         UiKit.add(hints, numbering, 0);
         UiKit.add(page, hints, 24);
@@ -105,13 +105,13 @@ public final class Match3SettingsActivity extends UiActivity {
         toast(enable ? "触屏点读已开启" : "触屏点读已关闭");
     }
 
-    private void readNumbering() {
+    private void readGuidance() {
         if (CaptureService.isRunning() || Match3LiveService.isRunning()) {
-            toast("请先停止辅助，再试听行列说明"); return;
+            toast("请先停止辅助，再试听提示说明"); return;
         }
         stopPreview();
         preview = CuePlayer.speechProbe(this);
-        listen.setText("重新试听行列说明");
+        listen.setText("重新试听提示说明");
         preparePreview(preview, SystemClock.elapsedRealtime() + 20000);
     }
     private void preparePreview(CuePlayer expected, long deadline) {
@@ -123,9 +123,9 @@ public final class Match3SettingsActivity extends UiActivity {
             toast(expected.speechStatusText()); stopPreview(); return;
         }
         long now = SystemClock.elapsedRealtime();
-        CueRequest request = new CueRequest("m3-settings", "numbering:" + now, "m3:numbering", "行列说明",
+        CueRequest request = new CueRequest("m3-settings", "hint-guide:" + now, "m3:hint-guide", "提示说明",
                 CueRequest.Category.SYSTEM, 70, now, now + 10000, CueRequest.CHANNEL_SPEECH,
-                0, 0, 0, Match3Hint.NUMBERING);
+                0, 0, 0, Match3Hint.DIRECTION_GUIDANCE);
         if (!expected.speak(request, true, new CueDispatcher.PlaybackCallback() {
             @Override public void onStarted(long at) { }
             @Override public void onFinished(long at, boolean success) {
@@ -136,7 +136,7 @@ public final class Match3SettingsActivity extends UiActivity {
     private void stopPreview() {
         handler.removeCallbacksAndMessages(null);
         if (preview != null) { preview.close(); preview = null; }
-        if (listen != null) listen.setText("听行列说明");
+        if (listen != null) listen.setText("听提示说明");
     }
     @Override protected void onResume() {
         super.onResume(); refreshPermission();

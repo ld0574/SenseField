@@ -415,6 +415,28 @@ public final class Match3RuleEngineTest {
         Match3RuleEngine.Result r=settle(p,Match3Action.Type.SWAP,8,15);
         assertEquals(0,r.preparation(Match3Goals.Kind.STAR_BOTTLE,Match3Goals.Mode.CHARGE));
     }
+    @Test public void adjacentPoisonClearsWithoutDiagonalOrRecursiveRemovalOrInventedSpread() {
+        Match3Position p=board("HHHHH","RGRHH","HRHHH");
+        for(int col=0;col<4;col++)p=replace(p,0,col,
+                Match3Position.Cell.observed(Match3Position.Kind.POISON,"poison",1,-1));
+        Match3RuleEngine.Result r=settle(p,Match3Action.Type.SWAP,6,11);
+        assertEquals(3,r.collected(Match3Goals.Kind.POISON,Match3Goals.Mode.CLEAR));
+        assertEquals(3,r.hits(Match3Goals.Kind.POISON));
+        for(int col=0;col<3;col++)assertEquals(Match3Position.Kind.VACANT,r.after.cell(0,col).kind);
+        assertEquals("A removed poison cell does not remove its poison neighbour",Match3Position.Kind.POISON,r.after.cell(0,3).kind);
+        assertTrue(r.unknowns.contains("poison_step_spread_unknown"));assertFalse(r.successorKnown);
+        for(Match3Action candidate:Match3Action.enumerate(p)) {
+            assertNotEquals(Match3Position.Kind.POISON,p.cell(candidate.geometry.fromRow,candidate.geometry.fromCol).kind);
+            assertNotEquals(Match3Position.Kind.POISON,p.cell(candidate.geometry.toRow,candidate.geometry.toCol).kind);
+        }
+    }
+    @Test public void aConfirmedPoisonFinishBeatsAnUnrelatedAnimalMatch() {
+        Match3Position p=replace(board("HHHHHHH","BGBHRGR","HBHHHRH"),0,1,
+                Match3Position.Cell.observed(Match3Position.Kind.POISON,"poison",1,-1));
+        Match3MoveValue best=Match3MoveRanker.rankedMoves(p,goals(Match3Goals.Kind.POISON,1,Match3Goals.Mode.CLEAR,1)).get(0);
+        assertEquals(1,best.swap.fromCol);assertEquals(1,best.directUnits);
+        assertTrue(best.allTargetsFinish);assertEquals("清理毒液",best.reason);
+    }
     @Test public void unconfirmedCollectorsDoNotTurnGoldPodsIntoCollectedUnits() {
         Match3Position p=replace(board("HHH","RGR","HRH"),0,1,Match3Position.Cell.observed(Match3Position.Kind.GOLD_POD,"gold_pod",0,5));
         Match3RuleEngine.Result r=settle(p,Match3Action.Type.SWAP,4,7);
