@@ -56,7 +56,7 @@ final class AssistantGatewayClient implements AutoCloseable {
     private final AssistantSettings settings;
     private final Listener listener;
     private final OkHttpClient http = new OkHttpClient.Builder().connectTimeout(3, TimeUnit.SECONDS)
-            .callTimeout(8, TimeUnit.SECONDS).readTimeout(8, TimeUnit.SECONDS).build();
+            .callTimeout(19, TimeUnit.SECONDS).readTimeout(19, TimeUnit.SECONDS).build();
     private final OkHttpClient audioHttp = new OkHttpClient.Builder().connectTimeout(3, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.MILLISECONDS).pingInterval(25, TimeUnit.SECONDS).build();
     private WebSocket socket;
@@ -159,7 +159,8 @@ final class AssistantGatewayClient implements AutoCloseable {
         JSONObject body = json("session_id", session.sessionId, "generation", frame.generation,
                 "turn_id", turn, "frame_id", primaryFrameId, "question", question,
                 "image_base64", primaryBase64,
-                "frame_age_ms", primaryAgeMs, "proactive", proactive);
+                "frame_age_ms", primaryAgeMs, "proactive", proactive,
+                "snapshot_read", !proactive);
         if (encodedContext.length() > 0) {
             try { body.put("context_frames", encodedContext); }
             catch (org.json.JSONException invalidContext) {
@@ -167,9 +168,12 @@ final class AssistantGatewayClient implements AutoCloseable {
                 return;
             }
         }
-        Call call = http.newCall(new Request.Builder().url(settings.endpoint + "/v1/visual")
-                .header("Authorization", "Bearer " + settings.token)
-                .post(RequestBody.create(body.toString(), MediaType.get("application/json; charset=utf-8"))).build());
+        Request.Builder request = new Request.Builder().url(settings.endpoint + "/v1/visual")
+                .header("X-SenseField-Installation", settings.installationId);
+        if (!settings.token.isEmpty()) request.header("Authorization", "Bearer " + settings.token);
+        Call call = http.newCall(request.post(RequestBody.create(body.toString(),
+                MediaType.get("application/json; charset=utf-8"))).build());
+        call.timeout().timeout(proactive ? 14 : 19, TimeUnit.SECONDS);
         synchronized (this) {
             if (closed) { listener.visualFailure(requestId, "closed"); return; }
             // A newer question can arrive during JPEG/Base64 work, before cancelVisual sees
@@ -208,7 +212,8 @@ final class AssistantGatewayClient implements AutoCloseable {
                                 JSONObject error = parsed.optJSONObject("error");
                                 if (error != null) {
                                     String candidateSource = error.optString("source", "unknown");
-                                    if ("provider".equals(candidateSource) || "cooldown".equals(candidateSource))
+                                    if ("provider".equals(candidateSource) || "cooldown".equals(candidateSource)
+                                            || "public_quota".equals(candidateSource) || "gateway".equals(candidateSource))
                                         source = candidateSource;
                                     String candidateCode = error.optString("provider_code", "");
                                     if (candidateCode.matches("[0-9]{1,6}")) providerCode = candidateCode;
@@ -216,13 +221,16 @@ final class AssistantGatewayClient implements AutoCloseable {
                                     if (candidateStatus >= 100 && candidateStatus <= 599) upstreamStatus = candidateStatus;
                                     retryAfter = Math.min(86_400, Math.max(-1, error.optLong("retry_after_seconds", -1)));
                                 }
-                                failure = owned.code() == 429 ? ("1305".equals(providerCode) ? "provider_busy" : "rate_limited")
+                                failure = error != null && "public_quota_exceeded".equals(error.optString("code"))
+                                        ? "public_quota_exceeded" : owned.code() == 429 ? ("1305".equals(providerCode) ? "provider_busy" : "rate_limited")
                                         : error == null ? parsed.optString("code", "service_unavailable")
                                         : error.optString("code", "service_unavailable");
                             }
                         }
                     }
                 } catch (Exception ignoredError) { failure = "invalid_response"; }
+                if (!response.isSuccessful()) failure = AssistantVisualFailure.code(
+                        status, source, upstreamStatus, failure);
                 release();
                 if (!response.isSuccessful()) listener.visualDiagnostic(requestId, status,
                         source, providerCode, upstreamStatus, retryAfter);

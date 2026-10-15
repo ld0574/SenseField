@@ -191,32 +191,53 @@ def _parse_cues(events: list[dict[str, Any]]) -> tuple[dict[str, dict[str, Any]]
     dispatch_by_id: dict[str, dict[str, Any]] = {}
     callbacks: list[dict[str, Any]] = []
     audit_counts: Counter[str] = Counter()
+    policies: dict[str, dict[str, Any]] = {}
     for event in events:
-        if event["type"] != "audit":
+        if event["type"] not in {"audit", "CueDispatch", "CuePlayback", "CuePolicy"}:
             continue
         data = event.get("data", {})
         message = data.get("message") if isinstance(data, dict) else None
+        structured = event["type"] != "audit"
+        if event["type"] == "CuePolicy":
+            cue_id = data.get("cue_id")
+            if not isinstance(cue_id, str) or not cue_id or cue_id in policies:
+                raise ValueError("invalid or duplicate CuePolicy cue_id")
+            policies[cue_id] = {k: data.get(k) if type(data.get(k)) is bool else None
+                                for k in ("category_enabled", "near_two_word_enabled", "near_haptic_enabled")}
+            mask = _nonnegative_int(data.get("enabled_channels"))
+            policies[cue_id]["enabled_channels"] = mask if mask is not None and not mask & ~KNOWN_CHANNEL_MASK else None
+            continue
+
+        def clock(value: Any, label: str) -> int:
+            return _int(value if structured else _parse_decimal(value, label), label, minimum=0)
+
         dispatch = _audit_fields(message, "CueDispatch")
+        if event["type"] == "CueDispatch":
+            dispatch = {old: data.get(new) for old, new in (
+                ("cueId", "cue_id"), ("kind", "kind"), ("category", "category"), ("eventKey", "event_key"),
+                ("createdAtMs", "created_at_ms"), ("expiresAtMs", "expires_at_ms"),
+                ("requestedMask", "requested_channels"), ("acceptedMask", "accepted_channels"),
+                ("outcome", "outcome"), ("dropReason", "reason"))}
+            dispatch["dispatchAtMs"] = event.get("at_ms")
         if dispatch is not None:
             audit_counts["CueDispatch"] += 1
             cue_id = dispatch.get("cueId")
-            if not cue_id:
+            if not isinstance(cue_id, str) or not cue_id:
                 raise ValueError("CueDispatch audit is missing cueId")
             if cue_id in dispatch_by_id:
                 raise ValueError(f"duplicate CueDispatch cueId {cue_id!r}")
-            requested = _int(_parse_decimal(dispatch.get("requestedMask"), "requestedMask"),
-                             "CueDispatch.requestedMask", minimum=0)
-            accepted = _int(_parse_decimal(dispatch.get("acceptedMask"), "acceptedMask"),
-                             "CueDispatch.acceptedMask", minimum=0)
+            requested = clock(dispatch.get("requestedMask"), "CueDispatch.requestedMask")
+            accepted = clock(dispatch.get("acceptedMask"), "CueDispatch.acceptedMask")
             if requested & ~KNOWN_CHANNEL_MASK or accepted & ~KNOWN_CHANNEL_MASK or accepted & ~requested:
                 raise ValueError(f"CueDispatch {cue_id!r} has invalid channel masks")
             outcome = dispatch.get("outcome")
             if outcome not in {"ACCEPTED", "DROPPED"} or (outcome == "ACCEPTED") != (accepted != 0):
                 raise ValueError(f"CueDispatch {cue_id!r} has an inconsistent outcome")
-            created = _int(_parse_decimal(dispatch.get("createdAtMs"), "createdAtMs"),
-                           "CueDispatch.createdAtMs", minimum=0)
-            dispatched_at = _int(_parse_decimal(dispatch.get("dispatchAtMs"), "dispatchAtMs"),
-                                 "CueDispatch.dispatchAtMs", minimum=0)
+            created = clock(dispatch.get("createdAtMs"), "CueDispatch.createdAtMs")
+            dispatched_at = clock(dispatch.get("dispatchAtMs"), "CueDispatch.dispatchAtMs")
+            expires = clock(dispatch["expiresAtMs"], "CueDispatch.expiresAtMs") if dispatch.get("expiresAtMs") is not None else None
+            if expires is not None and expires < created:
+                raise ValueError("CueDispatch expiry precedes creation")
             delay_value = dispatch.get("dispatchDelayMs")
             dispatch_delay = _int(_parse_decimal(delay_value, "dispatchDelayMs"),
                                   "CueDispatch.dispatchDelayMs", minimum=0) if delay_value is not None else max(0, dispatched_at - created)
@@ -225,6 +246,9 @@ def _parse_cues(events: list[dict[str, Any]]) -> tuple[dict[str, dict[str, Any]]
                 "kind": dispatch.get("kind", "unknown"),
                 "category": dispatch.get("category", "unknown"),
                 "created_at_ms": created,
+                "expires_at_ms": expires,
+                "event_key": dispatch.get("eventKey"),
+                "record_format": "structured" if structured else "legacy_audit",
                 "dispatch_at_ms": dispatched_at,
                 "dispatch_delay_ms": dispatch_delay,
                 "requested_mask": requested,
@@ -238,18 +262,21 @@ def _parse_cues(events: list[dict[str, Any]]) -> tuple[dict[str, dict[str, Any]]
             continue
 
         playback = _audit_fields(message, "CuePlayback")
+        if event["type"] == "CuePlayback":
+            playback = {"cueId": data.get("cue_id"), "eventKey": data.get("event_key"),
+                        "channel": data.get("channel"), "result": data.get("result"), "atMs": data.get("at_ms")}
         if playback is not None:
             audit_counts["CuePlayback"] += 1
             cue_id = playback.get("cueId")
             channel = playback.get("channel")
             result = playback.get("result")
-            if not cue_id or channel not in CHANNEL_BITS or result not in PLAYBACK_RESULTS:
+            if not isinstance(cue_id, str) or not cue_id or channel not in CHANNEL_BITS or result not in PLAYBACK_RESULTS:
                 raise ValueError("CuePlayback audit has an invalid cue, channel, or result")
-            at_ms = _int(_parse_decimal(playback.get("atMs"), "atMs"),
-                         "CuePlayback.atMs", minimum=0)
+            at_ms = clock(playback.get("atMs"), "CuePlayback.atMs")
             provided_delay = playback.get("playbackDelayMs")
             callbacks.append({
                 "cue_id": cue_id,
+                "event_key": playback.get("eventKey"),
                 "channel": channel,
                 "at_ms": at_ms,
                 "playback_delay_ms": _int(_parse_decimal(provided_delay, "playbackDelayMs"),
@@ -257,6 +284,8 @@ def _parse_cues(events: list[dict[str, Any]]) -> tuple[dict[str, dict[str, Any]]
                 if provided_delay is not None else None,
                 "result": result,
             })
+    for cue_id, dispatch in dispatch_by_id.items():
+        dispatch["policy_at_dispatch"] = policies.get(cue_id)
     return dispatch_by_id, callbacks, audit_counts
 
 
@@ -529,7 +558,7 @@ def _contexts_and_markers(events: list[dict[str, Any]], images: list[dict[str, A
         reason = context.get("reason")
         trigger_candidates: list[dict[str, Any]] = []
         trigger_match_method = None
-        if reason in {"near_enter", "user_marker_frame"} and requested_at is not None:
+        if reason in {"near_enter", "enemy_approach", "user_marker_frame"} and requested_at is not None:
             # These records are exported after the triggering frame completes.
             # requested_at_ms therefore identifies that frame even when an
             # active/coalesced window retains an older start_observed_at_ms.
@@ -541,13 +570,13 @@ def _contexts_and_markers(events: list[dict[str, Any]], images: list[dict[str, A
             if len(trigger_candidates) == 1:
                 trigger_match_method = "exact_observed_frame"
         if (not trigger_candidates and start_observed is not None
-                and not (reason in {"near_enter", "user_marker_frame"} and requested_at is not None)):
+                and not (reason in {"near_enter", "enemy_approach", "user_marker_frame"} and requested_at is not None)):
             trigger_candidates = frames_by_observed.get(start_observed, [])
             if len(trigger_candidates) == 1:
                 trigger_match_method = "start_frame_fallback"
         trigger_frame_index = trigger_candidates[0]["frame_index"] if len(trigger_candidates) == 1 else None
         trigger_observed_at_ms = trigger_candidates[0].get("observed_at_ms") if len(trigger_candidates) == 1 else None
-        trigger_reasons = {"near_enter", "user_marker", "user_marker_frame"}
+        trigger_reasons = {"near_enter", "enemy_approach", "user_marker", "user_marker_frame"}
         trigger_images = [image for image in image_frames.get(trigger_frame_index, [])
                           if image.get("reason") in trigger_reasons] if trigger_frame_index is not None else []
         pre_context_images = [image for frame_index in pre_frames
@@ -635,8 +664,9 @@ def _contexts_and_markers(events: list[dict[str, Any]], images: list[dict[str, A
             continue
         at_ms = _nonnegative_int(event.get("at_ms"))
         event_name = fields.get("event")
-        if event_name != "NEAR_ENTER":
+        if event_name not in {"NEAR_ENTER", "APPROACH"}:
             continue
+        trigger_reason = "enemy_approach" if event_name == "APPROACH" else "near_enter"
         near_marker_index += 1
         dispatch_candidates = [dispatch for dispatch in dispatch_by_id.values()
                                if dispatch.get("kind", "").upper() == "NEAR_ZONE"
@@ -656,13 +686,13 @@ def _contexts_and_markers(events: list[dict[str, Any]], images: list[dict[str, A
         if dispatch is not None:
             matched_dispatches[cue_id] += 1
             exact_contexts = [position for position, ctx in enumerate(context_rows)
-                              if ctx.get("reason") == "near_enter"
+                              if ctx.get("reason") == trigger_reason
                               and ctx.get("trigger_frame_index") in {
                                   frame["frame_index"] for frame in frames_by_observed.get(dispatch["created_at_ms"], [])
                               }]
             if not exact_contexts:
                 exact_contexts = [position for position, ctx in enumerate(context_rows)
-                                  if ctx.get("reason") == "near_enter"
+                                  if ctx.get("reason") == trigger_reason
                                   and ctx.get("trigger_frame_index") is None
                                   and ctx.get("requested_at_ms") is None
                                   and ctx.get("start_observed_at_ms") == dispatch["created_at_ms"]]
@@ -673,7 +703,7 @@ def _contexts_and_markers(events: list[dict[str, Any]], images: list[dict[str, A
             frame_matches = frames_by_observed.get(dispatch["created_at_ms"], [])
             trigger_frame = frame_matches[0]["frame_index"] if len(frame_matches) == 1 else None
             trigger_ids = [image["image_id"] for image in image_frames.get(trigger_frame, [])
-                           if image.get("reason") == "near_enter"] if trigger_frame is not None else []
+                           if image.get("reason") == trigger_reason] if trigger_frame is not None else []
             marker_item = (_marker_from_context(
                 f"event-{near_marker_index}", "event", at_ms, context,
                 settings_pre, settings_post, cue_id=cue_id,
@@ -681,7 +711,7 @@ def _contexts_and_markers(events: list[dict[str, Any]], images: list[dict[str, A
                 "marker_id": f"event-{near_marker_index}", "kind": "event", "at_ms": at_ms,
                 "cue_id": cue_id, "context_status": None, "window_id": None,
                 "pre_frame_indices": [], "pre_image_ids": [], "post_image_ids": [],
-                "evidence_gap": "Cue 的创建时间没有精确匹配的 near_enter 截图上下文",
+                "evidence_gap": "Cue 的创建时间没有精确匹配的事件截图上下文",
             })
             marker_item["trigger_image_ids"] = trigger_ids
             marker_item["dispatch_at_ms"] = dispatch["dispatch_at_ms"]
@@ -690,13 +720,13 @@ def _contexts_and_markers(events: list[dict[str, Any]], images: list[dict[str, A
             if len(dispatch_candidates) != 1:
                 marker_item["evidence_gap"] = "NearZoneEvent 与 CueDispatch 时间匹配不唯一"
             elif not trigger_ids:
-                marker_item["evidence_gap"] = "已关联 Cue，但创建帧没有 near_enter 清晰截图"
+                marker_item["evidence_gap"] = "已关联 Cue，但创建帧没有事件清晰截图"
             markers.append(marker_item)
             continue
 
         outcome = fields.get("outcome")
         context_candidates = [position for position, ctx in enumerate(context_rows)
-                              if ctx.get("reason") == "near_enter"
+                              if ctx.get("reason") == trigger_reason
                               and position not in used_contexts
                               and outcome == "CATEGORY_DISABLED"
                               and at_ms is not None
@@ -724,7 +754,7 @@ def _contexts_and_markers(events: list[dict[str, Any]], images: list[dict[str, A
     # A context may be recorded even when its audit event is missing. Preserve
     # those rows as evidence too; do not create a false event match.
     for index, context in enumerate(context_rows, start=1):
-        if context.get("reason") not in {"near_enter", "user_marker", "user_marker_frame"}:
+        if context.get("reason") not in {"near_enter", "enemy_approach", "user_marker", "user_marker_frame"}:
             continue
         if index - 1 not in used_contexts:
             markers.append(_marker_from_context(
@@ -795,6 +825,32 @@ def _cue_items(dispatch_by_id: dict[str, dict[str, Any]], callbacks: list[dict[s
         item["queue_replaced_count"] = sum(callback["result"] == "QUEUE_REPLACED" for callback in cue_callbacks)
         item["queue_evicted_count"] = sum(callback["result"] == "QUEUE_EVICTED" for callback in cue_callbacks)
         item["dropped_dispatch"] = bool(dispatch and dispatch["outcome"] == "DROPPED")
+        states, anomalies, unassociated = {}, [], 0
+        started, terminal = set(), set()
+        for callback in cue_callbacks:
+            channel, result, at_ms = callback["channel"], callback["result"], callback["at_ms"]
+            reason = None
+            if dispatch is None: reason = "dispatch_missing"
+            elif at_ms < dispatch["created_at_ms"]: reason = "before_request"
+            elif dispatch.get("event_key") is not None and callback.get("event_key") != dispatch["event_key"]: reason = "event_mismatch"
+            elif result == "STARTED" and dispatch.get("expires_at_ms") is not None and at_ms > dispatch["expires_at_ms"]: reason = "expired_start"
+            elif not dispatch["accepted_mask"] & CHANNEL_BITS[channel] and result not in {"FAILED", "UNAVAILABLE"}: reason = "channel_not_admitted"
+            if reason:
+                unassociated += 1; anomalies.append(reason + ":" + channel); continue
+            if result == "STARTED":
+                if channel in started: anomalies.append("duplicate_start:" + channel)
+                if channel in terminal: anomalies.append("start_after_terminal:" + channel); continue
+                started.add(channel); states[channel] = "started_without_terminal"
+            else:
+                if channel in terminal: anomalies.append("duplicate_terminal:" + channel); continue
+                terminal.add(channel)
+                states[channel] = ("cancelled" if result.startswith("CANCELLED") or result in {
+                    "QUEUE_REPLACED", "QUEUE_EVICTED", "PREEMPTED"} else result.lower())
+        if dispatch is not None:
+            for channel in dispatch["accepted_channels"]: states.setdefault(channel, "callback_missing")
+        item["channel_states"] = states
+        item["callback_anomalies"] = anomalies
+        item["unassociated_callback_count"] = unassociated
         items.append(item)
     return items, results
 
@@ -844,6 +900,10 @@ def analyze_diagnostic_zip(path: Path, latency_csv: Path | None = None) -> tuple
 
         dispatch_by_id, callbacks, audit_counts = _parse_cues(events)
         cue_items, callback_results = _cue_items(dispatch_by_id, callbacks)
+        for item in cue_items:
+            unresolved = any(state in {"callback_missing", "started_without_terminal"}
+                             for state in item["channel_states"].values())
+            item["right_censored"] = unresolved and (summary.get("interrupted") is True or summary.get("end_observed") is False)
         image_records, inline_images, image_gaps = _image_assets(archive, members, events)
 
     processing, thermal, frame_rows = _frame_stats(events, summary, metadata, replay_timing)
@@ -914,6 +974,11 @@ def analyze_diagnostic_zip(path: Path, latency_csv: Path | None = None) -> tuple
         "queue_evicted_count": sum(callback["result"] == "QUEUE_EVICTED" for callback in callbacks),
         "dropped_dispatch_count": sum(item["outcome"] == "DROPPED" for item in dispatch_by_id.values()),
         "dispatch_outcomes": dict(Counter(item["outcome"] for item in dispatch_by_id.values())),
+        "software_channel_states": dict(Counter(state for item in cue_items for state in item["channel_states"].values())),
+        "callback_anomalies": dict(Counter(reason for item in cue_items for reason in item["callback_anomalies"])),
+        "unassociated_callback_count": sum(item["unassociated_callback_count"] for item in cue_items),
+        "right_censored_cue_count": sum(item["right_censored"] for item in cue_items),
+        "dispatches_missing_policy_snapshot": sum(item["policy_at_dispatch"] is None for item in dispatch_by_id.values()),
         "items": cue_items,
     }
     report: dict[str, Any] = {

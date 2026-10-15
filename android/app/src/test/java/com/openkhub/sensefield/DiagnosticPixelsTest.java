@@ -11,6 +11,29 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 public final class DiagnosticPixelsTest {
+    @Test public void boundedThumbnailsFitBudgetForPortraitSquareLandscapeAndThinFrames() {
+        long budget = 2L * 1024 * 1024;
+        for (int[] size : new int[][]{{1220,2712},{2048,2048},{1600,900},{1,4096},{53,47}}) {
+            int width=size[0], height=size[1];
+            ByteBuffer pixels=ByteBuffer.allocate(width*height*4);
+            int edge=DiagnosticPixels.boundedEdge(width,height,960,budget);
+            DiagnosticPixels copy=DiagnosticPixels.copy(pixels,width,height,width*4,0,0,width,height,edge);
+            assertNotNull(copy);
+            assertEquals((double) width/height, (double) copy.width/copy.height,
+                    1.0 / Math.min(copy.width,copy.height));
+            assertEquals(Math.min(width,copy.width),copy.width);
+            assertEquals(Math.min(height,copy.height),copy.height);
+            org.junit.Assert.assertTrue(copy.argb.length*4L<=budget);
+            if(edge<960) {
+                DiagnosticPixels larger=DiagnosticPixels.copy(pixels,width,height,width*4,0,0,width,height,edge+1);
+                org.junit.Assert.assertTrue(larger.argb.length*4L>budget);
+            }
+        }
+        assertEquals(0,DiagnosticPixels.boundedEdge(1,1,960,3));
+        assertEquals(0,DiagnosticPixels.boundedEdge(0,10,960,budget));
+        assertEquals(0,DiagnosticPixels.boundedEdge(10,10,0,budget));
+    }
+
     @Test public void paddedHeapFramesMatchPreviousPerPixelCopyForCropAndScale() {
         int width = 19;
         int height = 13;

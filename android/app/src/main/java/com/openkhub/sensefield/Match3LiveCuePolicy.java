@@ -23,6 +23,6 @@ final class Match3LiveCuePolicy implements CueDispatcher.Policy {
     }
 
     @Override public long dedupeWindowMs(CueRequest.Category category) {
-        return storedSettings.dedupeWindowMs(category);
+        return Math.max(1500, storedSettings.dedupeWindowMs(category));
     }
 }

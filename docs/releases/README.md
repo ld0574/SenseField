@@ -1,14 +1,34 @@
 # 发布与交付索引
 
-整理日期：2026-10-04。最新公开下载仍为 [0.3.8 体验版](https://github.com/ld0574/SenseField/releases/tag/v0.3.8)，已于 2026-10-04 发布为 GitHub 普通 Release 并设为 Latest；构建交付日期为 2026-10-03。当前源码配置为 `0.4.1 / versionCode 18`，本轮同版本 CDN 修订包及本地 TLS/UI 安装流程已验证，仍未发布。项目 CDN 上的 APK 对象目前仍是旧包摘要，`latest.json` 返回 404，手动上传和刷新 CDN 缓存待完成；整体状态仍未达到 `verified` 或 `release_ready`。0.4.0 保留为前一版的历史工程候选说明，已有本地测试交付但未公开发布。版本号不代表稳定性验收通过。
+2026-10-15 按用户要求更新 [0.4.7 体验版](0.4.7/RELEASE_NOTES.md)（versionCode 24），同版本移除语音问法白名单。当前 [GitHub v0.4.7](https://github.com/ld0574/SenseField/releases/tag/v0.4.7) 为普通 Release、Latest，保留 APK 与使用说明两个附件，源码已推送 main。唯一当前 APK 为 24,591,309 bytes，SHA-256 `5f65b2bb849c772f03739f01943ce6ad8545bf7c3bf7c89fb0740f561bcaf78a`；可覆盖同证书旧 0.4.7，保留数据。同 code 不会触发应用内版本更新，需手动下载安装。[本次分发核对](../../validation/releases/GITHUB_RELEASE_0_4_7_OPEN_CONVERSATION_2026-10-15.md)与各历史修订分别保留。
+
+完整、非空的识别文字作为消息原文交给游戏搭子理解，暂停、复述等本地指令继续处理；空结果不打断待答问题，新消息替换上一轮。高温只暂停自动观察和历史采样，主动问答与本地降载保留。Debug／Release JVM 各 630 项、Release lint、模拟器 37 项控制器检查通过，手机安装回读一致；独立准确率、真实策略收益、实际发声、受控温升与整体成本继续待验。
+
+APK、使用说明、清单和校验文件在 output/releases/0.4.7/，按用户要求不生成 Gitee ZIP。GitHub 两个附件 digest 及匿名下载摘要与本地一致；Gitee 附件和公网 latest.json 由用户同步，先核对下载字节再更新清单及缓存。本次仅更新 Android，无需再次部署 Python；此前中文提示词配套仍保留原部署说明。旧二进制清理不删除源码、摘要、失败回执或诊断。
+
+[0.4.6](0.4.6/RELEASE_NOTES.md)（code23）为历史普通 Release、发布时为 Latest，其标签和原验证范围见[发布记录](../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。当前分发以 0.4.7 为准；[版本规划](../plans/0.4.7版本规划.md)与[当前状态](../../validation/STATUS.md)保留未完成验收。
+
+2026-10-10 公开发布记录：当时主线为[0.4.5](0.4.5/RELEASE_NOTES.md)（`versionCode 22`），消消乐代码已完整合入 `main`，包含两款游戏入口、离线固定语音与默认关闭的助手。[GitHub v0.4.5](https://github.com/ld0574/SenseField/releases/tag/v0.4.5) 已发布为普通 Release、Latest，源码标签指向 `859e672f9505e380d8af7b2ca216fbaf0477d7a6`；附件和下载入口见[发布核对](../../validation/releases/GITHUB_RELEASE_0_4_5_2026-10-10.md)。此前负责人已上传 Gitee APK 与固定网站清单，两处使用同一份已测字节。
+
+公开 APK 为 24,364,276 bytes（约 24.36MB），SHA-256 `00c3b31434d26d105eb0b96f6cad30506756f3d7d550fa752074a5ac2e86c4e4`。GitHub 三个附件的显示名、大小及摘要逐项核对一致，APK 下载返回 HTTP 200。此前 Gitee 下载字节与本地包一致、线上 `latest.json` 匹配的核对仍保留。本次没有重新构建，也没有修改 Gitee 或公网清单；后续分发按 [CDN 发布步骤](../../deploy/assistant/CDN发布.md)进行，语音识别模型分片继续复用。
+
+已公开 0.4.5 对应的工程检查为 495 项 JVM、4 项 Python、73 项 Debug／48 项 minified Release 通过，lint 0 错误／33 警告；手机与模拟器安装摘要一致。当时真实试用仍不满意，目标识别、建议收益和提示完整性继续整改；独立准确率、外部实声及受控温升仍待独立验收。工程检查和公开分发不改变评分、`verified` 或 `release_ready`，详见[该版本证据与试用记录](../../validation/match3/MATCH3_TASK_FEEDBACK_0_4_5_2026-10-10.md)。
+
+[听野 0.4.4](https://github.com/ld0574/SenseField/releases/tag/v0.4.4) 的离线双音色、连续试听与 24.22MB 正式包发布核对保留在[历史记录](../../validation/releases/GITHUB_RELEASE_0_4_4_2026-10-08.md)，各批次验收结果以对应制品为准。
 
 ## 版本记录
 
 | 版本 | 日期 | versionCode | 交付状态 | 主要内容与说明 |
 | --- | --- | ---: | --- | --- |
-| [0.4.1](0.4.1/RELEASE_NOTES.md) | 2026-10-04 | 18 | 当前源码工程候选，同版本 CDN 修订测试通过，未发布；CDN 清单上传待完成 | 相同版本以 SHA-256 区分修订；本地 TLS fixture 与系统 UPDATE 流程通过，CDN 当前 `latest.json` 为 404。见[本轮 CDN 验证记录](../../validation/APP_UPDATE_CDN_0.4.1_2026-10-04.md) |
+| [0.4.7](0.4.7/RELEASE_NOTES.md) | 2026-10-15 | 24 | GitHub 普通 Release、Latest；源码已推送 main，Gitee 与公网清单由用户同步 | 移除语音问法白名单，保留高温主动问答；完整物理和独立验收待验 |
+| [0.4.6](0.4.6/RELEASE_NOTES.md) | 2026-10-13 | 23 | 历史普通 Release，发布时为 Latest；唯一交付在版本根目录，Gitee 附件和公网清单由用户同步 | 王者两字开关遵循选择，保留灰毛球、末块雪块、魔力鸟组合与识别开销修复 |
+| [0.4.5](0.4.5/RELEASE_NOTES.md) | 2026-10-10 | 22 | 历史 GitHub 普通 Release，发布时为 Latest；Gitee APK 与线上清单此前核对一致 | 稀疏整盘定位、确认的一步任务收益排序与交换高亮、最后目标准备建议；消消乐仍为体验版，最新试用问题继续整改 |
+| [0.4.4](0.4.4/RELEASE_NOTES.md) | 2026-10-08 | 21 | 历史 GitHub 普通 Release，发布时为 Latest | 默认游戏解说男声／可选游戏向导女声、离线完整说明、连续试听修复、24.22MB 正式包；受控温升待测 |
+| [0.4.3](0.4.3/RELEASE_NOTES.md) | 2026-10-07 | 20 | 历史主线普通 Release，独立标签 `v0.4.3-main` | 大字与导航改进、消消乐最新已验证合并、离线中文检查和方位缓存、内置音效自动试听、首次说明可随时跳过 |
+| 0.4.2 | 2026-10-06 | 19 | 主线历史本地交付；同名消消乐分支发布另计 | 分组帮助及首次学习流程，见[当批记录](../../validation/android/ANDROID_0_4_2_HELP_ONBOARDING_2026-10-06.md) |
+| [0.4.1](0.4.1/RELEASE_NOTES.md) | 2026-10-06 | 18 | Gitee已有测试包附件；迁移修订已本地交付，模型公开字节核对通过 | 同版本以SHA-256区分修订；固定网站清单与迁移APK由负责人按步骤发布、核对，手机更新链路待验收。见[Gitee迁移记录](../../validation/releases/GITEE_DISTRIBUTION_2026-10-06.md) |
 | [0.4.0](0.4.0/RELEASE_NOTES.md) | 2026-10-04 | 17 | 历史工程候选，已有本地测试交付，未发布 | 选用式语音/画面助手与消消乐体验入口；当时的合并后复核和验证边界保留在原记录 |
-| [0.3.8](0.3.8/RELEASE_NOTES.md) | 2026-10-03 | 16 | 最新公开体验版（2026-10-04 发布） | 提前温控降载、保留冷却时钟、明确通知标记入口；收到发热体感改善反馈，量化复测仍待完成 |
+| [0.3.8](0.3.8/RELEASE_NOTES.md) | 2026-10-03 | 16 | 历史公开体验版（2026-10-04 发布） | 提前温控降载、保留冷却时钟、明确通知标记入口；收到发热体感改善反馈，量化复测仍待完成 |
 | [0.3.7](0.3.7/RELEASE_NOTES.md) | 2026-10-03 | 15 | 历史本地体验候选 | native 诊断复制、识别前 ROI 复制优化与离线诊断对照；两局真机仍明显发热 |
 | [0.3.6](0.3.6/RELEASE_NOTES.md) | 2026-10-03 | 14 | 历史本地体验候选 | 左右短音试听、诊断报告与匿名玩家试用工具 |
 | [0.3.5](0.3.5/RELEASE_NOTES.md) | 2026-10-02 | 13 | 历史公开体验版 | 有界事件前后采样与通知人工标记；另见[队友复测说明](0.3.5/复测说明.md) |
@@ -20,13 +40,14 @@
 
 ## 发布规则与验证
 
+- [Gitee 下载分发与后续发布](../../deploy/assistant/CDN发布.md)：当前 APK 与语音模型分发流程；同版本修订、新版本清单及模型复用。
 - [版本命名规范](版本命名规范.md)：内部和外部交付共用版本序列，每次包含新改动的交付递增版本。
 - [GitHub 发布检查清单](GITHUB发布检查清单.md)：公开仓库、构建、说明与附件的复核要求。
 - [当前验证状态](../../validation/STATUS.md)：真机、模型和玩家试用证据；逐版本说明保留交付当时的验证边界。
 
 ## 材料来源与保存位置
 
-0.3.1、0.3.2、0.3.4–0.3.8 的使用与交付说明从 `output/releases/` 整理。0.3.3 目录仅有 APK 和校验文件，其变化说明补充自[漏报排查记录](../../validation/TOUCH_ALERT_DIAG_2026-10-02.md)。0.3.0-alpha.1 保留原有发布说明与检查记录。
+0.3.1、0.3.2、0.3.4–0.3.8 的使用与交付说明从 `output/releases/` 整理。0.3.3 目录仅有 APK 和校验文件，其变化说明补充自[漏报排查记录](../../validation/honor/TOUCH_ALERT_DIAG_2026-10-02.md)。0.3.0-alpha.1 保留原有发布说明与检查记录。
 
 文档目录仅保留 Markdown 说明。APK、体验 ZIP、`.sha256`、`handoff.json` 和 GitHub 附件元数据继续放在本地 `output/releases/<版本>/`，不复制到 `docs/`。各版本文档记录 APK 文件名、大小、SHA-256 和说明来源；0.3.5 的本地 APK 文件名与公开附件名不同，校验值一致。
 

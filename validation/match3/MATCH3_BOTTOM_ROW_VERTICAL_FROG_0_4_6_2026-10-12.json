@@ -1,0 +1,346 @@
+{
+  "schema": "sensefield.sanitized_bottom_row_vertical_frog.v1",
+  "date": "2026-10-12",
+  "independent": false,
+  "published": false,
+  "version_name": "0.4.6",
+  "version_code": 23,
+  "source_sha256": "6612fa490207bd3b54e527e3da5e77f11f3e969ab0d041bb311d4c69ab76ccca",
+  "source_base_git_revision": "3d6370f2a664b9237c00e1cb5aecc5fb3419d8b8",
+  "main_apk_sha256": "c8ce0d8114a714aaba80015892fd45cf4340ff94aac59ac496f392aa950f28c7",
+  "main_apk_bytes": 24545819,
+  "standard_test_apk_sha256": "e26104d54a3b30bb4e341a4ca1d5745d023159a5a5b8c2ea4e78adf9f4f4c769",
+  "certificate_sha256": "5a42a53a8f06850e89c46ea193931e9853e3ce7cff99551b42e8b414a1eaaf68",
+  "jvm": {
+    "tests": 575,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "debug_specific_instrumentation": {
+    "executed": 10,
+    "skipped": 0
+  },
+  "release_instrumentation": {
+    "executed": 90,
+    "skipped": 0
+  },
+  "lint": {
+    "Error": 0,
+    "Warning": 33
+  },
+  "package_integrity": {
+    "debuggable": false,
+    "audio_files": 856,
+    "extract_native_libs": true
+  },
+  "frog": {
+    "archive_sha256": "fa15390435f4e6c0341fb785077e0ae01b7924259fdcaee1aada77c240cea185",
+    "archive_version_from_metadata_only": true,
+    "unmarked_development_frames": 3,
+    "sizes_per_frame": 2,
+    "training_source_frames": 1,
+    "development_variants_source_frames": 2,
+    "training_is_not_accuracy_holdout": true,
+    "templates_added": 1,
+    "rule_id": "line_vertical",
+    "top_swap_zero_based": [
+      6,
+      5,
+      7,
+      5
+    ],
+    "known_snow_clear_lower_bound": 2,
+    "no_guaranteed_pass_claim": true,
+    "secondary_special_trigger_not_promoted": true,
+    "merge": {
+      "existing_entries_unchanged": true,
+      "independent": false,
+      "one_training_frame_two_filtered_sizes": true,
+      "previous_supplement_sha256": "e11883f21161bfec7cee3defe028073bf6733f612f56463e75070cb4177bc65c",
+      "runtime_state_bindings_preserved": true,
+      "source_training_cells": 4,
+      "supplement_bytes": 65507,
+      "supplement_cells": 31,
+      "supplement_sha256": "7ee45fe556c09b1cbab5d19fb11b6ac5159747e1679e149c03805edf8d9fa52a",
+      "templates_added": 1,
+      "thresholds_and_budgets_unchanged": true
+    }
+  },
+  "bottom_row": {
+    "recorded_actual_rows": 9,
+    "old_live_confirmed_rows": 8,
+    "synthetic_old_code_tests_failed": 2,
+    "synthetic_fix_and_safety_checks_passed": true,
+    "calibrated_bounds_use_same_completion": true,
+    "compressed_JPEG_does_not_reproduce_raw_projection_exactly": true
+  },
+  "replays": {
+    "final-frog": {
+      "frame_count": 6,
+      "sample_count": 486,
+      "different_keys": [],
+      "parity_metadata_exclusions": [
+        "source_sha256",
+        "cover_catalog_id",
+        "cover_catalog_sha256"
+      ]
+    },
+    "final-bottom-row": {
+      "frame_count": 10,
+      "sample_count": 567,
+      "different_keys": [],
+      "parity_metadata_exclusions": [
+        "source_sha256",
+        "cover_catalog_id",
+        "cover_catalog_sha256"
+      ]
+    },
+    "verified-feedback-audit": {
+      "frame_count": 4,
+      "sample_count": 324,
+      "different_keys": [
+        "samples",
+        "rankings"
+      ],
+      "parity_metadata_exclusions": [
+        "source_sha256",
+        "cover_catalog_id",
+        "cover_catalog_sha256"
+      ]
+    },
+    "verified-historical": {
+      "frame_count": 10,
+      "sample_count": 743,
+      "different_keys": [],
+      "parity_metadata_exclusions": [
+        "source_sha256",
+        "cover_catalog_id",
+        "cover_catalog_sha256"
+      ]
+    },
+    "final-flower": {
+      "frame_count": 9,
+      "sample_count": 604,
+      "different_keys": [],
+      "parity_metadata_exclusions": [
+        "source_sha256",
+        "cover_catalog_id",
+        "cover_catalog_sha256"
+      ]
+    },
+    "final-split": {
+      "frame_count": 6,
+      "sample_count": 486,
+      "different_keys": [],
+      "parity_metadata_exclusions": [
+        "source_sha256",
+        "cover_catalog_id",
+        "cover_catalog_sha256"
+      ]
+    }
+  },
+  "geometry_aot_cost": {
+    "scope": "fixed_input_geometry_only_not_phone_cost_or_full_software_gate",
+    "compilation_mode": "speed_aot_both_main_and_probe",
+    "parity_count": 110,
+    "costs": [
+      {
+        "file": "live-f12.jpg",
+        "width": 1220,
+        "height": 2711,
+        "warmup_pairs": 5,
+        "pairs": 30,
+        "wall_micros": {
+          "before_p95": 53994,
+          "after_p95": 54199,
+          "change_percent": 0.379671815386895,
+          "under_10_percent": true
+        },
+        "cpu_micros": {
+          "before_p95": 53060,
+          "after_p95": 53193,
+          "change_percent": 0.25065963060686425,
+          "under_10_percent": true
+        }
+      },
+      {
+        "file": "live-f64.jpg",
+        "width": 1220,
+        "height": 2711,
+        "warmup_pairs": 5,
+        "pairs": 30,
+        "wall_micros": {
+          "before_p95": 59977,
+          "after_p95": 60473,
+          "change_percent": 0.8269836770762096,
+          "under_10_percent": true
+        },
+        "cpu_micros": {
+          "before_p95": 58546,
+          "after_p95": 58787,
+          "change_percent": 0.4116421275578208,
+          "under_10_percent": true
+        }
+      },
+      {
+        "file": "live-f211.jpg",
+        "width": 1220,
+        "height": 2711,
+        "warmup_pairs": 5,
+        "pairs": 30,
+        "wall_micros": {
+          "before_p95": 152009,
+          "after_p95": 156120,
+          "change_percent": 2.704445131538269,
+          "under_10_percent": true
+        },
+        "cpu_micros": {
+          "before_p95": 148972,
+          "after_p95": 152693,
+          "change_percent": 2.4977848186236384,
+          "under_10_percent": true
+        }
+      }
+    ],
+    "paired_p95_under_10_percent": true
+  },
+  "geometry_default_compilation_rerun": {
+    "passed": false,
+    "retained": true,
+    "costs": [
+      {
+        "file": "live-f12.jpg",
+        "width": 1220,
+        "height": 2711,
+        "warmup_pairs": 5,
+        "pairs": 30,
+        "wall_micros": {
+          "before_p95": 73545,
+          "after_p95": 70908,
+          "change_percent": -3.5855598613094064,
+          "under_10_percent": true
+        },
+        "cpu_micros": {
+          "before_p95": 70816,
+          "after_p95": 63065,
+          "change_percent": -10.945266606416626,
+          "under_10_percent": true
+        }
+      },
+      {
+        "file": "live-f64.jpg",
+        "width": 1220,
+        "height": 2711,
+        "warmup_pairs": 5,
+        "pairs": 30,
+        "wall_micros": {
+          "before_p95": 173201,
+          "after_p95": 75420,
+          "change_percent": -56.455216771265746,
+          "under_10_percent": true
+        },
+        "cpu_micros": {
+          "before_p95": 155345,
+          "after_p95": 73006,
+          "change_percent": -53.003958930123275,
+          "under_10_percent": true
+        }
+      },
+      {
+        "file": "live-f211.jpg",
+        "width": 1220,
+        "height": 2711,
+        "warmup_pairs": 5,
+        "pairs": 30,
+        "wall_micros": {
+          "before_p95": 231628,
+          "after_p95": 284594,
+          "change_percent": 22.866838206089078,
+          "under_10_percent": false
+        },
+        "cpu_micros": {
+          "before_p95": 224713,
+          "after_p95": 272931,
+          "change_percent": 21.457592573638372,
+          "under_10_percent": false
+        }
+      }
+    ],
+    "scope": "parity passed; default compilation P95 failed; not reclassified as passed"
+  },
+  "release_software_cost": {
+    "passed": false,
+    "scope": "emulator_processing_thread_including_descriptor_serialization; excludes_async_disk_io_and_phone_thermal",
+    "cold": {
+      "wall_change_percent": 30.30483096402157,
+      "cpu_change_percent": 28.950323983447813
+    },
+    "cached": {
+      "wall_change_percent": 9.768873947780854,
+      "cpu_change_percent": 11.150095587781216
+    }
+  },
+  "software_cost": {
+    "scope": "emulator_processing_thread_including_descriptor_serialization; excludes_async_disk_io_and_phone_thermal",
+    "rounds": 30,
+    "boards": 10,
+    "cold": {
+      "wall_change_percent": 14.735392147234094,
+      "cpu_change_percent": 14.695058745700074
+    },
+    "cached": {
+      "wall_change_percent": 4.4675385220256825,
+      "cpu_change_percent": 4.507822555927876
+    },
+    "passed": false
+  },
+  "phone": {
+    "passed": false,
+    "install_performed": false,
+    "reason": "wireless_adb_unavailable_latest_user_endpoint_timed_out",
+    "phone_geometry_tests": {
+      "executed": 0,
+      "status": "not_run"
+    }
+  },
+  "preserved_failures": [
+    "old_code_two_tail_tests_expected_9_was_8",
+    "initial_bottom_row_patch_geometry_p95_above_10_percent",
+    "compressed_JPEG_strict_replay_assumption",
+    "earlier_missing_flower_review_manifest",
+    "supplement_first_attempt_65546_over_65536_budget",
+    "default_compilation_final_geometry_p95_above_10_percent",
+    "first_frog_release_test_called_r8_folded_internal_method",
+    "strict_feedback_parity_expected_new_vertical_frog",
+    "debug_and_release_full_software_cost_above_10_percent"
+  ],
+  "limits": [
+    "development_replay_not_independent_accuracy",
+    "no_new_live_game_on_final_apk",
+    "no_actual_action_or_pass_benefit",
+    "no_new_full_soak_or_controlled_phone_thermal",
+    "secondary_line_trigger_and_unreviewed_special_combinations_not_promoted",
+    "original_debug_certificate_minified_non_debuggable_trial_candidate"
+  ],
+  "release_ready": false,
+  "public_manifest_changed": false,
+  "receipt_sha256": {
+    "verified-debug": "1b3a4a216252d7690c1f633734b17a09daca95e5912f407460227e6eb411e9bc",
+    "verified-debug-native": "eb9fb3f9a2226f3411fc4de39e02c5bc092ff704446b56c2ac9368a0df793441",
+    "verified-release": "f072055a47593e5d866bb496ce42c6e124dc1e6a54a7abd3eb5b7854ef6e81f2",
+    "verified-release-suite": "7a317fc117cca1cbb8c8426af354da60593aa02a4873d737a87e369f818549ee",
+    "final-frog": "fbf9f37d7eb652b0aaf2bab9ea2092e31778bef8519988b635722f0e19192178",
+    "final-bottom-row": "51db235902e5f2a03f7d8f0456521fc23b78b9b60b9349962f189b1af2012bf1",
+    "verified-feedback-audit": "b6fd093ac4b5a6c0bbc598f8f51e539b4983ec645a825793af2f6e1149473f9d",
+    "verified-historical": "74dc9ac50a81e3381df9270f26c84fffd827543478096b0008dd94530097fdaa",
+    "final-flower": "96462116fe394a07389756f55b867b7d6f7793c851dda3948542225215d78f96",
+    "final-split": "7a5eb62500ba92d56cdae0e02334074deaae7c4c4bf6eeef28e28ddc68cd16f2",
+    "verified-software-cost": "3c455a889e70657d744310cc69ada720dab97ce6ba7fb9a6fa5104f2d7a8ff7d",
+    "final-geometry-aot-cost": "2f7a1ef8228003758ada3161b03f6842ac204647bfa7928f07018b71c6098cf5",
+    "default-compilation-geometry-failure": "dbde4ab08b5c1d6c9e31e98f456c7a452014464210801b385889343f16e8a955",
+    "first-hot-loop-geometry-failure": "34d2a319f7e431acbc43f855416652d3ab09da70a0c3c4ccd2305de158e5516d",
+    "phone-install-status": "bdb2b0e1686f065da75a7038ff9e657a0d71ec4529e3fc91a5ca8552f995690b",
+    "release-software-cost-failure": "8f234fae70d38c7d7036dc0ef83827751294699fff1b567312cf80b45cc2d96f"
+  }
+}

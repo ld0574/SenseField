@@ -9,7 +9,7 @@ public class FrameHistoryTest {
         return new FrameSnapshot(id, atMs, 1, 0, null);
     }
 
-    @Test public void samplesAtNormalAndWarmCadenceAndHotClearsTheCache() {
+    @Test public void samplesAtNormalAndWarmCadenceAndHotPausesSampling() {
         FrameHistory history = new FrameHistory();
         assertTrue(history.due(1_000, FrameProcessingPolicy.Mode.NORMAL));
         assertTrue(history.add(frame(1, 1_000)));
@@ -18,8 +18,21 @@ public class FrameHistoryTest {
         assertFalse(history.due(4_999, FrameProcessingPolicy.Mode.WARM));
         assertTrue(history.due(5_000, FrameProcessingPolicy.Mode.WARM));
         assertFalse(history.due(5_001, FrameProcessingPolicy.Mode.HOT));
-        assertEquals(0, history.size());
+        assertEquals(1, history.size());
         assertTrue(history.due(5_002, FrameProcessingPolicy.Mode.NORMAL));
+    }
+
+    @Test public void hotSamplingKeepsCaptureEpochAndExpiresOldHistory() {
+        FrameHistory history = new FrameHistory();
+        assertTrue(history.add(frame(1, 1_000)));
+        long epoch = history.epoch();
+        assertFalse(history.due(2_000, FrameProcessingPolicy.Mode.HOT));
+        assertEquals(epoch, history.epoch());
+        assertTrue("An owned copy is not invalidated by the thermal sampling check",
+                history.add(frame(2, 2_000), epoch));
+        assertFalse(history.due(8_001, FrameProcessingPolicy.Mode.HOT));
+        assertEquals(0, history.size());
+        assertEquals(epoch, history.epoch());
     }
 
     @Test public void keepsAtMostTwoDistinctOlderFramesInChronologicalOrder() {

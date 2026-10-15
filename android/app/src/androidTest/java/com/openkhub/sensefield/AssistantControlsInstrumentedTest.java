@@ -35,11 +35,126 @@ public class AssistantControlsInstrumentedTest {
     }
     private static final String EXPIRED_FRAME_PROMPT = "画面返回太慢，旧画面已丢弃。";
 
+    @Test public void unknownManualAnswerAfterSixSecondsExplainsOutcomeInsteadOfFrameExpiry() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "unknown-delayed-test",
+                new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller); String turn = session.newTurn();
+            FrameSnapshot frame = staleHudFrame(995, SystemClock.elapsedRealtime() - 6_500, session.generation());
+            installVisualTask(controller, 995, turn, frame, false);
+            JSONObject result = visualResult(session, session.generation(), turn, 995, "")
+                    .put("kind", "unknown").put("uncertain", true).put("unknown_reason", "model_uncertain");
+            controller.visualResult(995, result);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(1, host.spoken);
+            assertEquals("这张截图没能判断清楚。", host.last.answer);
+            assertEquals(0, countAudit(host, "event=EXPIRED"));
+            assertEquals(1, countAudit(host, "event=RESULT_UNKNOWN reason=model_uncertain"));
+            assertEquals("local", host.last.kind);
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void unknownAutomaticOrSupersededAnswerNeverSpeaks() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "unknown-silent-test",
+                new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller); String turn = session.newTurn();
+            FrameSnapshot frame = staleHudFrame(996, SystemClock.elapsedRealtime() - 6_500, session.generation());
+            installVisualTask(controller, 996, turn, frame, true);
+            controller.visualResult(996, visualResult(session, session.generation(), turn, 996, "")
+                    .put("kind", "unknown").put("uncertain", true));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(0, host.spoken);
+            turn = session.newTurn();
+            long generation = session.generation();
+            frame = staleHudFrame(997, SystemClock.elapsedRealtime() - 6_500, generation);
+            installVisualTask(controller, 997, turn, frame, false);
+            session.newTurn();
+            controller.visualResult(997, visualResult(session, generation, turn, 997, "")
+                    .put("kind", "unknown").put("uncertain", true));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(0, host.spoken);
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    private static AssistantPolicy policy(AssistantController controller) throws Exception {
+        Field field = AssistantController.class.getDeclaredField("policy");
+        field.setAccessible(true);
+        return (AssistantPolicy) field.get(controller);
+    }
+
+    @Test public void modelAuthFailureExplainsManualRequestAndStopsAutomaticCallsUntilRecovery() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "synthetic-auth",
+                new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller);
+            String turn = session.newTurn();
+            FrameSnapshot frame = staleHudFrame(991, SystemClock.elapsedRealtime(), session.generation());
+            installVisualTask(controller, 991, turn, frame, false);
+            controller.visualFailure(991, AssistantVisualFailure.code(502, "provider", 401,
+                    "vision_upstream_unavailable"));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(1, host.spoken);
+            assertTrue(host.last.answer.contains("模型服务拒绝了访问"));
+            assertTrue(host.last.answer.contains("账户余额和接入配置"));
+            long at = SystemClock.elapsedRealtime() + AssistantPolicy.WINDOW_MS;
+            assertFalse(policy(controller).automaticDue(at, FrameProcessingPolicy.Mode.NORMAL,
+                    false, false, -1, 2));
+            assertTrue(policy(controller).manualAllowed(at, FrameProcessingPolicy.Mode.NORMAL));
+            controller.question("附近情况", false);
+            assertEquals(2, host.spoken);
+            turn = session.newTurn();
+            frame = staleHudFrame(992, SystemClock.elapsedRealtime(), session.generation());
+            installVisualTask(controller, 992, turn, frame, false);
+            controller.visualResult(992, visualResult(session, session.generation(), turn, 992,
+                    "当前是合成测试画面。"));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertTrue(policy(controller).automaticDue(at, FrameProcessingPolicy.Mode.NORMAL,
+                    false, false, -1, 3));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void automaticAuthFailureStaysSilentAndStaleFailureCannotPauseRecoveredService() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "synthetic-auto-auth",
+                new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller);
+            String turn = session.newTurn();
+            FrameSnapshot frame = staleHudFrame(993, SystemClock.elapsedRealtime(), session.generation());
+            installVisualTask(controller, 993, turn, frame, true);
+            controller.visualFailure(993, "vision_provider_auth_failed");
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(0, host.spoken);
+            assertTrue(host.status.contains("模型服务拒绝了访问"));
+            assertTrue(host.status.contains("自动读屏已暂停"));
+            assertEquals(1, countAudit(host, "event=AUTOMATIC_PAUSED reason=vision_provider_auth_failed"));
+            policy(controller).serviceRecovered();
+            turn = session.newTurn();
+            frame = staleHudFrame(994, SystemClock.elapsedRealtime(), session.generation());
+            installVisualTask(controller, 994, turn, frame, true);
+            session.newTurn(); // The request no longer owns the active question.
+            controller.visualFailure(994, "vision_provider_auth_failed");
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertTrue(policy(controller).automaticDue(SystemClock.elapsedRealtime(),
+                    FrameProcessingPolicy.Mode.NORMAL, false, false, -1, 4));
+            assertEquals(1, countAudit(host, "event=AUTOMATIC_PAUSED reason=vision_provider_auth_failed"));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
     private static SharedPreferences preferences(Context context) {
         SharedPreferences preferences = context.getSharedPreferences("assistant-control-test", Context.MODE_PRIVATE);
-        preferences.edit().clear().putBoolean(AssistantSettings.VOICE, true)
+        preferences.edit().clear().putBoolean(AssistantSettings.ENABLED, true)
+            .putBoolean(AssistantSettings.VOICE, true)
             .putBoolean(AssistantSettings.AUDIO_CONSENT, true).putBoolean(AssistantSettings.VISION, true)
-            .putBoolean(AssistantSettings.IMAGE_CONSENT, true).putString(AssistantSettings.ENDPOINT, "https://example.invalid")
+            .putBoolean(AssistantSettings.IMAGE_CONSENT, true).putBoolean(AssistantSettings.CUSTOM_SERVICE, true).putString(AssistantSettings.ENDPOINT, "https://example.invalid")
             .putString(AssistantSettings.TOKEN, "test-token-placeholder-not-for-production").commit();
         return preferences;
     }
@@ -118,13 +233,14 @@ public class AssistantControlsInstrumentedTest {
         return host.audits.stream().filter(value -> value.contains(marker)).count();
     }
 
-    @Test public void speechStartReservesSixtySecondQuietWindowWithoutStartingCapture() throws Exception {
+    @Test public void hotSpeechStartReservesQuietWindowAndStillChecksLocalInput() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         SharedPreferences preferences = preferences(context);
         Host host = new Host();
         AssistantController controller = new AssistantController(context, "speech-quiet-test",
                 new AssistantSettings(preferences), host);
         try {
+            controller.thermal(FrameProcessingPolicy.Mode.HOT);
             long before = SystemClock.elapsedRealtime();
             java.lang.reflect.Method started = AssistantController.class.getDeclaredMethod("voiceStarted");
             started.setAccessible(true);
@@ -134,6 +250,7 @@ public class AssistantControlsInstrumentedTest {
             assertTrue(quiet.getLong(controller) >= before + 60_000);
             assertEquals(1, host.cancelled);
             assertEquals(0, host.spoken);
+            assertEquals(1, countAudit(host, "reason=asr_unavailable"));
         } finally { controller.close(); preferences.edit().clear().commit(); }
     }
 
@@ -183,7 +300,8 @@ public class AssistantControlsInstrumentedTest {
                     "先跟前排推进。"));
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             assertEquals(1, host.spoken);
-            assertTrue(host.last.answer.startsWith("画面变化，"));
+            assertEquals("先跟前排推进。", host.last.answer);
+            assertTrue(host.last.spokenAnswerAt(SystemClock.elapsedRealtime()).startsWith("画面变化，"));
             assertTrue(host.last.proactive);
             assertEquals(capturedAt, host.last.capturedAtMs);
             Field history = AssistantController.class.getDeclaredField("history");
@@ -214,7 +332,7 @@ public class AssistantControlsInstrumentedTest {
         } finally { controller.close(); preferences.edit().clear().commit(); }
     }
 
-    @Test public void ordinaryChoiceFinalDoesNotRequestScreenshot() throws Exception {
+    @Test public void statementFinalEntersConversationWithItsOriginalText() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         SharedPreferences preferences = preferences(context);
         Host host = new Host();
@@ -228,10 +346,10 @@ public class AssistantControlsInstrumentedTest {
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             Field pending = AssistantController.class.getDeclaredField("pendingQuestion");
             pending.setAccessible(true);
-            assertNull(pending.get(controller));
-            assertEquals(0, countAudit(host, "AssistantInteraction event=QUESTION"));
+            assertEquals("我选桑启", pending.get(controller));
+            assertEquals(1, countAudit(host, "AssistantInteraction event=QUESTION"));
             assertEquals(0, host.spoken);
-            assertEquals("已听到，等待你的问题", host.status);
+            assertEquals("正在等待当前画面", host.status);
         } finally { controller.close(); preferences.edit().clear().commit(); }
     }
 
@@ -253,7 +371,7 @@ public class AssistantControlsInstrumentedTest {
         } finally { controller.close(); preferences.edit().clear().commit(); }
     }
 
-    @Test public void nonRequestFinalReleasesDeferredResponseWithOriginalFrameAge() throws Exception {
+    @Test public void emptyFinalReleasesDeferredResponseWithOriginalFrameAge() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         SharedPreferences preferences = preferences(context); Host host = new Host();
         AssistantController controller = new AssistantController(context, "vad-defer-test", new AssistantSettings(preferences), host);
@@ -265,7 +383,7 @@ public class AssistantControlsInstrumentedTest {
             controller.visualResult(302, visualResult(session, session.generation(), turn, 302, "先跟前排推进。"));
             InstrumentationRegistry.getInstrumentation().waitForIdleSync(); assertEquals(0, host.spoken);
             assertEquals(1, countAudit(host, "AssistantVisual event=WAITING_FOR_INPUT"));
-            controller.onLocalAsrResult(session.generation(), capture, "我选桑启", 20);
+            controller.onLocalAsrResult(session.generation(), capture, null, 20);
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             assertEquals(1, host.spoken); assertEquals(capturedAt, host.last.capturedAtMs);
             assertEquals(turn, host.last.turnId);
@@ -293,7 +411,7 @@ public class AssistantControlsInstrumentedTest {
         } finally { controller.close(); preferences.edit().clear().commit(); }
     }
 
-    @Test public void speechAlreadySubmittedIsCancelledAndCannotResumeAfterNonRequest() throws Exception {
+    @Test public void speechAlreadySubmittedIsCancelledAtVoiceStart() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         SharedPreferences preferences = preferences(context); Host host = new Host(); host.assistantSpeaking = true;
         AssistantController controller = new AssistantController(context, "vad-playback-test", new AssistantSettings(preferences), host);
@@ -319,7 +437,7 @@ public class AssistantControlsInstrumentedTest {
             String capture = session.newCaptureTurn(); markAwaitingAsrResult(controller);
             controller.visualResult(304, visualResult(session, session.generation(), turn, 304, "旧建议不应播报。"));
             InstrumentationRegistry.getInstrumentation().waitForIdleSync(); assertEquals(0, host.spoken);
-            controller.onLocalAsrResult(session.generation(), capture, "我选桑启", 20);
+            controller.onLocalAsrResult(session.generation(), capture, "  ", 20);
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             assertEquals(1, host.spoken); assertEquals("local", host.last.kind);
             assertEquals(EXPIRED_FRAME_PROMPT, host.last.answer);
@@ -430,10 +548,10 @@ public class AssistantControlsInstrumentedTest {
                             903, primaryAt, session.generation(), 0, null)).size());
 
             controller.thermal(FrameProcessingPolicy.Mode.HOT);
-            assertEquals(0, history.size());
+            assertEquals("Load reduction does not restart the capture session", 2, history.size());
 
             controller.thermal(FrameProcessingPolicy.Mode.NORMAL);
-            addHistoryPair(history, SystemClock.elapsedRealtime());
+            assertEquals("Cooling preserves the same capture history", 2, history.size());
             controller.pause(true);
             assertEquals(0, history.size());
 
@@ -499,7 +617,7 @@ public class AssistantControlsInstrumentedTest {
                 assertFalse(host.status.contains("已就绪"));
                 controller.thermal(FrameProcessingPolicy.Mode.HOT);
                 controller.localAsrReady();
-                assertTrue(host.status.contains("温度较高"));
+                assertTrue(host.status.startsWith(VoiceInputSafetyPolicy.InputState.PAUSED.status));
                 assertFalse(host.status.contains("已就绪"));
             } finally { controller.close(); preferences.edit().clear().commit(); }
         });
@@ -510,7 +628,7 @@ public class AssistantControlsInstrumentedTest {
         SharedPreferences preferences = preferences(context);
         try {
             preferences.edit().putBoolean(AssistantSettings.VISION, false)
-                    .putString(AssistantSettings.ENDPOINT, "")
+                    .putBoolean(AssistantSettings.CUSTOM_SERVICE, true).putString(AssistantSettings.ENDPOINT, "")
                     .putString(AssistantSettings.TOKEN, "").commit();
             AssistantSettings localVoice = new AssistantSettings(preferences);
             assertTrue(localVoice.voice);
@@ -615,6 +733,256 @@ public class AssistantControlsInstrumentedTest {
         } finally { controller.close(); preferences.edit().clear().commit(); }
     }
 
+    @Test public void hotTenSecondSelectionReplyStillRequiresFreshPageObservation() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context);
+        Host host = new Host();
+        AssistantController controller = new AssistantController(context, "decision-wait-test",
+                new AssistantSettings(preferences), host);
+        try {
+            controller.thermal(FrameProcessingPolicy.Mode.HOT);
+            AssistantSession session = session(controller);
+            String turn = session.newTurn();
+            long capturedAt = SystemClock.elapsedRealtime() - 10_000;
+            FrameSnapshot frame = staleHudFrame(120, capturedAt, session.generation());
+            installVisualTask(controller, 120, turn, frame, false);
+            controller.offerFrame(ByteBuffer.allocate(64 * 36 * 4), 64, 36, 64 * 4,
+                    121, SystemClock.elapsedRealtime());
+            JSONObject result = visualResult(session, session.generation(), turn, 120, "补对抗路，当前队友缺前排。")
+                    .put("decision_scene", "hero_selection");
+            controller.visualResult(120, result);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(1, host.spoken);
+            assertTrue(host.last.answer.contains("补对抗路"));
+            assertEquals("hero_selection", host.last.decisionScene);
+            assertTrue(controller.allows(host.last));
+            ByteBuffer changed = ByteBuffer.allocate(64 * 36 * 4);
+            for (int y = 0; y < 36; y++) for (int x = 0; x < 64; x++) {
+                int value = x < 32 ? 255 : 0;
+                changed.put((byte) value).put((byte) value).put((byte) value).put((byte) 255);
+            }
+            changed.rewind();
+            controller.offerFrame(changed, 64, 36, 64 * 4, 122, SystemClock.elapsedRealtime());
+            Thread.sleep(120);
+            controller.offerFrame(changed, 64, 36, 64 * 4, 123, SystemClock.elapsedRealtime());
+            assertFalse("A changed page cannot play the old selection again", controller.allows(host.last));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void heatingKeepsManualQuestionReplyAndRepeatButBlocksAutomaticSpeech() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context);
+        Host host = new Host();
+        AssistantController controller = new AssistantController(context, "hot-manual-turn-test",
+                new AssistantSettings(preferences), host);
+        try {
+            controller.readScreen();
+            AssistantSession session = session(controller);
+            long generation = session.generation();
+            Field pending = AssistantController.class.getDeclaredField("pendingQuestion");
+            pending.setAccessible(true);
+            Field pendingTurn = AssistantController.class.getDeclaredField("pendingTurn");
+            pendingTurn.setAccessible(true);
+            String turn = (String) pendingTurn.get(controller);
+            int cancelled = host.cancelled;
+            controller.thermal(FrameProcessingPolicy.Mode.HOT);
+            assertEquals(AssistantController.SCREEN_QUESTION, pending.get(controller));
+            assertTrue(session.owns(generation, turn));
+            assertEquals(cancelled, host.cancelled);
+
+            FrameSnapshot frame = staleHudFrame(130, SystemClock.elapsedRealtime(), generation);
+            pending.set(controller, null); // The capture path has consumed this question.
+            installVisualTask(controller, 130, turn, frame, false);
+            controller.thermal(FrameProcessingPolicy.Mode.WARM);
+            controller.thermal(FrameProcessingPolicy.Mode.HOT);
+            controller.visualResult(130, visualResult(session, generation, turn, 130,
+                    "截图右侧有敌方标记。").put("answer_scope", "snapshot"));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(1, host.spoken);
+            assertTrue(controller.allows(host.last));
+            AssistantReply automatic = new AssistantReply(generation, turn, frame.frameId,
+                    frame.capturedAtMs, "hud", "自动观察。", false, true, "", null, false);
+            assertFalse("Hot mode still suppresses unattended speech", controller.allows(automatic));
+
+            controller.question("重复", false);
+            assertEquals(2, host.spoken);
+            assertEquals(frame.capturedAtMs, host.last.capturedAtMs);
+            controller.readScreen();
+            assertEquals(AssistantController.SCREEN_QUESTION, pending.get(controller));
+            assertEquals(0, countAudit(host, "AssistantVisual event=DENIED reason=hot"));
+            controller.pause(true);
+            assertFalse("User pause still revokes the reply", controller.allows(host.last));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void completeMessagesReachVisualCaptureWithoutAWordingAllowlist() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context);
+        Host host = new Host();
+        AssistantController controller = new AssistantController(context, "complete-message-test",
+                new AssistantSettings(preferences), host);
+        try {
+            Field pending = AssistantController.class.getDeclaredField("pendingQuestion");
+            pending.setAccessible(true);
+            AssistantSession session = session(controller);
+            String[] messages = { "分析一下局势", "下一步我该干嘛", "我准备去下路了",
+                    "也没多少呀", "劳驾捋一捋上面那排亮着的东西", "这波有点棘手，帮我拿个主意" };
+            for (String message : messages) {
+                String capture = session.newCaptureTurn();
+                markAwaitingAsrResult(controller);
+                controller.onLocalAsrResult(session.generation(), capture, message, 25);
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                assertEquals(message, pending.get(controller));
+                assertEquals("正在等待当前画面", host.status);
+            }
+            assertEquals(messages.length, countAudit(host, "AssistantInteraction event=QUESTION"));
+            assertEquals(0, countAudit(host, "AssistantVoice event=RESULT_UNKNOWN"));
+            assertEquals(0, host.spoken);
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void emptyFinalKeepsThePendingMessageAndGeneration() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "empty-message-test",
+                new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller);
+            controller.question("我准备去下路了", false);
+            Field pending = AssistantController.class.getDeclaredField("pendingQuestion");
+            pending.setAccessible(true);
+            long generation = session.generation();
+            for (String empty : new String[] { null, "", " \t " }) {
+                String capture = session.newCaptureTurn(); markAwaitingAsrResult(controller);
+                controller.onLocalAsrResult(generation, capture, empty, 25);
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                assertEquals("我准备去下路了", pending.get(controller));
+                assertEquals(generation, session.generation());
+            }
+            assertEquals(1, countAudit(host, "AssistantInteraction event=QUESTION"));
+            assertEquals(3, countAudit(host, "reason=empty_final"));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void completeMessageReplacesADeferredAnswerEvenWithoutQuestionWords() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "message-replace-test",
+                new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller); String turn = session.newTurn();
+            long generation = session.generation();
+            installVisualTask(controller, 306, turn,
+                    staleHudFrame(306, SystemClock.elapsedRealtime(), generation), false);
+            String capture = session.newCaptureTurn(); markAwaitingAsrResult(controller);
+            controller.visualResult(306, visualResult(session, generation, turn, 306, "旧建议。"));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(1, countAudit(host, "AssistantVisual event=WAITING_FOR_INPUT"));
+            controller.onLocalAsrResult(generation, capture, "我准备去下路了", 25);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertFalse(session.owns(generation, turn));
+            Field pending = AssistantController.class.getDeclaredField("pendingQuestion");
+            pending.setAccessible(true); assertEquals("我准备去下路了", pending.get(controller));
+            Field deferred = AssistantController.class.getDeclaredField("deferredVisualResult");
+            deferred.setAccessible(true); assertNull(deferred.get(controller));
+            assertEquals(0, host.spoken);
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void emptyFinalReleasesDeferredFailureWithoutLosingTheOutcome() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "empty-deferred-failure-test",
+                new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller); String turn = session.newTurn();
+            long generation = session.generation();
+            installVisualTask(controller, 307, turn,
+                    staleHudFrame(307, SystemClock.elapsedRealtime(), generation), false);
+            String capture = session.newCaptureTurn(); markAwaitingAsrResult(controller);
+            controller.visualFailure(307, "timeout");
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync(); assertEquals(0, host.spoken);
+            controller.onLocalAsrResult(generation, capture, " ", 25);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(1, host.spoken); assertEquals("local", host.last.kind);
+            assertEquals(turn, host.last.turnId);
+            assertTrue(host.last.answer.contains("超时"));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void pausedAndRevokedVoiceCannotDispatchLateCompleteMessages() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "late-message-test",
+                new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller);
+            long generation = session.generation();
+            String capture = session.newCaptureTurn(); markAwaitingAsrResult(controller);
+            controller.setVoicePaused(true);
+            controller.onLocalAsrResult(generation, capture, "劳驾捋一捋这个局面", 25);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            controller.setVoicePaused(false);
+            generation = session.generation();
+            capture = session.newCaptureTurn(); markAwaitingAsrResult(controller);
+            preferences.edit().putBoolean(AssistantSettings.VOICE, false).commit();
+            controller.settingsChanged(new AssistantSettings(preferences));
+            controller.onLocalAsrResult(generation, capture, "劳驾捋一捋这个局面", 25);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(0, countAudit(host, "AssistantInteraction event=QUESTION"));
+            assertEquals(2, countAudit(host, "reason=stale_local_asr_result"));
+            assertEquals(0, host.spoken);
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void heatingKeepsAnAwaitedLocalVoiceFinalUsableAsAManualQuestion() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context);
+        Host host = new Host();
+        AssistantController controller = new AssistantController(context, "hot-asr-final-test",
+                new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller);
+            String turn = session.newCaptureTurn();
+            long generation = session.generation();
+            markAwaitingAsrResult(controller);
+            controller.thermal(FrameProcessingPolicy.Mode.HOT);
+            assertTrue(session.ownsCapture(generation, turn));
+            controller.onLocalAsrResult(generation, turn, "帮我看一下当前画面", 25);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            Field pending = AssistantController.class.getDeclaredField("pendingQuestion");
+            pending.setAccessible(true);
+            assertNotNull("A deliberate voice question remains available while hot", pending.get(controller));
+            assertEquals(0, host.spoken);
+            assertEquals(0, countAudit(host, "reason=hot"));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void masterOffCancelsReplyAndRequiresANewSessionToResume() {
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+            Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+            SharedPreferences preferences = preferences(context); Host host = new Host();
+            AssistantController controller = new AssistantController(context, "master-off-test",
+                    new AssistantSettings(preferences), host);
+            try {
+                controller.question("附近情况", false);
+                AssistantReply old = host.last;
+                assertNotNull(old); assertTrue(controller.allows(old));
+                int spoken = host.spoken, cancelled = host.cancelled;
+                preferences.edit().putBoolean(AssistantSettings.ENABLED, false).commit();
+                controller.settingsChanged(new AssistantSettings(preferences));
+                assertFalse(controller.allows(old));
+                assertTrue(host.cancelled > cancelled);
+                controller.question("附近情况", false);
+                assertEquals(spoken, host.spoken);
+                preferences.edit().putBoolean(AssistantSettings.ENABLED, true).commit();
+                controller.settingsChanged(new AssistantSettings(preferences));
+                controller.question("附近情况", false);
+                assertEquals("Re-enabling needs a fresh foreground session", spoken, host.spoken);
+            } finally { controller.close(); preferences.edit().clear().commit(); }
+        });
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+    }
     @Test public void revocationInvalidatesOldReplyAndCannotBeReenabledInSameSession() {
         InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
             Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();

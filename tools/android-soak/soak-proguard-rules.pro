@@ -1,0 +1,2 @@
+-keep class com.openkhub.sensefield.Match3SoakResultListener { *; }
+-keep class com.openkhub.sensefield.Match3SoakWakeBootstrapInstrumentation { *; }

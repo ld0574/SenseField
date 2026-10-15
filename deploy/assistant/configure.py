@@ -22,9 +22,21 @@ def write_private(path: Path, text: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--codes-output", type=Path, required=True)
+    parser.add_argument("--codes-output", type=Path)
+    parser.add_argument("--public-access", action="store_true", help="Native public vision service, no player connection code")
+    parser.add_argument("--runtime", choices=("container", "native"), default="container")
+    parser.add_argument("--transport", choices=("backend-tls", "local-proxy"))
     args = parser.parse_args()
-    if args.output.exists() or args.codes_output.exists():
+    # Containers retain their existing TLS backend contract. Native installs
+    # default to loopback HTTP behind the public HTTPS reverse proxy.
+    transport = args.transport or ("local-proxy" if args.runtime == "native" else "backend-tls")
+    if args.runtime == "container" and transport != "backend-tls":
+        parser.error("Container runtime requires --transport backend-tls.")
+    if not args.public_access and args.codes_output is None:
+        parser.error("Private mode requires --codes-output.")
+    if args.public_access and args.runtime != "native":
+        parser.error("Public configuration currently supports native deployment only.")
+    if args.output.exists() or (args.codes_output is not None and args.codes_output.exists()):
         parser.error("Configuration or player codes already exist; preserve them or move them explicitly.")
     base_url = input("视觉服务商接口地址（HTTPS）：").strip().rstrip("/")
     parsed = urlsplit(base_url)
@@ -37,7 +49,7 @@ def main() -> None:
     key = getpass.getpass("视觉服务商 API Key（不会回显）：").strip()
     if not key or "\x00" in key or "\n" in key or "\r" in key:
         parser.error("A valid provider key is required.")
-    tokens = [secrets.token_hex(24) for _ in range(2)]
+    tokens = [] if args.public_access else [secrets.token_hex(24) for _ in range(2)]
     config = {
         "ASSISTANT_GATEWAY_VISION_PROVIDER": "compatible",
         "ASSISTANT_GATEWAY_VISION_BASE_URL": base_url,
@@ -47,15 +59,25 @@ def main() -> None:
         "ASSISTANT_GATEWAY_DEVICE_TOKENS": ",".join(tokens),
         "ASSISTANT_GATEWAY_ASR_BACKEND": "disabled",
         "ASSISTANT_GATEWAY_ACCOUNT_CONCURRENCY": "1",
-        "ASSISTANT_GATEWAY_HOST": "0.0.0.0",
+        "ASSISTANT_GATEWAY_HOST": "127.0.0.1" if args.runtime == "native" else "0.0.0.0",
         "ASSISTANT_GATEWAY_PORT": "18765",
-        "ASSISTANT_GATEWAY_TLS_CERT": "/run/tls/backend.crt",
-        "ASSISTANT_GATEWAY_TLS_KEY": "/run/tls/backend.key",
     }
+    if args.public_access:
+        config.update(ASSISTANT_GATEWAY_PUBLIC_ACCESS="1",
+                      ASSISTANT_GATEWAY_PUBLIC_GLOBAL_DAILY="1000",
+                      ASSISTANT_GATEWAY_PUBLIC_INSTALLATION_DAILY="300",
+                      ASSISTANT_GATEWAY_PUBLIC_INSTALLATION_MINUTE="12")
+    if transport == "local-proxy":
+        config["ASSISTANT_GATEWAY_LOCAL_TLS_PROXY"] = "1"
+    else:
+        tls_dir = "/etc/sensefield-assistant/tls" if args.runtime == "native" else "/run/tls"
+        config["ASSISTANT_GATEWAY_TLS_CERT"] = tls_dir + "/backend.crt"
+        config["ASSISTANT_GATEWAY_TLS_KEY"] = tls_dir + "/backend.key"
     write_private(args.output, json.dumps(config, ensure_ascii=False, indent=2) + "\n")
-    write_private(args.codes_output, "听野体验连接码（逐人私下提供，不上传 CDN 或 GitHub）\n\n"
+    if not args.public_access:
+        write_private(args.codes_output, "听野体验连接码（逐人私下提供，不上传 CDN 或 GitHub）\n\n"
                   + "\n".join(f"体验者{i + 1}：{value}" for i, value in enumerate(tokens)) + "\n")
-    print("配置和两份体验连接码已保存；未输出任何密钥或连接码。")
+    print("公开画面服务配置已保存；用户无需连接码。" if args.public_access else "配置和两份体验连接码已保存；未输出任何密钥或连接码。")
 
 
 if __name__ == "__main__":

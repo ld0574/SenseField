@@ -1,0 +1,1521 @@
+{
+  "format": "match3-rule-catalog-v1",
+  "id": "kxxxl-reference-2026-10-11-v1",
+  "version": 1,
+  "source": {
+    "path": "docs/research/开心消消乐元素规则参考.md",
+    "sha256": "d5f8be36d12cdc0985cd0587ed5bd8e005daeb9a71d30aa849cabd36165c7f19"
+  },
+  "rules": [
+    {
+      "rule_id": "ordinary_uncovered_animal",
+      "version": 1,
+      "source_entries": [
+        "小黄鸡（黄色）",
+        "红狐狸（红色）",
+        "蓝河马（蓝色）",
+        "绿青蛙（绿色）",
+        "紫猫头鹰（紫色）",
+        "棕色小动物（棕色）"
+      ],
+      "mechanism": "color_match",
+      "reference_evidence": "documented",
+      "parameter_completeness": "complete",
+      "parameters": {
+        "colors": "ROYGBP",
+        "minimum_run": 3,
+        "line_length": 4,
+        "bird_line_length": 5,
+        "blast_shape": "L_or_T_of_five"
+      },
+      "abilities": {
+        "move": "yes",
+        "match": "yes",
+        "activate": "no"
+      },
+      "required_evidence": [
+        "generated_special_retained_position"
+      ],
+      "engine_status": "direct_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Exact ordinary triples; documented four/straight-five/L-or-T-five generation counts and retained-clear lower bounds. Anchor and undocumented larger shapes stop successor search."
+    },
+    {
+      "rule_id": "line_horizontal",
+      "version": 1,
+      "source_entries": [
+        "直线特效（横向 / 纵向）"
+      ],
+      "mechanism": "line_effect",
+      "reference_evidence": "documented",
+      "parameter_completeness": "complete",
+      "parameters": {
+        "axis": "row",
+        "trigger": "click_or_adjacent_swap",
+        "generated_by": "horizontal_four"
+      },
+      "abilities": {
+        "move": "yes",
+        "match": "yes",
+        "activate": "yes"
+      },
+      "required_evidence": [
+        "generated_special_retained_position",
+        "simultaneous_swap_match_settlement_order",
+        "secondary_special_hit_trigger"
+      ],
+      "engine_status": "direct_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Observed direction supports a click or ordinary-neighbour swap and one row/column mask. Unresolved simultaneous matches and secondary special activation stop successor search."
+    },
+    {
+      "rule_id": "line_vertical",
+      "version": 1,
+      "source_entries": [
+        "直线特效（横向 / 纵向）"
+      ],
+      "mechanism": "line_effect",
+      "reference_evidence": "documented",
+      "parameter_completeness": "complete",
+      "parameters": {
+        "axis": "column",
+        "trigger": "click_or_adjacent_swap",
+        "generated_by": "vertical_four"
+      },
+      "abilities": {
+        "move": "yes",
+        "match": "yes",
+        "activate": "yes"
+      },
+      "required_evidence": [
+        "generated_special_retained_position",
+        "simultaneous_swap_match_settlement_order",
+        "secondary_special_hit_trigger"
+      ],
+      "engine_status": "direct_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Observed direction supports a click or ordinary-neighbour swap and one row/column mask. Unresolved simultaneous matches and secondary special activation stop successor search."
+    },
+    {
+      "rule_id": "blast",
+      "version": 1,
+      "source_entries": [
+        "爆炸特效"
+      ],
+      "mechanism": "blast_effect",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "generated_by": "L_or_T_of_five",
+        "reported_rounds": 2,
+        "reported_extent": "about_5x5"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "exact_hit_mask_each_round",
+        "activation_guards",
+        "retained_position"
+      ],
+      "engine_status": "partial_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "magic_bird",
+      "version": 1,
+      "source_entries": [
+        "魔力鸟（俗称\"彩虹\"）"
+      ],
+      "mechanism": "color_effect",
+      "reference_evidence": "documented",
+      "parameter_completeness": "complete",
+      "parameters": {
+        "generated_by": "straight_five",
+        "ordinary_color_swap": "all_animals_of_partner_color",
+        "bird_swap": "all_animals"
+      },
+      "abilities": {
+        "move": "yes",
+        "match": "no",
+        "activate": "yes"
+      },
+      "required_evidence": [
+        "generated_special_retained_position"
+      ],
+      "engine_status": "direct_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "combo_bird_color",
+      "version": 1,
+      "source_entries": [
+        "组合:魔力鸟 + 普通动物"
+      ],
+      "mechanism": "all_animals_of_partner_color",
+      "reference_evidence": "confirmed",
+      "parameter_completeness": "complete",
+      "parameters": {
+        "partner_guards": "魔力鸟 + 普通动物"
+      },
+      "abilities": {},
+      "required_evidence": [],
+      "engine_status": "direct_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "combo_bird_bird",
+      "version": 1,
+      "source_entries": [
+        "组合:魔力鸟 + 魔力鸟"
+      ],
+      "mechanism": "all_animals",
+      "reference_evidence": "confirmed",
+      "parameter_completeness": "complete",
+      "parameters": {
+        "partner_guards": "魔力鸟 + 魔力鸟"
+      },
+      "abilities": {},
+      "required_evidence": [],
+      "engine_status": "direct_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "combo_bird_line",
+      "version": 1,
+      "source_entries": [
+        "组合:魔力鸟 + 直线特效"
+      ],
+      "mechanism": "combined_effect",
+      "reference_evidence": "partial",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "partner_guards": "魔力鸟 + 直线特效",
+        "lower_bound": "known_unblocked_partner_color_animals_only"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "exact_conversion",
+        "hit_mask"
+      ],
+      "engine_status": "partial_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Observed bird plus confirmed directional line: partner-color clear lower bound only; transformed directions, extra hit mask and successor remain unknown. Developer feedback from levels 107..109, 2026-10-13; no independent acceptance."
+    },
+    {
+      "rule_id": "combo_bird_blast",
+      "version": 1,
+      "source_entries": [
+        "组合:魔力鸟 + 爆炸特效"
+      ],
+      "mechanism": "combined_effect",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {
+        "partner_guards": "魔力鸟 + 爆炸特效"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "exact_conversion",
+        "hit_mask"
+      ],
+      "engine_status": "pending",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "combo_line_line",
+      "version": 1,
+      "source_entries": [
+        "组合:直线 + 直线"
+      ],
+      "mechanism": "combined_effect",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {
+        "partner_guards": "直线 + 直线"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "kxxxl_specific_trigger_and_mask"
+      ],
+      "engine_status": "pending",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "combo_line_blast",
+      "version": 1,
+      "source_entries": [
+        "组合:直线 + 爆炸"
+      ],
+      "mechanism": "combined_effect",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {
+        "partner_guards": "直线 + 爆炸"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "kxxxl_specific_trigger_and_mask"
+      ],
+      "engine_status": "pending",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "combo_blast_blast",
+      "version": 1,
+      "source_entries": [
+        "组合:爆炸 + 爆炸"
+      ],
+      "mechanism": "combined_effect",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {
+        "partner_guards": "爆炸 + 爆炸"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "kxxxl_specific_trigger_and_mask"
+      ],
+      "engine_status": "pending",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "combo_dye_dye",
+      "version": 1,
+      "source_entries": [
+        "组合:染色宝宝 + 染色宝宝"
+      ],
+      "mechanism": "combined_effect",
+      "reference_evidence": "confirmed",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "partner_guards": "染色宝宝 + 染色宝宝"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "exact_hit_mask"
+      ],
+      "engine_status": "pending",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "combo_dye_star",
+      "version": 1,
+      "source_entries": [
+        "组合:染色宝宝 + 星星瓶（能量集满）"
+      ],
+      "mechanism": "all_animals",
+      "reference_evidence": "confirmed",
+      "parameter_completeness": "complete",
+      "parameters": {
+        "partner_guards": "染色宝宝 + 星星瓶（能量集满）"
+      },
+      "abilities": {},
+      "required_evidence": [],
+      "engine_status": "direct_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "combo_star_star",
+      "version": 1,
+      "source_entries": [
+        "组合:星星瓶 + 星星瓶"
+      ],
+      "mechanism": "combined_effect",
+      "reference_evidence": "confirmed",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "partner_guards": "星星瓶 + 星星瓶"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "exact_hit_mask"
+      ],
+      "engine_status": "pending",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "combo_energy_energy",
+      "version": 1,
+      "source_entries": [
+        "组合:精力瓶 + 精力瓶"
+      ],
+      "mechanism": "all_animals",
+      "reference_evidence": "confirmed",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "partner_guards": "精力瓶 + 精力瓶"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "independent_visual_identity"
+      ],
+      "engine_status": "pending",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "combo_dye_egg_bird",
+      "version": 1,
+      "source_entries": [
+        "组合:染色蛋 + 魔力鸟/彩虹特效"
+      ],
+      "mechanism": "conversion_effect",
+      "reference_evidence": "partial",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "partner_guards": "染色蛋 + 魔力鸟/彩虹特效"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "exact_conversion_and_mask"
+      ],
+      "engine_status": "pending",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "snow",
+      "version": 1,
+      "source_entries": [
+        "雪块"
+      ],
+      "mechanism": "adjacent_damage",
+      "reference_evidence": "documented",
+      "parameter_completeness": "complete",
+      "parameters": {
+        "hit": "orthogonal_match",
+        "layers_per_hit": 1
+      },
+      "abilities": {
+        "move": "no",
+        "match": "no"
+      },
+      "required_evidence": [],
+      "engine_status": "direct_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "frozen_ice",
+      "version": 1,
+      "source_entries": [
+        "冰块"
+      ],
+      "mechanism": "frozen_cover",
+      "reference_evidence": "documented",
+      "parameter_completeness": "complete",
+      "parameters": {
+        "hit": "orthogonal_match",
+        "layers_per_hit": 1,
+        "observed_layer_range": [
+          1,
+          2
+        ]
+      },
+      "abilities": {
+        "move": "no",
+        "match": "no",
+        "activate": "no"
+      },
+      "required_evidence": [],
+      "engine_status": "direct_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "locked_animal",
+      "version": 1,
+      "source_entries": [
+        "锁链 / 藤蔓"
+      ],
+      "mechanism": "immobile_matchable_cover",
+      "reference_evidence": "documented",
+      "parameter_completeness": "complete",
+      "parameters": {
+        "hit": "orthogonal_match",
+        "unlock_hits": 1
+      },
+      "abilities": {
+        "move": "no",
+        "match": "yes"
+      },
+      "required_evidence": [],
+      "engine_status": "direct_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "poison",
+      "version": 1,
+      "source_entries": [
+        "毒液"
+      ],
+      "mechanism": "spreading_obstacle",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "clear": "adjacent_match",
+        "may_charge": "star_bottle"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "spread_count",
+        "spread_direction",
+        "suppression_condition",
+        "energy_per_clear"
+      ],
+      "engine_status": "partial_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "honey_cover",
+      "version": 1,
+      "source_entries": [
+        "蜂蜜"
+      ],
+      "mechanism": "layered_cover",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "clear": "multiple_adjacent_matches"
+      },
+      "abilities": {
+        "move": "unknown",
+        "match": "unknown"
+      },
+      "required_evidence": [
+        "layer_count_or_unknown",
+        "move_and_match_permissions"
+      ],
+      "engine_status": "partial_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "chest",
+      "version": 1,
+      "source_entries": [
+        "宝箱"
+      ],
+      "mechanism": "key_unlock",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "unlock": "sufficient_keys_collected",
+        "ordinary_damage": "none"
+      },
+      "abilities": {
+        "move": "no",
+        "match": "no"
+      },
+      "required_evidence": [
+        "key_requirement",
+        "contents"
+      ],
+      "engine_status": "partial_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "stone_gate",
+      "version": 1,
+      "source_entries": [
+        "翻转石门"
+      ],
+      "mechanism": "periodic_gate",
+      "reference_evidence": "partial",
+      "parameter_completeness": "partial",
+      "parameters": {},
+      "abilities": {},
+      "required_evidence": [
+        "observed_open_closed",
+        "exact_period"
+      ],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "transport",
+      "version": 1,
+      "source_entries": [
+        "传送带 / 传送门 / 滑道"
+      ],
+      "mechanism": "transport_topology",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {},
+      "abilities": {},
+      "required_evidence": [
+        "observed_edges",
+        "motion_timing",
+        "collector_edges"
+      ],
+      "engine_status": "partial_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "coin",
+      "version": 1,
+      "source_entries": [
+        "银币"
+      ],
+      "mechanism": "adjacent_clear",
+      "reference_evidence": "documented",
+      "parameter_completeness": "complete",
+      "parameters": {
+        "hit": "orthogonal_match",
+        "may_trigger": "cuttlefish"
+      },
+      "abilities": {
+        "move": "no",
+        "match": "no"
+      },
+      "required_evidence": [],
+      "engine_status": "direct_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "leaf",
+      "version": 1,
+      "source_entries": [
+        "小叶堆 / 树叶"
+      ],
+      "mechanism": "layered_obstacle",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {},
+      "abilities": {},
+      "required_evidence": [
+        "layer_count_and_damage"
+      ],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "furball",
+      "version": 1,
+      "source_entries": [
+        "毛球（褐色毛球）"
+      ],
+      "mechanism": "special_only_damage",
+      "reference_evidence": "documented",
+      "parameter_completeness": "complete",
+      "parameters": {
+        "ordinary_match": "no_effect",
+        "special_hit": "clear"
+      },
+      "abilities": {
+        "move": "no",
+        "match": "no"
+      },
+      "required_evidence": [],
+      "engine_status": "direct_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "invincible_furball",
+      "version": 1,
+      "source_entries": [
+        "无敌毛球"
+      ],
+      "mechanism": "temporary_special_removal",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "special_hit": "temporarily_absent"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "absence_duration",
+        "return_position"
+      ],
+      "engine_status": "partial_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "snowflake",
+      "version": 1,
+      "source_entries": [
+        "雪花"
+      ],
+      "mechanism": "assist_effect",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {},
+      "abilities": {},
+      "required_evidence": [
+        "trigger",
+        "exact_hit_mask"
+      ],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "cloud",
+      "version": 1,
+      "source_entries": [
+        "云层"
+      ],
+      "mechanism": "obscuring_layer",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {},
+      "abilities": {},
+      "required_evidence": [
+        "clear_rule"
+      ],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "flower_cluster",
+      "version": 1,
+      "source_entries": [
+        "花团"
+      ],
+      "mechanism": "linked_effect_target",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {},
+      "abilities": {},
+      "required_evidence": [
+        "activation_and_goal_event"
+      ],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "cage",
+      "version": 1,
+      "source_entries": [
+        "牢笼"
+      ],
+      "mechanism": "rescue_cover",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "hit": "adjacent_match",
+        "collection": "after_rescue"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "hit_count",
+        "match_permission"
+      ],
+      "engine_status": "partial_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "egg_shell",
+      "version": 1,
+      "source_entries": [
+        "鸡蛋壳"
+      ],
+      "mechanism": "ambiguous_egg_state",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {},
+      "abilities": {},
+      "required_evidence": [
+        "identity_vs_egg",
+        "clear_rule"
+      ],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "ice_barrier",
+      "version": 1,
+      "source_entries": [
+        "冰块栏杆"
+      ],
+      "mechanism": "barrier",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {},
+      "abilities": {},
+      "required_evidence": [
+        "damage_rule",
+        "topology"
+      ],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "chick_hatch_goal",
+      "version": 1,
+      "source_entries": [
+        "小鸡（小黄鸡）"
+      ],
+      "mechanism": "hatch_collection",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "producer": "egg",
+        "ordinary_yellow_clear": "not_hatch_progress",
+        "spawn_positions": "random"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "activation_count",
+        "spawn_count",
+        "collection_event"
+      ],
+      "engine_status": "direct_opportunity",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "egg",
+      "version": 1,
+      "source_entries": [
+        "鸡窝"
+      ],
+      "mechanism": "hatch_trigger",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "adjacent_match": "prepare_hatch"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "egg_vs_nest",
+        "activation_count",
+        "spawn_count"
+      ],
+      "engine_status": "direct_opportunity",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "penguin",
+      "version": 1,
+      "source_entries": [
+        "企鹅"
+      ],
+      "mechanism": "covered_rescue",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "before_rescue": "clear_cover"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "footprint",
+        "rescue_terminal_state"
+      ],
+      "engine_status": "partial_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "snow_bear",
+      "version": 1,
+      "source_entries": [
+        "北极熊 / 雪怪 / 雪熊"
+      ],
+      "mechanism": "multi_cell_rescue",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "before_rescue": "damage_surrounding_or_covering_ice"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "footprint",
+        "object_state",
+        "terminal_rescue_event"
+      ],
+      "engine_status": "partial_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "sprite",
+      "version": 1,
+      "source_entries": [
+        "精灵 / 精灵萌豆"
+      ],
+      "mechanism": "collection_target",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {},
+      "abilities": {},
+      "required_evidence": [
+        "collection_event"
+      ],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "one_eye",
+      "version": 1,
+      "source_entries": [
+        "独眼仔"
+      ],
+      "mechanism": "special_generator",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {},
+      "abilities": {},
+      "required_evidence": [
+        "activation",
+        "generated_effect_count_and_positions"
+      ],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "dolphin",
+      "version": 1,
+      "source_entries": [
+        "海豚"
+      ],
+      "mechanism": "rescue_target",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {},
+      "abilities": {},
+      "required_evidence": [
+        "cover",
+        "rescue_event"
+      ],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "gold_pod",
+      "version": 1,
+      "source_entries": [
+        "金豆荚"
+      ],
+      "mechanism": "delivery_target",
+      "reference_evidence": "documented",
+      "parameter_completeness": "complete",
+      "parameters": {
+        "collection": "arrive_at_bottom_collector"
+      },
+      "abilities": {},
+      "required_evidence": [],
+      "engine_status": "direct_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "key",
+      "version": 1,
+      "source_entries": [
+        "钥匙"
+      ],
+      "mechanism": "delivery_key",
+      "reference_evidence": "documented",
+      "parameter_completeness": "complete",
+      "parameters": {
+        "collection": "fall_to_collector",
+        "effect": "chest_unlock_when_enough"
+      },
+      "abilities": {},
+      "required_evidence": [],
+      "engine_status": "direct_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "gem",
+      "version": 1,
+      "source_entries": [
+        "宝石"
+      ],
+      "mechanism": "collection_target",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {},
+      "abilities": {},
+      "required_evidence": [
+        "collection_event"
+      ],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "star",
+      "version": 1,
+      "source_entries": [
+        "星星"
+      ],
+      "mechanism": "collection_target",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {},
+      "abilities": {},
+      "required_evidence": [
+        "collection_event"
+      ],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "jellyfish",
+      "version": 1,
+      "source_entries": [
+        "水母宝宝"
+      ],
+      "mechanism": "activated_assist",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "trigger": "adjacent_match"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "exact_hit_mask"
+      ],
+      "engine_status": "partial_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "cannon",
+      "version": 1,
+      "source_entries": [
+        "魔法炮 / 大炮"
+      ],
+      "mechanism": "directional_assist",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "effect": "fixed_direction_line"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "observed_direction",
+        "activation_guards",
+        "exact_range",
+        "blocking_rules",
+        "target_mask",
+        "cannon_propagation_links"
+      ],
+      "engine_status": "partial_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Special hit triggers an observed open, uncovered, directed cannon once per round; no inferred ray hits or propagation. Resulting damage stays unknown."
+    },
+    {
+      "rule_id": "shell",
+      "version": 1,
+      "source_entries": [
+        "贝壳"
+      ],
+      "mechanism": "jellyfish_generator",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "terminal": "release_jellyfish"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "hit_count",
+        "release_positions"
+      ],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "puffer",
+      "version": 1,
+      "source_entries": [
+        "气鼓鱼"
+      ],
+      "mechanism": "damaged_generator",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {},
+      "abilities": {},
+      "required_evidence": [
+        "damage_state",
+        "terminal_hit_mask"
+      ],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "magic_stone",
+      "version": 1,
+      "source_entries": [
+        "魔法石"
+      ],
+      "mechanism": "activated_assist",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "trigger": "adjacent_match"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "exact_hit_mask",
+        "linked_object_relations"
+      ],
+      "engine_status": "partial_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "dye_egg",
+      "version": 1,
+      "source_entries": [
+        "染色蛋"
+      ],
+      "mechanism": "color_conversion",
+      "reference_evidence": "documented",
+      "parameter_completeness": "complete",
+      "parameters": {
+        "trigger": "adjacent_match",
+        "result": "ordinary_animal_of_match_color"
+      },
+      "abilities": {},
+      "required_evidence": [],
+      "engine_status": "direct_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "dye_baby",
+      "version": 1,
+      "source_entries": [
+        "染色宝宝"
+      ],
+      "mechanism": "charged_special",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "full_charge_partner": "star_bottle"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "energy_threshold",
+        "energy_sources",
+        "standalone_effect"
+      ],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "star_bottle",
+      "version": 1,
+      "source_entries": [
+        "星星瓶"
+      ],
+      "mechanism": "charged_special",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "energy_source": "poison_clear"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "energy_threshold",
+        "energy_per_clear"
+      ],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "energy_bottle",
+      "version": 1,
+      "source_entries": [
+        "精力瓶"
+      ],
+      "mechanism": "paired_special",
+      "reference_evidence": "partial",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "paired_fullscreen": "documented"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "visual_difference_from_star_bottle"
+      ],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "octopus",
+      "version": 1,
+      "source_entries": [
+        "章鱼"
+      ],
+      "mechanism": "poison_generator",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "per_step": "generate_poison"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "exact_spawn_rule"
+      ],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "cuttlefish",
+      "version": 1,
+      "source_entries": [
+        "墨鱼宝宝"
+      ],
+      "mechanism": "coin_triggered_assist",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "trigger": "coin_clear"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "exact_hit_mask",
+        "stone_cannon_relocation",
+        "coin_fall"
+      ],
+      "engine_status": "partial_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "moving_floor",
+      "version": 1,
+      "source_entries": [
+        "移动地板"
+      ],
+      "mechanism": "dynamic_topology",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {},
+      "abilities": {},
+      "required_evidence": [
+        "observed_state_and_transition"
+      ],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "tool_hammer",
+      "version": 1,
+      "source_entries": [
+        "道具:小木槌"
+      ],
+      "mechanism": "player_tool",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {},
+      "abilities": {},
+      "required_evidence": [
+        "official_effect",
+        "explicit_player_use_authorization"
+      ],
+      "engine_status": "pending",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "tool_shuffle",
+      "version": 1,
+      "source_entries": [
+        "道具:刷新"
+      ],
+      "mechanism": "player_tool",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {},
+      "abilities": {},
+      "required_evidence": [
+        "official_effect",
+        "explicit_player_use_authorization"
+      ],
+      "engine_status": "pending",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "tool_extra_steps",
+      "version": 1,
+      "source_entries": [
+        "道具:加步数（+5 步等）"
+      ],
+      "mechanism": "player_tool",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {},
+      "abilities": {},
+      "required_evidence": [
+        "official_effect",
+        "explicit_player_use_authorization"
+      ],
+      "engine_status": "pending",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "tool_start_special",
+      "version": 1,
+      "source_entries": [
+        "道具:开局特效"
+      ],
+      "mechanism": "player_tool",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {},
+      "abilities": {},
+      "required_evidence": [
+        "official_effect",
+        "explicit_player_use_authorization"
+      ],
+      "engine_status": "pending",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "tool_undo",
+      "version": 1,
+      "source_entries": [
+        "道具:后退一步"
+      ],
+      "mechanism": "player_tool",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {},
+      "abilities": {},
+      "required_evidence": [
+        "official_effect",
+        "explicit_player_use_authorization"
+      ],
+      "engine_status": "pending",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "stationary_single_layer_ice",
+      "version": 1,
+      "source_entries": [],
+      "mechanism": "stationary_underlay",
+      "reference_evidence": "legacy_reviewed",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "moves_with_animal": false,
+        "ordinary_animal_can_swap": true,
+        "damage_when_animal_removed": 1
+      },
+      "abilities": {},
+      "required_evidence": [
+        "keep_original_source_and_variant"
+      ],
+      "engine_status": "direct_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "legacy_source": "docs/development/match3-element-evidence.md",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "single_clear_honey",
+      "version": 1,
+      "source_entries": [],
+      "mechanism": "single_honey_pot",
+      "reference_evidence": "legacy_reviewed",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "adjacent_hit": "one_clear"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "keep_original_source_and_variant"
+      ],
+      "engine_status": "direct_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "legacy_source": "docs/plans/消消乐识别飞轮改造.md",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "multistage_iceflower",
+      "version": 1,
+      "source_entries": [],
+      "mechanism": "iceflower_to_snow",
+      "reference_evidence": "legacy_reviewed",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "adjacent_hit": "transform_to_snow"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "keep_original_source_and_variant"
+      ],
+      "engine_status": "partial_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "legacy_source": "docs/plans/消消乐识别飞轮改造.md",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "identity_only_2x2",
+      "version": 1,
+      "source_entries": [],
+      "mechanism": "large_cookie_identity",
+      "reference_evidence": "legacy_reviewed",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "footprint": [
+          2,
+          2
+        ],
+        "removal": "unknown"
+      },
+      "abilities": {},
+      "required_evidence": [
+        "keep_original_source_and_variant"
+      ],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "legacy_source": "docs/development/match3-element-evidence.md",
+      "engineering_scope": "Conditional observed-state settlement; parameters listed in required_evidence remain unknown."
+    },
+    {
+      "rule_id": "gray_furball",
+      "version": 1,
+      "source_entries": [
+        "灰毛球"
+      ],
+      "mechanism": "jumping_animal_cover",
+      "reference_evidence": "confirmed",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "orthogonal_clear": "remove_cover_preserve_animal",
+        "cover_layers": 1,
+        "surviving_after_step": "jump_destination_unknown"
+      },
+      "abilities": {
+        "move": "no",
+        "match": "no",
+        "activate": "no"
+      },
+      "required_evidence": [
+        "special_direct_hit",
+        "jump_destination",
+        "hidden_animal_identity"
+      ],
+      "engine_status": "partial_effect",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Guaranteed adjacent cover removal only; unknown foreground and surviving jump block a known successor."
+    }
+  ],
+  "engineering_entry": "android/app/src/main/java/com/openkhub/sensefield/Match3RuleEngine.java",
+  "search_budget": {
+    "max_depth": 2,
+    "max_successor_nodes": 96,
+    "max_time_ms": 8,
+    "overflow": "all_candidates_one_action_fallback",
+    "time_budget_check": "before_and_after_successor_node; one_settlement_may_overrun"
+  },
+  "settlement_budget": {
+    "max_rounds": 12,
+    "max_cells": 144,
+    "gravity_iterations": "size*size+size",
+    "propagation": "unknown cannon/assist masks never expanded"
+  }
+}

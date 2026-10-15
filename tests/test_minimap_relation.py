@@ -36,10 +36,10 @@ def relation_library(tmp_path_factory: pytest.TempPathFactory):
 
 
 def _entity(kind: int, x: float, y: float, state: int = native.MA_TRACK_STATE_VISIBLE,
-            freshness: int = 0) -> native.TrackedEntity:
+            freshness: int = 0, track_id: int = 1) -> native.TrackedEntity:
     value = native.TrackedEntity()
     value.entity_kind = kind
-    value.track_id = 1
+    value.track_id = track_id
     value.state = state
     value.bbox = native.Rect(x - 0.01, y - 0.01, 0.02, 0.02)
     value.confidence = 0.9
@@ -63,6 +63,8 @@ def _relation(library) -> native.Relation:
 
 
 def _step(relation: native.Relation, now_ms: int, *items) -> dict:
+    for item in items:
+        item.last_seen_ms = now_ms - item.freshness_ms
     buffer = (native.TrackedEntity * max(1, len(items)))(*items)
     return relation.update(buffer, len(items), MAP_BODY, True, 1000, 1000, now_ms)
 
@@ -79,7 +81,118 @@ def test_far_enemy_walking_in_cues_once_with_bearing(relation_library) -> None:
     assert outputs[0]["state"] == "CLEAR"
 
 
-def test_rearm_window_rearms_without_global_cooldown(relation_library) -> None:
+def test_consistent_approach_warns_before_entry_without_a_second_near_announcement(relation_library) -> None:
+    with _relation(relation_library) as relation:
+        outputs = [_step(relation, index * 300, _self(), _enemy(distance, 135))
+                   for index, distance in enumerate((.32, .29, .26, .23, .20, .17, .14))]
+    assert [item["event"] for item in outputs if item["event"]] == ["APPROACH"]
+    assert outputs[2]["event"] == "APPROACH"
+    assert outputs[2]["nearest_distance"] == pytest.approx(.26)
+    assert outputs[2]["sector"] == "up_left"
+    assert outputs[2]["episode_id"] == 1
+
+
+@pytest.mark.parametrize("distances", [(.26, .26, .26), (.26, .29, .32),
+                                      (.32, .30, .29), (.32, .29, .32),
+                                      (.50, .47, .44), (.38, .29, .26)])
+def test_static_receding_jitter_distant_or_inconsistent_motion_cannot_forecast(relation_library, distances) -> None:
+    with _relation(relation_library) as relation:
+        outputs = [_step(relation, index * 300, _self(), _enemy(distance, 0))
+                   for index, distance in enumerate(distances)]
+    assert all(item["event"] is None for item in outputs)
+
+
+@pytest.mark.parametrize("gap", ["cached", "enemy_lost", "stale", "self_lost", "player_id",
+                                "enemy_id", "timestamp_mismatch", "long_interval", "clock_reverse"])
+def test_motion_discontinuities_do_not_supply_the_third_approach_sighting(relation_library, gap) -> None:
+    with _relation(relation_library) as relation:
+        _step(relation, 0, _self(), _enemy(.32, 0))
+        _step(relation, 300, _self(), _enemy(.29, 0))
+        player, enemy, now = _self(), _enemy(.26, 0), 600
+        if gap == "cached":
+            player.freshness_ms = enemy.freshness_ms = 300
+        elif gap == "enemy_lost":
+            enemy.state = native.MA_TRACK_STATE_LOST
+        elif gap == "stale":
+            enemy.freshness_ms = 501
+        elif gap == "self_lost":
+            player.state = native.MA_TRACK_STATE_LOST
+        elif gap == "player_id":
+            player.track_id = 100
+        elif gap == "enemy_id":
+            enemy.track_id = 100
+        elif gap == "timestamp_mismatch":
+            player.freshness_ms = 80
+        elif gap == "long_interval":
+            now = 1200
+        elif gap == "clock_reverse":
+            now = 250
+        assert _step(relation, now, player, enemy)["event"] is None
+
+
+def test_crossing_path_that_misses_the_near_circle_cannot_forecast(relation_library) -> None:
+    with _relation(relation_library) as relation:
+        outputs = [_step(relation, index * 300, _self(),
+                         _entity(native.MA_MINIMAP_ENEMY, SELF_X + x * .40, SELF_Y + .23 * .40))
+                   for index, x in enumerate((.24, .21, .18, .15, .12, .09))]
+    assert all(item["event"] is None for item in outputs)
+
+
+def test_relative_player_motion_is_supported(relation_library) -> None:
+    with _relation(relation_library) as relation:
+        outputs = [_step(relation, index * 300,
+                         _entity(native.MA_MINIMAP_PLAYER, SELF_X + .03 * index * .40, SELF_Y),
+                         _enemy(.32, 0)) for index in range(3)]
+    assert outputs[-1]["event"] == "APPROACH"
+
+
+def test_approach_uses_physical_short_edge_on_a_rectangular_map(relation_library) -> None:
+    with _relation(relation_library) as relation:
+        outputs = []
+        for index, distance_value in enumerate((.32, .29, .26)):
+            player = _self()
+            enemy = _entity(native.MA_MINIMAP_ENEMY, SELF_X + distance_value * .20, SELF_Y)
+            player.last_seen_ms = enemy.last_seen_ms = index * 300
+            items = (native.TrackedEntity * 2)(player, enemy)
+            outputs.append(relation.update(items, 2, MAP_BODY, True, 2000, 1000, index * 300))
+    assert outputs[-1]["event"] == "APPROACH"
+    assert outputs[-1]["nearest_distance"] == pytest.approx(.26)
+
+
+def test_layout_change_discards_approach_motion_without_resetting_near_rules(relation_library) -> None:
+    with _relation(relation_library) as relation:
+        _step(relation, 0, _self(), _enemy(.32, 0))
+        _step(relation, 300, _self(), _enemy(.29, 0))
+        player, enemy = _self(), _enemy(.26, 0)
+        player.last_seen_ms = enemy.last_seen_ms = 600
+        items = (native.TrackedEntity * 2)(player, enemy)
+        moved_body = native.Rect(.10, .11, .40, .40)
+        assert relation.update(items, 2, moved_body, True, 1000, 1000, 600)["event"] is None
+        assert _step(relation, 900, _self(), _enemy(.15, 0))["event"] is None
+        assert _step(relation, 1200, _self(), _enemy(.15, 0))["event"] == "NEAR_ENTER"
+
+
+def test_real_near_batch_has_priority_over_a_simultaneous_approach(relation_library) -> None:
+    with _relation(relation_library) as relation:
+        _step(relation, 0, _self(), _enemy(.32, 0))
+        _step(relation, 300, _self(), _enemy(.29, 0), _enemy(.15, 180, track_id=2))
+        result = _step(relation, 600, _self(), _enemy(.26, 0), _enemy(.15, 180, track_id=2))
+    assert result["event"] == "NEAR_ENTER"
+    assert result["sector"] == "left"
+    assert result["nearest_distance"] == pytest.approx(.15)
+
+
+def test_stale_processing_consumes_the_prediction_lead_budget(relation_library) -> None:
+    with _relation(relation_library) as relation:
+        outputs = []
+        for index, distance in enumerate((.32, .29, .26)):
+            player, enemy = _self(), _enemy(distance, 0)
+            player.freshness_ms = enemy.freshness_ms = 400
+            outputs.append(_step(relation, 400 + index * 300, player, enemy))
+    assert outputs[-1]["event"] is None  # .6s to entry minus .4s processing < .5s remaining
+
+
+def test_continuously_visible_range_return_stays_quiet(relation_library) -> None:
     now = 0
     events = []
     with _relation(relation_library) as relation:
@@ -88,8 +201,7 @@ def test_rearm_window_rearms_without_global_cooldown(relation_library) -> None:
                 events.append((now, _step(relation, now, _self(), _enemy(distance, 0.0))))
                 now += 83
     enters = [(at, item) for at, item in events if item["event"] == "NEAR_ENTER"]
-    assert [item["episode_id"] for _, item in enters] == [1, 2]
-    assert enters[1][0] - enters[0][0] < 15000
+    assert [item["episode_id"] for _, item in enters] == [1]
 
 
 def test_long_self_loss_pauses_then_resumes(relation_library) -> None:
@@ -117,6 +229,113 @@ def test_lost_ghosts_are_not_evidence(relation_library) -> None:
     assert all(item["event"] is None and item["state"] == "CLEAR" for item in outputs)
     assert all(item["nearest_distance"] is None for item in outputs)
 
+
+@pytest.mark.parametrize("missing_frames", [1, 2, 3, 10, 30, 45, 60])
+@pytest.mark.parametrize("another_enemy_stays", [False, True])
+def test_tracker_to_relation_requires_confirmed_absence(
+    relation_library, missing_frames: int, another_enemy_stays: bool
+) -> None:
+    # Exercise real confirmation, retained VISIBLE boxes, LOST, the old
+    # two-second identity grace and four-second memory expiry. No footage or
+    # model inference is needed to verify the event contract.
+    config = native.EngineConfig(.1, 500, 0, 0, 2, 3)
+    engine = relation_library.ma_engine_create(ctypes.byref(config))
+    assert engine
+    entities = (native.TrackedEntity * native.MA_MAX_TRACKED_ENTITIES)()
+    cues = (native.Cue * 1)()
+    now = 0
+    target = _enemy(.18, 135)
+    staying = _enemy(.10, 0)
+    other = [staying] if another_enemy_stays else []
+
+    try:
+        with _relation(relation_library) as relation:
+            def step(enemies: list) -> dict:
+                nonlocal now
+                observations = (native.Observation * (1 + len(enemies)))(
+                    native.Observation(native.MA_MINIMAP_PLAYER, 0, _self().bbox, .9, now),
+                    *(native.Observation(native.MA_MINIMAP_ENEMY, 0, enemy.bbox, .9, now)
+                      for enemy in enemies),
+                )
+                relation_library.ma_engine_step(engine, observations, len(observations),
+                                              now, cues, 1)
+                count = relation_library.ma_engine_read_tracked_entities(
+                    engine, entities, len(entities))
+                result = relation.update(entities, count, MAP_BODY, True, 1000, 1000, now)
+                now += 83
+                return result
+
+            initial = [step([target, *other]) for _ in range(3)]
+            assert [item["episode_id"] for item in initial if item["event"] == "NEAR_ENTER"] == [1]
+            absent = [step(other) for _ in range(missing_frames)]
+            assert all(item["event"] != "NEAR_ENTER" for item in absent)
+            returned = [step([target, *other]) for _ in range(4)]
+            enters = [item for item in returned if item["event"] == "NEAR_ENTER"]
+            if missing_frames < 45:
+                # LOST alone is uncertainty, including replacement ids after
+                # the tracker's two-second grace. Require 3s reliable absence.
+                assert enters == []
+            else:
+                assert len(enters) == 1
+                assert enters[0]["episode_id"] == 2
+                assert enters[0]["sector"] == "up_left"
+                assert enters[0]["nearest_distance"] == pytest.approx(.18, abs=1e-4)
+            assert all(step([target, *other])["event"] is None for _ in range(10))
+    finally:
+        relation_library.ma_engine_destroy(engine)
+
+
+def test_one_returned_detection_and_cached_boxes_do_not_trigger(relation_library) -> None:
+    with _relation(relation_library) as relation:
+        assert _step(relation, 0, _self(), _enemy(.15, 0))["event"] is None
+        assert _step(relation, 83, _self(), _enemy(.15, 0))["event"] == "NEAR_ENTER"
+        for i in range(38):
+            _step(relation, 166 + i * 83, _self(),
+                  _enemy(.15, 0, state=native.MA_TRACK_STATE_LOST))
+        assert _step(relation, 3320, _self(), _enemy(.15, 0))["event"] is None
+        assert _step(relation, 3403, _self(), _enemy(.15, 0, freshness=83))["event"] is None
+        assert _step(relation, 3486, _self(), _enemy(.15, 0, freshness=166))["event"] is None
+        _step(relation, 3569, _self(), _enemy(.15, 0, state=native.MA_TRACK_STATE_LOST))
+        assert _step(relation, 3652, _self(), _enemy(.15, 0))["event"] is None
+        assert _step(relation, 3735, _self(), _enemy(.15, 0))["episode_id"] == 2
+
+
+
+@pytest.mark.parametrize("width,height", [(1000, 1000), (4000, 1000)])
+def test_id_continuity_uses_marker_size_in_pixels(relation_library, width, height):
+    # Square 400px map body in differently shaped capture frames. A 10px
+    # replacement must inherit state; an unrelated 100px-away enemy must not.
+    body = native.Rect(.1, .1, 400 / width, 400 / height)
+    def marker(kind, track_id, x_px, y_px):
+        value = _entity(kind, .1 + x_px / width, .1 + y_px / height, track_id=track_id)
+        value.bbox.w = 20 / width
+        value.bbox.h = 20 / height
+        value.bbox.x = .1 + (x_px - 10) / width
+        value.bbox.y = .1 + (y_px - 10) / height
+        return value
+    now = 0
+    with _relation(relation_library) as relation:
+        def step(*items):
+            nonlocal now
+            for item in items:
+                item.last_seen_ms = now
+            buf = (native.TrackedEntity * len(items))(*items)
+            result = relation.update(buf, len(items), body, True, width, height, now)
+            now += 83
+            return result
+        player = marker(native.MA_MINIMAP_PLAYER, 100, 200, 200)
+        old = marker(native.MA_MINIMAP_ENEMY, 1, 150, 200)
+        assert step(player, old)["event"] is None
+        assert step(player, old)["event"] == "NEAR_ENTER"
+        old.state = native.MA_TRACK_STATE_LOST
+        step(player, old)
+        replaced = marker(native.MA_MINIMAP_ENEMY, 9, 140, 200)
+        extra = marker(native.MA_MINIMAP_ENEMY, 10, 250, 200)
+        assert step(player, replaced, extra)["event"] is None
+        result = step(player, replaced, extra)
+        assert result["event"] == "NEAR_ENTER"
+        assert result["sector"] == "right"
+        assert result["nearest_distance"] == pytest.approx(.125)
 
 def test_ctypes_constants_match_the_c_header() -> None:
     header = (ROOT / "native/include/mapassist.h").read_text(encoding="utf-8")
@@ -160,7 +379,7 @@ def test_profile_relation_section_is_validated() -> None:
 
 
 @pytest.mark.parametrize(("field", "value"), [
-    ("exit_radius", 0.20), ("confirm_hits", 0), ("short_gap_ms", 100),
+    ("exit_radius", 0.16), ("confirm_hits", 0), ("short_gap_ms", 100),
     ("enter_radius", "0.2"), ("schema_version", 2), ("enabled", "true"),
 ])
 def test_malformed_relation_section_is_rejected(field: str, value) -> None:
@@ -178,6 +397,9 @@ def test_dual_class_profiles_match_bundle_and_metadata() -> None:
                 "models", "thresholds", "events", "minimap_relation"):
         assert bundled[key] == desktop[key]
     assert bundled["verified"] is False
+    assert bundled["minimap_relation"]["enter_radius"] == .16
+    assert bundled["minimap_relation"]["exit_radius"] == .20
+    assert bundled["minimap_relation"]["rearm_ms"] == 3000
     thresholds = bundled["thresholds"]
     assert thresholds["minimap_yolox_input_size"] == 512
     # The event engine filters every class again with events.min_confidence;
@@ -343,6 +565,20 @@ def test_session_log_reports_near_zone_coverage_and_rate(tmp_path: Path) -> None
     assert near["suppressions"] == {"rearm_pending": 1}
     assert [item["to"] for item in near["transitions"]] == ["CLEAR", "PENDING"]
     assert parsed["cues"][0]["kind"] == "near_zone"
+
+
+def test_session_log_distinguishes_approach_without_requiring_it_in_old_summaries(tmp_path: Path) -> None:
+    path = tmp_path / "logcat.txt"
+    content = _near_zone_log().replace("event=NEAR_ENTER", "event=APPROACH")
+    content = content.replace("nearEnters=1", "nearEnters=0 approaches=1")
+    path.write_text(content)
+    near = parse_session_log(path, SESSION_ID)["near_zone"]
+    assert near["near_enters"] == 0
+    assert near["approaches"] == 1
+    assert near["events"][0]["event"] == "APPROACH"
+    path.write_text(content.replace("approaches=1", "approaches=2"))
+    with pytest.raises(ValueError, match="approaches"):
+        parse_session_log(path, SESSION_ID)
 
 
 def test_session_log_rejects_inconsistent_near_zone_records(tmp_path: Path) -> None:

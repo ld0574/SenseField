@@ -1,0 +1,10 @@
+Use case: photorealistic-natural
+Asset type: editorial image for the Chinese SenseField Android game accessibility website
+Primary request: a believable close-up of an adult playing a mobile game on a generic Android smartphone held horizontally in both hands, with thumbs naturally resting on touchscreen controls.
+Scene/backdrop: a quiet contemporary home, warm cream table and softly blurred teal upholstery, daylight through a window.
+Subject: the phone and the player's hands are clearly visible; an over-the-shoulder framing shows part of a plain cream sleeve, without a recognizable face. The screen displays an original fictional top-down mobile adventure with abstract terrain and simple unobtrusive touchscreen controls, designed from scratch rather than copying an existing game.
+Style/medium: premium natural editorial photography, real skin texture, correct hand anatomy, physically plausible reflections, restrained cinematic depth of field.
+Composition/framing: landscape 3:2, the phone and hands occupy the center two-thirds, screen tilted slightly toward the camera, enough context to unmistakably communicate Android touchscreen gaming.
+Lighting/mood: soft warm natural daylight, calm, focused and welcoming.
+Color palette: warm ivory, deep teal, soft muted peach; retain realistic skin colors.
+Constraints: no console, no separate controller, no PlayStation or Xbox hardware, no game or device trademarks, no recognizable copyrighted characters, no brand logos, no text, no watermarks. Exactly two natural human hands with correct fingers. The phone has slim rounded bezels and a small generic circular front camera cutout, with no iPhone notch or Dynamic Island. This is a conceptual editorial image, not a testimonial or a screenshot of the real product.

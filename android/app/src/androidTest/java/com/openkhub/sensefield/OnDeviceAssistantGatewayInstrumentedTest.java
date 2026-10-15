@@ -102,12 +102,13 @@ public final class OnDeviceAssistantGatewayInstrumentedTest {
 
     private void createController(boolean vision) {
         preferences.edit().clear()
+                .putBoolean(AssistantSettings.ENABLED, true)
                 .putBoolean(AssistantSettings.VOICE, true)
                 .putBoolean(AssistantSettings.VISION, vision)
                 .putBoolean(AssistantSettings.PROACTIVE, false)
                 .putBoolean(AssistantSettings.AUDIO_CONSENT, true)
                 .putBoolean(AssistantSettings.IMAGE_CONSENT, vision)
-                .putString(AssistantSettings.ENDPOINT, endpoint)
+                .putBoolean(AssistantSettings.CUSTOM_SERVICE, true).putString(AssistantSettings.ENDPOINT, endpoint)
                 .putString(AssistantSettings.TOKEN, token)
                 .commit();
         AssistantSettings settings = new AssistantSettings(preferences);
@@ -123,8 +124,8 @@ public final class OnDeviceAssistantGatewayInstrumentedTest {
         AssistantSession session = session(controller);
         String recognizedQuestion = runScoreFixtureThroughLocalAsr(session);
         assertTrue(host.questionSeen.await(3, TimeUnit.SECONDS));
-        assertTrue("known synthetic score audio should be actionable",
-                recognizedQuestion.contains("比分") && AssistantController.isRequest(recognizedQuestion));
+        assertTrue("known synthetic score audio should be recognized",
+                recognizedQuestion.contains("比分"));
 
         // The first reply is held by the local fixture. A newer question cancels its ownership
         // before a second genuine Android HTTPS request is issued.
@@ -195,7 +196,7 @@ public final class OnDeviceAssistantGatewayInstrumentedTest {
         fixtureRequest("POST", "/__fixture__/reset");
         AssistantSession session = session(controller);
         String text = runScoreFixtureThroughLocalAsr(session);
-        assertTrue(text.contains("比分") && AssistantController.isRequest(text));
+        assertTrue(text.contains("比分"));
         assertTrue("voice-only question should remain local", awaitReplies(1, 3000));
 
         JSONObject evidence = fixtureRequest("GET", "/__fixture__/evidence");

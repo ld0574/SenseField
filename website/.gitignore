@@ -1,0 +1,8 @@
+node_modules/
+dist/
+playwright-report/
+test-results/
+.vite/
+# Release metadata is read from the CDN, never shipped with the website.
+public/latest.json
+public/latest.json.*

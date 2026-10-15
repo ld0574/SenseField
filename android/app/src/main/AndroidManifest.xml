@@ -59,6 +59,9 @@
         <activity android:name=".DiagnosticsActivity" android:exported="false" />
         <activity android:name=".AssistantSettingsActivity" android:exported="false" />
         <activity android:name=".ReminderGuideActivity" android:exported="false" />
+        <activity android:name=".SettingHelpActivity" android:exported="false" />
+        <activity android:name=".HapticSettingsActivity" android:exported="false" />
+        <activity android:name=".CueSoundSettingsActivity" android:exported="false" />
         <activity
             android:name=".AppSettingsActivity"
             android:exported="false" />
@@ -76,10 +79,25 @@
             android:name=".Match3AssistActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize|stateHidden" />
+        <activity android:name=".Match3SettingsActivity" android:exported="false" />
+        <activity android:name=".Match3ToolsActivity" android:exported="false"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
         <service
             android:name=".Match3LiveService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
+        <service
+            android:name=".SenseFieldReaderService"
+            android:exported="false"
+            android:label="听野读屏状态服务"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
         <activity
             android:name=".GameTuningActivity"
             android:exported="false" />

@@ -8,80 +8,101 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
-import android.text.InputType;
+import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
-import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
 /** Optional experimental assistant; the existing local mode needs none of these grants. */
-public final class AssistantSettingsActivity extends Activity {
-    private EditText endpoint, token;
-    private TextView status;
+public final class AssistantSettingsActivity extends UiActivity {
+    private TextView resources;
+    private Button retryResources;
+    private LinearLayout assistantOptions;
+    private boolean preparing;
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state); UiKit.configureWindow(this);
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true);
+        scroll.setFitsSystemWindows(true);
+        scroll.setBackgroundColor(UiKit.PAGE);
         LinearLayout page = UiKit.page(this); scroll.addView(page);
-        UiKit.addBrandHeader(page, "语音与画面助手");
-        UiKit.add(page, UiKit.heading(this, "实验助手设置"), 12);
-        UiKit.add(page, UiKit.body(this, "实时预警和中文语音识别都在手机本地运行，支持 Android 10 及以上。进入游戏前开始辅助，等待离线识别就绪后即可直接说话。请戴耳机并确认游戏声音也在耳机中；游戏开麦期间助手会暂停语音输入。画面问答需要配置画面服务连接。"), 12);
-        AssistantSettings settings = AssistantSettings.from(this);
-        endpoint = field(page, "画面服务地址（HTTPS）", settings.endpoint, false);
-        token = field(page, "体验连接码", settings.token, true);
-        if (!BuildConfig.ASSISTANT_DEFAULT_ENDPOINT.isEmpty()) {
-            button(page, "使用听野线上服务").setOnClickListener(v -> {
-                String onlineEndpoint = BuildConfig.ASSISTANT_DEFAULT_ENDPOINT;
-                endpoint.setText(onlineEndpoint);
-                GameProfile.settings(this).edit()
-                        .putString(AssistantSettings.ENDPOINT, onlineEndpoint).apply();
-                status.setText("已选择听野线上服务。还需要负责人提供的体验连接码；此操作不会开启画面理解。");
-            });
-            UiKit.add(page, UiKit.body(this, "使用线上服务还需要负责人提供的体验连接码。"), 8);
-        }
-        UiKit.add(page, UiKit.body(this, "本地离线语音不需要服务地址或体验连接码。开启画面理解时才需要 HTTPS 地址和体验连接码。"), 10);
-        status = UiKit.body(this, "关闭功能会立即停止对应处理；开启或更改连接需要重新开始辅助。"); UiKit.add(page, status, 10);
-        button(page, "保存服务连接").setOnClickListener(v -> {
-            String address = endpoint.getText().toString().trim().replaceAll("/+$", "");
-            String deviceToken = token.getText().toString().trim();
-            if (!AssistantSettings.validEndpoint(address) || deviceToken.length() < 24 || deviceToken.length() > 256) {
-                status.setText("请输入 HTTPS 服务地址与至少24位的体验连接码。"); return;
-            }
-            GameProfile.settings(this).edit().putString(AssistantSettings.ENDPOINT, address)
-                    .putString(AssistantSettings.TOKEN, deviceToken).apply();
-            status.setText("已保存。更改连接后请重新开始辅助。");
-        });
-        consentSwitch(page, "连续语音（可以插话）", AssistantSettings.VOICE, AssistantSettings.AUDIO_CONSENT,
-                "听野会持续检测说话，在你说完后离线识别。原始语音只在手机内存里临时处理，不上传、不保存音频文件。第一次开启需要等待本地模型加载。\n\n请戴耳机，并确认游戏声音也在耳机里。听野只能检查自己的声音路线，无法确认游戏的实际路线；蓝牙音箱和外放不适合此实验。普通蓝牙耳机连接时，识别可能使用手机麦克风。游戏开麦、其他录音活动或路线不明时，助手暂停输入。\n\n开启画面理解后，问题文字和授权画面会发送到画面服务及其视觉模型。背景人声也可能被识别成问题，请留意周围环境。", true);
-        consentSwitch(page, "画面理解", AssistantSettings.VISION, AssistantSettings.IMAGE_CONSENT,
-                "开启后，提问会把当前共享画面和最多两张最近画面的缩图发送到画面服务及其配置的视觉模型；低频主动观察只发送当前画面。助手可以结合可见信息解释装备、选人和对战建议，信息不足时会说明。授权画面可能包含游戏聊天或系统通知，请留意共享范围。助手近期画面只缓存在内存，诊断截图由独立设置管理；第三方服务按其条款处理数据。", false);
-        simpleSwitch(page, "低频主动描述（需要画面理解）", AssistantSettings.PROACTIVE);
-        button(page, "授权左侧小圆点").setOnClickListener(v -> startActivity(new Intent(
+        UiKit.pageHeader(this, page, "实验助手设置", "语音与画面助手");
+        UiKit.add(page, UiKit.bullets(this,
+                "AI助手默认关闭，需要时再开启",
+                "回复可能较慢、较长或被中断",
+                "关闭助手不影响本地敌人提醒"), 20);
+        // The master switch and everything it reveals form one card; presentation is separate.
+        LinearLayout assistantCard = UiKit.card(this);
+        UiKit.add(page, assistantCard, UiKit.GAP_SECTION);
+        CheckBox enabled = box(assistantCard, "启用实验 AI 助手", AssistantSettings.ENABLED);
+        assistantOptions = new LinearLayout(this);
+        assistantOptions.setOrientation(LinearLayout.VERTICAL);
+        assistantOptions.setPadding(0, UiKit.dp(this, 8), 0, 0);
+        UiKit.add(assistantCard, assistantOptions, 0);
+        SettingHelp.addGroup(this, assistantOptions, "assistant_connection", 8);
+        TextView service = UiKit.hint(this,
+                "默认使用听野线上服务，无需填写地址或连接码。语音和画面需分别开启；开启后请重新开始辅助。");
+        UiKit.add(assistantOptions, service, 20);
+        SettingHelp.addGroup(this, assistantOptions, "assistant_group", 12);
+        consentSwitch(assistantOptions, "连续语音（可以插话）", AssistantSettings.VOICE, AssistantSettings.AUDIO_CONSENT,
+                "听野会持续检测说话，在你说完后离线识别。原始语音只在手机内存里临时处理，不上传、不保存音频文件。第一次开启会从听野 CDN 下载约153 MiB语音资源，请在网络稳定时准备，并预留约400 MiB空间。下载后离线识别，已缓存资源会复用。\n\n请戴耳机，并确认游戏声音也在耳机里。听野只能检查自己的声音路线，无法确认游戏的实际路线；蓝牙音箱和外放不适合此实验。普通蓝牙耳机连接时，识别可能使用手机麦克风。游戏开麦、其他录音活动或路线不明时，助手暂停输入。\n\n开启画面理解后，每句完整、非空的识别文字都会作为消息，连同授权画面发送到画面服务及其视觉模型；暂停、复述等本地指令单独处理。不需要固定问法，新消息会替换尚未完成的回答。背景人声也可能被识别并发送；暂时不想对话时，请暂停连续语音。", true);
+        resources = UiKit.hint(this, "首次开启连续语音后准备资源，完成后可离线识别。");
+        resources.setAccessibilityLiveRegion(android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        UiKit.add(assistantOptions, resources, 12);
+        retryResources = button(assistantOptions, "准备语音资源／重试");
+        retryResources.setOnClickListener(v -> prepareResources());
+        consentSwitch(assistantOptions, "画面理解", AssistantSettings.VISION, AssistantSettings.IMAGE_CONSENT,
+                "听野是为低视力用户服务的游戏搭子，结合共享画面回答游戏问题、解释可见信息并帮助判断。云端回答可能等待5～10秒，依据截取时的画面；即时敌人提醒由本地预警负责。默认只发送当前共享画面；明确要求比较近期变化时，才加最多两张近期缩图。画面和问题会发送到画面服务及其视觉模型，可能包含游戏聊天或系统通知，请留意共享范围。近期画面只缓存在内存，诊断截图由独立设置管理；第三方服务按其条款处理数据。", false);
+        simpleSwitch(assistantOptions, "低频主动描述（需要画面理解）", AssistantSettings.PROACTIVE);
+        UiKit.gap(assistantOptions, 4);
+        Button overlayPermission = button(assistantOptions, "授权左侧小圆点");
+        ((LinearLayout.LayoutParams) overlayPermission.getLayoutParams()).bottomMargin = 0;
+        overlayPermission.setOnClickListener(v -> startActivity(new Intent(
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()))));
-        UiKit.add(page, UiKit.body(this, "小圆点默认收起，点击后展开记录。没有置顶权限时仍可使用语音，并从运行通知暂停或标记问题。"), 14);
-        UiKit.add(page, UiKit.heading(this, "呈现层实验（默认关闭）"), 14);
-        simpleSwitch(page, "左右双耳线索（需双耳耳机）", "presentation_spatial");
-        simpleSwitch(page, "距离强度与节奏震动", "presentation_distance_haptic");
-        simpleSwitch(page, "两字方位提示", "near_two_word");
-        UiKit.add(page, UiKit.body(this, "这些模式尚需玩家对照验证，开启双耳线索后请重新开始辅助。左右双耳线索不提供完整 HRTF；普通手机的单马达不提供左右分离震动。"), 12);
-        button(page, "返回").setOnClickListener(v -> finish());
+        assistantOptions.setVisibility(enabled.isChecked() ? View.VISIBLE : View.GONE);
+        enabled.setOnCheckedChangeListener((button, checked) -> {
+            GameProfile.settings(this).edit().putBoolean(AssistantSettings.ENABLED, checked).apply();
+            assistantOptions.setVisibility(checked ? View.VISIBLE : View.GONE);
+            if (checked && AssistantSettings.voiceEnabled(GameProfile.settings(this))) prepareResources();
+        });
         setContentView(scroll);
+        if (AssistantSettings.voiceEnabled(GameProfile.settings(this))) prepareResources();
     }
-    private EditText field(LinearLayout page, String title, String value, boolean secret) {
-        UiKit.add(page, UiKit.body(this, title), 8);
-        EditText field = new EditText(this); field.setTextSize(20); field.setSingleLine(true);
-        field.setInputType(secret ? InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD
-                : InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        field.setText(value); field.setMinHeight(UiKit.dp(this, 56)); UiKit.add(page, field, 10); return field;
+
+    @Override @SuppressWarnings("deprecation") public void onBackPressed() {
+        if (!SettingHelp.close(this)) super.onBackPressed();
+    }
+    private void prepareResources() {
+        if (preparing) return;
+        if (!AssistantSettings.voiceEnabled(GameProfile.settings(this))) {
+            resources.setText("请先开启连续语音，再准备资源。"); return;
+        }
+        preparing = true; retryResources.setEnabled(false);
+        resources.setText("正在检查语音资源；首次下载约153 MiB…");
+        AsrModelStore.prepare(this, percent -> runOnUiThread(() -> {
+            if (!isDestroyed()) resources.setText(percent < 100
+                    ? "正在下载语音资源：" + percent + "%（约153 MiB）"
+                    : "正在校验语音资源…");
+        }), message -> runOnUiThread(() -> {
+            if (isDestroyed()) return;
+            preparing = false; retryResources.setEnabled(true);
+            if (!AssistantSettings.voiceEnabled(GameProfile.settings(this))) {
+                resources.setText("语音资源准备已停止；已下载部分会保留。");
+                return;
+            }
+            resources.setText(message + " 准备完成后重新开始辅助。");
+        }));
     }
     private Button button(LinearLayout page, String title) {
-        Button button = UiKit.button(this, title, false); button.setMinHeight(UiKit.dp(this, 64));
-        UiKit.add(page, button, 10); return button;
+        Button button = UiKit.button(this, title, false);
+        button.setMinHeight(UiKit.dp(this, 56)); button.setMinimumHeight(UiKit.dp(this, 56));
+        UiKit.add(page, button, 12); return button;
     }
     private CheckBox box(LinearLayout page, String label, String key) {
-        CheckBox box = new CheckBox(this); box.setText(label); box.setTextSize(22); UiKit.styleCheckable(box, this);
-        box.setChecked(GameProfile.settings(this).getBoolean(key, false)); UiKit.add(page, box, 8); return box;
+        CheckBox box = new CheckBox(this); box.setText(label); box.setTextSize(18);
+        box.setTextColor(UiKit.INK); UiKit.styleCheckable(box, this);
+        box.setChecked(GameProfile.settings(this).getBoolean(key, false)); UiKit.add(page, box, 6); return box;
     }
     private void simpleSwitch(LinearLayout page, String label, String key) {
         box(page, label, key).setOnCheckedChangeListener((button, checked) ->
@@ -91,13 +112,15 @@ public final class AssistantSettingsActivity extends Activity {
         CheckBox box = box(page, label, key);
         box.setOnCheckedChangeListener((button, checked) -> {
             if (!checked) { GameProfile.settings(this).edit().putBoolean(key, false).apply(); return; }
-            new AlertDialog.Builder(this).setTitle(label).setMessage(explanation)
+            AlertDialog consentDialog = new AlertDialog.Builder(this).setTitle(label).setMessage(explanation)
                     .setPositiveButton("同意并开启", (dialog, which) -> {
                         GameProfile.settings(this).edit().putBoolean(consent, true).putBoolean(key, true).apply();
+                        if (microphone) prepareResources();
                         if (microphone && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
                             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 1501);
                     }).setNegativeButton("取消", (dialog, which) -> box.setChecked(false))
                     .setOnCancelListener(dialog -> box.setChecked(false)).show();
+            UiKit.styleDialog(consentDialog, UiKit.ButtonStyle.FILLED);
         });
     }
 }

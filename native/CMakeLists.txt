@@ -11,6 +11,11 @@ target_compile_options(mapassist PRIVATE -Wall -Wextra -Wpedantic)
 # keep the host-only memory regression executable out of that APK graph.
 include(CTest)
 if(BUILD_TESTING AND NOT ANDROID)
+    add_executable(mapassist_exact_roi_cache_test tests/exact_roi_cache_test.cpp)
+    target_compile_features(mapassist_exact_roi_cache_test PRIVATE cxx_std_17)
+    target_compile_options(mapassist_exact_roi_cache_test PRIVATE -Wall -Wextra -Wpedantic -UNDEBUG)
+    target_include_directories(mapassist_exact_roi_cache_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    add_test(NAME mapassist_exact_roi_cache COMMAND mapassist_exact_roi_cache_test)
     add_executable(mapassist_perception_memory_test tests/perception_memory_test.cpp)
     target_compile_features(mapassist_perception_memory_test PRIVATE cxx_std_17)
     target_include_directories(mapassist_perception_memory_test

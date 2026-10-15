@@ -51,20 +51,21 @@ public final class NearZoneCombatPolicyTest {
         assertTrue(NearZoneCombatPolicy.priorityForScore(400f) < 100);
     }
 
-    @Test public void twoFreshTargetsEnterDenseAndSuppressLowerSpeech() {
+    @Test public void denseModeScoresEachNewNearEventWithoutKeepingAnOldWinner() {
         NearZoneCombatPolicy policy = new NearZoneCombatPolicy();
         NativeFrameResult first = frame(1000, NearZoneRouting.EVENT_NEAR_ENTER, .2f,
                 enemy(1, 10), enemy(2, 12));
         NearZoneCombatPolicy.Decision decision = policy.observe(first, 1000, 250);
         assertTrue(decision.dense);
         assertTrue(decision.enteredDense);
-        assertTrue(decision.allowSpeech);
+        int firstPriority = decision.priority;
 
         NativeFrameResult lower = frame(1100, NearZoneRouting.EVENT_NEAR_ENTER, .8f,
                 enemy(1, 10), enemy(2, 12));
         decision = policy.observe(lower, 1100, 250);
         assertTrue(decision.dense);
-        assertFalse(decision.allowSpeech);
+        assertTrue(decision.priority < firstPriority);
+        assertEquals(NearZoneCombatPolicy.score(2, true, .8f), decision.score, 1e-6f);
     }
 
     @Test public void denseModeExitsAfterQuietWindow() {
@@ -78,27 +79,55 @@ public final class NearZoneCombatPolicyTest {
         assertFalse(decision.dense);
     }
 
-    @Test public void unspokenFrameCannotSetTheDenseWinner() {
+    @Test public void unchangedFreshTargetsKeepDenseModeAcrossSeveralQuietWindows() {
+        NearZoneCombatPolicy policy = new NearZoneCombatPolicy();
+        for (long atMs : new long[]{1000, 1500, 2000, 2601, 4000, 5500, 7100}) {
+            NearZoneCombatPolicy.Decision decision = policy.observe(
+                    frame(atMs, NearZoneRouting.EVENT_NONE, .2f,
+                            enemy(1, 10), enemy(2, 10)), atMs, 250);
+            assertTrue("Still two fresh targets at " + atMs, decision.dense);
+            assertEquals(atMs == 1000, decision.enteredDense);
+            assertFalse(decision.exitedDense);
+        }
+    }
+
+    @Test public void quietWindowStartsAfterLastFreshMultiTargetSnapshot() {
+        NearZoneCombatPolicy policy = new NearZoneCombatPolicy();
+        policy.observe(frame(1000, NearZoneRouting.EVENT_NONE, .2f,
+                enemy(1, 10), enemy(2, 10)), 1000, 250);
+        policy.observe(frame(2000, NearZoneRouting.EVENT_NONE, .2f,
+                enemy(1, 10), enemy(2, 10)), 2000, 250);
+        assertTrue(policy.observe(frame(3300, NearZoneRouting.EVENT_NONE, .2f,
+                enemy(1, 10), enemy(2, 251)), 3300, 250).dense);
+        assertTrue(policy.observe(frame(3500, NearZoneRouting.EVENT_NONE, .2f,
+                enemy(1, 10)), 3500, 250).dense);
+        NearZoneCombatPolicy.Decision quiet = policy.observe(
+                frame(3501, NearZoneRouting.EVENT_NONE, .2f, enemy(1, 10)), 3501, 250);
+        assertTrue(quiet.exitedDense);
+        assertFalse(quiet.dense);
+    }
+
+    @Test public void previousNonEventCannotInflateNewNearPriority() {
         NearZoneCombatPolicy policy = new NearZoneCombatPolicy();
         policy.observe(frame(1000, NearZoneRouting.EVENT_NONE, .05f,
                 enemy(1, 10), enemy(2, 12), enemy(3, 10)), 1000, 250);
         NearZoneCombatPolicy.Decision decision = policy.observe(frame(1100,
                 NearZoneRouting.EVENT_NEAR_ENTER, .2f, enemy(1, 10), enemy(2, 10)), 1100, 250);
         assertTrue(decision.dense);
-        assertTrue(decision.allowSpeech);
+        assertEquals(NearZoneCombatPolicy.score(2, true, .2f), decision.score, 1e-6f);
     }
 
-    @Test public void newWindowAcceptsLowerScoreDuringContinuingDenseCombat() {
+    @Test public void lowerScoreEventsKeepDenseModeUntilTheQuietWindow() {
         NearZoneCombatPolicy policy = new NearZoneCombatPolicy();
         policy.observe(frame(1000, NearZoneRouting.EVENT_NEAR_ENTER, .05f,
                 enemy(1, 10), enemy(2, 10)), 1000, 250);
-        assertFalse(policy.observe(frame(1200, NearZoneRouting.EVENT_NEAR_ENTER, .3f,
-                enemy(1, 10), enemy(2, 10)), 1200, 250).allowSpeech);
+        assertTrue(policy.observe(frame(1200, NearZoneRouting.EVENT_NEAR_ENTER, .3f,
+                enemy(1, 10), enemy(2, 10)), 1200, 250).dense);
         NearZoneCombatPolicy.Decision decision = policy.observe(frame(1800,
                 NearZoneRouting.EVENT_NEAR_ENTER, .3f, enemy(1, 10), enemy(2, 10)), 1800, 250);
         assertTrue(decision.dense);
         assertFalse(decision.exitedDense);
-        assertTrue(decision.allowSpeech);
+        assertEquals(NearZoneCombatPolicy.score(2, true, .3f), decision.score, 1e-6f);
     }
 
     @Test public void staleAndInvisibleTargetsDoNotInflateThreat() {
@@ -113,16 +142,14 @@ public final class NearZoneCombatPolicyTest {
         assertFalse(decision.dense);
     }
 
-    @Test public void higherScoreWithinTheWindowCanReplaceTheWinner() {
+    @Test public void higherScoreRaisesPriorityAndResetClearsDenseMode() {
         NearZoneCombatPolicy policy = new NearZoneCombatPolicy();
-        policy.observe(frame(1000, NearZoneRouting.EVENT_NEAR_ENTER, .3f,
+        NearZoneCombatPolicy.Decision lower = policy.observe(frame(1000, NearZoneRouting.EVENT_NEAR_ENTER, .3f,
                 enemy(1, 10), enemy(2, 10)), 1000, 250);
         NearZoneCombatPolicy.Decision higher = policy.observe(frame(1100,
                 NearZoneRouting.EVENT_NEAR_ENTER, .1f, enemy(1, 10), enemy(2, 10)), 1100, 250);
-        assertTrue(higher.allowSpeech);
-        assertEquals(higher.score, higher.bestWindowScore, 1e-6f);
+        assertTrue(higher.priority > lower.priority);
         policy.reset();
-        assertTrue(policy.observe(frame(1150, NearZoneRouting.EVENT_NEAR_ENTER, .3f,
-                enemy(1, 10), enemy(2, 10)), 1150, 250).allowSpeech);
+        assertFalse(policy.isDense());
     }
 }

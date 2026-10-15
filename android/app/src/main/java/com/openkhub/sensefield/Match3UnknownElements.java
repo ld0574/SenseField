@@ -1,0 +1,164 @@
+package com.openkhub.sensefield;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+/** Bounded diagnostic families. Their prototypes never enter the recognition/rule catalog. */
+final class Match3UnknownElements {
+    private final boolean allAppearances;
+    Match3UnknownElements() { this(false); }
+    Match3UnknownElements(boolean allAppearances) { this.allAppearances=allAppearances; }
+    static final int MAX_FAMILIES=24, MAX_SAMPLES_PER_FAMILY=2, STABLE_SAMPLES=3;
+    static final int COVER_RESERVED_FAMILIES=6;
+    static final long SAMPLE_GAP_MS=10000, FRESH_MS=2400;
+    static final class Observation {
+        final Match3Position.Cell cell;
+        final int[] patch;
+        final Match3AnimalAppearance.Body body;
+        private Boolean detailed;
+        Observation(Match3Position.Cell cell,int[] patch) {
+            this.cell=cell;this.patch=patch.clone();body=new Match3AnimalAppearance.Body(patch);
+        }
+        Observation(Match3Position.Cell cell,int[] patch,Match3AnimalAppearance.Body body) {
+            this.cell=cell;this.patch=patch.clone();this.body=body;
+        }
+        boolean sameRuleState(Observation other) { return cell.equals(other.cell); }
+        boolean detailed() {
+            if(detailed==null)detailed=Match3AnimalAppearance.hasFaceDetail(patch);
+            return detailed;
+        }
+    }
+    static final class Sample {
+        private final Family family;
+        private final int previousSamples,previousDetail;
+        private final long previousAt;
+        final String familyId;
+        final int sampleNumber,row,col;
+        final long at;
+        final Observation observation;
+        Sample(Family family,int row,int col,long at,Observation observation,int detail) {
+            this.family=family;previousSamples=family.samples;previousDetail=family.detail;previousAt=family.sampledAt;
+            family.samples++;family.detail=detail;family.sampledAt=at;
+            familyId=family.id;sampleNumber=family.samples;this.row=row;this.col=col;this.at=at;this.observation=observation;
+        }
+        /** Roll back only this reservation, so a busy writer can retry on a fresh frame. */
+        void rejected() {
+            if(family.samples==sampleNumber && family.sampledAt==at) {
+                family.samples=previousSamples;family.detail=previousDetail;family.sampledAt=previousAt;
+            }
+        }
+        String filename() { return familyId+"-"+sampleNumber+".png"; }
+        String reason() { return observation.cell.kind==Match3Position.Kind.ANIMAL?"cover_unverified":"identity_or_rule_unverified"; }
+    }
+    private static final class Family {
+        final String id;
+        final Observation anchor;
+        int samples,detail;
+        long sampledAt;
+        Family(String id,Observation anchor) { this.id=id;this.anchor=anchor; }
+    }
+    private final List<Family> families=new ArrayList<>();
+    private java.nio.ByteBuffer nativeFamilies;
+    private Observation[][] anchors;
+    private Observation[][] previous;
+    private int[][] counts;
+    private Family[][] assigned;
+    private Observation[][] assignedObservation;
+    private int[][] assignedVersion;
+    private long lastAt=-1;
+    int saturatedObservations,ambiguousObservations;
+    int familyCount() { return families.size(); }
+    void resetStability() {
+        anchors=null;previous=null;counts=null;assigned=null;assignedObservation=null;assignedVersion=null;lastAt=-1;
+    }
+    static boolean needsReview(Match3Position.Cell cell) {
+        return cell!=null && (cell.kind==Match3Position.Kind.UNKNOWN || cell.kind==Match3Position.Kind.SURFACE
+                || cell.kind==Match3Position.Kind.ANIMAL && cell.swapPermission==Match3Position.SwapPermission.UNKNOWN);
+    }
+    List<Sample> observe(Observation[][] observations,long at) {
+        if(observations==null || observations.length==0 || observations[0].length==0 || at<0) {
+            resetStability();return Collections.emptyList();
+        }
+        int rows=observations.length,cols=observations[0].length;
+        if(rows>12 || cols>12)throw new IllegalArgumentException("Element grid");
+        for(Observation[] row:observations)if(row==null || row.length!=cols)throw new IllegalArgumentException("Element grid");
+        if(at==lastAt) {
+            boolean same=previous!=null && previous.length==rows && previous[0].length==cols;
+            for(int r=0;r<rows && same;r++)for(int c=0;c<cols;c++) {
+                Observation a=observations[r][c],b=previous[r][c];
+                if(a==null || b==null) { if(a!=b)same=false; }
+                else if(!a.sameRuleState(b) || !java.util.Arrays.equals(a.patch,b.patch))same=false;
+            }
+            if(!same)resetStability(); // exact comparison, not a collision-prone appearance hash
+            return Collections.emptyList();
+        }
+        if(anchors==null || anchors.length!=rows || anchors[0].length!=cols || at<lastAt || at-lastAt>FRESH_MS) {
+            anchors=new Observation[rows][cols];counts=new int[rows][cols];
+            assigned=new Family[rows][cols];assignedObservation=new Observation[rows][cols];assignedVersion=new int[rows][cols];
+        }
+        lastAt=at;previous=new Observation[rows][];
+        for(int r=0;r<rows;r++)previous[r]=observations[r].clone();
+        List<Sample> samples=new ArrayList<>();
+        for(int r=0;r<rows;r++)for(int c=0;c<cols;c++) {
+            Observation current=observations[r][c],anchor=anchors[r][c];
+            if(current==null || !allAppearances && !needsReview(current.cell)) {
+                anchors[r][c]=null;counts[r][c]=0;assigned[r][c]=null;assignedObservation[r][c]=null;continue;
+            }
+            if(anchor==null || !current.sameRuleState(anchor) || current.body.difference(anchor.body)>Match3AnimalAppearance.MAXIMUM) {
+                anchors[r][c]=current;counts[r][c]=1;assigned[r][c]=null;assignedObservation[r][c]=null;continue;
+            }
+            counts[r][c]=Math.min(STABLE_SAMPLES,counts[r][c]+1);
+            if(counts[r][c]<STABLE_SAMPLES || !current.detailed())continue;
+            Family family=assigned[r][c];Observation cached=assignedObservation[r][c];
+            // A fixed catalog and exactly unchanged pixels have the same result.
+            // New families, new rule states, movement and changed pixels all recheck.
+            if(family==null || assignedVersion[r][c]!=families.size() || cached==null
+                    || !current.sameRuleState(cached) || !java.util.Arrays.equals(current.patch,cached.patch)) {
+                family=find(current);assigned[r][c]=family;assignedObservation[r][c]=current;assignedVersion[r][c]=families.size();
+            }
+            if(family==null)continue;
+            if(family.samples>=MAX_SAMPLES_PER_FAMILY)continue;
+            if(family.samples>0 && at-family.sampledAt<SAMPLE_GAP_MS)continue;
+            int detail=current.body.detail();
+            if(family.samples==0 || family.samples<MAX_SAMPLES_PER_FAMILY
+                    && at-family.sampledAt>=SAMPLE_GAP_MS && detail>family.detail) {
+                samples.add(new Sample(family,r,c,at,current,detail));
+            }
+        }
+        return samples;
+    }
+    private Family find(Observation observation) {
+        Family best=null;float first=Float.POSITIVE_INFINITY,second=Float.POSITIVE_INFINITY;
+        boolean[] compatible=new boolean[families.size()];boolean any=false;
+        for(int i=0;i<families.size();i++)any|=compatible[i]=observation.sameRuleState(families.get(i).anchor);
+        // Session family anchors never change. Batch only compatible rule
+        // states; an observation uses bounded native stack storage instead of
+        // allocating a direct descriptor for every prospective sample.
+        float[] distances=any && Match3NativeMath.AVAILABLE?observation.body.differences(nativeFamilies,families.size(),compatible):null;
+        for(int i=0;i<families.size();i++)if(compatible[i]) {
+            Family family=families.get(i);
+            float error=distances==null?observation.body.difference(family.anchor.body):distances[i];
+            if(error<first) { second=first;first=error;best=family; }
+            else second=Math.min(second,error);
+        }
+        if(first<=Match3AnimalAppearance.MAXIMUM) {
+            if(second-first<Match3AnimalAppearance.MARGIN) { ambiguousObservations++;return null; }
+            return best;
+        }
+        boolean uncertainCover=observation.cell.kind==Match3Position.Kind.ANIMAL && needsReview(observation.cell);
+        int general=0;for(Family existing:families)
+            if(existing.anchor.cell.kind!=Match3Position.Kind.ANIMAL || !needsReview(existing.anchor.cell))general++;
+        // Keep the session's 24-family/two-image cap. Early ordinary or opaque
+        // appearances cannot consume the six slots reserved for later covers.
+        if(families.size()>=MAX_FAMILIES || !uncertainCover && general>=MAX_FAMILIES-COVER_RESERVED_FAMILIES) {
+            saturatedObservations++;return null;
+        }
+        Family family=new Family("u"+(families.size()+1),observation);families.add(family);
+        if(Match3NativeMath.AVAILABLE) {
+            if(nativeFamilies==null)nativeFamilies=java.nio.ByteBuffer.allocateDirect(MAX_FAMILIES*4748).order(java.nio.ByteOrder.nativeOrder());
+            observation.body.appendNativeDescriptor(nativeFamilies);
+        }
+        return family;
+    }
+}

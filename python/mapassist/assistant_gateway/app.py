@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
+import inspect
 import json
 import logging
 import time
@@ -18,11 +20,15 @@ from .asr import FunAsrStreamingRecognizer, MockStreamingRecognizer
 from .sensevoice import SenseVoiceRecognizer
 from .audio import AudioProtocolError, AudioWebSocketSession, GenerationHighWater, validate_start
 from .config import GatewaySettings, safe_configuration_status
+from .public_access import PublicVisionQuota, installation_key
+from .local_proxy import LocalProxyPeerMiddleware
 from .errors import GatewayError
 from .glm import GlmVisionClient
 from .compatible import CompatibleVisionClient
 from .test_text_trace import TestTextTraceRecorder
 from .request_trace import visual_request_context
+from .prompts import load_vision_prompt
+from .validation import is_immediate_combat_question
 from .validation import (
     UNKNOWN_ANSWER,
     InvalidRequest,
@@ -90,6 +96,7 @@ def _log_visual_event(
     kind: str | None = None,
     uncertain: bool | None = None,
     answer_chars: int | None = None,
+    include_image_metadata: bool = False,
 ) -> None:
     fields = [
         "assistant_gateway_visual",
@@ -114,6 +121,17 @@ def _log_visual_event(
         fields.append(f"uncertain={str(uncertain).lower()}")
     if answer_chars is not None:
         fields.append(f"answer_chars={answer_chars}")
+    if include_image_metadata:
+        image = visual_request.image
+        fields.extend((
+            f"image_width={image.width}",
+            f"image_height={image.height}",
+            f"image_bytes={len(image.jpeg_bytes)}",
+            f"image_sha256={hashlib.sha256(image.jpeg_bytes).hexdigest()}",
+            f"image_transcoded={str(image.transcoded).lower()}",
+            f"frame_age_ms={visual_request.frame_age_ms}",
+            f"context_count={len(visual_request.context_frames)}",
+        ))
     _AUDIT_LOGGER.info(" ".join(fields))
 
 
@@ -206,28 +224,38 @@ def _secure_scheme(scope: dict[str, Any]) -> bool:
     return scope.get("scheme") in {"https", "wss"}
 
 
-async def _vision_call(vision_client: Any, visual_request: VisualRequest) -> Any:
+async def _vision_call(vision_client: Any, visual_request: VisualRequest,
+                       timeout_seconds: float | None = None) -> Any:
     token = visual_request_context.set((visual_request.session_id, visual_request.generation,
                                         visual_request.turn_id, visual_request.frame_id))
     try:
-        return await _vision_call_with_context(vision_client, visual_request)
+        return await _vision_call_with_context(vision_client, visual_request, timeout_seconds)
     finally:
         visual_request_context.reset(token)
 
 
-def _vision_call_with_context(vision_client: Any, visual_request: VisualRequest) -> Any:
+def _vision_call_with_context(vision_client: Any, visual_request: VisualRequest,
+                              timeout_seconds: float | None = None) -> Any:
+    if is_immediate_combat_question(visual_request.question):
+        async def redirect_to_local_warning() -> str:
+            return json.dumps({"kind": "ui_text", "answer": "团战即时提醒请听本地预警。我可以帮你读画面、分析游戏问题。", "uncertain": False}, ensure_ascii=False)
+        return redirect_to_local_warning()
     context_images = tuple(frame.image.jpeg_base64 for frame in visual_request.context_frames)
     question = visual_request.question
+    extra: dict[str, Any] = {}
+    if (timeout_seconds is not None
+            and "timeout_seconds" in inspect.signature(vision_client.complete).parameters):
+        extra["timeout_seconds"] = timeout_seconds
     if context_images:
-        context_ages = ", ".join(
-            f"context frame {index} is {frame.frame_age_ms} ms before the primary frame"
+        context_ages = "，".join(
+            f"背景截图{index}已过去{frame.frame_age_ms}毫秒"
             for index, frame in enumerate(visual_request.context_frames, start=1)
         )
         question = (
             f"{question}\n\n"
-            "[Frame timing metadata, separate from the user question: "
-            f"{context_ages}; the primary frame is {visual_request.frame_age_ms} ms old. "
-            "Attached images follow this chronological order, with the primary frame last.]"
+            "【以下为截图时间信息，与用户问题区分："
+            f"{context_ages}；当前主截图已过去{visual_request.frame_age_ms}毫秒。"
+            "图片按时间从早到晚排列，最后一张是当前主截图。】"
         )
         # Keep the legacy no-context call shape intact for third-party clients
         # and existing adapters that only accept question and image_base64.
@@ -235,10 +263,12 @@ def _vision_call_with_context(vision_client: Any, visual_request: VisualRequest)
             question=question,
             image_base64=visual_request.image.jpeg_base64,
             context_images=context_images,
+            **extra,
         )
     return vision_client.complete(
         question=question,
         image_base64=visual_request.image.jpeg_base64,
+        **extra,
     )
 
 
@@ -265,8 +295,10 @@ def create_app(
                 base_url=settings.vision_base_url,
                 model=settings.vision_model,
                 max_tokens=settings.vision_max_tokens,
+                disable_thinking=settings.vision_disable_thinking,
                 concurrency=settings.account_concurrency,
                 timeout_seconds=settings.request_timeout_seconds,
+                system_prompt=load_vision_prompt(settings.vision_prompt_file),
             )
         elif settings.vision_provider == "zhipu" and settings.zhipu_api_key:
             vision_client = GlmVisionClient(
@@ -274,7 +306,13 @@ def create_app(
                 model=settings.zhipu_model,
                 concurrency=settings.account_concurrency,
                 timeout_seconds=settings.request_timeout_seconds,
+                system_prompt=load_vision_prompt(settings.vision_prompt_file),
             )
+
+    public_quota = PublicVisionQuota(settings.public_quota_db,
+        global_daily=settings.public_global_daily,
+        installation_daily=settings.public_installation_daily,
+        installation_minute=settings.public_installation_minute) if settings.public_access else None
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -288,6 +326,8 @@ def create_app(
         try:
             if settings.mode == "production":
                 settings.validate_production()
+            if public_quota is not None:
+                await asyncio.to_thread(public_quota.initialize)
             if settings.asr_backend != "disabled":
                 initialize = getattr(recognizer, "initialize", None)
                 if initialize is None:
@@ -312,6 +352,8 @@ def create_app(
         else None
     )
     app.add_middleware(HttpBodyLimitMiddleware)
+    if settings.local_tls_proxy:
+        app.add_middleware(LocalProxyPeerMiddleware)
 
     @app.exception_handler(GatewayError)
     async def gateway_error_handler(_request: Request, exc: GatewayError) -> JSONResponse:
@@ -356,8 +398,11 @@ def create_app(
         started = time.monotonic()
         if settings.require_tls and not _secure_scheme(request.scope):
             raise GatewayError("https_required", "Use HTTPS for this service.", http_status=426)
+        public_identity = None
         if not _authorization_matches(request.headers.get("authorization"), settings.device_tokens):
-            raise GatewayError("unauthorized", "A valid bearer device token is required.", http_status=401)
+            if public_quota is None:
+                raise GatewayError("unauthorized", "A valid bearer device token is required.", http_status=401)
+            public_identity = installation_key(request.headers.get("x-sensefield-installation"))
         if not request.app.state.vision_ready or vision_client is None:
             raise GatewayError(
                 "vision_unconfigured",
@@ -373,10 +418,19 @@ def create_app(
         except InvalidRequest as exc:
             raise GatewayError("invalid_request", str(exc), http_status=422) from exc
         del payload
+        if public_identity is not None:
+            try:
+                await asyncio.to_thread(public_quota.charge, public_identity)
+            except GatewayError:
+                raise
+            except Exception:
+                _AUDIT_LOGGER.error("assistant_gateway_audit event=public_quota_unavailable")
+                raise GatewayError("public_quota_unavailable", "Public service unavailable.", http_status=503) from None
 
         _log_visual_event(
             "payload_validated", visual_request,
             stage="payload_validation", started_at=started,
+            include_image_metadata=True,
         )
         text_trace = request.app.state.test_text_trace
         if text_trace is not None:
@@ -414,7 +468,9 @@ def create_app(
                         generation=visual_request.generation,
                     )
                     active.upstream_task = asyncio.create_task(
-                        _vision_call(vision_client, visual_request)
+                        _vision_call(vision_client, visual_request,
+                            settings.snapshot_timeout_seconds if visual_request.snapshot_read
+                            and not visual_request.proactive else settings.request_timeout_seconds)
                     )
                     request.app.state.active_visual_requests[session_id] = active
                     owns_slot = True
@@ -499,7 +555,9 @@ def create_app(
                     active.proactive = False
                     active.generation = visual_request.generation
                     active.upstream_task = asyncio.create_task(
-                        _vision_call(vision_client, visual_request)
+                        _vision_call(vision_client, visual_request,
+                            settings.snapshot_timeout_seconds if visual_request.snapshot_read
+                            and not visual_request.proactive else settings.request_timeout_seconds)
                     )
                     owns_slot = True
 
@@ -520,6 +578,7 @@ def create_app(
                     "unknown",
                     UNKNOWN_ANSWER,
                     True,
+                    failure_reason="invalid_output",
                 )
             result = {
                 "session_id": visual_request.session_id,
@@ -531,6 +590,14 @@ def create_app(
                 "uncertain": answer.uncertain,
                 "elapsed_ms": max(0, int((time.monotonic() - started) * 1000)),
             }
+            if answer.decision_scene:
+                result["decision_scene"] = answer.decision_scene
+            if answer.failure_reason:
+                result["unknown_reason"] = answer.failure_reason
+            if (visual_request.snapshot_read and not visual_request.proactive
+                    and answer.kind == "hud" and not answer.uncertain
+                    and not is_immediate_combat_question(visual_request.question)):
+                result["answer_scope"] = "snapshot"
             if text_trace is not None:
                 text_trace.record(
                     "validated_response",
@@ -538,10 +605,11 @@ def create_app(
                     answer=answer.answer,
                     kind=answer.kind,
                     uncertain=answer.uncertain,
+                    answer_scope=result.get("answer_scope", ""),
                     elapsed_ms=result["elapsed_ms"],
                 )
             _AUDIT_LOGGER.info(
-                "assistant_gateway_visual event=response_validated generation=%s turn_id=%s frame_id=%s context_count=%s proactive=%s stage=response_validation kind=%s uncertain=%s answer_chars=%s elapsed_ms=%s",
+                "assistant_gateway_visual event=response_validated generation=%s turn_id=%s frame_id=%s context_count=%s proactive=%s stage=response_validation kind=%s uncertain=%s answer_chars=%s elapsed_ms=%s answer_scope=%s unknown_reason=%s",
                 visual_request.generation,
                 visual_request.turn_id,
                 visual_request.frame_id,
@@ -551,6 +619,8 @@ def create_app(
                 answer.uncertain,
                 len(answer.answer),
                 result["elapsed_ms"],
+                result.get("answer_scope", "legacy"),
+                answer.failure_reason or "none",
             )
             _log_visual_event(
                 "success", visual_request,

@@ -1,0 +1,754 @@
+{
+  "schema": "sensefield.feedback_audit/1",
+  "date": "2026-10-14",
+  "observations": "Software timestamps, not actual acoustic latency or death attribution.",
+  "combat": {
+    "archive_sha256": "a3cdb95130c7fc1f36d6590f35ed341edf09ba7c16b0abc59dc7aeef12cf922b",
+    "archive_bytes": 16065616,
+    "version_name": "0.4.6",
+    "version_code": 23,
+    "installed_apk_sha256": null,
+    "frame_count": 8433,
+    "interrupted": true,
+    "end_observed": false,
+    "near_dispatch_count": 16,
+    "near_dispatch_outcomes": {
+      "ACCEPTED": 16
+    },
+    "tone_started_from_observed_ms": {
+      "count": 16,
+      "min": 118,
+      "p50": 262,
+      "p95": 521,
+      "max": 521
+    },
+    "tone_completed_from_observed_ms": {
+      "count": 16,
+      "min": 372,
+      "p50": 502,
+      "p95": 768,
+      "max": 768
+    },
+    "speech_started_from_observed_ms": {
+      "count": 16,
+      "min": 177,
+      "p50": 267,
+      "p95": 521,
+      "max": 521
+    },
+    "speech_completed_from_observed_ms": {
+      "count": 16,
+      "min": 1108,
+      "p50": 1550,
+      "p95": 1821,
+      "max": 1821
+    },
+    "haptic_started_from_observed_ms": {
+      "count": 16,
+      "min": 118,
+      "p50": 186,
+      "p95": 462,
+      "max": 462
+    },
+    "speech_duration_ms": {
+      "count": 16,
+      "min": 879,
+      "p50": 1295,
+      "p95": 1376,
+      "max": 1376
+    },
+    "recorded_audio_styles": {
+      "phrase": 16
+    },
+    "over_age_frames": 5,
+    "native_ms": {
+      "count": 8433,
+      "min": 0.146,
+      "p50": 1.64,
+      "p95": 323.042,
+      "max": 1275.103
+    },
+    "span_from_first_near_native_ms": {
+      "count": 2112,
+      "min": 0.146,
+      "p50": 161.984,
+      "p95": 351.382,
+      "max": 1275.103
+    },
+    "span_from_first_near_observed_gap_ms": {
+      "count": 2111,
+      "min": 116,
+      "p50": 301,
+      "p95": 635,
+      "max": 1773
+    },
+    "assistant_requests": {},
+    "assistant_http_errors": [],
+    "assistant_manual_feedback": {},
+    "assistant_success_result_count": 0,
+    "aggregate_pending_run_to_speech_start_ms": {
+      "count": 9,
+      "min": 469,
+      "p50": 819,
+      "p95": 3943,
+      "max": 3943
+    },
+    "aggregate_pending_note": "Consecutive aggregate PENDING states can involve different targets or radius crossings; not a same-target confirmation latency."
+  },
+  "vision": {
+    "archive_sha256": "ae3b00baa54ba9dd45f900bd44ce12c0068594c734a7955e4f362527d2e2c92e",
+    "archive_bytes": 32457458,
+    "version_name": "0.4.6",
+    "version_code": 23,
+    "installed_apk_sha256": null,
+    "frame_count": 6048,
+    "interrupted": true,
+    "end_observed": false,
+    "near_dispatch_count": 40,
+    "near_dispatch_outcomes": {
+      "ACCEPTED": 40
+    },
+    "tone_started_from_observed_ms": {
+      "count": 40,
+      "min": 101,
+      "p50": 205,
+      "p95": 425,
+      "max": 457
+    },
+    "tone_completed_from_observed_ms": {
+      "count": 40,
+      "min": 383,
+      "p50": 453,
+      "p95": 685,
+      "max": 763
+    },
+    "speech_started_from_observed_ms": {
+      "count": 40,
+      "min": 138,
+      "p50": 221,
+      "p95": 439,
+      "max": 580
+    },
+    "speech_completed_from_observed_ms": {
+      "count": 39,
+      "min": 910,
+      "p50": 1122,
+      "p95": 1387,
+      "max": 1403
+    },
+    "haptic_started_from_observed_ms": {
+      "count": 37,
+      "min": 95,
+      "p50": 163,
+      "p95": 397,
+      "max": 425
+    },
+    "speech_duration_ms": {
+      "count": 39,
+      "min": 754,
+      "p50": 833,
+      "p95": 956,
+      "max": 960
+    },
+    "recorded_audio_styles": {
+      "phrase": 15,
+      "two_word": 40
+    },
+    "over_age_frames": 1,
+    "native_ms": {
+      "count": 6048,
+      "min": 0.129,
+      "p50": 114.419,
+      "p95": 345.077,
+      "max": 655.875
+    },
+    "span_from_first_near_native_ms": {
+      "count": 4736,
+      "min": 0.129,
+      "p50": 118.528,
+      "p95": 347.995,
+      "max": 655.875
+    },
+    "span_from_first_near_observed_gap_ms": {
+      "count": 4735,
+      "min": 71,
+      "p50": 168,
+      "p95": 453,
+      "max": 1067
+    },
+    "assistant_requests": {
+      "automatic": 31,
+      "manual": 7
+    },
+    "assistant_http_errors": [
+      {
+        "http_status": 502,
+        "source": "provider",
+        "upstream_http_status": 401,
+        "count": 38
+      }
+    ],
+    "assistant_manual_feedback": {
+      "vision_upstream_unavailable": 7
+    },
+    "assistant_success_result_count": 0,
+    "aggregate_pending_run_to_speech_start_ms": {
+      "count": 20,
+      "min": 335,
+      "p50": 454,
+      "p95": 787,
+      "max": 815
+    },
+    "aggregate_pending_note": "Consecutive aggregate PENDING states can involve different targets or radius crossings; not a same-target confirmation latency."
+  },
+  "user_clarification": {
+    "combat_need": "Earlier anticipation of observed enemies approaching, not extra channels or removal of directional wording",
+    "vision_cause": "Service operator confirmed depleted provider balance",
+    "new_relay_status": "Tokens1688 real API tested; Kimi-K3 preferred; no production gateway deployment performed",
+    "cloud_vision_scope": "Chinese-speaking game partner serving low-vision users; hero selection and equipment planning; editable server prompt, no fixed recommendations"
+  },
+  "approach_development_replay": {
+    "combat": {
+      "frame_count": 8433,
+      "events_sha256": "e7986b5ba2d191a4eeffd2cd6db0324068e46be7ec3a8dd82f796d714f7a87c3",
+      "baseline_library_sha256": "79435f5d3560b14e3f26879bfd381663fb351bdce55b27633756a608f367b4f9",
+      "candidate_library_sha256": "0a1c549da91656686e78de2edb12e1e368e8caa8bd98bf6249da86257178cd6b",
+      "baseline_events": {
+        "RADAR_PAUSED": 14,
+        "RADAR_RESUMED": 13,
+        "NEAR_ENTER": 16,
+        "SUPPRESSED": 10
+      },
+      "candidate_events": {
+        "RADAR_PAUSED": 14,
+        "RADAR_RESUMED": 13,
+        "NEAR_ENTER": 14,
+        "SUPPRESSED": 10,
+        "APPROACH": 6
+      },
+      "approach_count": 6,
+      "observed_entry_leads_ms": [
+        2846
+      ],
+      "matched_baseline_cue_leads_ms": [],
+      "entry_within_projection_horizon_count": 0,
+      "no_entry_observed_within_3s_count": 1,
+      "censored_count": 4,
+      "independent_accuracy": false,
+      "acoustic_latency": false,
+      "survival_benefit": false
+    },
+    "vision": {
+      "frame_count": 6048,
+      "events_sha256": "6b06f4c5be57e782743458a17805577496aa19c8edebc6386d0aee7f8c2310b9",
+      "baseline_library_sha256": "79435f5d3560b14e3f26879bfd381663fb351bdce55b27633756a608f367b4f9",
+      "candidate_library_sha256": "0a1c549da91656686e78de2edb12e1e368e8caa8bd98bf6249da86257178cd6b",
+      "baseline_events": {
+        "RADAR_PAUSED": 24,
+        "RADAR_RESUMED": 23,
+        "NEAR_ENTER": 40,
+        "SUPPRESSED": 21
+      },
+      "candidate_events": {
+        "RADAR_PAUSED": 24,
+        "RADAR_RESUMED": 23,
+        "APPROACH": 11,
+        "NEAR_ENTER": 32,
+        "SUPPRESSED": 21
+      },
+      "approach_count": 11,
+      "observed_entry_leads_ms": [
+        603,
+        1653,
+        1939,
+        2539,
+        1453
+      ],
+      "matched_baseline_cue_leads_ms": [
+        780,
+        1934,
+        2122,
+        2706,
+        1636
+      ],
+      "entry_within_projection_horizon_count": 2,
+      "no_entry_observed_within_3s_count": 2,
+      "censored_count": 4,
+      "independent_accuracy": false,
+      "acoustic_latency": false,
+      "survival_benefit": false
+    },
+    "limitations": "Stored spatial associations, not confirmed hero identity. Future motion can change: only two entries were observed within 1.5s; later entries and censored cases are not prediction accuracy passes. No extra speech style or shortened TTL was retained."
+  },
+  "vision_relay_benchmark": "../assistant/VISION_RELAY_BENCHMARK_2026-10-14.json",
+  "package": {
+    "apk": "sensefieldv0.4.7.apk",
+    "bytes": 24591661,
+    "sha256": "97957d1e2744c2f5cc0f0670c9bcda7e4dab2a50b4218fad67f860bbeb1f1a5e",
+    "certificate_sha256": "5a42a53a8f06850e89c46ea193931e9853e3ce7cff99551b42e8b414a1eaaf68",
+    "version_name": "0.4.7",
+    "version_code": 24,
+    "package_name": "com.openkhub.sensefield",
+    "test_fixture": false,
+    "compressed_groups": {
+      "other": 7408015,
+      "dex": 475293,
+      "native": 12522155,
+      "speech": 3929178
+    },
+    "elf_load_alignments": {
+      "lib/arm64-v8a/libmapassist.so": [
+        16384,
+        16384,
+        16384
+      ],
+      "lib/arm64-v8a/libmapassist_jni.so": [
+        16384,
+        16384,
+        16384
+      ],
+      "lib/arm64-v8a/libmatch3_math_jni.so": [
+        16384,
+        16384
+      ],
+      "lib/arm64-v8a/libondevice_asr_jni.so": [
+        16384,
+        16384,
+        16384
+      ],
+      "lib/arm64-v8a/libonnxruntime.so": [
+        16384,
+        16384,
+        16384,
+        16384
+      ],
+      "lib/arm64-v8a/libpresentation_audio_jni.so": [
+        16384,
+        16384,
+        16384
+      ],
+      "lib/arm64-v8a/libsherpa-onnx-c-api.so": [
+        16384,
+        16384,
+        16384
+      ]
+    },
+    "audio_files": 856,
+    "debuggable": false,
+    "extract_native_libs": true
+  },
+  "engineering_checks": {
+    "bytes": 24591661,
+    "sha256": "97957d1e2744c2f5cc0f0670c9bcda7e4dab2a50b4218fad67f860bbeb1f1a5e",
+    "certificate_sha256": "5a42a53a8f06850e89c46ea193931e9853e3ce7cff99551b42e8b414a1eaaf68",
+    "version_name": "0.4.7",
+    "version_code": 24,
+    "package_name": "com.openkhub.sensefield",
+    "test_fixture": false,
+    "compressed_groups": {
+      "other": 7408015,
+      "dex": 475293,
+      "native": 12522155,
+      "speech": 3929178
+    },
+    "elf_load_alignments": {
+      "lib/arm64-v8a/libmapassist.so": [
+        16384,
+        16384,
+        16384
+      ],
+      "lib/arm64-v8a/libmapassist_jni.so": [
+        16384,
+        16384,
+        16384
+      ],
+      "lib/arm64-v8a/libmatch3_math_jni.so": [
+        16384,
+        16384
+      ],
+      "lib/arm64-v8a/libondevice_asr_jni.so": [
+        16384,
+        16384,
+        16384
+      ],
+      "lib/arm64-v8a/libonnxruntime.so": [
+        16384,
+        16384,
+        16384,
+        16384
+      ],
+      "lib/arm64-v8a/libpresentation_audio_jni.so": [
+        16384,
+        16384,
+        16384
+      ],
+      "lib/arm64-v8a/libsherpa-onnx-c-api.so": [
+        16384,
+        16384,
+        16384
+      ]
+    },
+    "audio_files": 856,
+    "debuggable": false,
+    "extract_native_libs": true,
+    "debug_jvm": {
+      "tests": 626,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "release_jvm": {
+      "tests": 626,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "lint": {
+      "Error": 0,
+      "Warning": 31
+    },
+    "debug_instrumentation": {
+      "app_sha256": "f83082f2a71d1e485fbfd289049eb56265a6f13bc68796afbcecb4f57c9344fc",
+      "test_sha256": "96c3b5df1c98ad4a3a5f0e688c44f97a9856079104461e1e99d6b6e8fc7c9099",
+      "exit_code": 0,
+      "log_sha256": "29c042ef6dbc6ef9177820961dc6fae2b6efb97a934fc02bb992c8b2da5fcddf",
+      "executed": 34,
+      "skipped": 0,
+      "passed": true
+    },
+    "python": {
+      "executed": 265,
+      "failures": 0,
+      "errors": 0,
+      "log_sha256": "c5b884bdd9fc3f35098ba47d5a140e07d1bc2f27c5cc352c6f5b2cf4d5b5af39"
+    },
+    "release_instrumentation": {
+      "started_utc": "2026-10-14T03:56:26.129148+00:00",
+      "app_sha256": "97957d1e2744c2f5cc0f0670c9bcda7e4dab2a50b4218fad67f860bbeb1f1a5e",
+      "test_sha256": "c8fab27035bb9ecd4e30c0923823f2f586c04535959d8d1bac2a3c27a3198e34",
+      "source_sha256": "fd97368dafa66bf5e43e95c398be00a874bcb7c0b17169a705b0eec9085b49f2",
+      "serial": "emulator-5554",
+      "retry_after_emulator_shell_timeout": true,
+      "passed": true,
+      "steps": [
+        {
+          "name": "release-environment",
+          "exit_code": 0,
+          "log_sha256": "a70a90e09ce39cd21946e3f1ffe361ad465571fca1765d1f3a654128a382ad92"
+        },
+        {
+          "name": "release-install-app",
+          "exit_code": 0,
+          "log_sha256": "781a31c82430c97897af612ece5e0ca2205e301cb5ff121ce2660541ea5182c7"
+        },
+        {
+          "name": "release-install-test",
+          "exit_code": 0,
+          "log_sha256": "781a31c82430c97897af612ece5e0ca2205e301cb5ff121ce2660541ea5182c7"
+        },
+        {
+          "name": "release-main-path",
+          "exit_code": 0,
+          "log_sha256": "d3b6528c4f2c94d31a6d8a39c20c108a547533c16dad63d2ac6bd631fe1afb6a"
+        },
+        {
+          "name": "release-main-readback",
+          "exit_code": 0,
+          "log_sha256": "3089f19d78560f5ddcc0eb1c7fc236db8219ebc15e6f419e2af7dbb2096621eb"
+        },
+        {
+          "name": "release-test-path",
+          "exit_code": 0,
+          "log_sha256": "87522dd1aca69e9ed2fb67148fce7438ced7a90ceb2487c5350172eeff776c80"
+        },
+        {
+          "name": "release-test-readback",
+          "exit_code": 0,
+          "log_sha256": "c6dd2332bfcd5494d31082f7d5612a82980d6765415c7d676a73acb06c2bc646"
+        },
+        {
+          "name": "release-overlay",
+          "exit_code": 0,
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "release-notifications",
+          "exit_code": 0,
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "release-instrumentation",
+          "exit_code": 0,
+          "log_sha256": "3c19dbe91bef73eb9deb078e004d056a5841dea1c5e6a928aa832c842fc7a439"
+        }
+      ],
+      "executed": 83,
+      "skipped": 0,
+      "finished_utc": "2026-10-14T04:00:53.588448+00:00"
+    },
+    "host_ctest": {
+      "executed": 5,
+      "failures": 0,
+      "log_sha256": "5ed8b4613a096fbbe13981f2c3fad9b1974a3bf7ad0bc7804680d9eec9b2b991",
+      "scope": "Host native branch tests; native source unchanged since this run. Not Android/phone sound or performance."
+    },
+    "final_emulator_restoration": {
+      "started_utc": "2026-10-14T04:16:44.010695+00:00",
+      "steps": [
+        {
+          "name": "final-settings-before",
+          "exit_code": 0,
+          "log_sha256": "f3de61af120f9a88cf90d5c7970b7ba705581d8ede6b00561142f89933962413"
+        },
+        {
+          "name": "final-install-main",
+          "exit_code": 0,
+          "log_sha256": "781a31c82430c97897af612ece5e0ca2205e301cb5ff121ce2660541ea5182c7"
+        },
+        {
+          "name": "final-path-main",
+          "exit_code": 0,
+          "log_sha256": "7709846be3d2ce3be28eb0db263c243ec5710ef96d3201b9788b888d9f459bce"
+        },
+        {
+          "name": "final-readback-main",
+          "exit_code": 0,
+          "log_sha256": "9823ef933764531cd313a2c05e0661bd9ea7fa12072d366fcb3515133b484144"
+        },
+        {
+          "name": "final-install-test",
+          "exit_code": 0,
+          "log_sha256": "781a31c82430c97897af612ece5e0ca2205e301cb5ff121ce2660541ea5182c7"
+        },
+        {
+          "name": "final-path-test",
+          "exit_code": 0,
+          "log_sha256": "ce5cd560d1a0ad2708498c7f179dac0764f9a3375e581afcf8391387b4f8c946"
+        },
+        {
+          "name": "final-readback-test",
+          "exit_code": 0,
+          "log_sha256": "4b7b9e8ea8169430b1d278011a5717159a615bec064d0b9a7cc93c85fc1a9574"
+        },
+        {
+          "name": "final-settings-after",
+          "exit_code": 0,
+          "log_sha256": "f3de61af120f9a88cf90d5c7970b7ba705581d8ede6b00561142f89933962413"
+        }
+      ],
+      "passed": true,
+      "main_sha256": "97957d1e2744c2f5cc0f0670c9bcda7e4dab2a50b4218fad67f860bbeb1f1a5e",
+      "test_sha256": "c8fab27035bb9ecd4e30c0923823f2f586c04535959d8d1bac2a3c27a3198e34",
+      "settings_unchanged": true,
+      "finished_utc": "2026-10-14T04:16:45.945257+00:00",
+      "receipt_sha256": "802132238628b6c076a8ac76ac5950c0a1826409af6a40dc24698c3a5d5bbd29"
+    }
+  },
+  "cloud_decision_probe": {
+    "created_utc": "2026-10-14T03:42:24.268764+00:00",
+    "model": "Kimi-K3",
+    "base_url": "https://www.tokens1688.com/v1",
+    "timeout_seconds": 12,
+    "max_tokens": 256,
+    "disable_thinking": true,
+    "prompt_sha256": "91d00fbbf8decf873c98fd0151b41d9faaf9ee2f3027e517911b8e7e86fd1c9a",
+    "synthetic_only": true,
+    "requests": [
+      {
+        "scene": "hero_selection",
+        "image_sha256": "edf23b1b368fd1939807653947bf91f94bfcfeecb7ee83ffd26300fabe346ba0",
+        "answer": "选吕布。队友已锁射手、中路、打野、辅助，缺对抗路和前排，吕布正好补上。",
+        "kind": "hud",
+        "uncertain": false,
+        "decision_scene": "hero_selection",
+        "passed": true,
+        "stream_metrics": {
+          "outcome": "success",
+          "reasoning_chars": 0,
+          "finish_reason": "stop",
+          "first_content_ms": 4187
+        },
+        "total_ms": 5229.2
+      },
+      {
+        "scene": "equipment",
+        "image_sha256": "f01517ba95af856ee22f71903d6af4014bc63976a953789758c7bfc642dc47a4",
+        "answer": "先出魔女斗篷。你玩吕布已有抵抗之靴，当前主要威胁是对方法术伤害，魔女斗篷能直接补法术防御。",
+        "kind": "hud",
+        "uncertain": false,
+        "decision_scene": "equipment",
+        "passed": true,
+        "stream_metrics": {
+          "outcome": "success",
+          "reasoning_chars": 0,
+          "finish_reason": "stop",
+          "first_content_ms": 5783
+        },
+        "total_ms": 7164.6
+      },
+      {
+        "scene": "combat",
+        "image_sha256": "38889e066345e3e69e273c05ae972ca8dd5b90012fba3484a0b0373759767ae2",
+        "passed": false,
+        "error_code": "vision_timeout",
+        "stream_metrics": null,
+        "total_ms": 12002.3
+      }
+    ],
+    "limitations": "Two synthetic decision pages only; combat cloud probe timed out, so no model-level negative pass is claimed. New gateway bypass is tested separately and does not call a cloud model. No phone or public gateway recovery evidence."
+  },
+  "source_binding": {
+    "base_commit": "0aac5b8b4d6c04c649d8135ce5df6d5f7300955f",
+    "android_native_source_sha256": "fd97368dafa66bf5e43e95c398be00a874bcb7c0b17169a705b0eec9085b49f2",
+    "prompt_file_sha256": "fb2c38d11232ac349e13502673d049bb3bbf5ece95a99aab7cb1b08489374457",
+    "effective_prompt_sha256": "91d00fbbf8decf873c98fd0151b41d9faaf9ee2f3027e517911b8e7e86fd1c9a",
+    "note": "The runtime loader strips the UTF-8 file; effective prompt hash binds the actual tested request. Committed source receipt is delivered with the candidate."
+  },
+  "retained_failures": {
+    "final_release_timeout": {
+      "timeout_seconds": 600,
+      "receipt_sha256": "052d3cfaa0b70d3f5419dc029bb3479dba1498de4111e7fa05e8e36b30517781",
+      "observation": "ADB transport remained online; shell/getprop failed to respond within 8 seconds. Emulator cold restart followed by final-byte suite passed. No root cause attribution."
+    },
+    "earlier_release_notes": "Unsupported reflection ABI, missing overlay authorization/private fixtures, and earlier skips are preserved on their original runs. Final test APK alone includes 44 private fixtures.",
+    "python_caption_assertion": "Initial translated context-caption assertion failed; assertion corrected and all affected 265 tests passed. Original failure log retained.",
+    "final_cost_reference_permissions": {
+      "receipt_sha256": "3b9d002593f09cf23634b6d3b7369ec9aaf1abfc17f8bd5c4a43f75b6ae22319",
+      "error": "settings-before and settings-after permission denied after cold emulator startup; retried separately under emulator adbd root."
+    }
+  },
+  "honor_reference_review": {
+    "schema": "sensefield.honor_semantic_review/1",
+    "frames": 12,
+    "all_normalized_outputs_equal": true,
+    "diffs": [],
+    "apk_sha256": {
+      "baseline": "a0c8365938475b4e37b08c48bb33c2ff1e410604706fc29555e7bbd5d687467d",
+      "candidate": "97957d1e2744c2f5cc0f0670c9bcda7e4dab2a50b4218fad67f860bbeb1f1a5e"
+    },
+    "references_sha256": {
+      "baseline": "d0a27dc7cd4891dfd8a06f7fd23c9002b451fa603ed2c7e2fd28ea19e70a8944",
+      "candidate": "cbc713f3b00111327ba5515259161a984992d2e894afc98048816d141934dbdb"
+    },
+    "scope": "12 frozen development/reconstructed JPEGs, no independent anticipation truth, live service/audio or phone heat."
+  },
+  "honor_cost_initial": {
+    "receipt_sha256": "0654b22599ca0be7b1d81e355b03f2e0cb4b34a62172beed6b2001c59b2f9300",
+    "passed": false,
+    "packages_sha256": {
+      "baseline": "a0c8365938475b4e37b08c48bb33c2ff1e410604706fc29555e7bbd5d687467d",
+      "candidate": "97957d1e2744c2f5cc0f0670c9bcda7e4dab2a50b4218fad67f860bbeb1f1a5e",
+      "producer": "e5c9951953ce47d95891871e45494bd162e1d58d6c8af0cda799266d37e189a1",
+      "restore_test": "c8fab27035bb9ecd4e30c0923823f2f586c04535959d8d1bac2a3c27a3198e34"
+    },
+    "manifest_sha256": "8f180132d1d0515d28070f62cd0cb05be3040349e36e1825375858d8d82dcb80",
+    "pairs": [
+      {
+        "baseline_wall_p95_ms": 144.503834,
+        "candidate_wall_p95_ms": 218.547333,
+        "wall_p95_change_percent": 51.23981623906255,
+        "baseline_worker_p95_ms": 41.068534,
+        "candidate_worker_p95_ms": 59.711546,
+        "worker_p95_change_percent": 45.39488066459836,
+        "baseline_process_cpu_ms": 11662,
+        "candidate_process_cpu_ms": 12007,
+        "process_cpu_change_percent": 2.95832618761791,
+        "passed": false
+      },
+      {
+        "baseline_wall_p95_ms": 118.478251,
+        "candidate_wall_p95_ms": 118.923875,
+        "wall_p95_change_percent": 0.376123040506382,
+        "baseline_worker_p95_ms": 35.456767,
+        "candidate_worker_p95_ms": 35.827251,
+        "worker_p95_change_percent": 1.0448894000967268,
+        "baseline_process_cpu_ms": 10851,
+        "candidate_process_cpu_ms": 10858,
+        "process_cpu_change_percent": 0.06451018339324044,
+        "passed": true
+      },
+      {
+        "baseline_wall_p95_ms": 150.986709,
+        "candidate_wall_p95_ms": 117.585459,
+        "wall_p95_change_percent": -22.121980286357523,
+        "baseline_worker_p95_ms": 43.346344,
+        "candidate_worker_p95_ms": 35.371833,
+        "worker_p95_change_percent": -18.397194005565954,
+        "baseline_process_cpu_ms": 11508,
+        "candidate_process_cpu_ms": 10793,
+        "process_cpu_change_percent": -6.213069169273544,
+        "passed": true
+      }
+    ],
+    "median_process_cpu_change_percent": 0.06451018339324044,
+    "restored_original_candidate_and_standard_test": true,
+    "host": {
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "load_average_start": [
+        30.537109375,
+        16.52392578125,
+        11.81689453125
+      ],
+      "load_average_end": [
+        4.14501953125,
+        10.05419921875,
+        10.06396484375
+      ]
+    },
+    "scope": "original APKs; retained production stages on frozen developer pixels; no live service admission, UI/audio/capture or phone heat",
+    "note": "First pair failed the 10% P95 gate, other two passed. Preserve every sample. Same-byte baseline P95 varied 约27.4% across runs; A/A diagnostic follows, no failure erased."
+  },
+  "honor_cost_control_aa": {
+    "receipt_sha256": "8c5b6c72c585d5e5f23ab0e1cb57a7bfccd107e7bb75dfee22d3912a647a982c",
+    "apk_sha256": "a0c8365938475b4e37b08c48bb33c2ff1e410604706fc29555e7bbd5d687467d",
+    "pairs": [
+      {
+        "baseline_wall_p95_ms": 160.943875,
+        "candidate_wall_p95_ms": 117.229625,
+        "wall_p95_change_percent": -27.161176528153053,
+        "baseline_worker_p95_ms": 43.062721,
+        "candidate_worker_p95_ms": 35.542963,
+        "worker_p95_change_percent": -17.46233824843535,
+        "baseline_process_cpu_ms": 11494,
+        "candidate_process_cpu_ms": 10852,
+        "process_cpu_change_percent": -5.58552288150339,
+        "passed": true
+      },
+      {
+        "baseline_wall_p95_ms": 131.942375,
+        "candidate_wall_p95_ms": 119.499084,
+        "wall_p95_change_percent": -9.430852673373513,
+        "baseline_worker_p95_ms": 39.060317,
+        "candidate_worker_p95_ms": 36.209373,
+        "worker_p95_change_percent": -7.298824533349279,
+        "baseline_process_cpu_ms": 11087,
+        "candidate_process_cpu_ms": 10859,
+        "process_cpu_change_percent": -2.0564625236763723,
+        "passed": true
+      },
+      {
+        "baseline_wall_p95_ms": 198.91,
+        "candidate_wall_p95_ms": 117.398875,
+        "wall_p95_change_percent": -40.978897491327736,
+        "baseline_worker_p95_ms": 55.882429,
+        "candidate_worker_p95_ms": 35.604789,
+        "worker_p95_change_percent": -36.286253770393564,
+        "baseline_process_cpu_ms": 11910,
+        "candidate_process_cpu_ms": 10885,
+        "process_cpu_change_percent": -8.606213266162888,
+        "passed": true
+      }
+    ],
+    "wall_abs_change_max_percent": 40.978897491327736,
+    "worker_abs_change_max_percent": 36.286253770393564,
+    "symmetric_stability_within_10_percent": false,
+    "one_sided_tool_passed": true,
+    "note": "A/A diagnostics require symmetric stability. The one-sided comparison tool marks apparent improvements as pass; identical APK bytes show these are variability, not performance improvement. No initial A/B failure erased."
+  },
+  "honor_cost_conclusion": {
+    "passed": false,
+    "status": "p95_gate_not_passed_measurement_variance_unresolved",
+    "scope": "Final APK retained production stages on frozen emulator inputs. Functional outputs match, but no stable cost pass or new regression attribution.",
+    "follow_up": "Recheck with stable idle host/device and final APK; no physical heat, phone sound, independent anticipation or strategy accuracy pass claimed."
+  }
+}

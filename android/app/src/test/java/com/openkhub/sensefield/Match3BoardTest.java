@@ -85,7 +85,7 @@ public class Match3BoardTest {
         assertEquals(0, s.toRow);
         assertEquals(1, s.toCol);
         assertTrue(s.runsFormed >= 1);
-        assertEquals("第 1 行，第 1 个和第 2 个交换，可以消除", Match3Board.swapSpeech(s));
+        assertEquals("第 1 行，第 1 列和第 2 列交换", Match3Board.swapSpeech(s));
     }
 
     @Test
@@ -118,12 +118,40 @@ public class Match3BoardTest {
         assertEquals(0, Match3Board.findSwaps(of(src)).size());
     }
 
+    /** 逐行扫描与点读共用一套词表（Match3Coach.pieceName）：念动物名，弃权格念「未识别」而不是「空」。 */
     @Test
-    public void scanSpeechUsesOneBasedChineseNames() {
+    public void scanSpeechUsesTheSharedAnimalVocabulary() {
         String[][] src = {{"R", "Y"}, {"B", "."}};
         List<String> lines = Match3Board.scanSpeech(of(src));
         assertEquals(2, lines.size());
-        assertEquals("第 1 行：红、黄", lines.get(0));
-        assertEquals("第 2 行：蓝、空", lines.get(1));
+        assertEquals("第 1 行：红狐狸、小鸡", lines.get(0));
+        assertEquals("第 2 行：河马、未识别", lines.get(1));
+    }
+
+    /** Identical learned appearances do not establish that an object is a matchable animal. */
+    @Test
+    public void specialAppearanceLabelsDoNotInventOrdinaryRuns() {
+        String[][] src = {{"R", "Y", "1", "1", "1", "G", "O", "P"}};
+        List<Match3Board.Run> runs = Match3Board.findRuns(of(src));
+        assertTrue(runs.isEmpty());
+    }
+
+    /** Unknown special mechanics cannot supply an automatic swap recommendation. */
+    @Test
+    public void swapInvolvingOnlyUnknownSpecialMatchingRulesIsNotProposed() {
+        String[][] src = {{"R", "G", "1"}, {"Y", "O", "1"}, {"B", "1", "G"}};
+        char[][] board = of(src);
+        assertEquals("原盘不该有三连", 0, Match3Board.findRuns(board).size());
+        List<Match3Board.Swap> swaps = Match3Board.findSwaps(board);
+        assertTrue(swaps.isEmpty());
+    }
+
+    /** 空格与未识别永远不算棋子，不许凑成三连或产生假走法。 */
+    @Test
+    public void emptyAndUnknownNeverCountAsPieces() {
+        String[][] src = {{"R", "R", " ", "."}, {"G", "Y", " ", "."}, {"B", "O", " ", "."}};
+        char[][] board = of(src);
+        assertEquals(0, Match3Board.findRuns(board).size());
+        assertEquals(0, Match3Board.findSwaps(board).size());
     }
 }

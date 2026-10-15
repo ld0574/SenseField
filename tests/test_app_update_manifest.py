@@ -84,6 +84,39 @@ def test_manifest_rejects_non_https_or_unsafe_apk_urls(url: str) -> None:
         manifest_builder.validate_apk_url(url)
 
 
+@pytest.mark.parametrize("notes", ["改" * 101, "第一条\n第二条\n第三条\n第四条", "第一条\n\n第二条\n第三条"])
+def test_manifest_rejects_long_update_dialog_notes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, notes: str,
+) -> None:
+    apk = tmp_path / "app.apk"
+    apk.write_bytes(b"apk payload")
+    summary = tmp_path / "update-summary.txt"
+    summary.write_text(notes, encoding="utf-8")
+    monkeypatch.setattr(
+        manifest_builder, "read_apk_metadata",
+        lambda *_args: manifest_builder.parse_aapt2_badging(BADGING),
+    )
+
+    with pytest.raises(manifest_builder.ManifestError, match="Update dialog summary"):
+        manifest_builder.create_manifest(apk, "https://updates.example/app.apk", "unused", summary)
+
+
+def test_manifest_accepts_summary_at_both_limits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    apk = tmp_path / "app.apk"
+    apk.write_bytes(b"apk payload")
+    summary = tmp_path / "update-summary.txt"
+    notes = "改" * 32 + "\n" + "善" * 32 + "\n" + "提" * 34
+    summary.write_text(notes + "\n", encoding="utf-8")
+    monkeypatch.setattr(
+        manifest_builder, "read_apk_metadata",
+        lambda *_args: manifest_builder.parse_aapt2_badging(BADGING),
+    )
+
+    result = manifest_builder.create_manifest(apk, "https://updates.example/app.apk", "unused", summary)
+
+    assert result["release_notes"] == notes
+
+
 def test_aapt_badging_must_include_version_and_minimum_sdk() -> None:
     with pytest.raises(manifest_builder.ManifestError, match="versionName"):
         manifest_builder.parse_aapt2_badging("package: name='com.example.app' versionCode='2'\nminSdkVersion:'23'\n")

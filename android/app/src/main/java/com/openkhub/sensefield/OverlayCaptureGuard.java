@@ -45,6 +45,7 @@ final class OverlayCaptureGuard {
     private List<Marker> renderedMarkers = Collections.emptyList();
     private int consecutiveProbeFrames;
     private boolean suppressed;
+    private float probeAlpha = 1f;
 
     /** Forget the markers associated with a closed or disabled overlay. */
     void clearMarkers() {
@@ -73,6 +74,7 @@ final class OverlayCaptureGuard {
      * Coordinates are normalized to the complete captured frame.
      */
     void recordRenderedFrame(NativeFrameResult frame) {
+        probeAlpha = 1f;
         if (suppressed || frame == null) return;
         List<Marker> next = new ArrayList<>();
         for (TrackedEntity entity : frame.entities) {
@@ -92,6 +94,20 @@ final class OverlayCaptureGuard {
         if (next.isEmpty()) consecutiveProbeFrames = 0;
     }
 
+    /** Explicit normalized probes also support non-native boards and translucent windows. */
+    void recordRenderedPoints(float[][] points, float alpha) {
+        if (suppressed) return;
+        probeAlpha = Math.max(.01f, Math.min(1f, alpha));
+        List<Marker> next = new ArrayList<>();
+        if (points != null) for (float[] point : points) {
+            if (point.length == 2 && Float.isFinite(point[0]) && Float.isFinite(point[1])
+                    && point[0] >= 0 && point[0] <= 1 && point[1] >= 0 && point[1] <= 1)
+                next.add(new Marker(point[0], point[1]));
+        }
+        renderedMarkers = Collections.unmodifiableList(next);
+        if (next.isEmpty()) consecutiveProbeFrames = 0;
+    }
+
     /**
      * Inspect the frame that follows the most recently rendered marker set.
      * Returns true exactly once, when visual output must be disabled for this
@@ -106,7 +122,7 @@ final class OverlayCaptureGuard {
         }
         int matches = 0;
         for (Marker marker : renderedMarkers) {
-            if (probePatternAt(pixels, width, height, rowStride, marker.x, marker.y)) {
+            if (probePatternAt(pixels, width, height, rowStride, marker.x, marker.y, probeAlpha)) {
                 matches++;
             }
         }
@@ -123,6 +139,11 @@ final class OverlayCaptureGuard {
 
     static boolean probePatternAt(ByteBuffer pixels, int width, int height, int rowStride,
                                   float normalizedX, float normalizedY) {
+        return probePatternAt(pixels, width, height, rowStride, normalizedX, normalizedY, 1f);
+    }
+
+    private static boolean probePatternAt(ByteBuffer pixels, int width, int height, int rowStride,
+                                  float normalizedX, float normalizedY, float alpha) {
         if (pixels == null || width <= 0 || height <= 0 ||
                 rowStride < width * 4 || !Float.isFinite(normalizedX) ||
                 !Float.isFinite(normalizedY)) return false;
@@ -130,34 +151,39 @@ final class OverlayCaptureGuard {
         int centerY = Math.round(normalizedY * height);
         return colorNear(pixels, width, height, rowStride,
                 centerX - SAMPLE_OFFSET_X_PX, centerY,
-                PROBE_LEFT_RED, PROBE_LEFT_GREEN, PROBE_LEFT_BLUE)
+                PROBE_LEFT_RED, PROBE_LEFT_GREEN, PROBE_LEFT_BLUE, alpha)
                 && colorNear(pixels, width, height, rowStride,
                 centerX + SAMPLE_OFFSET_X_PX, centerY,
-                PROBE_RIGHT_RED, PROBE_RIGHT_GREEN, PROBE_RIGHT_BLUE);
+                PROBE_RIGHT_RED, PROBE_RIGHT_GREEN, PROBE_RIGHT_BLUE, alpha);
     }
 
     private static boolean colorNear(ByteBuffer pixels, int width, int height, int rowStride,
                                      int expectedX, int expectedY,
-                                     int red, int green, int blue) {
+                                     int red, int green, int blue, float alpha) {
         for (int dy = -SAMPLE_RADIUS_PX; dy <= SAMPLE_RADIUS_PX; dy++) {
             for (int dx = -SAMPLE_RADIUS_PX; dx <= SAMPLE_RADIUS_PX; dx++) {
                 if (colorAt(pixels, width, height, rowStride,
-                        expectedX + dx, expectedY + dy, red, green, blue)) return true;
+                        expectedX + dx, expectedY + dy, red, green, blue, alpha)) return true;
             }
         }
         return false;
     }
 
     private static boolean colorAt(ByteBuffer pixels, int width, int height, int rowStride,
-                                   int x, int y, int red, int green, int blue) {
+                                   int x, int y, int red, int green, int blue, float alpha) {
         if (x < 0 || x >= width || y < 0 || y >= height) return false;
         long offset = (long) y * rowStride + (long) x * 4;
         if (offset < 0 || offset + 2 >= pixels.limit() || offset > Integer.MAX_VALUE)
             return false;
         int index = (int) offset;
-        return near(pixels.get(index) & 255, red) &&
-                near(pixels.get(index + 1) & 255, green) &&
-                near(pixels.get(index + 2) & 255, blue);
+        return nearBlended(pixels.get(index) & 255, red, alpha) &&
+                nearBlended(pixels.get(index + 1) & 255, green, alpha) &&
+                nearBlended(pixels.get(index + 2) & 255, blue, alpha);
+    }
+
+    private static boolean nearBlended(int value, int expected, float alpha) {
+        return value >= expected * alpha - CHANNEL_TOLERANCE
+                && value <= expected * alpha + 255 * (1 - alpha) + CHANNEL_TOLERANCE;
     }
 
     private static boolean validNormalizedBox(TrackedEntity entity) {
@@ -169,7 +195,4 @@ final class OverlayCaptureGuard {
                 && entity.bbox.right <= 1.001f && entity.bbox.bottom <= 1.001f;
     }
 
-    private static boolean near(int actual, int expected) {
-        return Math.abs(actual - expected) <= CHANNEL_TOLERANCE;
-    }
 }

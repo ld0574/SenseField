@@ -1,0 +1,12 @@
+SenseField website / Third-party notices
+
+Three.js: MIT license (three-MIT.txt)
+Lucide: ISC license (lucide-ISC.txt)
+Manrope: SIL Open Font License 1.1 (manrope-OFL.txt)
+GSAP: Standard no-charge license https://gsap.com/standard-license/
+Android gaming concept image: generated with gpt-image-2.5 using the imagegen CLI.
+Generation prompt: website/assets/android-play.prompt.txt in the source repository.
+SenseField and K-Hub logos: existing project assets.
+Continuous acoustic ribbons and interface illustrations: project code.
+
+Source and asset provenance: https://github.com/ld0574/SenseField/tree/main/website

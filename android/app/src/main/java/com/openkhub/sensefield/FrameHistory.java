@@ -21,11 +21,12 @@ final class FrameHistory {
     private long captureEpoch;
 
     synchronized boolean due(long nowMs, FrameProcessingPolicy.Mode mode) {
+        discardExpired(nowMs);
         if (mode == FrameProcessingPolicy.Mode.HOT) {
-            clear();
+            // Sampling pauses without changing capture ownership. Changing the
+            // epoch here would also discard a pending manual screenshot.
             return false;
         }
-        discardExpired(nowMs);
         if (nowMs < lastCapturedAtMs) return false;
         long interval = mode == FrameProcessingPolicy.Mode.WARM ? WARM_INTERVAL_MS : NORMAL_INTERVAL_MS;
         return lastCapturedAtMs < 0 || nowMs - lastCapturedAtMs >= interval;

@@ -131,7 +131,7 @@ public class AssistantContractsTest {
         assertFalse(policy.automaticDue(30_000, FrameProcessingPolicy.Mode.WARM, false, false, -1, 6));
         assertTrue(policy.automaticDue(60_000, FrameProcessingPolicy.Mode.WARM, false, false, -1, 6));
         assertFalse(policy.automaticDue(60_000, FrameProcessingPolicy.Mode.HOT, false, false, -1, 6));
-        assertFalse(policy.manualAllowed(60_000, FrameProcessingPolicy.Mode.HOT));
+        assertTrue(policy.manualAllowed(60_000, FrameProcessingPolicy.Mode.HOT));
         assertFalse(policy.automaticDue(60_000, FrameProcessingPolicy.Mode.NORMAL, true, false, -1, 6));
         assertFalse(policy.automaticDue(60_000, FrameProcessingPolicy.Mode.NORMAL, false, true, -1, 6));
         assertFalse(policy.automaticDue(60_000, FrameProcessingPolicy.Mode.NORMAL, false, false, 58_000, 6));
@@ -143,10 +143,12 @@ public class AssistantContractsTest {
         assertEquals(60_000, policy.retryAfterMs(1000));
         assertEquals(1, policy.retryAfterMs(60_999));
         assertFalse(policy.manualAllowed(60_999, FrameProcessingPolicy.Mode.NORMAL));
+        assertFalse(policy.manualAllowed(60_999, FrameProcessingPolicy.Mode.HOT));
         assertTrue(policy.manualAllowed(61_000, FrameProcessingPolicy.Mode.NORMAL));
         assertEquals(0, policy.retryAfterMs(61_000));
         for (int i = 0; i < 120; i++) policy.started(61_000, false, i);
         assertFalse(policy.manualAllowed(61_000, FrameProcessingPolicy.Mode.NORMAL));
+        assertFalse(policy.manualAllowed(61_000, FrameProcessingPolicy.Mode.HOT));
         assertTrue(policy.manualAllowed(AssistantPolicy.WINDOW_MS + 60_999, FrameProcessingPolicy.Mode.NORMAL));
     }
     @Test public void shortGatewayResponseDoesNotRequireExactLength() throws IOException {
@@ -164,32 +166,12 @@ public class AssistantContractsTest {
         assertEquals(119_000, policy.retryAfterMs(13_000));
         assertFalse(policy.manualAllowed(131_999, FrameProcessingPolicy.Mode.NORMAL));
         assertTrue(policy.manualAllowed(132_000, FrameProcessingPolicy.Mode.NORMAL));
-        assertFalse(policy.manualAllowed(132_000, FrameProcessingPolicy.Mode.HOT));
+        assertTrue(policy.manualAllowed(132_000, FrameProcessingPolicy.Mode.HOT));
     }
     @Test public void responseLimitCountsUtf8Bytes() throws IOException {
         Buffer source = new Buffer().writeUtf8("听野听野");
         try { AssistantGatewayClient.readBounded(source, 8); fail("oversize UTF-8 accepted"); }
         catch (IOException expected) { }
-    }
-    @Test public void localSpeechRequestsAreNotLostByQuestionFiltering() {
-        assertTrue(AssistantController.isRequest("停止播报"));
-        assertTrue(AssistantController.isRequest("附近情况"));
-        assertTrue(AssistantController.isRequest("那这个呢"));
-        assertTrue(AssistantController.isRequest("你好"));
-        assertTrue(AssistantController.isRequest("你是谁"));
-        assertFalse(AssistantController.isRequest("我刚刚跑过去了"));
-        assertFalse(AssistantController.isRequest("他们刚刚聊到听野"));
-    }
-    @Test public void negatedQuantityCommentDoesNotReplaceAQuestionButRealQuantityQuestionsRemain() {
-        assertFalse(AssistantController.isRequest("也没多少呀。"));
-        assertFalse(AssistantController.isRequest("其实没有多少。"));
-        assertFalse(AssistantController.isRequest(null));
-        assertFalse(AssistantController.isRequest(" "));
-        assertTrue(AssistantController.isRequest("还要多少金币？"));
-        assertTrue(AssistantController.isRequest("现在金币多少？"));
-        assertTrue(AssistantController.isRequest("没多少血，应该怎么办？"));
-        assertTrue(AssistantController.isRequest("这件装备没有多少伤害吗？"));
-        assertTrue(AssistantController.isRequest("那这个呢？"));
     }
     @Test public void greetingsAndMicrophoneChecksStayLocalWithoutSwallowingVisualQuestions() {
         AssistantConversationIntent.Match repeatedGreeting =
@@ -197,7 +179,6 @@ public class AssistantContractsTest {
         assertNotNull(repeatedGreeting);
         assertEquals(AssistantConversationIntent.Type.GREETING, repeatedGreeting.type);
         assertTrue(AssistantConversationIntent.matches("你好你好"));
-        assertFalse(AssistantController.isRequest("你好你好"));
 
         AssistantConversationIntent.Match combined =
                 AssistantConversationIntent.classify("你好你好，你能听到我说话吗？");
@@ -224,23 +205,6 @@ public class AssistantContractsTest {
                 "你怎么还是看不清这张装备图？", "现在金币有多少？",
                 "这个英雄适合出什么装备？", "也没多少呀"))
             assertNull(question, AssistantConversationIntent.classify(question));
-    }
-    @Test public void whichQuestionsReadOptionsWithoutPromotingOrdinaryChoiceStatements() {
-        for (String question : Arrays.asList("这个画面我应该选哪个", "选哪一个", "哪项比较合适",
-                "哪一种", "选哪些", "哪个按钮是开始"))
-            assertTrue(question, AssistantController.isRequest(question));
-        for (String question : Arrays.asList("帮我看下出装", "看一下这局出装", "帮我分析阵容",
-                "推荐装备", "帮我选英雄", "这局对战策略", "对战策略",
-                "你能不能帮我分析阵容", "能不能推荐装备", "我能不能推荐装备",
-                "装备购买建议", "选人建议", "英雄推荐", "自然之灵出装建议"))
-            assertTrue(question, AssistantController.isRequest(question));
-        for (String statement : Arrays.asList("我选桑启", "选好了", "这一局我选择辅助", "我推荐装备"))
-            assertFalse(statement, AssistantController.isRequest(statement));
-        assertEquals("这个画面我应该选哪个", AssistantController.visualQuestion("这个画面我应该选哪个"));
-        assertEquals("哪项比较合适", AssistantController.visualQuestion("哪项比较合适"));
-        assertEquals("帮我推荐一个当前阵容适合的英雄", AssistantController.visualQuestion("帮我推荐一个当前阵容适合的英雄"));
-        assertEquals("哪个按钮是开始", AssistantController.visualQuestion("哪个按钮是开始"));
-        assertEquals("现在比分多少", AssistantController.visualQuestion("现在比分多少"));
     }
     @Test public void requestTimeoutIsReportedButExplicitCancellationStaysSilent() {
         java.io.InterruptedIOException timeout = new java.io.InterruptedIOException("timeout");

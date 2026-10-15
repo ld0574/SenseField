@@ -4,13 +4,15 @@
 
 ## 交付状态与构建版本
 
-截至 2026-10-04，公开下载为 [0.3.8 体验版](https://github.com/ld0574/SenseField/releases/tag/v0.3.8)（`versionCode 16`、GitHub 普通 Release，Latest）。`0.4.0 / versionCode 17` 与 `0.4.1 / versionCode 18` 均已有本地 Debug 测试交付，但都尚未公开发布；0.4.1 自动更新专项已完成，整体验收门禁仍未通过。完整历史见[发布索引](README.md)。所有新交付遵守[版本命名规范](版本命名规范.md)，内部和外部共用 `a.b.c` 序列。
+2026-10-15 当前 [0.4.7／code24](https://github.com/ld0574/SenseField/releases/tag/v0.4.7) 为普通 Release、Latest；本次同版本移除语音问法白名单，保留高温主动问答，APK 为 `5f65b2bb…`。源码已推送 main，APK 与使用说明两个附件保留原集合并替换核对，[本次记录](../../validation/releases/GITHUB_RELEASE_0_4_7_OPEN_CONVERSATION_2026-10-15.md)登记工程和分发范围。Gitee 与公网清单由用户同步。
+
+2026-10-13 发布的 [0.4.6／code23](0.4.6/RELEASE_NOTES.md)已合入并推送 `main`，[GitHub v0.4.6](https://github.com/ld0574/SenseField/releases/tag/v0.4.6) 发布时为普通 Release、Latest，标签及四个附件核对见[发布记录](../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。唯一交付目录为 `output/releases/0.4.6/`，旧包和重复交付已[清理](../../validation/releases/ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)。[听野 0.4.5](https://github.com/ld0574/SenseField/releases/tag/v0.4.5)（`versionCode 22`，2026-10-10 发布）的原标签、附件及公网清单历史核对保留。本轮 Gitee 同版本附件和公网清单由用户同步。历史主线 `v0.4.3-main` 和消消乐独立发布保留，完整历史见[发布索引](README.md)。公开分发不自动改变 `verified`／`release_ready`，版本名称继续使用 `a.b.c`。
 
 发布前核对 `android/app/build.gradle`、`scripts/build_android_preview.sh` 和实际 APK 的版本、升级序号与签名，准备新版本交付时同步配置与脚本。发布说明必须对应实际 APK 和该版本的验证证据。历史 [0.3.0-alpha.1 发布说明](0.3.0-alpha.1/RELEASE_NOTES.md)与[检查记录](0.3.0-alpha.1/CHECKLIST.md)保留原始信息。
 
-已交付候选只支持 Android 10（API 29）及以上的 `arm64-v8a` 设备。实验小地图模型尚未通过独立留出验收，主画面边缘候选分支默认关闭；按[当前验证状态](../../validation/STATUS.md)复核功能与证据边界。README 和 Release body 必须说明 `MediaProjection`、悬浮窗、通知权限的用途，以及识别在本地处理。
+已交付候选只支持 Android 10（API 29）及以上的 `arm64-v8a` 设备。实验小地图模型尚未通过独立留出验收，主画面边缘候选分支默认关闭；按[当前验证状态](../../validation/STATUS.md)复核功能与证据边界。README 与随包使用说明应写明 `MediaProjection`、悬浮窗、通知权限的用途，以及本地识别和可选上传的范围。Release 正文使用三行、100 字符以内的玩家更新摘要，完整用法放在 `.txt` 附件及版本说明中。
 
-构建优先使用 `bash scripts/build_android_preview.sh`。四个 `SENSEFIELD_KEYSTORE_PATH`、`SENSEFIELD_KEY_ALIAS`、`SENSEFIELD_KEYSTORE_PASSWORD`、`SENSEFIELD_KEY_PASSWORD` 环境变量全部提供时才构建签名 candidate；缺少签名参数时只构建文件名含 `debug-candidate` 的 Debug APK，并沿用 Android Gradle 的标准 debug signing。脚本不生成或上传发布 keystore，不发布 GitHub Release。
+构建优先使用 `bash scripts/build_android_preview.sh`。当前 0.4.7 交付必须提供四个 `SENSEFIELD_KEYSTORE_PATH`、`SENSEFIELD_KEY_ALIAS`、`SENSEFIELD_KEYSTORE_PASSWORD`、`SENSEFIELD_KEY_PASSWORD` 环境变量和完整内置语音；缺少时停止，不回退 Debug。脚本构建并校验签名 Release，当前上传路径使用 `sensefieldv<版本>.apk`，不靠文件名声称签名类型。本地原 Android debug 证书的混淆候选验证单独注明签名范围；已有同一字节完成工程验证时，发布前核对摘要、签名与源码对应后可直接分发，不为上传另行重建。脚本不生成或上传发布 keystore，不发布 GitHub Release。
 
 ## 1. 权利和隐私
 
@@ -93,6 +95,7 @@ git push -u origin main
 - [ ] 需要公开 Release 时，用对应版本的 Git tag 标记，例如 `v0.3.8`；本地候选交付不要求创建 tag。
 - [ ] APK、ZIP 和校验文件保存在 `output/releases/<版本>/`，公开交付时上传到 GitHub Release 附件；`docs/` 只保存说明和发布记录。
 - [ ] 在 `docs/releases/<版本>/RELEASE_NOTES.md` 记录变化、使用方式、验证边界、文件名、大小与 SHA-256，并更新[发布索引](README.md)。
+- [ ] 各上传目录使用一份 `SHA256SUMS.txt` 核对该目录中的产物（哈希、两个空格、文件名，清单不含自身）。上传前逐项核对，上传后再与 GitHub 附件的 `digest` 字段核对；不把构建输出提交到源码仓库。
 - [ ] 同时发布 APK 的 SHA-256、Android 最低版本、测试设备和已知限制。
 - [ ] Release 不包含私有 profile；如需演示配置，只发布不含玩家数据、经过复核的配置。
 - [ ] 保留一段可复现的合成演示；真实录像只有在取得授权后才能作为公开演示。

@@ -6,7 +6,11 @@ import java.util.List;
 
 /** Meaning and examples of the outputs actually enabled for this session. */
 final class ReminderGuide {
-    static final String PREF_READ_BEFORE_START = "read_reminder_guide_before_start";
+    static final String PREF_FULL_GUIDE_COMPLETED = "full_reminder_guide_completed";
+    // Choosing to start is distinct from successfully listening to the full guide.
+    static final String PREF_FULL_GUIDE_SKIPPED = "full_reminder_guide_skipped";
+    // Separate from the old, default-on directory preference to avoid repeat-on-upgrade.
+    static final String PREF_REPEAT_BEFORE_START = "repeat_full_reminder_guide_before_start";
     static final String NARRATION_KIND = "REMINDER_GUIDE";
     static final String SAMPLE_KIND = "REMINDER_GUIDE_SAMPLE";
     static final long NARRATION_TIMEOUT_MS = 30_000;
@@ -38,15 +42,43 @@ final class ReminderGuide {
         final int tone;
         final float pan;
         final boolean sample;
+        final float distance;
+        final float urgency;
+        final int hapticCode;
 
         private Step(String title, String text, int channel, int tone,
                      float pan, boolean sample) {
+            this(title, text, channel, tone, pan, sample, Float.NaN, 0f);
+        }
+
+        private Step(String title, String text, int channel, int tone,
+                     float pan, boolean sample, float distance, float urgency) {
+            this(title, text, channel, tone, pan, sample, distance, urgency, 0);
+        }
+
+        private Step(String title, String text, int channel, int tone,
+                     float pan, boolean sample, float distance, float urgency, int hapticCode) {
             this.title = title;
             this.text = text;
             this.channel = channel;
             this.tone = tone;
             this.pan = pan;
             this.sample = sample;
+            this.distance = distance;
+            this.urgency = urgency;
+            this.hapticCode = hapticCode;
+        }
+
+        Step withText(String value) {
+            return new Step(title, value, channel, tone, pan, sample, distance, urgency, hapticCode);
+        }
+
+        Step withRange(float value, float urgency) {
+            return new Step(title, text, channel, tone, pan, sample, value, urgency, hapticCode);
+        }
+
+        Step withHapticCode(int code) {
+            return new Step(title, text, channel, tone, pan, sample, distance, urgency, code);
         }
 
         CueRequest request(String id, long now) {
@@ -55,15 +87,20 @@ final class ReminderGuide {
                     sample ? SAMPLE_KIND : NARRATION_KIND,
                     nearSample ? CueRequest.Category.NEAR_ZONE : CueRequest.Category.SYSTEM,
                     80, now, now + (sample ? 2000 : NARRATION_TIMEOUT_MS), channel,
-                    tone, 0, 0, channel == CueRequest.CHANNEL_SPEECH ? text : null, pan);
+                    tone, 0, hapticCode, channel == CueRequest.CHANNEL_SPEECH ? text : null,
+                    pan, distance, urgency, -1, () -> true);
         }
     }
 
     private ReminderGuide() {}
 
+    static boolean shouldShowBeforeStart(boolean completed, boolean skipped, boolean repeat) {
+        return repeat || (!completed && !skipped);
+    }
+
     static List<Step> build(Outputs outputs) {
         List<Step> steps = new ArrayList<>();
-        say(steps, "开始前听一听", "先说明提醒的含义。接下来都是试听，你可以随时跳过。");
+        say(steps, "开始前听一听", "先说明提醒的含义。接下来都是示例。可随时点击“跳过并开始”进入辅助，以后可以在设置里按段重听。");
         if (has(outputs.near, CueRequest.CHANNEL_TONE)) {
             say(steps, "两声短音：附近有敌人",
                     "连续两声短音，表示小地图里有敌人进入你的附近。先听一次。");
@@ -139,7 +176,7 @@ final class ReminderGuide {
             say(steps, "重新授权的语音",
                     "听到“截屏授权已结束”或“截屏恢复失败，请重新授权”，请返回辅助首页重新开始。");
         }
-        say(steps, "听完后再开始", "说明结束。授权并启动辅助后，会自动打开王者荣耀。需要重听或调声音，可以到设置里操作。");
+        say(steps, "开始辅助", "说明结束。点击“开始辅助”，授权并启动后，会自动打开王者荣耀。需要重听或调声音，可以到设置里操作。");
         return Collections.unmodifiableList(steps);
     }
 
@@ -151,6 +188,10 @@ final class ReminderGuide {
 
     private static void sample(List<Step> steps, String title, int channel,
                                int tone, String speech, float pan) {
-        steps.add(new Step(title, speech, channel, tone, pan, true));
+        steps.add(sampleStep(title, channel, tone, speech, pan));
+    }
+
+    static Step sampleStep(String title, int channel, int tone, String speech, float pan) {
+        return new Step(title, speech, channel, tone, pan, true);
     }
 }

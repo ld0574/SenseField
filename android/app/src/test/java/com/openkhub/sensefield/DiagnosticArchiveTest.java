@@ -10,6 +10,17 @@ import java.util.UUID;
 import org.junit.Test;
 
 public final class DiagnosticArchiveTest {
+    @Test public void boundedElementSamplesShareArchiveLimitsAndAppearInTheExport() throws Exception {
+        File root=Files.createTempDirectory("sensefield-element-archive").toFile();
+        try(DiagnosticArchive archive=new DiagnosticArchive(root,"diag-"+System.currentTimeMillis()+"-"+UUID.randomUUID(),"{}")) {
+            assertTrue(archive.elementImage("u1-1.png",new byte[]{1,2,3}));
+            assertFalse(archive.elementImage("u1-2.png",new byte[20000]));
+            for(String bad:new String[]{"../a.png","u25-1.png","u1-3.png"})try { archive.elementImage(bad,new byte[]{1});org.junit.Assert.fail(bad); }
+                catch(java.io.IOException expected) { }
+            File zip=new File(root,"exports/test.zip");DiagnosticArchive.export(archive.directory,zip,"");
+            try(java.util.zip.ZipFile opened=new java.util.zip.ZipFile(zip)) { assertTrue(opened.getEntry("elements/u1-1.png")!=null); }
+        } finally { DiagnosticArchive.delete(root); }
+    }
     @Test public void checkpointSurvivesUntilNormalFinish() throws Exception {
         File root = Files.createTempDirectory("sensefield-diagnostics").toFile();
         String id = "diag-" + System.currentTimeMillis() + "-" + UUID.randomUUID();

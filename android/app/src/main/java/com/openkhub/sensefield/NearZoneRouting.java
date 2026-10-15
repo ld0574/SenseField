@@ -8,6 +8,8 @@ package com.openkhub.sensefield;
  * {@code native/include/mapassist.h}.</p>
  */
 final class NearZoneRouting {
+    /** Included in diagnostics because same-version CDN builds can differ. */
+    static final String EVENT_POLICY = "confirmed_absence_approach_v3";
     static final int KIND_NEAR_ZONE = 7;
     static final int KIND_RADAR_STATUS = 8;
 
@@ -23,6 +25,7 @@ final class NearZoneRouting {
     static final int EVENT_RADAR_PAUSED = 2;
     static final int EVENT_RADAR_RESUMED = 3;
     static final int EVENT_SUPPRESSED = 4;
+    static final int EVENT_APPROACH = 5;
 
     // CuePlayer sample ids for the three relation sounds.
     static final int TONE_NEAR = 7;
@@ -56,6 +59,20 @@ final class NearZoneRouting {
     static String twoWordSpeech(int sector) {
         if (sector >= 1 && sector <= 8) return TWO_WORD_SECTORS[sector];
         return "附近";
+    }
+
+    /** The saved speech style applies to every near cue, including dense combat. */
+    static String speech(int sector, boolean preferTwoWord) {
+        return preferTwoWord ? twoWordSpeech(sector) : speech(sector);
+    }
+
+    /** Single-vibrator rhythm code. Diagonals follow the same side as the pan. */
+    static int hapticDirection(int sector) {
+        if (sector == 4 || sector == 5 || sector == 6) return 1;
+        if (sector == 1 || sector == 2 || sector == 8) return 2;
+        if (sector == 3) return 3;
+        if (sector == 7) return 4;
+        return 0;
     }
 
     static float presentationDistanceLevel(float distance) {
@@ -117,6 +134,7 @@ final class NearZoneRouting {
         if (event == EVENT_RADAR_PAUSED) return "RADAR_PAUSED";
         if (event == EVENT_RADAR_RESUMED) return "RADAR_RESUMED";
         if (event == EVENT_SUPPRESSED) return "SUPPRESSED";
+        if (event == EVENT_APPROACH) return "APPROACH";
         return "NONE";
     }
 

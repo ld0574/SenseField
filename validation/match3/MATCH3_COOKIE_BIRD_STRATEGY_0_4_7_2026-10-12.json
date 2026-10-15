@@ -1,0 +1,180 @@
+{
+  "schema": "sensefield.sanitized_cookie_bird_strategy.v1",
+  "date": "2026-10-12",
+  "independent": false,
+  "published": false,
+  "version_name": "0.4.7",
+  "version_code": 24,
+  "source_sha256": "bedcdc5e3eb7e3d97937eca0650350ca409401d3eb1bf2c0413072be3de7461f",
+  "main_apk_sha256": "d0656e8c856322de3b699f6b49d3c29499f76344e603d96e729894e5b793a5bc",
+  "main_apk_bytes": 24544063,
+  "gallery_sha256": "3a7427fcd6fb669d39a4e26b43e433b6a677ebb706885b24476738e3ba74d3ec",
+  "supplement_sha256": "e11883f21161bfec7cee3defe028073bf6733f612f56463e75070cb4177bc65c",
+  "feedback_archive_sha256": "1d0f41829217b3a0f4d8297f518989f1114414caf9a93aa3d2160741ff5b817d",
+  "feedback": {
+    "reported_version_name": "0.4.6",
+    "reported_version_code": 23,
+    "apk_sha_not_present_in_zip": true,
+    "duration_ms": 1195212,
+    "frame_count": 1468,
+    "image_count": 487,
+    "end_observed": true,
+    "dropped_events": 0,
+    "dropped_image_requests": 1,
+    "diagnostic_error": "",
+    "voice_started_callbacks": 106,
+    "voice_completed_callbacks": 41,
+    "acoustic_evidence": false,
+    "temperature_scope": "charging_uncontrolled_33.6_to_38.0_C; not thermal acceptance"
+  },
+  "jvm": {
+    "tests": 575,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "python": {
+    "tests": 55,
+    "subtests": 8,
+    "passed": true
+  },
+  "debug_instrumentation": {
+    "executed": 111,
+    "skipped": 0,
+    "distinct_suites": [
+      96,
+      15
+    ],
+    "passed": true
+  },
+  "release_instrumentation": {
+    "status": "passed",
+    "executed": 86,
+    "skipped": 0,
+    "separate_replay_tests": 4
+  },
+  "lint": {
+    "Error": 0,
+    "Warning": 33
+  },
+  "targeted_replay": {
+    "independent": false,
+    "passed": true,
+    "replay_frames": 4,
+    "replay_cells": 324,
+    "known_swappable_cells_unchanged": 265,
+    "bird_late_top": {
+      "action": "BIRD_COLOR",
+      "swap_zero_based": [
+        2,
+        3,
+        2,
+        4
+      ],
+      "cleared_color": "RED",
+      "adjacent_clear_cells": 2,
+      "direct_cookie_units": 0
+    },
+    "feedback_top": {
+      "action": "SWAP",
+      "swap_zero_based": [
+        7,
+        3,
+        8,
+        3
+      ],
+      "adjacent_clear_cells": 1,
+      "direct_cookie_units": 0
+    },
+    "changed_cell_count": 29,
+    "verified_variants": [
+      "debug",
+      "release"
+    ]
+  },
+  "historical_cv": {
+    "samples": [
+      743,
+      604,
+      486
+    ],
+    "complete_sample_fields_unchanged": true,
+    "hud_unchanged": true,
+    "scope": "Debug and minified Release; complete output parity passed"
+  },
+  "software_cost": {
+    "passed": true,
+    "boards": 10,
+    "rounds": 30,
+    "max_increase_percent": 10,
+    "cold_wall_change_percent": 8.601677091632576,
+    "cold_cpu_change_percent": 8.384310135413964,
+    "cached_wall_change_percent": 5.361208011213914,
+    "cached_cpu_change_percent": 5.316656794006636,
+    "scope": "emulator_processing_thread_including_descriptor_serialization; excludes_async_disk_io_and_phone_thermal"
+  },
+  "development_templates": {
+    "bird": 1,
+    "cookie_tray": 2,
+    "reviewer": "assistant_under_user_fix_authorization",
+    "training_is_feedback_data": true,
+    "independent_holdout": false,
+    "budgets_unchanged": true
+  },
+  "limits": [
+    "no_independent_accuracy",
+    "no_real_action_or_pass_benefit",
+    "cookie_damage_and_goal_mode_unknown",
+    "early_JPEG_bird_still_abstains",
+    "no_new_phone_install_live_soak_or_controlled_thermal",
+    "unknown_special_combinations_not_enabled",
+    "no_upload_or_public_manifest_change"
+  ],
+  "debug_release_parity": {
+    "replay": {
+      "frames": 4,
+      "samples": 324,
+      "complete_json_equal": true,
+      "predictions_sha256": "fe5b5325e9adb26a28d81c8593904c0f26d3e687f259a940d3018ac902a68ed6"
+    },
+    "historical": {
+      "frames": 10,
+      "samples": 743,
+      "complete_json_equal": true,
+      "predictions_sha256": "4c000c58dad95d27047ae32ef76bc0a2f6b5321b7ea4de03c86ebad1a581b5c8"
+    },
+    "flower": {
+      "frames": 9,
+      "samples": 604,
+      "complete_json_equal": true,
+      "predictions_sha256": "62c7612d428e70c601151f9e2e3c6d862c38a14d91c72e200c9c702dd6d966f5"
+    },
+    "split": {
+      "frames": 6,
+      "samples": 486,
+      "complete_json_equal": true,
+      "predictions_sha256": "dc61c20635d240f6ae416d728057b05bade4e1263c36cea99089a56925faa7e1"
+    }
+  },
+  "receipt_sha256": {
+    "final-debug": "8eb03dfbdcdcecd6c767ca271c58c8a9059ba8534030a6d0b7b702e1ddfcccbe",
+    "final-release": "3101e7706486e9e336c0788ea74618a1f2872327d777ac8832eefb339a3a6c0d",
+    "final-debug-suite": "cb4659b8e51d439b520c3cba6401b604324faabb2a25c08e492d4719ac2cba74",
+    "final-debug-cv": "ff4e0feb6a67e660a3331be11fd926ba01a33bd36ce5732cccf3d11fcb2b484f",
+    "final-release-suite": "3cf2115bc449b8a2807c14c0175518707f72effe05979f5a14f7289e2acf8efe",
+    "final-debug-replay": "35a277ec5a10cf6a9512de5d615873da4a23e9c2e9be60303f49cacb7354f52d",
+    "final-release-replay": "907f7051762501b1e78f8729cfc348770c92723aae0b3e496b7a00b1fe961ae4",
+    "final-debug-historical": "5b7859e01c396d617520a62f8ffaa143bcecab179c0264b076ea7e2e0831a8bc",
+    "final-release-historical": "e20d4e97c046a7f2d99b4f53da2f746d04b38a9736369af88392c011f948fd62",
+    "final-debug-flower": "c247f34a909e2446359295343084b460d4176161f11a7fbdb136c56489b1459e",
+    "final-release-flower": "c72b518be2ddaac04cfbdd12835a1db449c4c42085a1cbbbe6b36e9432f37fe1",
+    "final-debug-split": "eaad8ac4a311515913aee2174d3694dc59fad5ecb6a5acb05e29674fb368be3b",
+    "final-release-split": "5d33099ca8a0a70eeb31472451b442f7ecc8cfd1cd6db67f9c1a3cafc581503e",
+    "final-software-cost": "cd1585a7c8fa4c99a750dabf5a5305e895d3fba4cdbc4f1d9a56a389385dc7f1",
+    "historical-cv-parity.json": "06aaee482dc9f0f81602909bc1bb77d2f5352489fe70de5d0211ab44e73f7594",
+    "targeted-cv-assertions.json": "61056651f8ba9c8f1038da9ae130077db06ce0d018fcba2955258e6f00645a55",
+    "final-release-targeted-assertions.json": "310ee215c95c09884abf5e8fc43d58809c3c6e90f199c4376cf1ba0169a34f0b",
+    "final-release-debug-parity.json": "4cc558b51ae08e220dca4498a18b68d1bb1d87f3494250d9b39d9318a3d3bb5e"
+  },
+  "delivery_status": "withdrawn_in_favor_of_user_selected_0_4_6_same_version_replacement"
+}

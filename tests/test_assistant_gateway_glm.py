@@ -57,14 +57,14 @@ def test_glm_direct_stream_uses_pinned_request_shape_and_raw_base64_image() -> N
     assert body["max_tokens"] == 256
     assert body["thinking"] == {"type": "disabled"}
     assert "response_format" not in body
-    assert "Simplified Chinese" in body["messages"][0]["content"]
+    assert "简体中文" in body["messages"][0]["content"]
     system = body["messages"][0]["content"]
-    assert "hud for match/lineup/board-dependent advice" in system
-    assert "ui_text for stable menu text" in system
-    assert "Never invent hero/icon identities, hidden enemies, cooldowns" in system
-    assert "Do not substitute gold, timer" in system
-    assert "王者荣耀 versus 开心消消乐" in system
-    assert "FIRST sentence" in system
+    assert "游戏搭子" in system and "低视力用户" in system
+    assert "本局、阵容或棋盘" in system and "稳定菜单文字" in system
+    assert "不要猜英雄或装备身份" in system
+    assert "不要用金币、计时和装饰信息代替建议" in system
+    assert "王者荣耀还是开心消消乐" in system
+    assert "第一句话先回答用户所问的信息或选择" in system
     assert body["messages"][0]["content"] == SYSTEM_PROMPT
     image = body["messages"][1]["content"][1]["image_url"]["url"]
     assert image == "/9j/RAWBASE64"
@@ -98,9 +98,9 @@ def test_context_images_precede_current_image_and_get_labels() -> None:
     content = context_body["messages"][1]["content"]
     assert [item.get("text") for item in content if item["type"] == "text"] == [
         "What build fits this hero? [context frame 1 is 5000 ms before current]",
-        "Earlier context frame 1, oldest first.",
-        "Earlier context frame 2, oldest first.",
-        "Current primary frame.",
+        "较早的背景截图1，按时间从早到晚排列。",
+        "较早的背景截图2，按时间从早到晚排列。",
+        "当前主截图。",
     ]
     images = [item["image_url"]["url"] for item in content if item["type"] == "image_url"]
     assert images == ["OLDEST", "NEWER", "CURRENT"]
@@ -576,4 +576,69 @@ def test_total_timeout_is_bounded_and_safe() -> None:
         finally:
             await http_client.aclose()
 
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("phase", ["upstream_headers", "first_content", "stream_end"])
+def test_timeout_reports_progress_without_exposing_provider_content(phase, caplog) -> None:
+    class WaitingStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            delta = ({"content": "PRIVATE_PARTIAL_ANSWER"} if phase == "stream_end"
+                     else {"reasoning_content": "PRIVATE_REASONING"})
+            yield ("data: " + json.dumps({"choices": [{"delta": delta, "finish_reason": None}]})
+                   + "\n\n").encode()
+            await asyncio.Event().wait()
+
+    async def handler(_request):
+        if phase == "upstream_headers":
+            await asyncio.Event().wait()
+        return httpx.Response(200, stream=WaitingStream())
+
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = GlmVisionClient("PRIVATE_KEY", http_client=http, timeout_seconds=0.025)
+            with pytest.raises(VisionTimeout) as caught:
+                await client.complete(question="PRIVATE_QUESTION", image_base64="PRIVATE_IMAGE")
+            metadata = caught.value.safe_metadata()
+            assert metadata["source"] == "gateway"
+            assert metadata["timeout_stage"] == phase
+            assert metadata["timeout_ms"] == 25
+            assert metadata["upstream_http_status"] == (None if phase == "upstream_headers" else 200)
+            assert metadata["content_chars"] == (len("PRIVATE_PARTIAL_ANSWER") if phase == "stream_end" else 0)
+            assert metadata["reasoning_content_chars"] == (len("PRIVATE_REASONING") if phase == "first_content" else 0)
+            assert "PRIVATE" not in repr(metadata)
+
+    caplog.set_level(logging.INFO, logger="mapassist.assistant_gateway.audit")
+    asyncio.run(scenario())
+    audit = "\n".join(record.getMessage() for record in caplog.records)
+    assert f"assistant_gateway_vision_timeout stage={phase}" in audit
+    assert "PRIVATE" not in audit
+
+
+def test_waiting_for_account_slot_has_a_distinct_timeout() -> None:
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+                lambda _request: pytest.fail("Queued request must not reach the provider"))) as http:
+            client = GlmVisionClient("test", http_client=http, timeout_seconds=0.02)
+            await client._semaphore.acquire()
+            try:
+                with pytest.raises(VisionTimeout) as caught:
+                    await client.complete(question="q", image_base64="a")
+                assert caught.value.safe_metadata()["timeout_stage"] == "account_slot"
+            finally:
+                client._semaphore.release()
+    asyncio.run(scenario())
+
+
+def test_per_request_budget_does_not_change_following_automatic_request() -> None:
+    async def handler(_request):
+        await asyncio.sleep(0.035)
+        return httpx.Response(200, content=_sse('{"kind":"hud","answer":"血量64","uncertain":false}'))
+
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = GlmVisionClient("test", http_client=http, timeout_seconds=0.01)
+            assert "64" in await client.complete(question="q", image_base64="a", timeout_seconds=0.2)
+            with pytest.raises(VisionTimeout):
+                await client.complete(question="q", image_base64="a")
     asyncio.run(scenario())
