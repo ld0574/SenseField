@@ -1,5 +1,7 @@
 # GitHub 0.4.7 体验版发布核对
 
+本记录保留 09:08 首次发布的原摘要与验证范围。随后用户明确要求同版本修复温控并清理旧安装包，当前交付已替换为 `2b7f7c9f…`，见[热修订发布核对](GITHUB_RELEASE_0_4_7_THERMAL_2026-10-15.md)。以下首版数据不转记到新包。
+
 发布时间：2026-10-15 09:08:56（Asia/Shanghai）。按用户要求公开 [v0.4.7](https://github.com/ld0574/SenseField/releases/tag/v0.4.7)，标记为 Pre-release。普通 Release、Latest 仍为 v0.4.6；README 下载按钮已改为本次 0.4.7 APK。
 
 ## 源码与安装包

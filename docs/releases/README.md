@@ -1,10 +1,10 @@
 # 发布与交付索引
 
-2026-10-15 公开 [0.4.7 体验版](0.4.7/RELEASE_NOTES.md)（`versionCode 24`）：[GitHub v0.4.7](https://github.com/ld0574/SenseField/releases/tag/v0.4.7) 为 Pre-release，对应源码已推送 `main`。APK 为 24,592,205 bytes，SHA-256 `617c4c6c40d67028f905d7a2cc06ae4df76594e631abd251a6404c433eedcb52`；沿用原证书，混淆、不可调试，可覆盖安装同证书 0.4.6。附件及源码核对见[发布记录](../../validation/releases/GITHUB_RELEASE_0_4_7_2026-10-15.md)。
+2026-10-15 按用户要求更新 [0.4.7 体验版](0.4.7/RELEASE_NOTES.md)（`versionCode 24`）：[GitHub v0.4.7](https://github.com/ld0574/SenseField/releases/tag/v0.4.7) 保持 Pre-release，同版本替换为高温问答修订，源码已推送 `main`。当前唯一 APK 为 24,592,049 bytes，SHA-256 `2b7f7c9f21e481669b1c23b4953321179dd9802c3b74db751b700a345fbc95e9`，可覆盖同证书旧 0.4.7，保留数据。已安装旧 0.4.7 的用户需手动下载覆盖安装，应用内不会提示同 code 更新。[本次发布核对](../../validation/releases/GITHUB_RELEASE_0_4_7_THERMAL_2026-10-15.md)与[首版记录](../../validation/releases/GITHUB_RELEASE_0_4_7_2026-10-15.md)分别保留。
 
-本版改善消消乐特效识别、提示语音与棋盘处理，增加王者可见敌人的接近提醒，游戏搭子直接播报正文并优先报告可见事实。Debug／Release JVM 各 633 项、Release lint、仓库 Python 1085 项及 29 个 subtest 通过，另 1 项跳过。整体成本稳定性、受控温升、独立准确率及策略收益仍待验；旧包持续运行和成本结果保留原制品绑定。
+本次高温仅暂停自动观察和历史采样，主动语音提问、读画面、在途回答和复述继续可用；本地降载与截图过期保护保留。Debug／Release JVM 各 634 项、Release lint、模拟器 32 项助手控制器及相关 Python 30 项通过，手机安装回读一致。软件高温模拟不等于受控温升或自然实局通过，整体成本、独立准确率和策略收益继续待验。此前消消乐、王者和游戏搭子改进保留。
 
-当前服务使用 Qwen3.8-Flash，关闭思考；配套事实优先提示词待部署者单独更新。唯一 APK 及清单在 `output/releases/0.4.7/`，交付 ZIP 含使用、上传、复测说明和服务端提示词包。Gitee 附件与公网 `latest.json` 由用户同步，GitHub 发布不会自动更新它们。
+当前服务使用 Qwen3.8-Flash，关闭思考；温控修复只需更新 APK，不需要再次部署服务器。唯一 APK、清单和 Gitee ZIP 在 `output/releases/0.4.7/`，GitHub 六个附件摘要一致，APK 与 ZIP 公开下载均核对通过。Gitee 附件与公网 `latest.json` 由用户同步，需同时替换大小、SHA 并刷新缓存。已清理 5 个旧 0.4.7 APK，保留原源码、摘要与验证记录。
 
 普通 Release、Latest 仍为 [GitHub v0.4.6](https://github.com/ld0574/SenseField/releases/tag/v0.4.6)（`versionCode 23`）；其源码标签、附件与历史验证范围见[0.4.6 发布记录](../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。旧包及重复交付清理见[归档记录](../../validation/releases/ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)。本轮发布与完整验收分别登记，[版本规划](../plans/0.4.7版本规划.md)及[当前状态](../../validation/STATUS.md)保留历史失败与剩余条件。
 
@@ -20,7 +20,7 @@
 
 | 版本 | 日期 | versionCode | 交付状态 | 主要内容与说明 |
 | --- | --- | ---: | --- | --- |
-| [0.4.7](0.4.7/RELEASE_NOTES.md) | 2026-10-15 | 24 | GitHub 公开 Pre-release，源码已推送 main；Gitee 与公网清单由用户同步 | 特效识别、提示语音与处理优化，王者接近提醒，事实优先游戏搭子；温升、独立准确率与策略收益待验 |
+| [0.4.7](0.4.7/RELEASE_NOTES.md) | 2026-10-15 | 24 | GitHub 公开 Pre-release，源码已推送 main；Gitee 与公网清单由用户同步 | 同版本高温问答修复，主动语音／读图保持可用，后台自动降载；温升、独立准确率与策略收益待验 |
 | [0.4.6](0.4.6/RELEASE_NOTES.md) | 2026-10-13 | 23 | 已合入 main、GitHub 普通 Release、Latest；唯一交付在版本根目录，本轮 Gitee 附件和公网清单由用户同步 | 王者两字开关遵循选择，保留灰毛球、末块雪块、魔力鸟组合与识别开销修复 |
 | [0.4.5](0.4.5/RELEASE_NOTES.md) | 2026-10-10 | 22 | 历史 GitHub 普通 Release，发布时为 Latest；Gitee APK 与线上清单此前核对一致 | 稀疏整盘定位、确认的一步任务收益排序与交换高亮、最后目标准备建议；消消乐仍为体验版，最新试用问题继续整改 |
 | [0.4.4](0.4.4/RELEASE_NOTES.md) | 2026-10-08 | 21 | 历史 GitHub 普通 Release，发布时为 Latest | 默认游戏解说男声／可选游戏向导女声、离线完整说明、连续试听修复、24.22MB 正式包；受控温升待测 |
