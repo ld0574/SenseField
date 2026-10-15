@@ -59,6 +59,12 @@ def media_duration(info):
     raise RuntimeError("媒体文件缺少可用时长")
 
 
+def start_log_monitor(adb):
+    return subprocess.Popen(adb + ["logcat", "-v", "threadtime", "-T", "1",
+                                   "-s", "MapAssistCapture:I"], stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL)
+
+
 def mix(record):
     directory = Path(record["directory"])
     capture = directory / "phone-capture.mkv"
@@ -185,9 +191,8 @@ def run(args):
             time.sleep(.1)
         else:
             raise RuntimeError("内部音轨或麦克风没有写入 PCM 数据")
-        monitor = subprocess.Popen(adb + ["logcat", "-v", "threadtime", "-T", "1",
-                                         "-s", "MapAssistCapture:I"], stdout=subprocess.PIPE,
-                                   stderr=subprocess.DEVNULL)
+        monitor = start_log_monitor(adb)
+        record["log_monitor_reconnects"] = 0
         record["status"] = "recording"
         save(record)
         print(f"录制就绪：{directory}\n手机声音已转到电脑；使用电脑耳机可避免麦克风再次收进播报。", flush=True)
@@ -206,7 +211,16 @@ def run(args):
                 if ready:
                     chunk = os.read(monitor.stdout.fileno(), 65536)
                     if not chunk:
-                        raise RuntimeError("日志监控连接中断")
+                        monitor.wait()
+                        record["log_monitor_reconnects"] += 1
+                        log.write((f"\n# logcat disconnected; reconnect "
+                                   f"{record['log_monitor_reconnects']}\n").encode())
+                        save(record)
+                        # ADB logcat is diagnostic only. Reconnect it without
+                        # sacrificing the phone and microphone recording.
+                        time.sleep(1)
+                        monitor = start_log_monitor(adb)
+                        continue
                     log.write(chunk)
                     # A recoverable frame starvation is logged and does not stop recording.
                     if re.search(rb"CaptureHealth[^\n]*state=(?:FAILED|REVOKED)\b", chunk):
