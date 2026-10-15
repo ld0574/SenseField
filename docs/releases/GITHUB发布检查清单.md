@@ -4,7 +4,7 @@
 
 ## 交付状态与构建版本
 
-2026-10-15 当前 [0.4.7／code24](https://github.com/ld0574/SenseField/releases/tag/v0.4.7) 为普通 Release、Latest；本次同版本移除语音问法白名单，保留高温主动问答，APK 为 `5f65b2bb…`。源码已推送 main，APK 与使用说明两个附件保留原集合并替换核对，[本次记录](../../validation/releases/GITHUB_RELEASE_0_4_7_OPEN_CONVERSATION_2026-10-15.md)登记工程和分发范围。Gitee 与公网清单由用户同步。
+2026-10-15 按用户要求进行 [0.4.7／code24 最终修订](https://github.com/ld0574/SenseField/releases/tag/v0.4.7)：修复近敌语音抢播，合入消消乐分支，取消采录实验，保留正常语音提问，APK 为 `84b3fd40…`。继续使用普通 Release、Latest 和 APK／使用说明两个附件；main、同版本标签及公开下载的实际核对结果见[最终记录](../../validation/releases/GITHUB_RELEASE_0_4_7_FINAL_2026-10-15.md)。Gitee 与公网清单由用户同步，完整物理和独立验收不因公开分发改为通过。
 
 2026-10-13 发布的 [0.4.6／code23](0.4.6/RELEASE_NOTES.md)已合入并推送 `main`，[GitHub v0.4.6](https://github.com/ld0574/SenseField/releases/tag/v0.4.6) 发布时为普通 Release、Latest，标签及四个附件核对见[发布记录](../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。唯一交付目录为 `output/releases/0.4.6/`，旧包和重复交付已[清理](../../validation/releases/ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)。[听野 0.4.5](https://github.com/ld0574/SenseField/releases/tag/v0.4.5)（`versionCode 22`，2026-10-10 发布）的原标签、附件及公网清单历史核对保留。本轮 Gitee 同版本附件和公网清单由用户同步。历史主线 `v0.4.3-main` 和消消乐独立发布保留，完整历史见[发布索引](README.md)。公开分发不自动改变 `verified`／`release_ready`，版本名称继续使用 `a.b.c`。
 

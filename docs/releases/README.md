@@ -1,10 +1,10 @@
 # 发布与交付索引
 
-2026-10-15 按用户要求更新 [0.4.7 体验版](0.4.7/RELEASE_NOTES.md)（versionCode 24），同版本移除语音问法白名单。当前 [GitHub v0.4.7](https://github.com/ld0574/SenseField/releases/tag/v0.4.7) 为普通 Release、Latest，保留 APK 与使用说明两个附件，源码已推送 main。唯一当前 APK 为 24,591,309 bytes，SHA-256 `5f65b2bb849c772f03739f01943ce6ad8545bf7c3bf7c89fb0740f561bcaf78a`；可覆盖同证书旧 0.4.7，保留数据。同 code 不会触发应用内版本更新，需手动下载安装。[本次分发核对](../../validation/releases/GITHUB_RELEASE_0_4_7_OPEN_CONVERSATION_2026-10-15.md)与各历史修订分别保留。
+2026-10-15 按用户要求收尾 [0.4.7 最终修订](0.4.7/RELEASE_NOTES.md)（versionCode 24）：修复普通近敌语音互相抢播，合入消消乐诊断分支，取消 Demo 采录实验，保留正常语音提问。唯一当前 APK 为 24,599,965 bytes，SHA-256 `84b3fd40fddbdb6d6789210b4657b6db9db1886650b43e734c72ff298a98f9e2`；可覆盖同证书旧 0.4.7，保留数据。同 code 不会触发应用内版本更新，需手动下载安装。[最终发布核对](../../validation/releases/GITHUB_RELEASE_0_4_7_FINAL_2026-10-15.md)记录 main、标签、GitHub 附件和下载的实际状态；[上一修订](../../validation/releases/GITHUB_RELEASE_0_4_7_OPEN_CONVERSATION_2026-10-15.md)保留原证据。
 
-完整、非空的识别文字作为消息原文交给游戏搭子理解，暂停、复述等本地指令继续处理；空结果不打断待答问题，新消息替换上一轮。高温只暂停自动观察和历史采样，主动问答与本地降载保留。Debug／Release JVM 各 630 项、Release lint、模拟器 37 项控制器检查通过，手机安装回读一致；独立准确率、真实策略收益、实际发声、受控温升与整体成本继续待验。
+Debug／Release JVM 各 697 项、Python 1100 项与 29 个 subtest、native 5 项通过；Python 1 项因缺少桌面合成回放产物跳过，Debug／Release lint 均为 0 错误、31 警告。最终混淆包的毒液、分离棋盘及王者 JNI 共 4 项专项通过；完整模拟器 UI 检查遭遇 System UI／测试 Activity 无响应，未通过。最终包未安装真机，独立准确率、策略收益、实际发声、受控温升和整体成本继续待验，不把此前包的实局结果转移到本包。
 
-APK、使用说明、清单和校验文件在 output/releases/0.4.7/，按用户要求不生成 Gitee ZIP。GitHub 两个附件 digest 及匿名下载摘要与本地一致；Gitee 附件和公网 latest.json 由用户同步，先核对下载字节再更新清单及缓存。本次仅更新 Android，无需再次部署 Python；此前中文提示词配套仍保留原部署说明。旧二进制清理不删除源码、摘要、失败回执或诊断。
+APK、使用说明、清单和校验文件在 output/releases/0.4.7/，按用户要求不生成 Gitee ZIP。GitHub 继续使用 APK 与使用说明两个附件；Gitee 附件和公网 latest.json 由用户同步，先核对下载字节再更新清单及缓存。本次仅更新 Android，无需再次部署 Python；此前中文提示词配套仍保留原部署说明。旧二进制清理保留源码、摘要、失败回执、诊断和本地视频素材。
 
 [0.4.6](0.4.6/RELEASE_NOTES.md)（code23）为历史普通 Release、发布时为 Latest，其标签和原验证范围见[发布记录](../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。当前分发以 0.4.7 为准；[版本规划](../plans/0.4.7版本规划.md)与[当前状态](../../validation/STATUS.md)保留未完成验收。
 
@@ -20,7 +20,7 @@ APK、使用说明、清单和校验文件在 output/releases/0.4.7/，按用户
 
 | 版本 | 日期 | versionCode | 交付状态 | 主要内容与说明 |
 | --- | --- | ---: | --- | --- |
-| [0.4.7](0.4.7/RELEASE_NOTES.md) | 2026-10-15 | 24 | GitHub 普通 Release、Latest；源码已推送 main，Gitee 与公网清单由用户同步 | 移除语音问法白名单，保留高温主动问答；完整物理和独立验收待验 |
+| [0.4.7](0.4.7/RELEASE_NOTES.md) | 2026-10-15 | 24 | 最终修订，分发状态见核对记录；Gitee 与公网清单由用户同步 | 近敌语音抢播修复、消消乐分支合并、移除采录实验；完整物理和独立验收待验 |
 | [0.4.6](0.4.6/RELEASE_NOTES.md) | 2026-10-13 | 23 | 历史普通 Release，发布时为 Latest；唯一交付在版本根目录，Gitee 附件和公网清单由用户同步 | 王者两字开关遵循选择，保留灰毛球、末块雪块、魔力鸟组合与识别开销修复 |
 | [0.4.5](0.4.5/RELEASE_NOTES.md) | 2026-10-10 | 22 | 历史 GitHub 普通 Release，发布时为 Latest；Gitee APK 与线上清单此前核对一致 | 稀疏整盘定位、确认的一步任务收益排序与交换高亮、最后目标准备建议；消消乐仍为体验版，最新试用问题继续整改 |
 | [0.4.4](0.4.4/RELEASE_NOTES.md) | 2026-10-08 | 21 | 历史 GitHub 普通 Release，发布时为 Latest | 默认游戏解说男声／可选游戏向导女声、离线完整说明、连续试听修复、24.22MB 正式包；受控温升待测 |

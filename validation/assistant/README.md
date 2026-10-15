@@ -6,6 +6,8 @@
 
 优先查看：[AI助手默认关闭修订](ASSISTANT_DEFAULT_OFF_2026-10-06.md)。
 
+0.4.7 最终收尾已取消采录实验，正常语音提问保留；见[收尾评估](../releases/FINALIZATION_ASSESSMENT_0_4_7_2026-10-15.md)。
+
 最新语音修订：[0.4.7 外放单次语音提问](ASSISTANT_MANUAL_VOICE_0_4_7_2026-10-15.md)。根据[第二台手机输入路由诊断](ASSISTANT_SECOND_PHONE_VOICE_GATE_0_4_7_2026-10-15.md)增加“说话／说完”入口；真人识别、外放回声与游戏人声抗干扰仍需实测。
 
 ## 记录索引
@@ -15,7 +17,7 @@
 | 日期 | 记录 |
 | --- | --- |
 | 2026-10-15 | [0.4.7 外放单次语音提问](ASSISTANT_MANUAL_VOICE_0_4_7_2026-10-15.md) |
-| 2026-10-15 | [测试机原生录屏、麦克风与设备声音短测](NATIVE_DEMO_RECORDING_FEASIBILITY_2026-10-15.md) |
+| 2026-10-15 | [已退役：测试机采录短测](NATIVE_DEMO_RECORDING_FEASIBILITY_2026-10-15.md) |
 | 2026-10-15 | [0.4.7 第二台手机输入路由诊断](ASSISTANT_SECOND_PHONE_VOICE_GATE_0_4_7_2026-10-15.md) |
 | 2026-10-15 | [0.4.7 视觉回答依据审计](ASSISTANT_VISUAL_GROUNDING_AUDIT_0_4_7_2026-10-15.md) |
 | 2026-10-15 | [0.4.7 助手输出容错与播报调度修订](ASSISTANT_DELIVERY_REPAIR_0_4_7_2026-10-15.md) |
