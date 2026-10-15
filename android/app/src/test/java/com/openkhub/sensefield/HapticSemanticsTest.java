@@ -123,4 +123,55 @@ public final class HapticSemanticsTest {
         assertTrue("a null tag must still produce a readable line",
                 line.contains("tag=UNKNOWN"));
     }
+
+    @Test public void triggerSourceTravelsWithTheWaveform() {
+        for (HapticSemantics.TriggerSource source : HapticSemantics.TriggerSource.values()) {
+            HapticSemantics.Waveform waveform = HapticSemantics.waveform(
+                    HapticSemantics.Semantic.APPROACH, source);
+
+            assertEquals("provenance must survive onto the waveform",
+                    source, waveform.source);
+        }
+    }
+
+    @Test public void nullTriggerSourceNormalisesToTemplate() {
+        HapticSemantics.Waveform explicit = HapticSemantics.waveform(
+                HapticSemantics.Semantic.DANGER, HapticSemantics.TriggerSource.TEMPLATE);
+        HapticSemantics.Waveform normalised = HapticSemantics.waveform(
+                HapticSemantics.Semantic.DANGER, null);
+
+        assertEquals(HapticSemantics.TriggerSource.TEMPLATE, normalised.source);
+        assertArrayEquals(explicit.timingsMs, normalised.timingsMs);
+        assertEquals(explicit.durationMs(), normalised.durationMs());
+    }
+
+    @Test public void triggerSourceNeverChangesTheShape() {
+        // A noise-fallback cue must not feel weaker than a template cue, or the demotion
+        // would itself lose the information it was meant to preserve.
+        for (HapticSemantics.Semantic tag : HapticSemantics.Semantic.values()) {
+            long[] fromTemplate = HapticSemantics.waveform(tag).timingsMs;
+            for (HapticSemantics.TriggerSource source : HapticSemantics.TriggerSource.values()) {
+                assertArrayEquals(tag + "/" + source + " must keep the template shape",
+                        fromTemplate, HapticSemantics.waveform(tag, source).timingsMs);
+            }
+        }
+    }
+
+    @Test public void auditReportsTheTriggerSource() {
+        HapticSemantics.Waveform waveform = HapticSemantics.waveform(
+                HapticSemantics.Semantic.ATTENTION, HapticSemantics.TriggerSource.NOISE_FALLBACK);
+
+        String line = HapticSemantics.audit(HapticSemantics.Semantic.ATTENTION, waveform);
+
+        assertTrue("audit must name the trigger source", line.contains("source=NOISE_FALLBACK"));
+    }
+
+    @Test public void everySourceStaysInsideTheChannelBudget() {
+        for (HapticSemantics.TriggerSource source : HapticSemantics.TriggerSource.values()) {
+            for (HapticSemantics.Semantic tag : HapticSemantics.Semantic.values()) {
+                assertTrue(tag + "/" + source + " exceeds the bounded channel budget",
+                        HapticSemantics.withinBudget(HapticSemantics.waveform(tag, source)));
+            }
+        }
+    }
 }

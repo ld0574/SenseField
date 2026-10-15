@@ -26,15 +26,39 @@ final class HapticSemantics {
         APPROACH,
     }
 
+    /**
+     * Where a vibration came from. Pure provenance: it never changes the waveform shape, only
+     * travels with it so diagnostics and future adaptive logic can attribute a cue.
+     *
+     * <ul>
+     *   <li>{@link #TEMPLATE} — a player-authored template asked for it.</li>
+     *   <li>{@link #ADAPTIVE} — the learning layer re-timed or re-prioritised it.</li>
+     *   <li>{@link #NOISE_FALLBACK} — the audio channel was too noisy, so this cue was
+     *       demoted to touch to avoid the player simply not hearing it.</li>
+     * </ul>
+     */
+    enum TriggerSource {
+        TEMPLATE,
+        ADAPTIVE,
+        NOISE_FALLBACK,
+    }
+
     /** Bounded waveform parameters. Mirrors {@link HapticPolicy.Pattern}'s layout. */
     static final class Waveform {
         final long[] timingsMs;
         /** Null means the platform's default amplitude, exactly like {@link HapticPolicy.Pattern}. */
         final int[] amplitudes;
+        /** Provenance only; never consulted when building or validating the shape. */
+        final TriggerSource source;
 
         Waveform(long[] timingsMs, int[] amplitudes) {
+            this(timingsMs, amplitudes, TriggerSource.TEMPLATE);
+        }
+
+        Waveform(long[] timingsMs, int[] amplitudes, TriggerSource source) {
             this.timingsMs = timingsMs;
             this.amplitudes = amplitudes;
+            this.source = normalize(source);
         }
 
         long durationMs() {
@@ -51,32 +75,67 @@ final class HapticSemantics {
     private static final int MIN_AMPLITUDE = 1;
     private static final int MAX_AMPLITUDE = 255;
 
+    /** The fixed shape each semantic resolves to. */
+    private static final class Shape {
+        final long[] timingsMs;
+        final int[] amplitudes;
+
+        Shape(long[] timingsMs, int[] amplitudes) {
+            this.timingsMs = timingsMs;
+            this.amplitudes = amplitudes;
+        }
+    }
+
     private HapticSemantics() {}
 
-    /** The waveform for one semantic tag. Never throws, never returns an empty or silent shape. */
-    static Waveform waveform(Semantic tag) {
+    /** Maps a semantic tag onto its fixed shape; null and unknown tags share one neutral shape. */
+    private static Shape resolve(Semantic tag) {
         if (tag == Semantic.DANGER) {
             // One long hold: unmistakably different from any two-pulse shape.
-            return new Waveform(new long[]{0, 420}, null);
+            return new Shape(new long[]{0, 420}, null);
         }
         if (tag == Semantic.APPROACH) {
             // Two pulses with rising amplitude: "swelling" is the only readable form of
             // "getting closer", and amplitude is the only field that can express it.
-            return new Waveform(new long[]{0, 60, 70, 60}, new int[]{0, 70, 0, 150});
+            return new Shape(new long[]{0, 60, 70, 60}, new int[]{0, 70, 0, 150});
         }
         if (tag == Semantic.ATTENTION) {
             // Two short taps, well under the 200 ms budget for a "just so you know" nudge.
-            return new Waveform(new long[]{0, 45, 55, 45}, null);
+            return new Shape(new long[]{0, 45, 55, 45}, null);
         }
-        // Unknown or null tag falls back to the same neutral double tap the platform default
+        // Unknown or null tag falls back to the same neutral single tap the platform default
         // already uses, so a bad tag is a plain "something happened", never silence.
-        return new Waveform(new long[]{0, 45}, null);
+        return new Shape(new long[]{0, 45}, null);
+    }
+
+    /** The waveform for one semantic tag. Never throws, never returns an empty or silent shape. */
+    static Waveform waveform(Semantic tag) {
+        return waveform(tag, TriggerSource.TEMPLATE);
+    }
+
+    /**
+     * The waveform for one semantic tag, tagged with where the cue came from.
+     *
+     * <p>{@code source} is provenance only: the shape is decided by {@code tag} alone, so the
+     * same semantic feels identical no matter who asked for it. That is deliberate — a
+     * noise-fallback cue must not feel weaker than a template cue, or the demotion would itself
+     * lose information.
+     */
+    static Waveform waveform(Semantic tag, TriggerSource source) {
+        Shape resolved = resolve(tag);
+        return new Waveform(resolved.timingsMs, resolved.amplitudes, source);
+    }
+
+    /** Null source means "nobody said", which is the template path. */
+    static TriggerSource normalize(TriggerSource source) {
+        return source == null ? TriggerSource.TEMPLATE : source;
     }
 
     /** One readable line for diagnostic replay, in the spirit of {@link HapticPolicy#audit}. */
     static String audit(Semantic tag, Waveform waveform) {
         String name = tag == null ? "UNKNOWN" : tag.name();
         return "HapticSemantic tag=" + name + " durationMs=" + waveform.durationMs()
+                + " source=" + normalize(waveform.source).name()
                 + " timingsMs=" + Arrays.toString(waveform.timingsMs).replace(" ", "")
                 + " amplitudes=" + (waveform.amplitudes == null ? "system"
                 : Arrays.toString(waveform.amplitudes).replace(" ", ""));
