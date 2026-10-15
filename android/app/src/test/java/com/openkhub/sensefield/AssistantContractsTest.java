@@ -189,6 +189,21 @@ public class AssistantContractsTest {
         assertFalse(AssistantController.isRequest("我已经升级二技能了"));
         assertFalse(AssistantController.isRequest("我刚才观察了小地图"));
     }
+    @Test public void generalAnalysisAndColloquialAdviceAreDeliberateRequests() {
+        for (String question : Arrays.asList("下一步应该怎么办", "分析一下局势", "分析当前局势",
+                "帮忙分析一下", "你分析下当前画面", "听野，分析一下局势", "看一下",
+                "给点建议", "给我一些建议吧", "现在给点思路", "能不能提个建议",
+                "接下来该干啥", "下一步我该干嘛", "这波该咋打", "现在咋办")) {
+            assertTrue(question, AssistantController.isRequest(question));
+            assertEquals(question, AssistantController.visualQuestion(question));
+        }
+    }
+    @Test public void reportedAnalysisAndAdviceDoNotBecomeVisualRequests() {
+        for (String statement : Arrays.asList("我刚才分析了局势", "这局局势不错", "分析完了",
+                "我给了他建议", "队友建议我去下路", "他让我分析一下局势", "分析功能很好用",
+                "这波打得不错", "我准备去下路了", "也没多少呀"))
+            assertFalse(statement, AssistantController.isRequest(statement));
+    }
     @Test public void negatedQuantityCommentDoesNotReplaceAQuestionButRealQuantityQuestionsRemain() {
         assertFalse(AssistantController.isRequest("也没多少呀。"));
         assertFalse(AssistantController.isRequest("其实没有多少。"));

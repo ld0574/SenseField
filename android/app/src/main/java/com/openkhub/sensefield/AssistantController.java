@@ -611,7 +611,18 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         String polite = "(请问|请|麻烦|能不能|能否|可以|能)?";
         String lead = "(?:我(能不能|能否|可以)|" + polite + "(你)?|(你)?" + polite + ")";
         String action = "(看|分析|推荐|建议|选|选择)";
-        if (compact.matches(lead + "(帮我|给我|替我)(看|读|分析|推荐|建议|选|选择|解释|比较|观察).+")) return true;
+        if (compact.matches(lead + "(帮我|给我|替我|帮忙)(看|读|分析|推荐|建议|选|选择|解释|比较|观察).+")) return true;
+        // A deliberate request does not need to name a hero or an equipment scene.
+        // Anchor these forms so comments such as "他让我分析一下局势" stay local.
+        String spokenLead = "(听野|助手)?(那|现在|目前|这会儿)?" + lead;
+        if (compact.matches(spokenLead + "(看|分析|判断|评估|观察|解释|比较)(一下|下|一眼).*")) return true;
+        if (compact.matches(spokenLead + "(分析|判断|评估|观察)(当前|现在|目前|这局|这波|这个)?(的)?"
+                + "(局势|形势|战局|情况|画面)(吧|啊|呀)?")) return true;
+        if (compact.matches(spokenLead + "(给|提)(我)?(一点|一些|点|些|一条|个|一个)?"
+                + "(建议|意见|思路)(吧|啊|呀)?")) return true;
+        if (compact.matches("(听野|助手)?(那)?(我|我们)?"
+                + "((接下来|下一步|下一手|现在|这波|这一波|然后)(我|我们)?)?"
+                + "(应该|该|要|能)?(干啥|做啥|干嘛|咋办|咋打|咋做)(啊|呀|呢|好)?")) return true;
         if (compact.matches(".*(升级|加点|先升|主升).*(还是|哪个|哪一个|哪项|更好|合适).*")) return true;
         String topic = "(出装|装备|阵容|英雄|对战策略|对战打法|打法|套路)";
         if (compact.matches(lead + "(帮我|给我)" + action + ".*" + topic + ".*")) return true;

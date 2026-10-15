@@ -815,6 +815,39 @@ public class AssistantControlsInstrumentedTest {
         } finally { controller.close(); preferences.edit().clear().commit(); }
     }
 
+    @Test public void generalSpokenAdviceReachesVisualCaptureWithoutSwallowingAComment() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context);
+        Host host = new Host();
+        AssistantController controller = new AssistantController(context, "general-spoken-advice-test",
+                new AssistantSettings(preferences), host);
+        try {
+            Field pending = AssistantController.class.getDeclaredField("pendingQuestion");
+            pending.setAccessible(true);
+            AssistantSession session = session(controller);
+            for (String question : new String[] { "分析一下局势", "给点建议", "下一步我该干嘛" }) {
+                String capture = session.newCaptureTurn();
+                markAwaitingAsrResult(controller);
+                controller.onLocalAsrResult(session.generation(), capture, question, 25);
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                assertEquals(question, pending.get(controller));
+                assertEquals("正在等待当前画面", host.status);
+            }
+            assertEquals(0, countAudit(host, "reason=not_request"));
+            assertEquals(3, countAudit(host, "AssistantInteraction event=QUESTION"));
+
+            long generation = session.generation();
+            String capture = session.newCaptureTurn();
+            markAwaitingAsrResult(controller);
+            controller.onLocalAsrResult(generation, capture, "我准备去下路了", 25);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals("A passing comment must keep the previous question", "下一步我该干嘛",
+                    pending.get(controller));
+            assertEquals(generation, session.generation());
+            assertEquals(1, countAudit(host, "reason=not_request"));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
     @Test public void heatingKeepsAnAwaitedLocalVoiceFinalUsableAsAManualQuestion() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         SharedPreferences preferences = preferences(context);
