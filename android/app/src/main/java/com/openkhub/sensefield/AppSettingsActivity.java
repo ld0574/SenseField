@@ -30,6 +30,9 @@ public final class AppSettingsActivity extends UiActivity {
         entry(content, "语音与画面助手（实验）", "默认关闭，可按需开启", AssistantSettingsActivity.class);
         UiKit.add(content, UiKit.navigationRow(this, "测试记录与反馈", "标记问题，导出本地诊断记录",
                 () -> startActivity(DiagnosticsActivity.intent(this, DiagnosticGame.HONOR))), UiKit.GAP_CONTROL);
+        UiKit.gap(content, 12);
+        section(content, "社区");
+        entry(content, "进入社区", "看大家发的帖子，也可以自己发一条", CommunityActivity.class);
         setContentView(scroll);
     }
 
