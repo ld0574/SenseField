@@ -33,6 +33,6 @@ Release 中的监听接口经过 R8 优化后，直接创建这些内部类型�
 
 原始工程日志与截图仅在忽略目录 `validation/private/assistant-manual-voice-20261015/`。最终本地候选的工程回执位于 `output/releases/0.4.7/validation/current-package/`；本轮不自动发布或更新公网清单。
 
-## 测试机录制功能
+## 已取消的测试机录制实验
 
-[录制短测](NATIVE_DEMO_RECORDING_FEASIBILITY_2026-10-15.md)独立记录。录制入口、前台服务及编码器只在 `androidTest` 测试包，主 APK 不包含它们；与辅助共用截屏、麦克风的并行录制尚未接入，不作为公开版发布项。
+[录制短测](NATIVE_DEMO_RECORDING_FEASIBILITY_2026-10-15.md)仅保留历史证据。用户已取消此项；0.4.7 最终版清除了脚本、测试入口、服务及编码器，正常“说话／说完”和耳机连续语音继续保留。

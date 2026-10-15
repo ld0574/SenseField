@@ -201,7 +201,14 @@ final class CueDispatcher implements AutoCloseable {
     private boolean enqueueSpeech(CueRequest request) {
         if (request.category != CueRequest.Category.ASSISTANT
                 && request.priority >= 90 && speaking != null
-                && speaking.priority < request.priority) {
+                && speaking.priority < request.priority
+                // A higher near score often means another visible enemy, not
+                // a new critical alarm. Let the short phrase finish; immediate
+                // tones/haptics already carry that event, and the newest waiting
+                // words retain their original expiry. Critical alerts still cut in.
+                && (request.category != CueRequest.Category.NEAR_ZONE
+                    || speaking.category != CueRequest.Category.NEAR_ZONE
+                    || request.priority >= 100)) {
             CueRequest preempted = speaking;
             cancelledSpeech.add(preempted.cueId);
             speechEpoch++;

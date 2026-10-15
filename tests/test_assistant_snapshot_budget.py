@@ -63,7 +63,7 @@ def test_automatic_request_cannot_claim_manual_snapshot_budget():
     ('{"kind":"hud","answer":"","uncertain":false}', "empty_answer"),
     ('{"kind":"hud","answer":"双杀","uncertain":false}', "unhelpful_answer"),
     ('{"extra":"PRIVATE_MODEL_OUTPUT"}', "invalid_output"),
-    (json.dumps(dict(kind="hud", answer="长" * 101, uncertain=False)), "response_limits"),
+    (json.dumps(dict(kind="hud", answer="长" * 401, uncertain=False)), "response_limits"),
 ])
 def test_unknown_response_has_safe_reason_and_never_snapshot_scope(raw, reason):
     class Vision:

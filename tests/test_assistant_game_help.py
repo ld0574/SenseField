@@ -54,7 +54,8 @@ def test_banner_mention_does_not_remove_useful_advice():
 def test_game_prompt_prioritizes_short_advice_and_excludes_decorative_banners():
     assert "第一句话先回答用户所问的信息或选择" in SYSTEM_PROMPT
     assert "不可阻挡" in SYSTEM_PROMPT
-    assert "尽量不超过六十个汉字" in SYSTEM_PROMPT
+    assert "第一句话先回答用户所问的信息或选择，尽量在二十个汉字内说清" in SYSTEM_PROMPT
+    assert "不为凑字数删掉否定、条件或不确定范围" in SYSTEM_PROMPT
     assert "用户明确要求读文字时，优先完成读字" in SYSTEM_PROMPT
     assert "正在为低视力用户服务的游戏搭子" in SYSTEM_PROMPT
 

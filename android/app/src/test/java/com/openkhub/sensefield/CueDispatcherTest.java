@@ -207,6 +207,104 @@ public final class CueDispatcherTest {
                 NearZoneRouting.speech(4), pan);
     }
 
+    private static CueRequest scoredNear(String id, int priority, long observedAt,
+                                         int sector, float pan) {
+        return new CueRequest("session", id, id, "NEAR_ZONE", CueRequest.Category.NEAR_ZONE,
+                priority, observedAt, observedAt + NearZoneRouting.NEAR_TTL_MS,
+                NearZoneRouting.nearChannels(true), NearZoneRouting.TONE_NEAR, sector,
+                NearZoneRouting.hapticDirection(sector), NearZoneRouting.speech(sector), pan);
+    }
+
+    @Test public void risingNearScoresLetCurrentWordsFinishAndKeepEveryImmediateSignal() {
+        // Relative observation/submission times and scores from the vivo burst.
+        // Completion times are controlled here; this is a scheduler replay, not acoustic truth.
+        for (boolean prepared : new boolean[]{false, true}) {
+            MutableClock clock = new MutableClock(); FakeRenderer renderer = new FakeRenderer();
+            renderer.preparedSpeech = prepared; renderer.autoStartSpeech = false;
+            Events events = new Events();
+            CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+            dispatcher.submit(scoredNear("first", 95, -222, 3, 0f));
+            renderer.callback.onStarted(32);
+            clock.now = 505;
+            dispatcher.submit(scoredNear("second", 97, 225, 2, .707f));
+            assertFalse(renderer.stopped);
+            assertEquals(List.of("first"), renderer.started);
+            clock.now = 800;
+            renderer.speechCallbacks.get("first").onFinished(800, true);
+            renderer.callback.onStarted(800);
+            clock.now = 1018;
+            dispatcher.submit(scoredNear("third", 98, 822, 0, 0f));
+            assertFalse(renderer.stopped);
+            assertEquals(List.of("first", "second"), renderer.started);
+            clock.now = 1500;
+            renderer.speechCallbacks.get("second").onFinished(1500, true);
+            renderer.callback.onStarted(1500);
+            clock.now = 1900;
+            renderer.speechCallbacks.get("third").onFinished(1900, true);
+            assertEquals(List.of("first", "second", "third"), renderer.started);
+            assertEquals(3, renderer.tones + (prepared ? 1 : 0));
+            assertEquals(3, renderer.haptics);
+            assertEquals(3, events.events.stream().filter(e -> e.endsWith(":SPEECH:COMPLETED")).count());
+            assertFalse(events.events.stream().anyMatch(e -> e.endsWith(":PREEMPTED")));
+        }
+    }
+
+    @Test public void risingNearScoresReplaceOnlyPendingWordsWithTheNewestDirection() {
+        MutableClock clock = new MutableClock(); FakeRenderer renderer = new FakeRenderer();
+        Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+        dispatcher.submit(scoredNear("active", 95, 0, 3, 0f));
+        clock.now = 200;
+        dispatcher.submit(scoredNear("old-right", 97, 200, 1, 1f));
+        clock.now = 400;
+        dispatcher.submit(scoredNear("new-left", 98, 400, 5, -1f));
+        assertEquals(List.of("new-left"), dispatcher.pendingCueIdsForTest());
+        assertEquals(3, renderer.tones);
+        assertTrue(events.events.contains("old-right:SPEECH:QUEUE_REPLACED"));
+        clock.now = 800;
+        renderer.speechCallbacks.get("active").onFinished(800, true);
+        assertEquals(List.of("active", "new-left"), renderer.started);
+        assertEquals("左方有敌人", renderer.speechRequests.get("new-left").speech);
+        assertEquals(-1f, renderer.speechRequests.get("new-left").pan, 0f);
+        assertFalse(renderer.stopped);
+    }
+
+    @Test public void waitingHigherNearScoreStillRespectsOriginalExpiryAndSettings() {
+        for (boolean disable : new boolean[]{false, true}) {
+            MutableClock clock = new MutableClock(); FakeRenderer renderer = new FakeRenderer();
+            FakePolicy policy = new FakePolicy(); Events events = new Events();
+            CueDispatcher dispatcher = new CueDispatcher(renderer, policy, events, clock);
+            dispatcher.submit(scoredNear("active", 95, 0, 3, 0f));
+            clock.now = 200;
+            dispatcher.submit(scoredNear("waiting", 98, 200, 5, -1f));
+            clock.now = disable ? 800 : 1401;
+            if (disable) policy.channels = CueRequest.CHANNEL_TONE;
+            renderer.speechCallbacks.get("active").onFinished(clock.now, true);
+            assertEquals(List.of("active"), renderer.started);
+            assertTrue(events.events.contains("waiting:SPEECH:" + (disable ? "SETTINGS_DISABLED" : "EXPIRED")));
+            assertFalse(dispatcher.isSpeaking());
+        }
+    }
+
+    @Test public void criticalAlertStillPreemptsNearWordsAndIgnoresTheCancelledCallback() {
+        for (CueRequest.Category category : new CueRequest.Category[]{
+                CueRequest.Category.DANGER, CueRequest.Category.NEAR_ZONE}) {
+            MutableClock clock = new MutableClock(); FakeRenderer renderer = new FakeRenderer();
+            Events events = new Events();
+            CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+            dispatcher.submit(scoredNear("near", 98, 0, 3, 0f));
+            CueDispatcher.PlaybackCallback old = renderer.callback;
+            clock.now = 100;
+            dispatcher.submit(alert("critical", category, 100, 1000));
+            assertTrue(renderer.stopped);
+            assertEquals(List.of("near", "critical"), renderer.started);
+            assertTrue(events.events.contains("near:SPEECH:PREEMPTED"));
+            old.onFinished(200, true);
+            assertTrue(dispatcher.isSpeaking());
+            assertFalse(events.events.contains("near:SPEECH:COMPLETED"));
+        }
+    }
+
     private static CueRequest assistant(String id, long expires, java.util.function.BooleanSupplier guard) {
         return new CueRequest("session", id, id, "ASSISTANT",
                 CueRequest.Category.ASSISTANT, 30, 0, expires,
