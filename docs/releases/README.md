@@ -4,7 +4,7 @@
 
 完整、非空的识别文字作为消息原文交给游戏搭子理解，暂停、复述等本地指令继续处理；空结果不打断待答问题，新消息替换上一轮。高温只暂停自动观察和历史采样，主动问答与本地降载保留。Debug／Release JVM 各 630 项、Release lint、模拟器 37 项控制器检查通过，手机安装回读一致；独立准确率、真实策略收益、实际发声、受控温升与整体成本继续待验。
 
-唯一 APK、清单和 Gitee ZIP 在 output/releases/0.4.7/。GitHub 两个附件 digest 及匿名下载摘要与本地一致；Gitee 附件和公网 latest.json 由用户同步，先核对下载字节再更新清单及缓存。本次仅更新 Android，无需再次部署 Python；此前中文提示词配套仍保留原部署说明。旧二进制清理不删除源码、摘要、失败回执或诊断。
+APK、使用说明、清单和校验文件在 output/releases/0.4.7/，按用户要求不生成 Gitee ZIP。GitHub 两个附件 digest 及匿名下载摘要与本地一致；Gitee 附件和公网 latest.json 由用户同步，先核对下载字节再更新清单及缓存。本次仅更新 Android，无需再次部署 Python；此前中文提示词配套仍保留原部署说明。旧二进制清理不删除源码、摘要、失败回执或诊断。
 
 [0.4.6](0.4.6/RELEASE_NOTES.md)（code23）为历史普通 Release、发布时为 Latest，其标签和原验证范围见[发布记录](../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。当前分发以 0.4.7 为准；[版本规划](../plans/0.4.7版本规划.md)与[当前状态](../../validation/STATUS.md)保留未完成验收。
 
