@@ -66,7 +66,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     private String currentStatus = "助手正在连接";
     private static final String EXPIRED_FRAME_PROMPT = "画面返回太慢，旧画面已丢弃。";
     static final long MANUAL_QUIET_MS = 60_000;
-    static final String SCREEN_QUESTION = "请根据当前截图，说明最值得注意的可见信息，或给一条有依据的游戏建议。看不清就说明。";
+    static final String SCREEN_QUESTION = "请根据当前截图，说明最值得注意的一条可见信息。只有画面依据明确且与这条信息直接相关时，再补一句游戏建议；看不清就说明缺少哪条依据。";
     static final String AUTOMATIC_QUESTION = "当前画面是否有需要我重新考虑的选择？没有可靠依据就保持安静。";
     private static final class VisualTask {
         final long id; final String turn; final long generation; final FrameSnapshot frame;

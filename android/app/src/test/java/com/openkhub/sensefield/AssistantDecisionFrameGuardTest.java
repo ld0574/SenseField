@@ -79,7 +79,7 @@ public final class AssistantDecisionFrameGuardTest {
         assertTrue(reply.freshAt(11000));
         assertTrue(reply.freshAt(21000));
         assertFalse(reply.freshAt(21001));
-        assertEquals("约10秒前截图显示，截图右侧有敌方标记。", reply.spokenAnswerAt(11000));
+        assertEquals("截图右侧有敌方标记。", reply.spokenAnswerAt(11000));
     }
     @Test public void snapshotFlagDoesNotExtendAutomaticUncertainOrStaticAnswers() {
         AssistantReply automatic = new AssistantReply(1, "t", 1, 1000, "hud", "敌方标记。", false,
@@ -95,16 +95,16 @@ public final class AssistantDecisionFrameGuardTest {
         assertFalse(uncertain.freshAt(6001));
         assertFalse(menu.freshAt(16001));
     }
-    @Test public void repeatingSnapshotRefreshesItsCaptionWithoutExtendingItsLifetime() {
+    @Test public void repeatingSnapshotKeepsItsAnswerAndOriginalLifetime() {
         AssistantReply original = new AssistantReply(1, "t", 1, 1000, "hud", "截图里的标记。", false,
                 false, "", null, true);
-        assertEquals("约6秒前截图显示，截图里的标记。", original.spokenAnswerAt(7000));
+        assertEquals("截图里的标记。", original.spokenAnswerAt(7000));
         AssistantReply repeated = new AssistantReply(2, "repeat", original.frameId, original.capturedAtMs,
                 original.kind, original.answer, original.uncertain, false,
                 original.decisionScene, original.decisionGuard, original.snapshotRead);
-        assertEquals("约12秒前截图显示，截图里的标记。", repeated.spokenAnswerAt(13000));
+        assertEquals("截图里的标记。", repeated.spokenAnswerAt(13000));
         assertEquals(original.expiresAtMs(), repeated.expiresAtMs());
         assertFalse(repeated.freshAt(21001));
-        assertEquals("约0秒前截图显示，截图里的标记。", original.spokenAnswerAt(1500));
+        assertEquals("截图里的标记。", original.spokenAnswerAt(1500));
     }
 }

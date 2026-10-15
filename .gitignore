@@ -82,6 +82,8 @@ validation/private/
 docs/**
 !docs/design/
 !docs/development/
+!docs/demo/
+!docs/demo/录制说明.md
 !docs/plans/
 !docs/references/
 !docs/requirements/

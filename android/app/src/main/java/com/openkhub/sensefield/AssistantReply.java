@@ -54,9 +54,8 @@ final class AssistantReply {
     }
     String spokenAnswerAt(long now) {
         if ("local".equals(kind)) return answer;
-        long ageMs = Math.max(0, now - capturedAtMs);
-        String caption = snapshotRead || ageMs > 2000
-                ? "约" + (ageMs / 1000) + "秒前截图显示，" : "";
-        return (proactive ? "画面变化，" : "") + caption + answer;
+        // Freshness is checked before delivery and repeat. Keep the answer
+        // concise instead of announcing the screenshot age on every utterance.
+        return (proactive ? "画面变化，" : "") + answer;
     }
 }
