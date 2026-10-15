@@ -65,7 +65,6 @@ public class OnDeviceAsrInstrumentedTest {
                 metrics.putInt("text_chars", text == null ? 0 : text.length());
                 InstrumentationRegistry.getInstrumentation().sendStatus(2, metrics);
                 assertTrue("expected synthetic keywords", recognized);
-                assertTrue("recognized question is actionable", AssistantController.isRequest(text));
             }
         }
     }

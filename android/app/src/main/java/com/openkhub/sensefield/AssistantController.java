@@ -244,21 +244,15 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
             host.audit("AssistantVoice event=FINAL source=on_device inferenceMs=" + inferenceMs
                     + " generation=" + generation + " turn=" + turn
                     + " monotonicMs=" + SystemClock.elapsedRealtime()
-                    + " textChars=" + text.length() + " requestLike=" + isRequest(text));
+                    + " textChars=" + text.length());
             if (text.isEmpty()) {
                 host.audit("AssistantVoice event=RESULT_UNKNOWN reason=empty_final generation="
                         + generation + " monotonicMs=" + SystemClock.elapsedRealtime());
                 setStatus("没有听清，请重说"); releaseDeferredVisual(); return;
             }
-            // Only a deliberate question proceeds to the visual service; PCM stays on device.
-            if (isRequest(text) || AssistantConversationIntent.matches(text)) question(text, false);
-            else {
-                host.audit("AssistantVoice event=RESULT_UNKNOWN reason=not_request generation="
-                        + generation + " textChars=" + text.length()
-                        + " monotonicMs=" + SystemClock.elapsedRealtime());
-                setStatus("已听到，等待你的问题");
-                releaseDeferredVisual();
-            }
+            // Every completed message enters the conversation. Local controls are handled
+            // by question(); the model interprets all other wording. PCM stays on device.
+            question(text, false);
         } });
     }
     private void localAsrUnavailable(String reason) {
@@ -434,7 +428,6 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
                     : "本次会话的画面问答次数已用完，请稍后再试。", false); return;
         }
         if (overlay != null && overlay.isExpanded()) overlay.setExpanded(false);
-        text = visualQuestion(text);
         synchronized (this) {
             pendingQuestion = text; pendingTurn = turn; pendingProactive = proactive;
             frameNotBeforeMs = SystemClock.elapsedRealtime() + 250;
@@ -600,42 +593,6 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         host.audit("AssistantVoice event=DROPPED reason=" + safeReason + " generation="
                 + audioGeneration + " monotonicMs=" + SystemClock.elapsedRealtime());
     }
-    static boolean isRequest(String text) {
-        if (text == null || text.trim().isEmpty()) return false;
-        String compact = text.replaceAll("[\\s，。！？!?、,.]", "");
-        // A negated quantity statement is not a question. In continuous listening, treating
-        // "也没多少呀" as a request would replace the player's pending visual question.
-        // Keep the whole-string guard narrow so "没多少血，应该怎么办" still asks for help.
-        if (compact.matches("(?:也|其实|感觉)?(?:没|没有|不|并不)(?:有)?多少(?:啊|呀|哦|吧|呢|嘛|了)*"))
-            return false;
-        String polite = "(请问|请|麻烦|能不能|能否|可以|能)?";
-        String lead = "(?:我(能不能|能否|可以)|" + polite + "(你)?|(你)?" + polite + ")";
-        String action = "(看|分析|推荐|建议|选|选择)";
-        if (compact.matches(lead + "(帮我|给我|替我|帮忙)(看|读|分析|推荐|建议|选|选择|解释|比较|观察).+")) return true;
-        // A deliberate request does not need to name a hero or an equipment scene.
-        // Anchor these forms so comments such as "他让我分析一下局势" stay local.
-        String spokenLead = "(听野|助手)?(那|现在|目前|这会儿)?" + lead;
-        if (compact.matches(spokenLead + "(看|分析|判断|评估|观察|解释|比较)(一下|下|一眼).*")) return true;
-        if (compact.matches(spokenLead + "(分析|判断|评估|观察)(当前|现在|目前|这局|这波|这个)?(的)?"
-                + "(局势|形势|战局|情况|画面)(吧|啊|呀)?")) return true;
-        if (compact.matches(spokenLead + "(给|提)(我)?(一点|一些|点|些|一条|个|一个)?"
-                + "(建议|意见|思路)(吧|啊|呀)?")) return true;
-        if (compact.matches("(听野|助手)?(那)?(我|我们)?"
-                + "((接下来|下一步|下一手|现在|这波|这一波|然后)(我|我们)?)?"
-                + "(应该|该|要|能)?(干啥|做啥|干嘛|咋办|咋打|咋做)(啊|呀|呢|好)?")) return true;
-        if (compact.matches(".*(升级|加点|先升|主升).*(还是|哪个|哪一个|哪项|更好|合适).*")) return true;
-        String topic = "(出装|装备|阵容|英雄|对战策略|对战打法|打法|套路)";
-        if (compact.matches(lead + "(帮我|给我)" + action + ".*" + topic + ".*")) return true;
-        if (compact.matches(lead + action + ".*" + topic + ".*")) return true;
-        if (compact.matches(lead + "(讲讲|说说)?(当前|这局)?(对战策略|对战打法|打法建议)")) return true;
-        if (compact.matches(lead + "(帮我|给我)(选|选择)(一下|下)?.+")) return true;
-        if (compact.matches(".*(出装建议|装备建议|装备购买建议|购买装备建议|英雄建议|选人建议|英雄推荐|选人推荐|阵容建议|阵容分析|出装推荐|装备推荐|建议买装备|建议购买装备).*")) return true;
-        if (compact.matches(
-                "(听野|助手)?(你好|您好|在不在|你是谁|你叫什么|能做什么|你能做什么)")) return true;
-        return text.matches(".*(什么|怎么|如何|多少|哪(一)?(个|项|种|些|位|款|边|里)|在哪|有没有|是不是|吗|么|呢|读|看看|告诉|解释|重复|重说|再说|别说|停止播报|停说|安静|暂停助手|附近情况|提醒|提示).*" );
-    }
-    /** Preserve the user's full intent; server-side visual grounding handles options and recommendations. */
-    static String visualQuestion(String text) { return text; }
     static boolean needsVisualHistory(String question) {
         return question != null && java.util.regex.Pattern.compile(
                 "刚才|之前|先前|最近|前后|变化|对比|比较|previous|earlier|before|changed|compare|recent",

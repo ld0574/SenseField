@@ -46,7 +46,7 @@ public final class AssistantSettingsActivity extends UiActivity {
         UiKit.add(assistantOptions, service, 20);
         SettingHelp.addGroup(this, assistantOptions, "assistant_group", 12);
         consentSwitch(assistantOptions, "连续语音（可以插话）", AssistantSettings.VOICE, AssistantSettings.AUDIO_CONSENT,
-                "听野会持续检测说话，在你说完后离线识别。原始语音只在手机内存里临时处理，不上传、不保存音频文件。第一次开启会从听野 CDN 下载约153 MiB语音资源，请在网络稳定时准备，并预留约400 MiB空间。下载后离线识别，已缓存资源会复用。\n\n请戴耳机，并确认游戏声音也在耳机里。听野只能检查自己的声音路线，无法确认游戏的实际路线；蓝牙音箱和外放不适合此实验。普通蓝牙耳机连接时，识别可能使用手机麦克风。游戏开麦、其他录音活动或路线不明时，助手暂停输入。\n\n开启画面理解后，问题文字和授权画面会发送到画面服务及其视觉模型。背景人声也可能被识别成问题，请留意周围环境。", true);
+                "听野会持续检测说话，在你说完后离线识别。原始语音只在手机内存里临时处理，不上传、不保存音频文件。第一次开启会从听野 CDN 下载约153 MiB语音资源，请在网络稳定时准备，并预留约400 MiB空间。下载后离线识别，已缓存资源会复用。\n\n请戴耳机，并确认游戏声音也在耳机里。听野只能检查自己的声音路线，无法确认游戏的实际路线；蓝牙音箱和外放不适合此实验。普通蓝牙耳机连接时，识别可能使用手机麦克风。游戏开麦、其他录音活动或路线不明时，助手暂停输入。\n\n开启画面理解后，每句完整、非空的识别文字都会作为消息，连同授权画面发送到画面服务及其视觉模型；暂停、复述等本地指令单独处理。不需要固定问法，新消息会替换尚未完成的回答。背景人声也可能被识别并发送；暂时不想对话时，请暂停连续语音。", true);
         resources = UiKit.hint(this, "首次开启连续语音后准备资源，完成后可离线识别。");
         resources.setAccessibilityLiveRegion(android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE);
         UiKit.add(assistantOptions, resources, 12);

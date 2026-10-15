@@ -173,55 +173,12 @@ public class AssistantContractsTest {
         try { AssistantGatewayClient.readBounded(source, 8); fail("oversize UTF-8 accepted"); }
         catch (IOException expected) { }
     }
-    @Test public void localSpeechRequestsAreNotLostByQuestionFiltering() {
-        assertTrue(AssistantController.isRequest("停止播报"));
-        assertTrue(AssistantController.isRequest("附近情况"));
-        assertTrue(AssistantController.isRequest("那这个呢"));
-        assertTrue(AssistantController.isRequest("你好"));
-        assertTrue(AssistantController.isRequest("你是谁"));
-        assertFalse(AssistantController.isRequest("我刚刚跑过去了"));
-        assertFalse(AssistantController.isRequest("他们刚刚聊到听野"));
-    }
-    @Test public void spokenSkillComparisonIsAQuestionEvenWithoutAQuestionMark() {
-        assertTrue(AssistantController.isRequest("升级二技能还是三技能"));
-        assertTrue(AssistantController.isRequest("先升二技能还是三技能"));
-        assertTrue(AssistantController.isRequest("帮我观察小地图"));
-        assertFalse(AssistantController.isRequest("我已经升级二技能了"));
-        assertFalse(AssistantController.isRequest("我刚才观察了小地图"));
-    }
-    @Test public void generalAnalysisAndColloquialAdviceAreDeliberateRequests() {
-        for (String question : Arrays.asList("下一步应该怎么办", "分析一下局势", "分析当前局势",
-                "帮忙分析一下", "你分析下当前画面", "听野，分析一下局势", "看一下",
-                "给点建议", "给我一些建议吧", "现在给点思路", "能不能提个建议",
-                "接下来该干啥", "下一步我该干嘛", "这波该咋打", "现在咋办")) {
-            assertTrue(question, AssistantController.isRequest(question));
-            assertEquals(question, AssistantController.visualQuestion(question));
-        }
-    }
-    @Test public void reportedAnalysisAndAdviceDoNotBecomeVisualRequests() {
-        for (String statement : Arrays.asList("我刚才分析了局势", "这局局势不错", "分析完了",
-                "我给了他建议", "队友建议我去下路", "他让我分析一下局势", "分析功能很好用",
-                "这波打得不错", "我准备去下路了", "也没多少呀"))
-            assertFalse(statement, AssistantController.isRequest(statement));
-    }
-    @Test public void negatedQuantityCommentDoesNotReplaceAQuestionButRealQuantityQuestionsRemain() {
-        assertFalse(AssistantController.isRequest("也没多少呀。"));
-        assertFalse(AssistantController.isRequest("其实没有多少。"));
-        assertFalse(AssistantController.isRequest(null));
-        assertFalse(AssistantController.isRequest(" "));
-        assertTrue(AssistantController.isRequest("还要多少金币？"));
-        assertTrue(AssistantController.isRequest("现在金币多少？"));
-        assertTrue(AssistantController.isRequest("没多少血，应该怎么办？"));
-        assertTrue(AssistantController.isRequest("这件装备没有多少伤害吗？"));
-        assertTrue(AssistantController.isRequest("那这个呢？"));
-    }
     @Test public void greetingsAndMicrophoneChecksStayLocalWithoutSwallowingVisualQuestions() {
         AssistantConversationIntent.Match repeatedGreeting =
                 AssistantConversationIntent.classify("你好你好");
         assertNotNull(repeatedGreeting);
         assertEquals(AssistantConversationIntent.Type.GREETING, repeatedGreeting.type);
         assertTrue(AssistantConversationIntent.matches("你好你好"));
-        assertFalse(AssistantController.isRequest("你好你好"));
 
         AssistantConversationIntent.Match combined =
                 AssistantConversationIntent.classify("你好你好，你能听到我说话吗？");
@@ -248,25 +205,6 @@ public class AssistantContractsTest {
                 "你怎么还是看不清这张装备图？", "现在金币有多少？",
                 "这个英雄适合出什么装备？", "也没多少呀"))
             assertNull(question, AssistantConversationIntent.classify(question));
-    }
-    @Test public void whichQuestionsReadOptionsWithoutPromotingOrdinaryChoiceStatements() {
-        for (String question : Arrays.asList("这个画面我应该选哪个", "选哪一个", "哪项比较合适",
-                "哪一种", "选哪些", "哪个按钮是开始"))
-            assertTrue(question, AssistantController.isRequest(question));
-        for (String question : Arrays.asList("帮我看下出装", "看一下这局出装", "帮我分析阵容",
-                "推荐装备", "帮我选英雄", "这局对战策略", "对战策略",
-                "你能不能帮我分析阵容", "能不能推荐装备", "我能不能推荐装备",
-                "装备购买建议", "选人建议", "英雄推荐", "自然之灵出装建议",
-                "帮我比较二技能和三技能", "帮我观察打野区域", "观察打野区域有没有敌人",
-                "升级二技能还是三技能呢", "帮我解释这个技能"))
-            assertTrue(question, AssistantController.isRequest(question));
-        for (String statement : Arrays.asList("我选桑启", "选好了", "这一局我选择辅助", "我推荐装备"))
-            assertFalse(statement, AssistantController.isRequest(statement));
-        assertEquals("这个画面我应该选哪个", AssistantController.visualQuestion("这个画面我应该选哪个"));
-        assertEquals("哪项比较合适", AssistantController.visualQuestion("哪项比较合适"));
-        assertEquals("帮我推荐一个当前阵容适合的英雄", AssistantController.visualQuestion("帮我推荐一个当前阵容适合的英雄"));
-        assertEquals("哪个按钮是开始", AssistantController.visualQuestion("哪个按钮是开始"));
-        assertEquals("现在比分多少", AssistantController.visualQuestion("现在比分多少"));
     }
     @Test public void requestTimeoutIsReportedButExplicitCancellationStaysSilent() {
         java.io.InterruptedIOException timeout = new java.io.InterruptedIOException("timeout");
