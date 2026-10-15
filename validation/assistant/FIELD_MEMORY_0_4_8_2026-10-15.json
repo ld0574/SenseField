@@ -1,0 +1,342 @@
+{
+  "answer_type_counts": {
+    "binding": 20,
+    "existence": 6,
+    "refusal": 6,
+    "temporal": 5
+  },
+  "length_decay": [
+    {
+      "by_answer_type": {
+        "binding": {
+          "accuracy": 1.0,
+          "correct": 20,
+          "total": 20
+        },
+        "existence": {
+          "accuracy": 1.0,
+          "correct": 6,
+          "total": 6
+        },
+        "refusal": {
+          "accuracy": 1.0,
+          "correct": 6,
+          "total": 6
+        },
+        "temporal": {
+          "accuracy": 1.0,
+          "correct": 5,
+          "total": 5
+        }
+      },
+      "minutes": 2,
+      "records": 26,
+      "top_k": 12
+    },
+    {
+      "by_answer_type": {
+        "binding": {
+          "accuracy": 0.85,
+          "correct": 17,
+          "total": 20
+        },
+        "existence": {
+          "accuracy": 0.5,
+          "correct": 3,
+          "total": 6
+        },
+        "refusal": {
+          "accuracy": 1.0,
+          "correct": 6,
+          "total": 6
+        },
+        "temporal": {
+          "accuracy": 0.2,
+          "correct": 1,
+          "total": 5
+        }
+      },
+      "minutes": 5,
+      "records": 44,
+      "top_k": 12
+    },
+    {
+      "by_answer_type": {
+        "binding": {
+          "accuracy": 0.55,
+          "correct": 11,
+          "total": 20
+        },
+        "existence": {
+          "accuracy": 0.3333,
+          "correct": 2,
+          "total": 6
+        },
+        "refusal": {
+          "accuracy": 1.0,
+          "correct": 6,
+          "total": 6
+        },
+        "temporal": {
+          "accuracy": 0.2,
+          "correct": 1,
+          "total": 5
+        }
+      },
+      "minutes": 10,
+      "records": 90,
+      "top_k": 12
+    },
+    {
+      "by_answer_type": {
+        "binding": {
+          "accuracy": 0.4,
+          "correct": 8,
+          "total": 20
+        },
+        "existence": {
+          "accuracy": 0.1667,
+          "correct": 1,
+          "total": 6
+        },
+        "refusal": {
+          "accuracy": 1.0,
+          "correct": 6,
+          "total": 6
+        },
+        "temporal": {
+          "accuracy": 0.0,
+          "correct": 0,
+          "total": 5
+        }
+      },
+      "minutes": 20,
+      "records": 168,
+      "top_k": 12
+    }
+  ],
+  "minimal_pair_attribution": [
+    {
+      "accuracy_drop": 0.25,
+      "baseline_accuracy": 1.0,
+      "baseline_correct": 20,
+      "cue": "direction",
+      "questions_broken": [
+        "binding-direction-1",
+        "binding-direction-2",
+        "binding-direction-3",
+        "binding-direction-4",
+        "binding-direction-6"
+      ],
+      "stripped_accuracy": 0.75,
+      "stripped_correct": 15,
+      "total": 20
+    },
+    {
+      "accuracy_drop": 0.25,
+      "baseline_accuracy": 1.0,
+      "baseline_correct": 20,
+      "cue": "tone",
+      "questions_broken": [
+        "binding-tone-1",
+        "binding-tone-2",
+        "binding-tone-3",
+        "binding-tone-4",
+        "binding-tone-6"
+      ],
+      "stripped_accuracy": 0.75,
+      "stripped_correct": 15,
+      "total": 20
+    },
+    {
+      "accuracy_drop": 0.25,
+      "baseline_accuracy": 1.0,
+      "baseline_correct": 20,
+      "cue": "pan",
+      "questions_broken": [
+        "binding-pan-1",
+        "binding-pan-2",
+        "binding-pan-3",
+        "binding-pan-4",
+        "binding-pan-6"
+      ],
+      "stripped_accuracy": 0.75,
+      "stripped_correct": 15,
+      "total": 20
+    },
+    {
+      "accuracy_drop": 0.25,
+      "baseline_accuracy": 1.0,
+      "baseline_correct": 20,
+      "cue": "intensity",
+      "questions_broken": [
+        "binding-intensity-1",
+        "binding-intensity-2",
+        "binding-intensity-3",
+        "binding-intensity-4",
+        "binding-intensity-6"
+      ],
+      "stripped_accuracy": 0.75,
+      "stripped_correct": 15,
+      "total": 20
+    }
+  ],
+  "minimal_pair_decisive": [
+    {
+      "correct": false,
+      "cue": "direction",
+      "question_id": "binding-direction-1",
+      "reason": "cue_absent"
+    },
+    {
+      "correct": false,
+      "cue": "tone",
+      "question_id": "binding-tone-1",
+      "reason": "cue_absent"
+    },
+    {
+      "correct": false,
+      "cue": "pan",
+      "question_id": "binding-pan-1",
+      "reason": "cue_absent"
+    },
+    {
+      "correct": false,
+      "cue": "intensity",
+      "question_id": "binding-intensity-1",
+      "reason": "cue_absent"
+    },
+    {
+      "correct": false,
+      "cue": "direction",
+      "question_id": "binding-direction-2",
+      "reason": "cue_absent"
+    },
+    {
+      "correct": false,
+      "cue": "tone",
+      "question_id": "binding-tone-2",
+      "reason": "cue_absent"
+    },
+    {
+      "correct": false,
+      "cue": "pan",
+      "question_id": "binding-pan-2",
+      "reason": "cue_absent"
+    },
+    {
+      "correct": false,
+      "cue": "intensity",
+      "question_id": "binding-intensity-2",
+      "reason": "cue_absent"
+    },
+    {
+      "correct": false,
+      "cue": "direction",
+      "question_id": "binding-direction-3",
+      "reason": "cue_absent"
+    },
+    {
+      "correct": false,
+      "cue": "tone",
+      "question_id": "binding-tone-3",
+      "reason": "cue_absent"
+    },
+    {
+      "correct": false,
+      "cue": "pan",
+      "question_id": "binding-pan-3",
+      "reason": "cue_absent"
+    },
+    {
+      "correct": false,
+      "cue": "intensity",
+      "question_id": "binding-intensity-3",
+      "reason": "cue_absent"
+    },
+    {
+      "correct": false,
+      "cue": "direction",
+      "question_id": "binding-direction-4",
+      "reason": "cue_absent"
+    },
+    {
+      "correct": false,
+      "cue": "tone",
+      "question_id": "binding-tone-4",
+      "reason": "cue_absent"
+    },
+    {
+      "correct": false,
+      "cue": "pan",
+      "question_id": "binding-pan-4",
+      "reason": "cue_absent"
+    },
+    {
+      "correct": false,
+      "cue": "intensity",
+      "question_id": "binding-intensity-4",
+      "reason": "cue_absent"
+    },
+    {
+      "correct": false,
+      "cue": "direction",
+      "question_id": "binding-direction-6",
+      "reason": "cue_absent"
+    },
+    {
+      "correct": false,
+      "cue": "tone",
+      "question_id": "binding-tone-6",
+      "reason": "cue_absent"
+    },
+    {
+      "correct": false,
+      "cue": "pan",
+      "question_id": "binding-pan-6",
+      "reason": "cue_absent"
+    },
+    {
+      "correct": false,
+      "cue": "intensity",
+      "question_id": "binding-intensity-6",
+      "reason": "cue_absent"
+    }
+  ],
+  "minutes": 20,
+  "question_count": 37,
+  "record_count": 168,
+  "refusal": {
+    "by_version": [
+      {
+        "correct": 6,
+        "minutes": 2,
+        "refusal_rate": 1.0,
+        "total": 6
+      },
+      {
+        "correct": 6,
+        "minutes": 5,
+        "refusal_rate": 1.0,
+        "total": 6
+      },
+      {
+        "correct": 6,
+        "minutes": 10,
+        "refusal_rate": 1.0,
+        "total": 6
+      },
+      {
+        "correct": 6,
+        "minutes": 20,
+        "refusal_rate": 1.0,
+        "total": 6
+      }
+    ],
+    "total": 6
+  },
+  "schema": "field_memory/v1",
+  "scope": "Synthetic retrieval-budget model. Not a language model, not a device measurement. Never quote as on-device accuracy.",
+  "seed": 20261015,
+  "top_k": 12
+}
