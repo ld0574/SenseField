@@ -12,6 +12,12 @@ import java.util.List;
 /** Small fixed UI templates, loaded once. No network, learned weights or user-template semantics. */
 final class Match3VisualCatalog {
     static final int PATCH = 16;
+    /** The obstacle admission line, shared by the label path and the diagnostic readout. */
+    static final float ADMISSION_MAXIMUM = .12f;
+    static final float ADMISSION_MARGIN = .025f;
+    /** Upper bound on the reviewed cover supplement, raised 2026-10-12 by user ruling so a
+     *  second reviewed rainbow-bird pose fits beside the first one. */
+    static final int COVER_CATALOG_MAXIMUM_BYTES = 98304;
     static final class CellCache {
         int[] patch;
         int[] envelope;
@@ -25,6 +31,22 @@ final class Match3VisualCatalog {
         boolean iceChecked;
         int iceLayers;
         Match3UnknownElements.Observation reviewObservation;
+        final Admission admission=new Admission();
+    }
+    /**
+     * Read-only side channel of the admission line: the winner it chose and the two distances
+     * that decided it, with the same lower-bound truncation the judgment itself applies.
+     * A contender cut before scoring is only known to be worse than maximum+margin.
+     */
+    static final class Admission {
+        String template;
+        float error = Float.POSITIVE_INFINITY;
+        float otherKind = Float.POSITIVE_INFINITY;
+        void reset() { template = null; error = Float.POSITIVE_INFINITY; otherKind = Float.POSITIVE_INFINITY; }
+        /** Non-finite numbers have no JSON representation, so an unseen reading is written as -1. */
+        static float distance(float value) {
+            return Float.isFinite(value) ? Math.round(value * 10000f) / 10000f : -1f;
+        }
     }
     static final class Pattern {
         final String kind;
@@ -355,7 +377,7 @@ final class Match3VisualCatalog {
                     try(java.io.InputStream extra=context.getAssets().open(name)) {
                         java.io.ByteArrayOutputStream data=new java.io.ByteArrayOutputStream();
                         int count;while((count=extra.read(buffer))>0) {
-                            if(data.size()+count>65536)throw new IllegalArgumentException("Cover catalog size");
+                            if(data.size()+count>COVER_CATALOG_MAXIMUM_BYTES)throw new IllegalArgumentException("Cover catalog size");
                             data.write(buffer,0,count);
                         }
                         supplements.add(data.toByteArray());
@@ -459,7 +481,7 @@ final class Match3VisualCatalog {
             int cells=0,goals=0,envelopes=0;StringBuilder ids=new StringBuilder();
             java.io.ByteArrayOutputStream proof=new java.io.ByteArrayOutputStream();
             for(byte[] supplement:supplements) {
-            if(supplement.length>65536)throw new IllegalArgumentException("Cover catalog size");
+            if(supplement.length>COVER_CATALOG_MAXIMUM_BYTES)throw new IllegalArgumentException("Cover catalog size");
             JSONObject extra=new JSONObject(new String(supplement,StandardCharsets.UTF_8));
             JSONObject metadata=extra.getJSONObject("metadata");
             cells+=extra.optJSONArray("cells")==null?0:extra.getJSONArray("cells").length();
@@ -705,6 +727,10 @@ final class Match3VisualCatalog {
         return patch;
     }
     static String recognize(List<Pattern> patterns, int[] patch, float maximum, float margin) {
+        return recognize(patterns, patch, maximum, margin, null);
+    }
+    static String recognize(List<Pattern> patterns, int[] patch, float maximum, float margin, Admission out) {
+        if (out != null) out.reset();
         String best = null; float error = Float.POSITIVE_INFINITY, second = Float.POSITIVE_INFINITY;
         java.util.Map<String,int[]> totals=new java.util.HashMap<>();
         Match3AnimalAppearance.Face goalShape=null;
@@ -748,6 +774,7 @@ final class Match3VisualCatalog {
                 best = pattern.kind; error = candidate;
             } else if (!pattern.kind.equals(best)) second = Math.min(second,candidate);
         }
+        if (out != null) { out.template = best; out.error = error; out.otherKind = second; }
         return error <= maximum && second-error >= margin ? best : null;
     }
     Match3Goals.Target goalTarget(int slot,Match3Goals.Kind kind,int count,boolean complete,String visualId,int[] patch) {
@@ -807,7 +834,7 @@ final class Match3VisualCatalog {
         int[] observed = patch(pixels,width,ix,iy,width-ix,height-iy);
         int[] envelope=patch(pixels,width,0,0,width,height);
         if(Match3NativeMath.samePixels(cache.patch,observed) && Match3NativeMath.samePixels(cache.envelope,envelope))return cache.result;
-        cache.patch=observed;cache.envelope=envelope;cache.result=classifyObstacle(observed);
+        cache.patch=observed;cache.envelope=envelope;cache.result=classifyObstacle(observed,cache.admission);
         if(cache.result==null)cache.result=classifyEffect(envelope);
         cache.animalChecked=false;cache.animal=null;cache.face=null;cache.body=null;
         cache.inferredChecked=false;cache.inferred=null;cache.iceChecked=false;
@@ -870,8 +897,9 @@ final class Match3VisualCatalog {
         return cache.face;
     }
     /** Same typed pixel admission used by the bitmap sampler and frozen development patches. */
-    Match3Position.Cell classifyObstacle(int[] observed) {
-        String kind = recognize(cells,observed,.12f,.025f);
+    Match3Position.Cell classifyObstacle(int[] observed) { return classifyObstacle(observed,null); }
+    Match3Position.Cell classifyObstacle(int[] observed, Admission out) {
+        String kind = recognize(cells,observed,ADMISSION_MAXIMUM,ADMISSION_MARGIN,out);
         if(kind!=null && kind.startsWith("identity_")) {
             Match3Position.Kind typed=Match3Position.Kind.valueOf(kind.substring(9));
             return Match3Position.Cell.observed(typed,Match3Rules.ruleForKind(typed),-1,-1)

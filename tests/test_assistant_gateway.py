@@ -134,9 +134,9 @@ def test_health_fingerprints_the_loaded_prompt_without_exposing_private_configur
     path = tmp_path / "private-prompt.txt"
     path.write_text(original, encoding="utf-8")
     settings = GatewaySettings(
-        device_tokens=(TOKEN,), zhipu_api_key="PRIVATE_PROVIDER_KEY",
+        device_tokens=(TOKEN,), zhipu_api_key="example-provider-key",
         vision_provider="compatible" if compatible else "zhipu",
-        vision_api_key="PRIVATE_PROVIDER_KEY",
+        vision_api_key="example-provider-key",
         vision_base_url="https://private-provider.example/v1",
         vision_model="qwen3.8-flash", vision_prompt_file=path,
         require_tls=False, mode="test", asr_backend="disabled",
@@ -148,7 +148,7 @@ def test_health_fingerprints_the_loaded_prompt_without_exposing_private_configur
     assert before.status_code == after.status_code == 200
     assert before.json()["vision_prompt_sha256"] == hashlib.sha256(original.encode()).hexdigest()
     assert after.json()["vision_prompt_sha256"] == before.json()["vision_prompt_sha256"]
-    for private in (str(path), original, "PRIVATE_PROVIDER_KEY", TOKEN, settings.vision_base_url):
+    for private in (str(path), original, "example-provider-key", TOKEN, settings.vision_base_url):
         assert private not in before.text
         assert private not in after.text
     with TestClient(create_app(settings)) as restarted:
