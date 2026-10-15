@@ -249,6 +249,8 @@ final class Match3Sampler implements AutoCloseable {
     }
     int[] elementPatch(int row,int col) { return observationCache[row][col].patch; }
     int[] elementEnvelope(int row,int col) { return observationCache[row][col].envelope; }
+    /** The obstacle admission the sampler last saw for this cell; diagnostic-only. */
+    Match3VisualCatalog.Admission elementAdmission(int row,int col) { return observationCache[row][col].admission; }
     Match3UnknownElements.Observation[][] reviewElements(Match3Position position) {
         return reviewElements(position,false);
     }

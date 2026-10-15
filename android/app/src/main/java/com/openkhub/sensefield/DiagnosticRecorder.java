@@ -308,15 +308,27 @@ final class DiagnosticRecorder {
         }
     }
 
-    /** Small representative crops from the existing processed frame; encoding stays on shared IO. */
-    void elementSample(Bitmap frame,BoardGeometry geometry,Match3UnknownElements.Sample sample) {
-        JSONObject data=object("family_id",sample.familyId,"scope","session_local_diagnostic_only",
+    /** Pure so a unit test can prove the admission readouts really reach the diagnostic line. */
+    static JSONObject elementObservedData(Match3UnknownElements.Sample sample,Match3VisualCatalog.Admission admission) {
+        return object("family_id",sample.familyId,"scope","session_local_diagnostic_only",
                 "sample_number",sample.sampleNumber,"row",sample.row+1,"col",sample.col+1,
                 "observed_at_ms",sample.at,"kind",sample.observation.cell.kind.name(),
                 "appearance_color",sample.observation.cell.kind==Match3Position.Kind.ANIMAL?String.valueOf(sample.observation.cell.color):null,
                 "swap_permission",sample.observation.cell.swapPermission.name(),"rule_supported",false,
-                "reason",sample.reason(),"catalog_admission","requires_independent_identity_cover_and_rule_review");
-        record("Match3ElementObserved",data);
+                "reason",sample.reason(),"catalog_admission","requires_independent_identity_cover_and_rule_review",
+                "admission_template",admission==null||admission.template==null?null:admission.template,
+                "admission_best_distance",Match3VisualCatalog.Admission.distance(admission==null?Float.POSITIVE_INFINITY:admission.error),
+                "admission_second_kind_distance",Match3VisualCatalog.Admission.distance(admission==null?Float.POSITIVE_INFINITY:admission.otherKind));
+    }
+
+    /** Small representative crops from the existing processed frame; encoding stays on shared IO. */
+    void elementSample(Bitmap frame,BoardGeometry geometry,Match3UnknownElements.Sample sample) {
+        elementSample(frame,geometry,sample,null);
+    }
+
+    void elementSample(Bitmap frame,BoardGeometry geometry,Match3UnknownElements.Sample sample,
+                       Match3VisualCatalog.Admission admission) {
+        record("Match3ElementObserved",elementObservedData(sample,admission));
         synchronized(imageStateLock) {
             if(finished || !failure.isEmpty() || !imagesEnabled || imageLimit) {
                 record("Match3ElementSample",object("family_id",sample.familyId,"status","images_disabled_or_closed"));return;

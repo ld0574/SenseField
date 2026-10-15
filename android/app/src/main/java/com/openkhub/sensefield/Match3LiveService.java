@@ -552,7 +552,7 @@ public class Match3LiveService extends Service {
             invalidateHint(s,"VISUAL_MOTION");s.cellConfirmation.reset();return;
         }
         for(Match3UnknownElements.Sample sample:s.unknownElements.observe(s.sampler.reviewElements(position),s.frameAt))
-            s.diagnostics.elementSample(frame,s.geometry,sample);
+            s.diagnostics.elementSample(frame,s.geometry,sample,s.sampler.elementAdmission(sample.row,sample.col));
         if(s.diagnostics.harvestEnabled()) {
             s.flywheelHarvest.collect(s.sampler,position,s.hudReader,s.frameAt,s.diagnostics::flywheelSample);
         } else s.flywheelHarvest.resetStability();
