@@ -4,13 +4,15 @@
 
 ## 交付状态与构建版本
 
+2026-10-15 新增 [0.4.7／code24 公开体验版](https://github.com/ld0574/SenseField/releases/tag/v0.4.7)（Pre-release），源码已推送 `main`，6 个附件与本地摘要一致；[发布记录](../../validation/releases/GITHUB_RELEASE_0_4_7_2026-10-15.md)登记验证范围。普通 Release、Latest 继续为 0.4.6，Gitee 与公网清单由用户同步。
+
 2026-10-13 当前 [0.4.6／code23](0.4.6/RELEASE_NOTES.md)已合入并推送 `main`，[GitHub v0.4.6](https://github.com/ld0574/SenseField/releases/tag/v0.4.6) 当前为普通 Release、Latest，标签及四个附件核对见[发布记录](../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。唯一交付目录为 `output/releases/0.4.6/`，旧包和重复交付已[清理](../../validation/releases/ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)。[听野 0.4.5](https://github.com/ld0574/SenseField/releases/tag/v0.4.5)（`versionCode 22`，2026-10-10 发布）的原标签、附件及公网清单历史核对保留。本轮 Gitee 同版本附件和公网清单由用户同步。历史主线 `v0.4.3-main` 和消消乐独立发布保留，完整历史见[发布索引](README.md)。公开分发不自动改变 `verified`／`release_ready`，版本名称继续使用 `a.b.c`。
 
 发布前核对 `android/app/build.gradle`、`scripts/build_android_preview.sh` 和实际 APK 的版本、升级序号与签名，准备新版本交付时同步配置与脚本。发布说明必须对应实际 APK 和该版本的验证证据。历史 [0.3.0-alpha.1 发布说明](0.3.0-alpha.1/RELEASE_NOTES.md)与[检查记录](0.3.0-alpha.1/CHECKLIST.md)保留原始信息。
 
 已交付候选只支持 Android 10（API 29）及以上的 `arm64-v8a` 设备。实验小地图模型尚未通过独立留出验收，主画面边缘候选分支默认关闭；按[当前验证状态](../../validation/STATUS.md)复核功能与证据边界。README 与随包使用说明应写明 `MediaProjection`、悬浮窗、通知权限的用途，以及本地识别和可选上传的范围。Release 正文使用三行、100 字符以内的玩家更新摘要，完整用法放在 `.txt` 附件及版本说明中。
 
-构建优先使用 `bash scripts/build_android_preview.sh`。当前 0.4.6 正式交付必须提供四个 `SENSEFIELD_KEYSTORE_PATH`、`SENSEFIELD_KEY_ALIAS`、`SENSEFIELD_KEYSTORE_PASSWORD`、`SENSEFIELD_KEY_PASSWORD` 环境变量和完整内置语音；缺少时停止，不回退 Debug。脚本构建并校验签名 Release，当前上传路径使用 `sensefieldv<版本>.apk`，不靠文件名声称签名类型。本地原 Android debug 证书的混淆候选验证单独注明签名范围；已有同一字节完成工程验证时，发布前核对摘要、签名与源码对应后可直接分发，不为上传另行重建。脚本不生成或上传发布 keystore，不发布 GitHub Release。
+构建优先使用 `bash scripts/build_android_preview.sh`。当前 0.4.7 交付必须提供四个 `SENSEFIELD_KEYSTORE_PATH`、`SENSEFIELD_KEY_ALIAS`、`SENSEFIELD_KEYSTORE_PASSWORD`、`SENSEFIELD_KEY_PASSWORD` 环境变量和完整内置语音；缺少时停止，不回退 Debug。脚本构建并校验签名 Release，当前上传路径使用 `sensefieldv<版本>.apk`，不靠文件名声称签名类型。本地原 Android debug 证书的混淆候选验证单独注明签名范围；已有同一字节完成工程验证时，发布前核对摘要、签名与源码对应后可直接分发，不为上传另行重建。脚本不生成或上传发布 keystore，不发布 GitHub Release。
 
 ## 1. 权利和隐私
 

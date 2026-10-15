@@ -6,13 +6,13 @@
 
 | 项目 | 已有记录 |
 | --- | --- |
-| 当前公开体验版 | 0.4.6／code23，已合入并推送 `main`；原 Android debug 证书的混淆 Release、非 debuggable，GitHub 当前为普通 Release、Latest |
-| 当前交付摘要 | 王者两字开关修订，24,586,457 bytes；SHA-256 `535a653a927f57744922951f63ec9014041e04959823404bb1662a6d80b4f080`，源码与包回执在交付目录 |
-| 公开包工程检查 | 609 项 Release JVM、Release lint（0 错误／31 警告）、签名／模型／856 份语音资产及 16KB 对齐检查通过；新包实声和受控温升待验 |
+| 当前公开体验版 | [0.4.7／code24](../docs/releases/0.4.7/RELEASE_NOTES.md)，源码已推送 `main`，GitHub 公开 Pre-release；普通 Release、Latest 仍为 0.4.6 |
+| 当前交付摘要 | 0.4.7，24,592,205 bytes；SHA-256 `617c4c6c40d67028f905d7a2cc06ae4df76594e631abd251a6404c433eedcb52`。APK、使用说明、清单、校验单和完整交付 ZIP 已上传 GitHub |
+| 公开包工程检查 | 0.4.7 Debug／Release JVM 各 633 项、Release lint、仓库 Python 1085 项及 29 个 subtest 通过，另 1 项跳过；签名、语音资产及覆盖安装回读核对通过。完整物理和独立验收待验 |
 | 当前手机包 | 0.4.7／code24，SHA-256 `617c4c6c40d67028f905d7a2cc06ae4df76594e631abd251a6404c433eedcb52`，覆盖安装与回读摘要一致。移除重复截图年龄前缀，保留过期保护；配套事实优先提示词待部署。[本轮修订](assistant/ASSISTANT_DEMO_FEEDBACK_2026_10_15.md) |
-| 已记录的公开版本 | 0.4.6／code23，2026-10-13 GitHub 普通 Release、Latest；0.4.5／code22 的附件与公网清单历史核对保留 |
-| 公开分发材料 | `output/releases/0.4.6/` 中 APK、使用说明、清单和校验单与 GitHub 四个附件字节一致；发布说明在 `publishing/`，当前源码回执在 `validation/current-package/`；本轮公网清单由用户上传并核对后生效 |
-| 下一版本工程 | 当前 0.4.7 Release 构建：Debug／Release JVM 各 633 项、相关 Python 358 项及 Release lint 通过；包身份、签名、语音资产和覆盖安装核对通过。已整理本地 Gitee 交付包，尚未公开上传。最终包独立准确率、整体成本稳定性、受控温升与完整实局录制仍待验。[交付说明](../docs/releases/0.4.7/RELEASE_NOTES.md) |
+| 已记录的公开版本 | 0.4.7／code24 为 2026-10-15 公开体验版（Pre-release）；0.4.6／code23 仍为普通 Release、Latest，历史版本及清单核对保留 |
+| 公开分发材料 | `output/releases/0.4.7/` 中 APK、使用说明、清单、校验单、交付 ZIP 及 ZIP 校验文件与 GitHub 6 个附件摘要一致。[发布记录](releases/GITHUB_RELEASE_0_4_7_2026-10-15.md)；Gitee 与公网清单仍由用户上传后核对 |
+| 0.4.7 验证余项 | 已按体验版公开分发，完整发布门禁未全部完成。最终包独立准确率、策略收益、整体成本稳定性、受控温升与完整实局录制仍待验，新提示词需部署后复核 |
 
 [先前公开原包对照](performance/PUBLIC_APK_COMPARISON_0_4_7_2026-10-14.md)使用同一兼容测量器直接调用公开 0.4.6 与先前冻结的0.4.7 `a0c83659…`保留生产代码，解决旧 R8 测试 ABI 缺口；两份主包未重构建。4 格训练／18 格同会话开发回放完整可用分别 0→4／0→18，旧 743 格错误计数及三局输出不变，王者完整归一检测／跟踪／事件相同。两款游戏各三组成本通过：消消乐 CPU 中位 −18.84%，墙钟 P95 下降 14.04%～21.45%；王者最大墙钟／worker P95 增幅 +0.14%／+0.03%。该负载不含完整服务准入、UI／语音或物理热测，旧失败和旧制品成绩保留；这些结果不转移到本轮新候选，公开0.4.6与分发状态保持。
 

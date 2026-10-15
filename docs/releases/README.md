@@ -1,14 +1,12 @@
 # 发布与交付索引
 
-2026-10-14 更新[0.4.7候选](0.4.7/RELEASE_NOTES.md)（`versionCode 24`），唯一候选目录为`output/releases/0.4.7/`，最新APK SHA-256为`97957d1e2744c2f5cc0f0670c9bcda7e4dab2a50b4218fad67f860bbeb1f1a5e`，24,591,661 bytes。加入可见相对接近提醒、服务访问拒绝恢复，以及为低视力用户服务的中文游戏搭子，动态帮助选人和出装。最终结果及剩余验收见[Hero修订记录](../../validation/honor/HERO_FEEDBACK_2026-10-14.md)；先前`a0c83659…`的[候选工程记录](../../validation/releases/ANDROID_CANDIDATE_0_4_7_2026-10-14.md)保持原字节。未切换生产网关、公开发布或更新公网清单；最终包手机实际发声、前台温升、持续运行与独立准确率继续待验。
+2026-10-15 公开 [0.4.7 体验版](0.4.7/RELEASE_NOTES.md)（`versionCode 24`）：[GitHub v0.4.7](https://github.com/ld0574/SenseField/releases/tag/v0.4.7) 为 Pre-release，对应源码已推送 `main`。APK 为 24,592,205 bytes，SHA-256 `617c4c6c40d67028f905d7a2cc06ae4df76594e631abd251a6404c433eedcb52`；沿用原证书，混淆、不可调试，可覆盖安装同证书 0.4.6。附件及源码核对见[发布记录](../../validation/releases/GITHUB_RELEASE_0_4_7_2026-10-15.md)。
 
-当前公开交付仍为 [0.4.6](0.4.6/RELEASE_NOTES.md)（`versionCode 23`），已合入并推送 `main`，[GitHub v0.4.6](https://github.com/ld0574/SenseField/releases/tag/v0.4.6) 当前为普通 Release、Latest。标签指向 `29cb75b8e1cc154c903570f7d8213e33279c6ba6`，四个附件及 APK 公开下载核对通过，见[发布记录](../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。
+本版改善消消乐特效识别、提示语音与棋盘处理，增加王者可见敌人的接近提醒，游戏搭子直接播报正文并优先报告可见事实。Debug／Release JVM 各 633 项、Release lint、仓库 Python 1085 项及 29 个 subtest 通过，另 1 项跳过。整体成本稳定性、受控温升、独立准确率及策略收益仍待验；旧包持续运行和成本结果保留原制品绑定。
 
-最新修订修复王者密集场景覆盖两字关闭选择，继承密集灰毛球、右侧末块雪块、魔力鸟直线组合、饼干及发光青蛙修复。唯一交付为 `output/releases/0.4.6/sensefieldv0.4.6.apk`，APK SHA 为 `535a653a927f57744922951f63ec9014041e04959823404bb1662a6d80b4f080`；配套清单、使用说明和校验单在同一目录，发布／上传说明在 `publishing/`。旧包及重复交付已[删除](../../validation/releases/ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)，源码与历史验证回执集中到 `validation/`。本轮 Gitee 附件与公网清单由用户同步，[复测说明](0.4.6/复测说明.md)继续对应最新包。2026-10-12 的 0.4.7 开发候选已撤回，原说明与工程范围见[历史归档](../../validation/releases/ANDROID_WITHDRAWN_0_4_7_2026-10-12.md)。
+当前服务使用 Qwen3.8-Flash，关闭思考；配套事实优先提示词待部署者单独更新。唯一 APK 及清单在 `output/releases/0.4.7/`，交付 ZIP 含使用、上传、复测说明和服务端提示词包。Gitee 附件与公网 `latest.json` 由用户同步，GitHub 发布不会自动更新它们。
 
-新一轮[0.4.7规划](../plans/0.4.7版本规划.md)以两款游戏提示稳定性、视觉感知与发热为主线，并按后续反馈补接近提醒和两个云决策场景。版本身份及本地清单保持0.4.7／code24，沿用现有签名；最终Debug／Release JVM各626项、受影响Debug仪器34项、混淆Release83项、Python265项通过。原缓存补正、权限／素材缺口、最终模拟器超时及恢复证据均保留，不把先前候选的900秒运行记为新包通过。
-
-公开 0.4.6 修订通过 609 项 Release JVM、Release 构建／lint 和实际包完整性核验。此前三局修订 `ead5e38a…` 的 8 项模拟器 Release、7 项手机回放和软件成本门限保持原制品绑定。独立准确率、实际通关收益及新包手机实局／持续运行／受控温升和实际发声仍待验收。公网清单由用户在公开 APK 下载核对后更新。详见[王者开关更正](../../validation/protocols/COMPLIANCE_IMPROVEMENT_2026-10-13.md)、[三局修复记录](../development/消消乐三局反馈修复_2026-10-13.md)与[当前状态](../../validation/STATUS.md)。
+普通 Release、Latest 仍为 [GitHub v0.4.6](https://github.com/ld0574/SenseField/releases/tag/v0.4.6)（`versionCode 23`）；其源码标签、附件与历史验证范围见[0.4.6 发布记录](../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。旧包及重复交付清理见[归档记录](../../validation/releases/ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)。本轮发布与完整验收分别登记，[版本规划](../plans/0.4.7版本规划.md)及[当前状态](../../validation/STATUS.md)保留历史失败与剩余条件。
 
 2026-10-10 公开发布记录：当时主线为[0.4.5](0.4.5/RELEASE_NOTES.md)（`versionCode 22`），消消乐代码已完整合入 `main`，包含两款游戏入口、离线固定语音与默认关闭的助手。[GitHub v0.4.5](https://github.com/ld0574/SenseField/releases/tag/v0.4.5) 已发布为普通 Release、Latest，源码标签指向 `859e672f9505e380d8af7b2ca216fbaf0477d7a6`；附件和下载入口见[发布核对](../../validation/releases/GITHUB_RELEASE_0_4_5_2026-10-10.md)。此前负责人已上传 Gitee APK 与固定网站清单，两处使用同一份已测字节。
 
@@ -22,7 +20,7 @@
 
 | 版本 | 日期 | versionCode | 交付状态 | 主要内容与说明 |
 | --- | --- | ---: | --- | --- |
-| [0.4.7](0.4.7/RELEASE_NOTES.md) | 2026-10-14 | 24 | 本地最新候选`97957d1e…`；最终工程结果见Hero记录，尚未公开发布或切换网关 | 接近提醒、中文低视力游戏搭子选人／出装，继承提示链路、视觉与处理优化；最终手机温升／发声、持续运行与独立准确率待验，旧900秒结果保持原包绑定 |
+| [0.4.7](0.4.7/RELEASE_NOTES.md) | 2026-10-15 | 24 | GitHub 公开 Pre-release，源码已推送 main；Gitee 与公网清单由用户同步 | 特效识别、提示语音与处理优化，王者接近提醒，事实优先游戏搭子；温升、独立准确率与策略收益待验 |
 | [0.4.6](0.4.6/RELEASE_NOTES.md) | 2026-10-13 | 23 | 已合入 main、GitHub 普通 Release、Latest；唯一交付在版本根目录，本轮 Gitee 附件和公网清单由用户同步 | 王者两字开关遵循选择，保留灰毛球、末块雪块、魔力鸟组合与识别开销修复 |
 | [0.4.5](0.4.5/RELEASE_NOTES.md) | 2026-10-10 | 22 | 历史 GitHub 普通 Release，发布时为 Latest；Gitee APK 与线上清单此前核对一致 | 稀疏整盘定位、确认的一步任务收益排序与交换高亮、最后目标准备建议；消消乐仍为体验版，最新试用问题继续整改 |
 | [0.4.4](0.4.4/RELEASE_NOTES.md) | 2026-10-08 | 21 | 历史 GitHub 普通 Release，发布时为 Latest | 默认游戏解说男声／可选游戏向导女声、离线完整说明、连续试听修复、24.22MB 正式包；受控温升待测 |

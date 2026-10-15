@@ -11,7 +11,7 @@
 <p align="center"><strong>把视野之外的战局，交给耳朵和手。</strong></p>
 
 <p align="center">
-  <a href="https://github.com/ld0574/SenseField/releases/download/v0.4.6/sensefieldv0.4.6.apk"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD%E5%AE%89%E5%8D%93%E5%AE%89%E8%A3%85%E5%8C%85-236874?style=for-the-badge&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj4gPHBhdGggZD0iTTIxIDE1djRhMiAyIDAgMCAxLTIgMkg1YTIgMiAwIDAgMS0yLTJ2LTQiLz4gPHBvbHlsaW5lIHBvaW50cz0iNyAxMCAxMiAxNSAxNyAxMCIvPiA8bGluZSB4MT0iMTIiIHgyPSIxMiIgeTE9IjE1IiB5Mj0iMyIvPgo8L3N2Zz4%3D" alt="下载安卓安装包" align="middle"></a>
+  <a href="https://github.com/ld0574/SenseField/releases/download/v0.4.7/sensefieldv0.4.7.apk"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD%E5%AE%89%E5%8D%93%E5%AE%89%E8%A3%85%E5%8C%85-236874?style=for-the-badge&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj4gPHBhdGggZD0iTTIxIDE1djRhMiAyIDAgMCAxLTIgMkg1YTIgMiAwIDAgMS0yLTJ2LTQiLz4gPHBvbHlsaW5lIHBvaW50cz0iNyAxMCAxMiAxNSAxNyAxMCIvPiA8bGluZSB4MT0iMTIiIHgyPSIxMiIgeTE9IjE1IiB5Mj0iMyIvPgo8L3N2Zz4%3D" alt="下载安卓安装包" align="middle"></a>
   <a href="https://ld0574.github.io/SenseField/"><img src="https://img.shields.io/badge/%E5%90%AC%E9%87%8E%E5%AE%98%E7%BD%91-236874?style=for-the-badge&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj4gPGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiLz4gPHBhdGggZD0iTTEyIDJhMTQuNSAxNC41IDAgMCAwIDAgMjAgMTQuNSAxNC41IDAgMCAwIDAtMjAiLz4gPHBhdGggZD0iTTIgMTJoMjAiLz4KPC9zdmc%2B" alt="听野官网" align="middle"></a>
   <a href="https://ld0574.github.io/SenseField/#voices"><img src="https://img.shields.io/badge/%E7%94%A8%E6%88%B7%E5%BF%83%E5%A3%B0%E4%B8%8E%E6%B8%B8%E6%88%8F%E9%80%82%E9%85%8D%E5%8F%8D%E9%A6%88-236874?style=for-the-badge&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj4gPHBhdGggZD0iTTcuOSAyMEE5IDkgMCAxIDAgNCAxNi4xTDIgMjJaIi8%2BCjwvc3ZnPg%3D%3D" alt="用户心声与游戏适配反馈" align="middle"></a>
 </p>
@@ -93,11 +93,11 @@ bash scripts/build_android_preview.sh
 
 必须同时配置 `SENSEFIELD_KEYSTORE_PATH`、`SENSEFIELD_KEY_ALIAS`、`SENSEFIELD_KEYSTORE_PASSWORD` 和 `SENSEFIELD_KEY_PASSWORD`，沿用已有签名证书。脚本构建并校验正式 Release；缺少签名或完整内置语音时停止，不会回退 Debug，也不会自动上传。
 
-当前 0.4.6 交付文件：
+当前 0.4.7 交付文件：
 
 ```text
-output/releases/0.4.6/
-├── sensefieldv0.4.6.apk
+output/releases/0.4.7/
+├── sensefieldv0.4.7.apk
 ├── installation-guide.txt
 ├── latest.json
 ├── SHA256SUMS.txt
@@ -135,7 +135,7 @@ python -m pip install -e '.[test]'
 | 实施与符合度 | [实施路线](docs/plans/黑客松方案收敛与实施路线.md) · [符合度改造方案](docs/plans/符合度改造方案.md) |
 | 0.4.7 规划 | [提示稳定性、视觉感知与发热](docs/plans/0.4.7版本规划.md) |
 | 消消乐改进 | [目标价值排序](docs/plans/消消乐目标价值排序.md) · [新元素可信识别](docs/plans/消消乐新元素可信识别.md) · [自动回归](docs/development/match3-regression.md) |
-| 安装与发布 | [0.4.6 使用说明](docs/releases/0.4.6/RELEASE_NOTES.md) · [发布索引](docs/releases/README.md) · [Gitee 分发步骤](deploy/assistant/CDN发布.md) |
+| 安装与发布 | [0.4.7 使用说明](docs/releases/0.4.7/RELEASE_NOTES.md) · [发布索引](docs/releases/README.md) · [Gitee 分发步骤](deploy/assistant/CDN发布.md) |
 | 助手与更新 | [助手部署](deploy/assistant/README.md) · [Android 自动更新](docs/development/app-update.md) |
 | 测试与反馈 | [当前验证状态](validation/STATUS.md) · [验证索引](validation/README.md) · [离线诊断](validation/protocols/DIAGNOSTIC_REPORT.md) · [玩家试用套件](validation/protocols/PLAYER_TRIAL_KIT.md) |
 
