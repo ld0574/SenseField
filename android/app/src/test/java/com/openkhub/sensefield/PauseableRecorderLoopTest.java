@@ -70,6 +70,39 @@ public class PauseableRecorderLoopTest {
         assertEquals(0, listener.failed);
     }
 
+    @Test public void deliberateRestartFlushesOldAudioAndDoesNotResumeAUserPause() throws Exception {
+        FakeRecorder recorder = new FakeRecorder();
+        RecordingListener listener = new RecordingListener();
+        PauseableRecorderLoop loop = new PauseableRecorderLoop(recorder, 160, listener);
+        try {
+            loop.start();
+            assertTrue(recorder.firstRead.await(WAIT_SECONDS, TimeUnit.SECONDS));
+            recorder.offer(filled(80, (short) 4));
+            assertTrue(recorder.reads.await(WAIT_SECONDS, TimeUnit.SECONDS));
+            loop.restart(() -> recorder.offer(filled(160, (short) 9)));
+            assertTrue(recorder.readAfterResume.await(WAIT_SECONDS, TimeUnit.SECONDS));
+            assertTrue("audio queued before the deliberate boundary must be flushed", listener.frames.isEmpty());
+            CountDownLatch fresh = listener.nextFrame();
+            recorder.offer(filled(160, (short) 12));
+            assertTrue(fresh.await(WAIT_SECONDS, TimeUnit.SECONDS));
+            assertEquals(1, listener.frames.size());
+            assertAll(listener.frames.get(0), (short) 12);
+
+            CountDownLatch waiting = listener.nextPause();
+            loop.pause(true);
+            assertTrue(waiting.await(WAIT_SECONDS, TimeUnit.SECONDS));
+            int starts = recorder.starts;
+            waiting = listener.nextPause();
+            loop.restart(null);
+            assertTrue(waiting.await(WAIT_SECONDS, TimeUnit.SECONDS));
+            assertEquals("a boundary reset cannot revoke the user's pause", starts, recorder.starts);
+        } finally {
+            loop.close();
+            assertTrue(listener.stopped.await(WAIT_SECONDS, TimeUnit.SECONDS));
+        }
+        assertEquals(0, listener.failed);
+    }
+
     @Test public void closeWhilePausedCannotRestartSameRecorder() throws Exception {
         FakeRecorder recorder = new FakeRecorder();
         RecordingListener listener = new RecordingListener();

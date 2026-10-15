@@ -22,17 +22,20 @@ import android.widget.TextView;
 /** Small touchable window; never repurposes the full-screen marker overlay. Main-thread only. */
 final class AssistantOverlay implements AutoCloseable {
     static final int HANDLE_DP = 56;
-    interface Listener { void readScreen(); void repeat(); void mark(); void pauseVoice(); }
+    interface Listener {
+        void readScreen(); void repeat(); void mark(); void pauseVoice();
+        default void voiceQuestion() { }
+    }
     private final Context context;
     private final Listener listener;
     private WindowManager manager;
     private WindowManager.LayoutParams layout;
     private volatile LinearLayout root;
     private TextView history, status;
-    private Button voiceControl;
-    private boolean voicePaused;
+    private Button voiceControl, voiceQuestion;
+    private boolean voicePaused, manualVoiceActive, voiceEnabled = true;
     private volatile boolean expanded;
-    private String lastStatus = "听野助手", lastHistory = "直接说话即可提问。\n";
+    private String lastStatus = "听野助手", lastHistory = "点“说话”提问；戴耳机并确认声音路线后，也可直接说话。\n";
     private volatile Rect bounds = new Rect();
     private final Rect safeInsets = new Rect();
     private boolean rightDocked;
@@ -152,6 +155,9 @@ final class AssistantOverlay implements AutoCloseable {
             status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
             UiKit.add(content, status, 12);
             ReminderSampleGrid buttons = UiKit.actionRow(context);
+            voiceQuestion = addButton(buttons, manualVoiceActive ? "说完" : "说话", listener::voiceQuestion);
+            voiceQuestion.setEnabled(voiceEnabled && !voicePaused);
+            voiceQuestion.setContentDescription(manualVoiceActive ? "说完并提交这次语音" : "说话提问，说完自动提交，也可再次点击结束");
             addButton(buttons, "读画面", listener::readScreen);
             addButton(buttons, "重说", listener::repeat);
             addButton(buttons, "标记问题", listener::mark);
@@ -258,7 +264,22 @@ final class AssistantOverlay implements AutoCloseable {
     Rect bounds() { return new Rect(bounds); }
     void status(String value) { lastStatus = value; if (status != null) UiKit.setTextIfChanged(status, value); }
     void history(String value) { lastHistory = value; if (history != null) UiKit.setTextIfChanged(history, value); }
-    void voicePaused(boolean value) { voicePaused = value; if (voiceControl != null) voiceControl.setText(value ? "恢复语音" : "暂停语音"); }
+    void voicePaused(boolean value) {
+        voicePaused = value;
+        if (voiceControl != null) voiceControl.setText(value ? "恢复语音" : "暂停语音");
+        if (voiceQuestion != null) voiceQuestion.setEnabled(voiceEnabled && !voicePaused);
+    }
+    void voiceEnabled(boolean value) {
+        voiceEnabled = value;
+        if (voiceQuestion != null) voiceQuestion.setEnabled(value && !voicePaused);
+    }
+    void manualVoiceActive(boolean value) {
+        manualVoiceActive = value;
+        if (voiceQuestion != null) {
+            voiceQuestion.setText(value ? "说完" : "说话");
+            voiceQuestion.setContentDescription(value ? "说完并提交这次语音" : "说话提问，说完自动提交，也可再次点击结束");
+        }
+    }
     @Override public void close() {
         if (manager != null && root != null) try { manager.removeViewImmediate(root); } catch (RuntimeException ignored) { }
         root = null; bounds = new Rect(); expanded = false;

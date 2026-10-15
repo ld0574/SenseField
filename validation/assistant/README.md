@@ -6,7 +6,7 @@
 
 优先查看：[AI助手默认关闭修订](ASSISTANT_DEFAULT_OFF_2026-10-06.md)。
 
-最新语音反馈：[0.4.7 第二台手机输入路由诊断](ASSISTANT_SECOND_PHONE_VOICE_GATE_0_4_7_2026-10-15.md)。三份已结束会话的声音走扬声器，被连续语音耳机检查暂停，未进入 ASR；手动读图五次有结果，实际声音与答案质量另验。
+最新语音修订：[0.4.7 外放单次语音提问](ASSISTANT_MANUAL_VOICE_0_4_7_2026-10-15.md)。根据[第二台手机输入路由诊断](ASSISTANT_SECOND_PHONE_VOICE_GATE_0_4_7_2026-10-15.md)增加“说话／说完”入口；真人识别、外放回声与游戏人声抗干扰仍需实测。
 
 ## 记录索引
 
@@ -14,6 +14,8 @@
 
 | 日期 | 记录 |
 | --- | --- |
+| 2026-10-15 | [0.4.7 外放单次语音提问](ASSISTANT_MANUAL_VOICE_0_4_7_2026-10-15.md) |
+| 2026-10-15 | [测试机原生录屏、麦克风与设备声音短测](NATIVE_DEMO_RECORDING_FEASIBILITY_2026-10-15.md) |
 | 2026-10-15 | [0.4.7 第二台手机输入路由诊断](ASSISTANT_SECOND_PHONE_VOICE_GATE_0_4_7_2026-10-15.md) |
 | 2026-10-15 | [0.4.7 视觉回答依据审计](ASSISTANT_VISUAL_GROUNDING_AUDIT_0_4_7_2026-10-15.md) |
 | 2026-10-15 | [0.4.7 助手输出容错与播报调度修订](ASSISTANT_DELIVERY_REPAIR_0_4_7_2026-10-15.md) |

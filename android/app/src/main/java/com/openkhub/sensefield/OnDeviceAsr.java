@@ -55,6 +55,7 @@ final class OnDeviceAsr implements AutoCloseable {
         });
     }
     boolean ready() { return ready && !closed; }
+    boolean busy() { return busy.get(); }
     synchronized boolean begin(long value, String id) {
         invalidate();
         if (!ready() || id == null || id.isEmpty()) return false;

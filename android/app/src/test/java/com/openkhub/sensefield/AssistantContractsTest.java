@@ -37,6 +37,18 @@ public class AssistantContractsTest {
         assertTrue(VoiceInputSafetyPolicy.otherRecorder(42, new int[]{42, 0}));
         assertTrue(VoiceInputSafetyPolicy.otherRecorder(42, new int[]{43}));
     }
+    @Test public void playbackCaptureDoesNotMasqueradeAsMicrophoneCompetition() {
+        int mic = android.media.MediaRecorder.AudioSource.MIC;
+        int output = android.media.MediaRecorder.AudioSource.REMOTE_SUBMIX;
+        assertTrue(VoiceInputSafetyPolicy.isOutputCaptureSource(output));
+        assertFalse(VoiceInputSafetyPolicy.isOutputCaptureSource(mic));
+        assertFalse(VoiceInputSafetyPolicy.otherRecorder(42,
+                new int[]{42, 0}, new int[]{mic, output}));
+        assertTrue(VoiceInputSafetyPolicy.otherRecorder(42,
+                new int[]{42, 0, 43}, new int[]{mic, output, mic}));
+        assertTrue("unknown recording metadata remains fail-closed",
+                VoiceInputSafetyPolicy.otherRecorder(42, new int[]{42}, new int[]{}));
+    }
     @Test public void unsafeInputStatesAndRecoveryRequireFreshServerGenerations() {
         assertEquals(VoiceInputSafetyPolicy.InputState.PAUSED,
                 VoiceInputSafetyPolicy.inputState(true, false, false, true));

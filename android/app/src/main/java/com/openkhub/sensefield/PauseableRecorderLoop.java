@@ -85,6 +85,17 @@ final class PauseableRecorderLoop implements AutoCloseable {
         }
     }
 
+    /** Discard platform-buffered audio as well as partial frames at a deliberate input boundary. */
+    void restart(Runnable stateUpdate) {
+        synchronized (lock) {
+            if (closed) return;
+            epoch++;
+            stopLocked();
+            if (stateUpdate != null) stateUpdate.run();
+            lock.notifyAll();
+        }
+    }
+
     boolean isCurrentEpoch(long expectedEpoch) {
         synchronized (lock) {
             return !closed && !paused && epoch == expectedEpoch;

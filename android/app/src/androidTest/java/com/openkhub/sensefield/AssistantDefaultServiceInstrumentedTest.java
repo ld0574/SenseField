@@ -58,7 +58,7 @@ public class AssistantDefaultServiceInstrumentedTest {
                 assertTrue(retry.isShown());
                 assertNotNull(findText(root, "无需填写地址或连接码"));
                 retry.performClick();
-                assertNotNull(findText(root, "请先开启连续语音"));
+                assertNotNull(findText(root, "请先开启语音提问"));
                 enabled.performClick();
                 assertFalse(new AssistantSettings(prefs).enabled());
                 assertFalse(retry.isShown());
@@ -122,7 +122,7 @@ public class AssistantDefaultServiceInstrumentedTest {
                 View root = activity.getWindow().getDecorView();
                 assertFalse(((CheckBox) findText(root, "启用实验 AI 助手")).isChecked());
                 assertFalse(findText(root, "准备语音资源／重试").isShown());
-                assertNotNull(findText(root, "首次开启连续语音后准备资源"));
+                assertNotNull(findText(root, "首次开启语音提问后准备资源"));
                 assertFalse(new AssistantSettings(prefs).enabled());
             });
         } finally {

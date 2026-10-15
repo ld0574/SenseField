@@ -48,45 +48,73 @@ def pcm_peak(path):
     return 20 * math.log10(peak / 32768) if peak else None
 
 
+def media_duration(info):
+    value = info.get("format", {}).get("duration")
+    if value is not None:
+        return float(value)
+    values = [float(stream["duration"]) for stream in info.get("streams", [])
+              if stream.get("duration") is not None]
+    if values:
+        return max(values)
+    raise RuntimeError("媒体文件缺少可用时长")
+
+
 def mix(record):
     directory = Path(record["directory"])
-    sources = {key: probe(directory / name) for key, name in (
-        ("screen", "phone-screen.mp4"), ("phone_audio", "phone-audio.wav"),
-        ("microphone", "mac-microphone.wav"))}
-    if not any(s.get("codec_type") == "video" for s in sources["screen"]["streams"]):
+    capture = directory / "phone-capture.mkv"
+    microphone = directory / "mac-microphone.wav"
+    sources = {"capture": probe(capture), "microphone": probe(microphone)}
+    if not any(s.get("codec_type") == "video" for s in sources["capture"]["streams"]):
         raise RuntimeError("手机画面文件没有视频轨")
-    for key in ("phone_audio", "microphone"):
-        if not any(s.get("codec_type") == "audio" for s in sources[key]["streams"]):
-            raise RuntimeError(f"{key} 文件没有音轨")
-    durations = {key: float(info["format"]["duration"]) for key, info in sources.items()}
-    # Native MP4 may extend its last still frame by several seconds. Use the
-    # recorder launch as the video clock anchor instead of that padded duration.
-    # Separate device clocks and encoder startup still make this approximate.
+    if not any(s.get("codec_type") == "audio" for s in sources["capture"]["streams"]):
+        raise RuntimeError("手机录制文件没有内部音轨")
+    if not any(s.get("codec_type") == "audio" for s in sources["microphone"]["streams"]):
+        raise RuntimeError("电脑麦克风文件没有音轨")
+
+    # Keep reviewable source tracks in addition to scrcpy's common-clock container.
+    with (directory / "extract.log").open("w") as log:
+        subprocess.run(["ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", str(capture),
+                        "-map", "0:v:0", "-an", "-c:v", "copy", str(directory / "phone-screen.mp4")],
+                       stdout=log, stderr=subprocess.STDOUT, check=True)
+        subprocess.run(["ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", str(capture),
+                        "-map", "0:a:0", "-vn", "-ar", "48000", "-ac", "2",
+                        "-c:a", "pcm_s16le", str(directory / "phone-audio.wav")],
+                       stdout=log, stderr=subprocess.STDOUT, check=True)
+
+    extracted = {
+        "phone_screen": probe(directory / "phone-screen.mp4"),
+        "phone_audio": probe(directory / "phone-audio.wav"),
+    }
+    durations = {
+        "capture": max(media_duration(extracted["phone_screen"]),
+                       media_duration(extracted["phone_audio"])),
+        "microphone": media_duration(sources["microphone"]),
+    }
+    # Both phone streams share scrcpy's clock. Align the independent microphone
+    # at the common stop edge to account for different encoder startup times.
     starts = {key: record["stop_monotonic"][key] - durations[key] for key in sources}
-    starts["screen"] = record["launch_monotonic"]["screen"]
-    video_duration = min(durations["screen"], record["stop_monotonic"]["screen"] - starts["screen"])
-    offsets = {key: starts[key] - starts["screen"] for key in ("phone_audio", "microphone")}
-    filters = []
-    for index, key in ((1, "phone_audio"), (2, "microphone")):
-        offset = offsets[key]
-        trim = max(0, -offset)
-        delay = round(max(0, offset) * 1000)
-        filters.append(
-            f"[{index}:a]atrim=start={trim:.6f},asetpts=PTS-STARTPTS,"
-            + ("loudnorm=I=-20:TP=-3:LRA=7," if key == "microphone" else "")
-            + f"aresample=48000,adelay={delay}:all=1,apad[{key}]")
+    video_duration = durations["capture"]
+    microphone_offset = starts["microphone"] - starts["capture"]
+    trim = max(0, -microphone_offset)
+    delay = round(max(0, microphone_offset) * 1000)
+    filters = [
+        "[0:a]aresample=48000,apad[phone_audio]",
+        f"[1:a]atrim=start={trim:.6f},asetpts=PTS-STARTPTS,"
+        f"loudnorm=I=-20:TP=-3:LRA=7,aresample=48000,adelay={delay}:all=1,apad[microphone]",
+    ]
     filters.append("[phone_audio][microphone]amix=inputs=2:duration=longest:normalize=0,"
                    "alimiter=limit=0.891:level=false:latency=true[mixed]")
     output = directory / "demo.mp4"
-    command = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", str(directory / "phone-screen.mp4"),
-               "-i", str(directory / "phone-audio.wav"), "-i", str(directory / "mac-microphone.wav"),
-               "-filter_complex", ";".join(filters), "-map", "0:v:0", "-map", "[mixed]",
+    command = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", str(capture),
+               "-i", str(microphone), "-filter_complex", ";".join(filters),
+               "-map", "0:v:0", "-map", "[mixed]",
                "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
                "-t", str(video_duration), "-movflags", "+faststart", str(output)]
     with (directory / "mix.log").open("w") as log:
         subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
     record.update(merged_file=str(output), source_durations_seconds=durations,
-                  audio_offsets_seconds=offsets, synchronization="approximate_host_launch_and_common_stop",
+                  audio_offsets_seconds={"microphone": microphone_offset},
+                  synchronization="phone_common_clock_and_microphone_common_stop",
                   sha256=hashlib.sha256(output.read_bytes()).hexdigest(),
                   output_media=probe(output))
     record["audio_peak_dbfs"] = {key: pcm_peak(directory / file) for key, file in (
@@ -114,7 +142,7 @@ def run(args):
                   controller_pid=os.getpid(), started_at=datetime.now().astimezone().isoformat(),
                   phone_audio_digital_capture=True, phone_audio_source="output",
                   phone_playback_preserved=False, computer_audio_playback=not args.no_monitor,
-                  microphone_device_index=args.microphone, capture_method="native_video_and_scrcpy_audio_only")
+                  microphone_device_index=args.microphone, capture_method="scrcpy_common_clock_and_mac_microphone")
     record["scrcpy_program"] = args.scrcpy
     record["scrcpy_version"] = subprocess.check_output([args.scrcpy, "--version"], text=True).splitlines()[0]
     commands = {
@@ -122,21 +150,20 @@ def run(args):
                        "-i", f":{args.microphone}", "-vn", "-af", "aresample=async=1:first_pts=0",
                        "-ar", "48000", "-ac", "1", "-c:a", "pcm_s16le",
                        "-n", str(directory / "mac-microphone.wav")],
-        "phone_audio": [args.scrcpy, "-s", args.serial, "--no-video", "--no-window", "--no-control",
-                        "--no-clipboard-autosync", "--audio-source=output", "--audio-codec=raw",
-                        "--require-audio", f"--time-limit={args.duration + 30}",
-                        "--record", str(directory / "phone-audio.wav")],
-        "screen": adb + ["shell", "screenrecord", "--verbose", "--time-limit", "0",
-                         "--size", args.size, "--bit-rate", "6000000", remote],
+        "capture": [args.scrcpy, "-s", args.serial, "--no-video-playback", "--no-control",
+                    "--no-clipboard-autosync", "--audio-source=output", "--audio-codec=opus",
+                    "--video-codec=h264", "--video-bit-rate=6M", "--max-size=1920",
+                    "--require-audio", f"--time-limit={args.duration + 30}",
+                    "--record", str(directory / "phone-capture.mkv")],
     }
     if args.no_monitor:
-        commands["phone_audio"].append("--no-audio-playback")
+        commands["capture"].append("--no-audio-playback")
     processes, handles = {}, []
     record["launch_monotonic"] = {}
     save(record)
     monitor = None
     try:
-        for key in ("microphone", "phone_audio", "screen"):
+        for key in ("microphone", "capture"):
             log = (directory / f"{key}.log").open("wb", buffering=0)
             handles.append(log)
             record["launch_monotonic"][key] = time.monotonic()
@@ -144,12 +171,8 @@ def run(args):
                                               stdout=log, stderr=subprocess.STDOUT,
                                               start_new_session=True)
         time.sleep(2)
-        remote_pid = subprocess.check_output(adb + ["shell", "pidof", "screenrecord"], text=True).strip()
-        if not remote_pid.isdigit():
-            raise RuntimeError("手机录屏启动失败")
-        record["remote_screen_pid"] = int(remote_pid)
         record["pids"] = {key: process.pid for key, process in processes.items()}
-        # Require both sources to write actual PCM bytes; headers alone are insufficient.
+        # Require both sources to write real data; container headers alone are insufficient.
         deadline = time.monotonic() + 12
         while time.monotonic() < deadline:
             exited = {key: process.poll() for key, process in processes.items()
@@ -157,7 +180,7 @@ def run(args):
             if exited:
                 raise RuntimeError(f"录制进程在准备阶段退出：{exited}")
             if all((directory / file).exists() and (directory / file).stat().st_size > 4096
-                   for file in ("phone-audio.wav", "mac-microphone.wav")):
+                   for file in ("phone-capture.mkv", "mac-microphone.wav")):
                 break
             time.sleep(.1)
         else:
@@ -200,10 +223,7 @@ def run(args):
         save(record)
         for key, process in processes.items():
             record["stop_monotonic"][key] = time.monotonic()
-            if key == "screen" and record.get("remote_screen_pid"):
-                subprocess.run(adb + ["shell", "kill", "-2", str(record["remote_screen_pid"])],
-                               capture_output=True, timeout=10)
-            elif process.poll() is None:
+            if process.poll() is None:
                 process.send_signal(signal.SIGINT)
         for process in processes.values():
             try:
@@ -222,8 +242,6 @@ def run(args):
         for handle in handles:
             handle.close()
         try:
-            subprocess.run(adb + ["pull", remote, str(directory / "phone-screen.mp4")],
-                           check=True, capture_output=True, timeout=60)
             mix(record)
             record["status"] = "stopped" if "error" not in record else "stopped_with_error"
             if not record["phone_audio_signal_present"]:

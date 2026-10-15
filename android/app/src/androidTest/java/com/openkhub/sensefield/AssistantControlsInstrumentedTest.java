@@ -623,6 +623,38 @@ public class AssistantControlsInstrumentedTest {
         });
     }
 
+    @Test public void speakerVadCannotOpenAQuestionAndLateManualEndCannotClearAPause() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "manual-input-ownership",
+                new AssistantSettings(preferences), host);
+        try {
+            controller.voiceInputStateChanged(VoiceInputSafetyPolicy.InputState.ROUTE_UNVERIFIED);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            int cancelled = host.cancelled;
+            java.lang.reflect.Method started = AssistantController.class.getDeclaredMethod("voiceStarted");
+            started.setAccessible(true); started.invoke(controller);
+            assertEquals("background speaker audio cannot interrupt a reply", cancelled, host.cancelled);
+            assertEquals(0, countAudit(host, "event=START source=on_device"));
+
+            Field active = AssistantController.class.getDeclaredField("manualVoiceActive");
+            Field token = AssistantController.class.getDeclaredField("manualVoiceToken");
+            active.setAccessible(true); token.setAccessible(true);
+            active.setBoolean(controller, true); token.setLong(controller, 21);
+            java.lang.reflect.Method finished = AssistantController.class.getDeclaredMethod(
+                    "manualVoiceFinished", long.class, String.class, boolean.class);
+            finished.setAccessible(true);
+            finished.invoke(controller, 20L, "no_speech", false);
+            assertTrue("old timer cannot close a new deliberate question", active.getBoolean(controller));
+            controller.setVoicePaused(true);
+            finished.invoke(controller, 21L, "no_speech", false);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertFalse(active.getBoolean(controller));
+            assertTrue(host.status.startsWith("助手语音已暂停"));
+            assertFalse(host.status.contains("没有检测到说话"));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
     @Test public void localVoiceDoesNotRequireVisualGatewayConfiguration() {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         SharedPreferences preferences = preferences(context);

@@ -42,6 +42,11 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     private volatile OnDeviceAsr asr;
     private volatile AssistantOverlay overlay;
     private volatile boolean closed, paused, voicePaused, userSpeaking, voiceTurnActive, awaitingFinal;
+    private volatile boolean manualVoiceActive;
+    private final Object manualVoiceLock = new Object();
+    private long manualVoiceSequence;
+    private volatile long manualVoiceToken;
+    private volatile String audioInputMode = "continuous";
     private volatile boolean voiceEnabled, visionEnabled, proactiveEnabled;
     private volatile FrameProcessingPolicy.Mode mode = FrameProcessingPolicy.Mode.NORMAL;
     private volatile String audioTurn = "";
@@ -106,13 +111,19 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
                 @Override public void repeat() { repeatLast(); }
                 @Override public void mark() { host.mark(); setStatus("已标记问题"); }
                 @Override public void pauseVoice() { setVoicePaused(!voicePaused); }
+                @Override public void voiceQuestion() { toggleManualVoice(); }
             });
+            overlay.voiceEnabled(voiceEnabled);
             overlay.show();
             if (voiceEnabled) {
                 final OnDeviceAsr[] ownedAsr = new OnDeviceAsr[1];
                 asr = new OnDeviceAsr(context, new OnDeviceAsr.Listener() {
                     @Override public void ready() {
-                        main.post(() -> { if (asr == ownedAsr[0]) localAsrReady(); });
+                        main.post(() -> {
+                            if (asr != ownedAsr[0]) return;
+                            host.audit("AssistantVoice event=ASR_READY source=on_device");
+                            localAsrReady();
+                        });
                     }
                     @Override public void result(long generation, String turn, String text, long inferenceMs) {
                         onLocalAsrResult(generation, turn, text, inferenceMs);
@@ -145,9 +156,11 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
                     @Override public void inputStateChanged(VoiceInputSafetyPolicy.InputState state) {
                         voiceInputStateChanged(state);
                     }
-                    @Override public void safetyMetadata(int flags, int routedDeviceType) {
+                    @Override public void safetyMetadata(int flags, int routedDeviceType,
+                            int outputCaptureCount) {
                         host.audit("AssistantVoice event=INPUT_STATE flags=" + flags
-                                + " routedDeviceType=" + routedDeviceType);
+                                + " routedDeviceType=" + routedDeviceType
+                                + " outputCaptureCount=" + outputCaptureCount);
                     }
                     @Override public void acousticSummary(int frames, int speechFrames, int rms, int peak,
                             int clippedSamples, int inputDeviceType) {
@@ -155,17 +168,21 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
                                 + " speechFrames=" + speechFrames + " rms=" + rms + " peak=" + peak
                                 + " clippedSamples=" + clippedSamples + " inputDeviceType=" + inputDeviceType);
                     }
+                    @Override public void manualFinished(long token, String reason, boolean hadSpeech) {
+                        manualVoiceFinished(token, reason, hadSpeech);
+                    }
                     @Override public void unavailable(String value) { main.post(() -> voiceInputUnavailable(value)); }
                 });
                 voice.start();
             }
-            setStatus(settings.voice ? "本地离线中文识别正在加载；请戴耳机并确认游戏声音也从耳机播放后再说话"
+            setStatus(settings.voice ? "本地离线中文识别正在加载；就绪后可点“说话”提问"
                     : "可从小圆点读取画面");
         });
     }
     void feedRender(short[] frame) { AssistantVoiceInput input = voice; if (input != null) input.feedRender(frame); }
     private synchronized void voiceStarted() {
         if (closed || paused || voicePaused || !voiceEnabled) return;
+        if (inputState == VoiceInputSafetyPolicy.InputState.ROUTE_UNVERIFIED && !manualVoiceActive) return;
         if (awaitingFinal || voiceTurnActive) {
             host.audit("AssistantVoice event=DROPPED reason=interrupted_by_user generation="
                     + audioGeneration + " monotonicMs=" + SystemClock.elapsedRealtime());
@@ -197,8 +214,10 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
             return;
         }
         voiceTurnActive = true;
+        audioInputMode = manualVoiceActive ? "manual" : "continuous";
         host.audit("AssistantVoice event=START source=on_device generation=" + audioGeneration
-                + " turn=" + audioTurn + " monotonicMs=" + SystemClock.elapsedRealtime());
+                + " turn=" + audioTurn + " inputMode=" + audioInputMode
+                + " monotonicMs=" + SystemClock.elapsedRealtime());
     }
     private synchronized void voiceEnded() {
         userSpeaking = false;
@@ -209,7 +228,8 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         OnDeviceAsr current = asr;
         boolean accepted = current != null && current.finish();
         host.audit("AssistantVoice event=SPEECH_END source=on_device generation=" + generation
-                + " turn=" + turn + " monotonicMs=" + SystemClock.elapsedRealtime() + " accepted=" + accepted);
+                + " turn=" + turn + " inputMode=" + audioInputMode
+                + " monotonicMs=" + SystemClock.elapsedRealtime() + " accepted=" + accepted);
         if (!accepted) {
             awaitingFinal = false;
             if (current != null) current.invalidate();
@@ -243,6 +263,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
             String text = rawText == null ? "" : rawText.trim();
             host.audit("AssistantVoice event=FINAL source=on_device inferenceMs=" + inferenceMs
                     + " generation=" + generation + " turn=" + turn
+                    + " inputMode=" + audioInputMode
                     + " monotonicMs=" + SystemClock.elapsedRealtime()
                     + " textChars=" + text.length());
             if (text.isEmpty()) {
@@ -257,6 +278,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     }
     private void localAsrUnavailable(String reason) {
         if (closed || !voiceEnabled) return;
+        host.audit("AssistantVoice event=ASR_UNAVAILABLE source=on_device");
         invalidate("local_asr_unavailable");
         AssistantVoiceInput input = voice; voice = null;
         if (input != null) input.close();
@@ -272,8 +294,79 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         } else if (inputState != null && inputState != VoiceInputSafetyPolicy.InputState.READY) {
             setStatus(inputState.status);
         } else {
-            setStatus("本地离线中文识别已就绪");
+            setStatus("语音已就绪，可点“说话”提问；耳机下也可直接说话");
         }
+    }
+
+    void toggleManualVoice() {
+        AssistantVoiceInput input = voice;
+        if (manualVoiceActive) {
+            if (input != null) input.finishManual(manualVoiceToken);
+            return;
+        }
+        if (closed || paused || voicePaused) { setStatus("请先恢复助手语音，再点“说话”"); return; }
+        if (!voiceEnabled) { setStatus("请先在助手设置中开启语音提问"); return; }
+        OnDeviceAsr current = asr;
+        if (current == null || !current.ready()) {
+            setStatus("本地语音资源尚未就绪，请在助手设置中查看准备进度"); return;
+        }
+        if (awaitingFinal || current.busy()) { setStatus("正在识别上一句，请稍等"); return; }
+        if (input == null || !VoiceInputSafetyPolicy.manualAllowed(input.inputState())) {
+            setStatus(input == null ? "语音输入暂不可用，请重新开始辅助" : input.inputState().status);
+            return;
+        }
+        invalidate("manual_voice_start");
+        final long token;
+        synchronized (manualVoiceLock) {
+            token = ++manualVoiceSequence;
+            manualVoiceToken = token; manualVoiceActive = true; userSpeaking = true;
+        }
+        proactiveQuietUntilMs = Math.max(proactiveQuietUntilMs,
+                SystemClock.elapsedRealtime() + MANUAL_QUIET_MS);
+        if (!input.beginManual(token)) {
+            synchronized (manualVoiceLock) {
+                if (manualVoiceToken == token) { manualVoiceActive = false; userSpeaking = false; }
+            }
+            setStatus(input.inputState().status); return;
+        }
+        host.audit("AssistantManualVoice event=START token=" + token
+                + " maxMs=" + ManualVoiceWindow.MAX_MS);
+        if (manualVoiceActive && manualVoiceToken == token) {
+            if (overlay != null) overlay.manualVoiceActive(true);
+            setStatus("请说话，说完自动提交；也可点“说完”");
+        }
+    }
+
+    private void manualVoiceFinished(long token, String reason, boolean hadSpeech) {
+        synchronized (manualVoiceLock) {
+            if (!manualVoiceActive || manualVoiceToken != token) return;
+            manualVoiceActive = false;
+            if (!hadSpeech) userSpeaking = false;
+        }
+        host.audit("AssistantManualVoice event=END token=" + token
+                + " reason=" + safeAsrReason(reason) + " hadSpeech=" + hadSpeech);
+        main.post(() -> {
+            if (closed || manualVoiceToken != token || manualVoiceActive) return;
+            if (overlay != null) overlay.manualVoiceActive(false);
+            if (!hadSpeech) {
+                setStatus("没有检测到说话，请靠近麦克风再点“说话”");
+                releaseDeferredVisual();
+            } else if (awaitingFinal) setStatus("正在识别这句语音");
+        });
+    }
+
+    private void cancelManualVoice(String reason) {
+        final long token;
+        synchronized (manualVoiceLock) {
+            if (!manualVoiceActive) return;
+            token = manualVoiceToken;
+            manualVoiceActive = false;
+        }
+        host.audit("AssistantManualVoice event=CANCELLED token=" + token
+                + " reason=" + safeAsrReason(reason));
+        AssistantVoiceInput input = voice;
+        if (input != null) input.cancelManual(token, reason);
+        main.post(() -> { if (overlay != null && !manualVoiceActive) overlay.manualVoiceActive(false); });
     }
     private void voiceInputUnavailable(String status) {
         if (closed) return;
@@ -304,7 +397,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         });
     }
     void setVoicePaused(boolean value) {
-        if (!voiceEnabled) { setStatus("连续语音尚未开启"); return; }
+        if (!voiceEnabled) { setStatus("语音提问尚未开启"); return; }
         voicePaused = value; invalidate("voice_pause");
         if (overlay != null) overlay.voicePaused(value);
         if (voice != null) voice.pause(paused || value);
@@ -329,6 +422,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         if (revokeVision) visionEnabled = false;
         if (revokeProactive) proactiveEnabled = false;
         invalidate("consent_revoked");
+        if (revokeVoice) main.post(() -> { if (overlay != null) overlay.voiceEnabled(false); });
         if (revokeVoice) {
             AssistantVoiceInput input = voice; voice = null;
             if (input != null) input.close();
@@ -346,6 +440,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         setStatus(value ? "助手已暂停" : "助手已恢复");
     }
     void invalidate(String reason) {
+        cancelManualVoice(reason);
         auditPendingAudioDrop(reason);
         session.invalidate();
         OnDeviceAsr localAsr = asr; if (localAsr != null) localAsr.invalidate();
@@ -363,6 +458,11 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     }
     /** Atomic invalidation under the capture lock; controls execute later outside it. */
     void captureInvalidated(String reason) {
+        final long cancelledManualToken;
+        synchronized (manualVoiceLock) {
+            cancelledManualToken = manualVoiceActive ? manualVoiceToken : 0;
+            manualVoiceActive = false;
+        }
         auditPendingAudioDrop(reason);
         clearFrameHistory();
         session.invalidate();
@@ -377,6 +477,9 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
                 + canceled.id + " proactive=" + canceled.proactive);
         long generation = session.generation();
         main.post(() -> {
+            AssistantVoiceInput input = voice;
+            if (cancelledManualToken != 0 && input != null) input.cancelManual(cancelledManualToken, reason);
+            if (overlay != null && !manualVoiceActive) overlay.manualVoiceActive(false);
             if (closed || generation != session.generation()) return;
             client.cancelVisual(); host.cancelSpeech();
             host.audit("AssistantInvalidated reason=" + reason + " generation=" + generation);
@@ -400,6 +503,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
             return;
         }
         text = text.trim();
+        cancelManualVoice("user_question");
         if (!proactive) proactiveQuietUntilMs = Math.max(proactiveQuietUntilMs,
                 SystemClock.elapsedRealtime() + MANUAL_QUIET_MS);
         auditPendingAudioDrop("user_question");
@@ -473,6 +577,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         lastReply = reply; append("听野：" + text); playReply(reply);
     }
     private void repeatLast() {
+        cancelManualVoice("repeat");
         AssistantReply previous = lastReply;
         auditPendingAudioDrop("user_question");
         session.invalidate();
@@ -782,13 +887,14 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     private void setStatus(String value) {
         if (closed) return;
         VoiceInputSafetyPolicy.InputState state = inputState;
-        if (voiceEnabled && state != null && state != VoiceInputSafetyPolicy.InputState.READY
+        if (voiceEnabled && !manualVoiceActive && state != null && state != VoiceInputSafetyPolicy.InputState.READY
                 && !value.equals(state.status)) value += "；" + state.status;
         currentStatus = value;
         host.status(value);
         if (overlay != null) overlay.status(value);
     }
     @Override public void close() {
+        cancelManualVoice("closed");
         closed = true; session.close(); clearFrameHistory();
         main.removeCallbacksAndMessages(null); main.post(() -> {
             client.close(); if (voice != null) voice.close();

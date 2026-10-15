@@ -1,6 +1,7 @@
 package com.openkhub.sensefield;
 
 import android.media.AudioDeviceInfo;
+import android.media.MediaRecorder;
 
 /** Continuous-voice trial requires the app-owned route probe and exclusive microphone use. */
 final class VoiceInputSafetyPolicy {
@@ -9,7 +10,7 @@ final class VoiceInputSafetyPolicy {
         PAUSED("paused", "助手语音已暂停"),
         CLIENT_SILENCED("client_silenced", "系统已静音麦克风，助手暂停输入"),
         OTHER_RECORDING("other_recording", "存在其他录音会话或录音状态未知，助手暂停输入"),
-        ROUTE_UNVERIFIED("route_unverified", "请戴耳机并确认游戏声音也从耳机播放；当前路由不支持连续语音"),
+        ROUTE_UNVERIFIED("route_unverified", "连续语音已暂停；请点“说话”提问，或将声音切到耳机"),
         UNAVAILABLE("unavailable", "语音输入暂不可用，预警继续运行");
 
         final String auditKey;
@@ -45,6 +46,11 @@ final class VoiceInputSafetyPolicy {
         return nextFlags != previousFlags;
     }
 
+    /** A deliberate bounded utterance can use the speaker, but cannot bypass mic ownership. */
+    static boolean manualAllowed(InputState state) {
+        return state == InputState.READY || state == InputState.ROUTE_UNVERIFIED;
+    }
+
     static boolean verifiedHeadphoneRoute(int sdk, boolean probeOperational, int routedDeviceType) {
         return sdk >= 29 && probeOperational && approvedHeadphoneType(sdk, routedDeviceType);
     }
@@ -60,6 +66,22 @@ final class VoiceInputSafetyPolicy {
     }
     static boolean otherRecorder(int ownSessionId, int[] activeSessionIds) {
         for (int id : activeSessionIds) if (id != ownSessionId) return true;
+        return false;
+    }
+
+    /** Android's playback capture is an output tap, not another owner of the microphone. */
+    static boolean isOutputCaptureSource(int audioSource) {
+        return audioSource == MediaRecorder.AudioSource.REMOTE_SUBMIX;
+    }
+
+    static boolean otherRecorder(int ownSessionId, int[] activeSessionIds, int[] audioSources) {
+        if (activeSessionIds == null || audioSources == null
+                || activeSessionIds.length != audioSources.length) return true;
+        for (int i = 0; i < activeSessionIds.length; i++) {
+            if (activeSessionIds[i] == ownSessionId) continue;
+            if (isOutputCaptureSource(audioSources[i])) continue;
+            return true;
+        }
         return false;
     }
 }

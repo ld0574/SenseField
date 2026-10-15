@@ -45,9 +45,9 @@ public final class AssistantSettingsActivity extends UiActivity {
                 "默认使用听野线上服务，无需填写地址或连接码。语音和画面需分别开启；开启后请重新开始辅助。");
         UiKit.add(assistantOptions, service, 20);
         SettingHelp.addGroup(this, assistantOptions, "assistant_group", 12);
-        consentSwitch(assistantOptions, "连续语音（可以插话）", AssistantSettings.VOICE, AssistantSettings.AUDIO_CONSENT,
-                "听野会持续检测说话，在你说完后离线识别。原始语音只在手机内存里临时处理，不上传、不保存音频文件。第一次开启会从听野 CDN 下载约153 MiB语音资源，请在网络稳定时准备，并预留约400 MiB空间。下载后离线识别，已缓存资源会复用。\n\n请戴耳机，并确认游戏声音也在耳机里。听野只能检查自己的声音路线，无法确认游戏的实际路线；蓝牙音箱和外放不适合此实验。普通蓝牙耳机连接时，识别可能使用手机麦克风。游戏开麦、其他录音活动或路线不明时，助手暂停输入。\n\n开启画面理解后，每句完整、非空的识别文字都会作为消息，连同授权画面发送到画面服务及其视觉模型；暂停、复述等本地指令单独处理。不需要固定问法，新消息会替换尚未完成的回答。背景人声也可能被识别并发送；暂时不想对话时，请暂停连续语音。", true);
-        resources = UiKit.hint(this, "首次开启连续语音后准备资源，完成后可离线识别。");
+        consentSwitch(assistantOptions, "语音提问（耳机下可连续提问）", AssistantSettings.VOICE, AssistantSettings.AUDIO_CONSENT,
+                "点悬浮面板的“说话”后开始一次提问，说完自动提交，也可点“说完”结束；五秒未检测到说话会退出，单次最长十五秒。戴耳机并确认游戏声音也走耳机后，还可直接说话连续提问。原始语音只在手机内存里临时处理，不上传、不保存音频文件。第一次开启会从听野 CDN 下载约153 MiB语音资源，请在网络稳定时准备，并预留约400 MiB空间。下载后离线识别，已缓存资源会复用。\n\n外放时只在你点“说话”的这次操作中识别，请尽量降低游戏音量，避免把游戏人声当成问题。连续语音需要耳机；听野只能检查自己的声音路线，无法确认游戏的实际路线，蓝牙音箱不适合连续提问。普通蓝牙耳机连接时，识别可能使用手机麦克风。游戏开麦、系统静音或其他录音活动时，两种输入都会暂停。\n\n开启画面理解后，每句完整、非空的识别文字都会作为消息，连同授权画面发送到画面服务及其视觉模型；暂停、复述等本地指令单独处理。不需要固定问法，新消息会替换尚未完成的回答。背景人声也可能被识别并发送；暂时不想对话时，请暂停连续语音。", true);
+        resources = UiKit.hint(this, "首次开启语音提问后准备资源，完成后可离线识别。");
         resources.setAccessibilityLiveRegion(android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE);
         UiKit.add(assistantOptions, resources, 12);
         retryResources = button(assistantOptions, "准备语音资源／重试");
@@ -76,7 +76,7 @@ public final class AssistantSettingsActivity extends UiActivity {
     private void prepareResources() {
         if (preparing) return;
         if (!AssistantSettings.voiceEnabled(GameProfile.settings(this))) {
-            resources.setText("请先开启连续语音，再准备资源。"); return;
+            resources.setText("请先开启语音提问，再准备资源。"); return;
         }
         preparing = true; retryResources.setEnabled(false);
         resources.setText("正在检查语音资源；首次下载约153 MiB…");

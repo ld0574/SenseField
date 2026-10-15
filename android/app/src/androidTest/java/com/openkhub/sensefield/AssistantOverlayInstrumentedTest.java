@@ -26,6 +26,48 @@ import org.junit.runner.RunWith;
 /** A real overlay with alternating framework insets; never captures audio or images. */
 @RunWith(AndroidJUnit4.class)
 public class AssistantOverlayInstrumentedTest {
+    @Test public void accessibleVoiceActionKeepsItsStopControlAcrossPanelReopening() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        assertTrue(Settings.canDrawOverlays(context));
+        java.util.concurrent.atomic.AtomicInteger clicks = new java.util.concurrent.atomic.AtomicInteger();
+        AtomicReference<AssistantOverlay> reference = new AtomicReference<>();
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+            AssistantOverlay overlay = new AssistantOverlay(context, new AssistantOverlay.Listener() {
+                public void readScreen() { }
+                public void repeat() { }
+                public void mark() { }
+                public void pauseVoice() { }
+                public void voiceQuestion() { clicks.incrementAndGet(); }
+            });
+            reference.set(overlay); overlay.show(); overlay.setExpanded(true);
+        });
+        AssistantOverlay overlay = reference.get();
+        try {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                try {
+                    android.widget.Button button = (android.widget.Button) field(overlay, "voiceQuestion");
+                    assertTrue(button.performAccessibilityAction(
+                            android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK, null));
+                    assertEquals(1, clicks.get());
+                    overlay.manualVoiceActive(true);
+                    overlay.setExpanded(false); overlay.setExpanded(true);
+                    button = (android.widget.Button) field(overlay, "voiceQuestion");
+                    assertEquals("说完", button.getText().toString());
+                    assertTrue(button.getContentDescription().toString().contains("提交"));
+                    assertTrue(button.performAccessibilityAction(
+                            android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK, null));
+                    assertEquals(2, clicks.get());
+                    overlay.voicePaused(true);
+                    assertFalse(button.performAccessibilityAction(
+                            android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK, null));
+                    assertEquals(2, clicks.get());
+                    overlay.voicePaused(false); overlay.voiceEnabled(false);
+                    assertFalse(button.isEnabled());
+                } catch (Exception error) { throw new AssertionError(error); }
+            });
+        } finally { InstrumentationRegistry.getInstrumentation().runOnMainSync(overlay::close); }
+    }
+
     private static Object field(AssistantOverlay overlay, String name) throws Exception {
         Field field = AssistantOverlay.class.getDeclaredField(name);
         field.setAccessible(true);
@@ -337,7 +379,7 @@ public class AssistantOverlayInstrumentedTest {
                 android.widget.ScrollView scroll = (android.widget.ScrollView) ((android.view.ViewGroup) root).getChildAt(0);
                 android.view.ViewGroup content = (android.view.ViewGroup) scroll.getChildAt(0);
                 ReminderSampleGrid buttons = (ReminderSampleGrid) content.getChildAt(1);
-                assertEquals(4, buttons.getChildCount());
+                assertEquals(5, buttons.getChildCount());
                 for (int i = 0; i < buttons.getChildCount(); i++) {
                     android.widget.Button button = (android.widget.Button) buttons.getChildAt(i);
                     assertTrue(button.getHeight() >= UiKit.dp(context, 56));
@@ -345,17 +387,26 @@ public class AssistantOverlayInstrumentedTest {
                     assertTrue(button.getLayout().getHeight() <= button.getHeight()
                             - button.getCompoundPaddingTop() - button.getCompoundPaddingBottom());
                 }
-                buttons.getChildAt(2).performClick();
-                View last = buttons.getChildAt(3);
+                buttons.getChildAt(3).performClick();
+                View last = buttons.getChildAt(buttons.getChildCount() - 1);
                 scroll.scrollTo(0, Math.max(0, buttons.getTop() + last.getBottom() - scroll.getHeight()));
                 android.graphics.Rect visible = new android.graphics.Rect();
-                assertTrue("The last control remains reachable by scrolling", buttons.getChildAt(3).getGlobalVisibleRect(visible));
+                assertTrue("The last control remains reachable by scrolling", last.getGlobalVisibleRect(visible));
             });
             assertEquals(1, marks[0]);
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             assertArrayEquals("Text reflow never changes the overlay's dock", before, geometry(root, params));
             android.graphics.Bitmap capture = InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();
-            assertNotNull(capture);
+            // Some headless emulator images return null through takeScreenshot().
+            // Still require a real display capture rather than skipping the preview check.
+            if (capture == null) {
+                android.os.ParcelFileDescriptor descriptor = InstrumentationRegistry.getInstrumentation()
+                        .getUiAutomation().executeShellCommand("screencap -p");
+                try (java.io.InputStream input = new android.os.ParcelFileDescriptor.AutoCloseInputStream(descriptor)) {
+                    capture = android.graphics.BitmapFactory.decodeStream(input);
+                }
+            }
+            assertNotNull("The emulator must provide a decodable display capture", capture);
             String phase = InstrumentationRegistry.getArguments().getString("preview_phase", "after").replaceAll("[^a-zA-Z0-9._-]", "_");
             java.io.File dir = new java.io.File(context.getExternalFilesDir("ui-0.4.3"), phase);
             assertTrue(dir.isDirectory() || dir.mkdirs());

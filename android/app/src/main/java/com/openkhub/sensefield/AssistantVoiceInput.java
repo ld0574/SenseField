@@ -13,6 +13,7 @@ import android.media.MediaRecorder;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -22,9 +23,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class AssistantVoiceInput implements AutoCloseable {
     interface Listener extends VoiceActivityGate.Output {
         void inputStateChanged(VoiceInputSafetyPolicy.InputState state);
-        default void safetyMetadata(int flags, int routedDeviceType) { }
+        default void safetyMetadata(int flags, int routedDeviceType, int outputCaptureCount) { }
         default void acousticSummary(int frames, int speechFrames, int rms, int peak,
                 int clippedSamples, int inputDeviceType) { }
+        default void manualFinished(long token, String reason, boolean hadSpeech) { }
         void unavailable(String status);
     }
 
@@ -34,18 +36,23 @@ final class AssistantVoiceInput implements AutoCloseable {
     private final VoiceEchoProcessor echo = new VoiceEchoProcessor();
     private final VoiceSpeechDetector speech = new VoiceSpeechDetector();
     private final VoiceInputMetrics metrics = new VoiceInputMetrics();
+    private final ManualVoiceWindow manual = new ManualVoiceWindow();
+    private final Handler manualDeadlines = new Handler(Looper.getMainLooper());
     private final ExecutorService callbacks = Executors.newSingleThreadExecutor();
     private final AudioManager manager;
     private final AtomicBoolean cleanupStarted = new AtomicBoolean();
     private volatile boolean closed, paused, headset;
+    private volatile boolean manualFinishing;
     private volatile boolean otherRecording = true;
     private volatile boolean silenced = true;
+    private volatile int outputCaptureCount;
     private volatile int ownSessionId;
     private volatile int routedInputDeviceType = -1;
     private volatile AudioRecord record;
     private volatile PauseableRecorderLoop recorderLoop;
     private int lastSafetyFlags = Integer.MIN_VALUE;
     private int lastRoutedDeviceType = Integer.MIN_VALUE;
+    private int lastOutputCaptureCount = Integer.MIN_VALUE;
     private AssistantAudioRouteProbe routeProbe;
     private AudioManager.AudioRecordingCallback inputRecordings;
     private AudioRouting.OnRoutingChangedListener inputRouting;
@@ -55,16 +62,40 @@ final class AssistantVoiceInput implements AutoCloseable {
             if (closed) return;
             try {
                 int[] ids = new int[configurations.size()];
-                for (int i = 0; i < ids.length; i++) ids[i] = configurations.get(i).getClientAudioSessionId();
-                otherRecording = VoiceInputSafetyPolicy.otherRecorder(ownSessionId, ids);
-            } catch (RuntimeException ignored) { otherRecording = true; }
+                int[] sources = new int[configurations.size()];
+                int outputCaptures = 0;
+                for (int i = 0; i < ids.length; i++) {
+                    AudioRecordingConfiguration configuration = configurations.get(i);
+                    ids[i] = configuration.getClientAudioSessionId();
+                    sources[i] = configuration.getClientAudioSource();
+                    if (ids[i] != ownSessionId
+                            && VoiceInputSafetyPolicy.isOutputCaptureSource(sources[i])) outputCaptures++;
+                }
+                outputCaptureCount = outputCaptures;
+                otherRecording = VoiceInputSafetyPolicy.otherRecorder(ownSessionId, ids, sources);
+            } catch (RuntimeException ignored) {
+                outputCaptureCount = 0;
+                otherRecording = true;
+            }
         }
     };
 
     AssistantVoiceInput(Context context, Listener listener) {
         this.context = context;
         this.listener = listener;
-        this.gate = new VoiceActivityGate(listener);
+        this.gate = new VoiceActivityGate(new VoiceActivityGate.Output() {
+            @Override public void started() { manual.speechStarted(); listener.started(); }
+            @Override public void pcm(short[] samples) { listener.pcm(samples); }
+            @Override public void ended() {
+                listener.ended();
+                long token = manual.token();
+                ManualVoiceWindow.End end = manual.end(token);
+                if (end != null) {
+                    manualDeadlines.removeCallbacksAndMessages(null);
+                    listener.manualFinished(token, "speech_end", end.hadSpeech);
+                }
+            }
+        });
         manager = context.getSystemService(AudioManager.class);
     }
 
@@ -102,14 +133,15 @@ final class AssistantVoiceInput implements AutoCloseable {
             inputRecordings = new AudioManager.AudioRecordingCallback() {
                 @Override public void onRecordingConfigChanged(List<AudioRecordingConfiguration> configurations) {
                     if (closed) return;
-                    boolean currentSilenced = true;
                     for (AudioRecordingConfiguration configuration : configurations) {
                         if (configuration.getClientAudioSessionId() == sessionId) {
-                            currentSilenced = configuration.isClientSilenced();
-                            break;
+                            silenced = configuration.isClientSilenced();
+                            return;
                         }
                     }
-                    silenced = currentSilenced;
+                    // Stopping/restarting our recorder removes it from this list;
+                    // that absence is not a platform "client silenced" decision.
+                    // Before the first matching callback, silenced remains true.
                 }
             };
             owned.registerAudioRecordingCallback(callbacks, inputRecordings);
@@ -166,9 +198,12 @@ final class AssistantVoiceInput implements AutoCloseable {
                 paused, silenced, otherRecording, headset);
         AssistantAudioRouteProbe probe = routeProbe;
         int safetyRoutedDeviceType = probe == null ? -1 : probe.routedDeviceType();
-        if (safetyFlags != lastSafetyFlags || safetyRoutedDeviceType != lastRoutedDeviceType) {
+        int currentOutputCaptureCount = outputCaptureCount;
+        if (safetyFlags != lastSafetyFlags || safetyRoutedDeviceType != lastRoutedDeviceType
+                || currentOutputCaptureCount != lastOutputCaptureCount) {
             lastRoutedDeviceType = safetyRoutedDeviceType;
-            listener.safetyMetadata(safetyFlags, safetyRoutedDeviceType);
+            lastOutputCaptureCount = currentOutputCaptureCount;
+            listener.safetyMetadata(safetyFlags, safetyRoutedDeviceType, currentOutputCaptureCount);
         }
         if (VoiceInputSafetyPolicy.requiresSessionReset(lastSafetyFlags, safetyFlags)) {
             gate.reset();
@@ -182,7 +217,13 @@ final class AssistantVoiceInput implements AutoCloseable {
                 return;
             }
         }
-        if (state != VoiceInputSafetyPolicy.InputState.READY || !isCurrentFrame(epoch)) return;
+        if (manual.active() && !VoiceInputSafetyPolicy.manualAllowed(state)) {
+            cancelManual("input_blocked");
+            return;
+        }
+        if (manualFinishing || (state != VoiceInputSafetyPolicy.InputState.READY
+                && !(manual.active() && VoiceInputSafetyPolicy.manualAllowed(state)))
+                || !isCurrentFrame(epoch)) return;
         if (!speech.available()) {
             reportUnavailable("本地语音检测不可用，助手输入暂停；预警继续");
             close();
@@ -240,6 +281,7 @@ final class AssistantVoiceInput implements AutoCloseable {
     }
 
     private void reportUnavailable(String status) {
+        cancelManual("input_unavailable");
         int flags = lastSafetyFlags == Integer.MIN_VALUE
                 ? VoiceInputSafetyPolicy.FLAG_UNAVAILABLE
                 : lastSafetyFlags | VoiceInputSafetyPolicy.FLAG_UNAVAILABLE;
@@ -254,8 +296,68 @@ final class AssistantVoiceInput implements AutoCloseable {
         if (!closed && !paused) echo.feedRender(pcm);
     }
 
+    VoiceInputSafetyPolicy.InputState inputState() {
+        if (closed || record == null) return VoiceInputSafetyPolicy.InputState.UNAVAILABLE;
+        return VoiceInputSafetyPolicy.inputState(paused, silenced, otherRecording, headset);
+    }
+
+    /** Explicitly open one utterance. No speaker-route change enables continuous capture. */
+    boolean beginManual(long token) {
+        PauseableRecorderLoop current = recorderLoop;
+        if (current == null || !VoiceInputSafetyPolicy.manualAllowed(inputState())) return false;
+        final boolean[] began = {false};
+        current.restart(() -> {
+            if (!closed && !paused && VoiceInputSafetyPolicy.manualAllowed(inputState()))
+                began[0] = manual.begin(token, SystemClock.elapsedRealtime());
+        });
+        if (!began[0]) return false;
+        manualDeadlines.postDelayed(() -> finishManualIfDue(token), ManualVoiceWindow.NO_SPEECH_MS);
+        manualDeadlines.postDelayed(() -> finishManualIfDue(token), ManualVoiceWindow.MAX_MS);
+        return true;
+    }
+
+    private void finishManualIfDue(long token) {
+        String reason = manual.dueReason(token, SystemClock.elapsedRealtime());
+        if (!reason.isEmpty()) endManual(token, reason, true);
+    }
+
+    void finishManual(long token) { endManual(token, "button", true); }
+
+    void cancelManual(String reason) { endManual(manual.token(), reason, false); }
+    void cancelManual(long token, String reason) { endManual(token, reason, false); }
+
+    private void endManual(long token, String reason, boolean submit) {
+        if (!manual.active() || manual.token() != token) return;
+        PauseableRecorderLoop current = recorderLoop;
+        if (current == null) return;
+        final ManualVoiceWindow.End[] ended = {null};
+        final int[][] acoustic = {null};
+        current.restart(() -> {
+            ended[0] = manual.end(token);
+            if (ended[0] != null) {
+                // Prevent a headset's continuous path from starting another turn
+                // between this boundary and finalizing the owned ASR buffer.
+                manualFinishing = true;
+                acoustic[0] = new int[]{metrics.frames, metrics.speechFrames, metrics.rms(),
+                        metrics.peak, metrics.clippedSamples, routedInputDeviceType};
+            }
+        });
+        if (ended[0] == null) return;
+        manualDeadlines.removeCallbacksAndMessages(null);
+        try {
+            boolean hadSpeech = submit && ended[0].hadSpeech;
+            if (hadSpeech) {
+                listener.ended();
+                int[] value = acoustic[0];
+                listener.acousticSummary(value[0], value[1], value[2], value[3], value[4], value[5]);
+            }
+            listener.manualFinished(token, reason, hadSpeech);
+        } finally { manualFinishing = false; }
+    }
+
     void pause(boolean value) {
         if (closed) return;
+        if (value) cancelManual("paused");
         PauseableRecorderLoop current = recorderLoop;
         if (current != null) current.pause(value, () -> paused = value);
         else paused = value;
@@ -293,6 +395,8 @@ final class AssistantVoiceInput implements AutoCloseable {
     }
 
     @Override public void close() {
+        cancelManual("closed");
+        manualDeadlines.removeCallbacksAndMessages(null);
         closed = true;
         paused = true;
         PauseableRecorderLoop current = recorderLoop;
