@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BASE = ROOT / "output" / "video"
 ACTIVE = BASE / "active-recording.json"
 PINNED_SCRCPY = ROOT / "output" / "tools" / "scrcpy-3.3.4" / "scrcpy-macos-aarch64-v3.3.4" / "scrcpy"
+MICROPHONE_CAPTURE_LATENCY_SECONDS = .5
 
 
 def save(record):
@@ -96,17 +97,23 @@ def mix(record):
                        media_duration(extracted["phone_audio"])),
         "microphone": media_duration(sources["microphone"]),
     }
-    # Both phone streams share scrcpy's clock. Align the independent microphone
-    # at the common stop edge to account for different encoder startup times.
-    starts = {key: record["stop_monotonic"][key] - durations[key] for key in sources}
+    # Both recorders are launched from the same monotonic clock. Align their
+    # launch edges instead of their stop edges: scrcpy may need several seconds
+    # to flush or be killed, so the capture file can outlive the microphone and
+    # make common-stop alignment delay the user's voice by 10+ seconds.
+    starts = record["launch_monotonic"]
     video_duration = durations["capture"]
-    microphone_offset = starts["microphone"] - starts["capture"]
+    microphone_offset = (starts["microphone"] - starts["capture"]
+                         + MICROPHONE_CAPTURE_LATENCY_SECONDS)
     trim = max(0, -microphone_offset)
     delay = round(max(0, microphone_offset) * 1000)
     filters = [
-        "[0:a]aresample=48000,apad[phone_audio]",
+        "[0:a]volume=0.55,aresample=48000,apad[phone_audio]",
         f"[1:a]atrim=start={trim:.6f},asetpts=PTS-STARTPTS,"
-        f"loudnorm=I=-20:TP=-3:LRA=7,aresample=48000,adelay={delay}:all=1,apad[microphone]",
+        f"highpass=f=100,lowpass=f=10000,"
+        f"agate=threshold=0.008:ratio=3:attack=10:release=250,"
+        f"loudnorm=I=-13:TP=-1.5:LRA=7,aresample=48000,"
+        f"adelay={delay}:all=1,apad[microphone]",
     ]
     filters.append("[phone_audio][microphone]amix=inputs=2:duration=longest:normalize=0,"
                    "alimiter=limit=0.891:level=false:latency=true[mixed]")
@@ -114,13 +121,13 @@ def mix(record):
     command = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", str(capture),
                "-i", str(microphone), "-filter_complex", ";".join(filters),
                "-map", "0:v:0", "-map", "[mixed]",
-               "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+               "-c:v", "copy", "-c:a", "aac", "-b:a", "224k", "-ar", "48000", "-ac", "2",
                "-t", str(video_duration), "-movflags", "+faststart", str(output)]
     with (directory / "mix.log").open("w") as log:
         subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
     record.update(merged_file=str(output), source_durations_seconds=durations,
                   audio_offsets_seconds={"microphone": microphone_offset},
-                  synchronization="phone_common_clock_and_microphone_common_stop",
+                  synchronization="phone_common_clock_and_microphone_launch_edge",
                   sha256=hashlib.sha256(output.read_bytes()).hexdigest(),
                   output_media=probe(output))
     record["audio_peak_dbfs"] = {key: pcm_peak(directory / file) for key, file in (
