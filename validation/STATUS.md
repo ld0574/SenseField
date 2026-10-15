@@ -6,12 +6,12 @@
 
 | 项目 | 已有记录 |
 | --- | --- |
-| 本轮最终交付 | [0.4.7／code24](../docs/releases/0.4.7/RELEASE_NOTES.md) 修复近敌语音抢播、合入消消乐诊断分支、取消采录实验，保留正常语音提问；main、标签和 GitHub 普通 Release／Latest 状态见[最终核对](releases/GITHUB_RELEASE_0_4_7_FINAL_2026-10-15.md) |
+| 本轮最终交付 | [0.4.7／code24](../docs/releases/0.4.7/RELEASE_NOTES.md) 修复近敌语音抢播、合入消消乐诊断分支、取消采录实验，保留正常语音提问；源码合入 main，GitHub 普通 Release、Latest，见[最终核对](releases/GITHUB_RELEASE_0_4_7_FINAL_2026-10-15.md) |
 | 当前交付摘要 | 24,599,965 bytes；SHA-256 `84b3fd40fddbdb6d6789210b4657b6db9db1886650b43e734c72ff298a98f9e2`。GitHub 继续使用 APK、installation-guide.txt 两个附件；同 code 需手动覆盖安装 |
 | 最终包工程检查 | Debug／Release JVM 各 697 项、Python 1100 项及 29 subtest、native 5 项通过；Python 1 项缺桌面合成回放产物跳过；Debug／Release lint 0 错误、31 警告。最终混淆包的毒液、分离棋盘及王者 JNI 共 4 项通过；完整模拟器 UI 检查遇 System UI／测试 Activity 无响应，未通过。身份、签名、856 份语音资产及对齐核验通过 |
 | 手机状态 | 本轮未连接或安装真机，不能将手机状态记为最终包已安装。此前手机修订、自然语音和安装核对继续绑定其原摘要与[工程记录](assistant/ASSISTANT_OPEN_CONVERSATION_0_4_7_2026-10-15.md) |
 | 已记录的公开版本 | 当前 0.4.7 为普通 Release、Latest；0.4.6／code23 为历史普通 Release，旧版本各自证据保留 |
-| 公开分发材料 | output/releases/0.4.7/ 为唯一当前交付，不生成 Gitee ZIP。[最终核对](releases/GITHUB_RELEASE_0_4_7_FINAL_2026-10-15.md)绑定 GitHub 附件与下载结果；Gitee 与公网清单由用户同步 |
+| 公开分发材料 | output/releases/0.4.7/ 为唯一当前交付，不生成 Gitee ZIP。GitHub 两个附件 digest／bytes 与匿名下载核对通过，见[最终核对](releases/GITHUB_RELEASE_0_4_7_FINAL_2026-10-15.md)；Gitee 与公网清单由用户同步 |
 | 0.4.7 验证余项 | 完整发布门禁未全部完成。自然 ASR 准确率、答案依据、实际收益、外部发声、受控温升、整体成本及完整 UI／混淆运行检查继续待验，先前提示词需部署后复核。用户取消采录实验，不再将录制列为验收余项 |
 
 [先前公开原包对照](performance/PUBLIC_APK_COMPARISON_0_4_7_2026-10-14.md)使用同一兼容测量器直接调用公开 0.4.6 与先前冻结的0.4.7 `a0c83659…`保留生产代码，解决旧 R8 测试 ABI 缺口；两份主包未重构建。4 格训练／18 格同会话开发回放完整可用分别 0→4／0→18，旧 743 格错误计数及三局输出不变，王者完整归一检测／跟踪／事件相同。两款游戏各三组成本通过：消消乐 CPU 中位 −18.84%，墙钟 P95 下降 14.04%～21.45%；王者最大墙钟／worker P95 增幅 +0.14%／+0.03%。该负载不含完整服务准入、UI／语音或物理热测，旧失败和旧制品成绩保留；这些结果不转移到本轮新候选，公开0.4.6与分发状态保持。

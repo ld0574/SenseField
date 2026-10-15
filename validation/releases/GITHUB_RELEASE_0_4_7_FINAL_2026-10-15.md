@@ -2,7 +2,7 @@
 
 2026-10-15，按用户要求保留 0.4.7／code24，取消录制实验，评估并修复有实局依据的问题，合并消消乐分支，继续更新现有 [GitHub v0.4.7](https://github.com/ld0574/SenseField/releases/tag/v0.4.7)。功能仍按体验版提供；“最终修订”表示本轮收尾，不表示完整准确率、实声或温升验收通过。
 
-发布状态：本地制品与专项核对完成，main 推送、同版本标签更新、GitHub 附件替换及匿名下载待回读。Gitee 与公网清单由用户同步，不生成 Gitee ZIP，不上传诊断、截图、音频、私有配置或签名文件。
+发布状态：GitHub 已替换两个附件，并保持普通 Release、Latest。匿名下载 APK 与说明均为 HTTP 200，大小与 SHA-256 和本地一致；本轮源码已合入 main，最终审计提交与 v0.4.7 标签的回读值保存在本地分发回执。Gitee 与公网清单由用户同步，不生成 Gitee ZIP，不上传诊断、截图、音频、私有配置或签名文件。
 
 ## 改动与源码
 
@@ -55,4 +55,4 @@ Python 跳过项为 `tests/test_yolox_ncnn_replay.py::test_frozen_replay_is_even
 
 GitHub 正文使用三行短摘要，完整使用说明放入 `.txt` 附件。Gitee 只需用户上传新 APK；核对下载字节后再将配套 latest.json 同步到 `https://888413.xyz/apk/latest.json`。清单仍指向固定 Gitee Release URL，本地产生清单不会改变公网。相同 code24 需手动下载安装，不会触发应用内更新提示。
 
-公开仓库扫描、增量历史凭据检查、远端标签、Latest、两个附件 digest／bytes 及匿名下载回执统一保存在本地 `output/validation/0.4.7-final-20261015/`；完成前不将远端状态登记为已核对。
+公开仓库扫描通过，新增提交文本的凭据模式检查无发现。2026-10-15 23:52（Asia/Shanghai）回读 GitHub Release ID 413317807：非草稿、非预发布、Latest，两个附件 digest／bytes 与上表一致；未带认证和缓存绕过参数的公开下载均通过。主线以普通快进推送，同版本标签使用针对原标签对象的 force-with-lease；没有改写 main。最终主线／标签 SHA、发布元数据、匿名下载与凭据检查回执统一保存在本地 `output/validation/0.4.7-final-20261015/`。
