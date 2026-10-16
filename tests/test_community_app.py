@@ -12,6 +12,7 @@ from mapassist.community.store import (  # noqa: E402
     AUTHOR_MAX,
     BODY_MAX,
     SECTION_LABELS,
+    SECTIONS,
     TITLE_MAX,
 )
 
@@ -99,16 +100,29 @@ def test_unknown_section_on_get_is_422(client):
     assert client.get("/posts?section=nope").status_code == 422
 
 
-def test_root_page_lists_endpoints_and_every_section(client):
+def test_root_page_is_a_usable_ui_not_just_a_pointer(client):
     # 根路径以前没有路由，打开域名只看到 404，会被当成服务挂了。
     response = client.get("/")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     body = response.text
-    for path in ("/docs", "/posts", "/health"):
+    # 能看：板块筛选与帖子列表；能发：标题/正文/署名三个输入项与提交按钮。
+    for marker in ("按板块筛选", "发一条", "f-section", "f-title", "f-body", "f-author", "send"):
+        assert marker in body, marker
+    # 无障碍与「不替用户做决定」：错误就地说明，且明确不清空已写内容。
+    for marker in ("aria-invalid", "role=\"alert\"", "写好的内容都还在", "aria-label"):
+        assert marker in body, marker
+    for path in ("/posts", "/sections", "/health", "/docs"):
         assert path in body
-    for label in SECTION_LABELS:
-        assert label in body
+
+
+def test_sections_endpoint_lists_all_seven_in_order(client):
+    response = client.get("/sections")
+    assert response.status_code == 200
+    listed = response.json()
+    assert [item["key"] for item in listed] == list(SECTIONS)
+    assert [item["label"] for item in listed] == list(SECTION_LABELS)
+    assert len(listed) == 7
 
 
 def test_health_reports_ok(client):
