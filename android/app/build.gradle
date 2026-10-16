@@ -77,8 +77,8 @@ android {
         applicationId speechFixture ? 'com.openkhub.sensefield.speechfixture' : 'com.openkhub.sensefield'
         minSdk 29
         targetSdk 35
-        versionCode 25
-        versionName '0.4.8'
+        versionCode 26
+        versionName '0.4.9'
         buildConfigField 'boolean', 'SPEECH_TEST_FIXTURE', speechFixture.toString()
         buildConfigField 'String', 'APP_UPDATE_METADATA_URL', groovy.json.JsonOutput.toJson(updateMetadataUrl)
         buildConfigField 'String', 'ASSISTANT_DEFAULT_ENDPOINT', groovy.json.JsonOutput.toJson(assistantDefaultEndpoint)
