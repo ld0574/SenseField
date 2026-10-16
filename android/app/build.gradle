@@ -293,3 +293,53 @@ tasks.register('verifyBundledSpeechAssets', Exec) {
 tasks.matching { it.name == 'preReleaseBuild' }.configureEach {
     dependsOn tasks.named('verifyBundledSpeechAssets')
 }
+
+// 版本号必须严格高于线上清单，否则客户端的「同版本修订」判定（按 SHA-256 区分）
+// 会把新构建当成旧包的修订，持续提示更新。历史上 v0.4.30(code27) 与
+// v0.4.33/34(code20) 交叉，正是这个坑的实例。
+tasks.register('verifyUpdateVersion') {
+    def manifestUrl = updateMetadataUrl
+    def localVersionCode = android.defaultConfig.versionCode
+    def localVersionName = android.defaultConfig.versionName
+    // 只在联网且配置了清单地址时校验；离线或留空一律放行，不阻断本地开发构建。
+    if (!manifestUrl.isEmpty()) {
+        inputs.property('updateManifestUrl', manifestUrl)
+        inputs.property('localVersionCode', localVersionCode)
+    }
+    doLast {
+        if (manifestUrl.isEmpty()) {
+            logger.lifecycle('Update manifest URL is empty; skipping version guard.')
+            return
+        }
+        def remote
+        try {
+            def connection = new URI(manifestUrl).toURL().openConnection()
+            connection.connectTimeout = 8000
+            connection.readTimeout = 8000
+            connection.inputStream.withCloseable { stream ->
+                remote = new JsonSlurper().parse(stream, 'UTF-8')
+            }
+        } catch (Exception unreachable) {
+            // 拿不到线上清单时不能证明冲突，放行并说明；发布前仍需人工核对。
+            logger.lifecycle("Could not read ${manifestUrl} (${unreachable.getClass().getSimpleName()}); "
+                    + 'skipping version guard. Verify manually before publishing.')
+            return
+        }
+        def remoteCode = remote?.version_code
+        if (!(remoteCode instanceof Number)) {
+            logger.lifecycle('Update manifest has no usable version_code; skipping version guard.')
+            return
+        }
+        if (localVersionCode <= remoteCode.intValue()) {
+            throw new GradleException(
+                    "versionCode ${localVersionCode} (${localVersionName}) must be greater than the "
+                    + "published version_code ${remoteCode} (${remote.version_name}) at ${manifestUrl}. "
+                    + 'Bump versionCode in android/app/build.gradle before building a new package.')
+        }
+        logger.lifecycle("Update version guard passed: ${localVersionCode} > published ${remoteCode}.")
+    }
+}
+
+tasks.matching { it.name == 'preReleaseBuild' }.configureEach {
+    dependsOn tasks.named('verifyUpdateVersion')
+}
