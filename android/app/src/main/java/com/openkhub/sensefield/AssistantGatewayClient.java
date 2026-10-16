@@ -127,6 +127,11 @@ final class AssistantGatewayClient implements AutoCloseable {
 
     void visual(long requestId, AssistantSession session, String turn, FrameSnapshot frame,
                 byte[] jpeg, List<ContextImage> contextFrames, String question, boolean proactive, long now) {
+        question = AssistantInputText.normalize(question);
+        if (question.isEmpty()) {
+            listener.visualFailure(requestId, "invalid_request");
+            return;
+        }
         String primaryBase64 = Base64.encodeToString(jpeg, Base64.NO_WRAP);
         Set<String> includedIds = new HashSet<>();
         ArrayList<ContextImage> orderedContext = new ArrayList<>();

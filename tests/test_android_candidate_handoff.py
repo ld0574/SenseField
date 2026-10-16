@@ -69,6 +69,14 @@ def test_publishable_notes_keep_links_usable_outside_the_source_checkout(handoff
     assert "https://github.com/ld0574/SenseField/blob/main/validation/STATUS.md" in body
 
 
+def test_handoff_works_without_optional_retest_notes(handoff):
+    (handoff[1] / "复测说明.md").unlink()
+    prepare(handoff)
+    assert (handoff[2] / "publishing/RELEASE_NOTES.md").is_file()
+    assert not (handoff[2] / "publishing/复测说明.md").exists()
+    assert (handoff[2] / "SHA256SUMS.txt").is_file()
+
+
 def test_failed_validation_cannot_leave_a_ready_apk_or_manifest(handoff, monkeypatch):
     def rejection(*_args):
         raise ValueError("signature mismatch")

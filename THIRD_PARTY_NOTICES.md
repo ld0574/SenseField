@@ -123,3 +123,20 @@ license), and the Manrope and Instrument Serif fonts (SIL Open Font License
 1.1). Its editorial photograph is used under the Unsplash License. Website
 asset provenance and upstream license links are listed in
 [website/ASSETS.md](website/ASSETS.md).
+
+## Local demo recording tools
+
+The optional desktop recording script invokes separately installed tools and
+keeps their binaries and audio models in ignored local directories. These
+dependencies are not packaged in the Android APK or redistributed in this
+repository:
+
+- [scrcpy](https://github.com/Genymobile/scrcpy), pinned to 3.3.4, uses the
+  Apache License 2.0.
+- [FFmpeg](https://ffmpeg.org/legal.html) uses LGPL or GPL terms depending on
+  the installed build and its enabled components.
+- The RNNoise-compatible `bd.rnnn` model is obtained separately from
+  [richardpl/arnndn-models](https://github.com/richardpl/arnndn-models). Its
+  upstream origin and checksum are recorded in the
+  [recording guide](docs/demo/录制说明.md); model licensing is governed by
+  its upstream distribution rather than this repository's license.

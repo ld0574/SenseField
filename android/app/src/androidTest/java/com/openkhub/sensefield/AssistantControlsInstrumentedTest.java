@@ -896,6 +896,120 @@ public class AssistantControlsInstrumentedTest {
         } finally { controller.close(); preferences.edit().clear().commit(); }
     }
 
+    @Test public void nonSpeechFinalKeepsTheRealQuestionWithoutSpeakingOrCancellingIt() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "non-speech-final-test",
+                new AssistantSettings(preferences), host);
+        try {
+            controller.question("分析一下局势", false);
+            AssistantSession session = session(controller);
+            long generation = session.generation();
+            int cancelled = host.cancelled;
+            Field pending = AssistantController.class.getDeclaredField("pendingQuestion");
+            pending.setAccessible(true);
+            for (String noise : new String[] { ".", "。", "，……", "\u3000\u200b", "🎮" }) {
+                String capture = session.newCaptureTurn(); markAwaitingAsrResult(controller);
+                controller.onLocalAsrResult(generation, capture, noise, 25);
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                assertEquals("分析一下局势", pending.get(controller));
+                assertEquals(generation, session.generation());
+                assertFalse(session.ownsCapture(generation, capture));
+                assertEquals(cancelled, host.cancelled);
+                assertEquals("正在等待当前画面", host.status);
+                assertEquals(0, host.spoken);
+            }
+            assertEquals(1, countAudit(host, "AssistantInteraction event=QUESTION "));
+            assertEquals(5, countAudit(host, "reason=no_speech_content"));
+            assertEquals(0, countAudit(host, "AssistantVisual event=REQUEST"));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void punctuationFinalReleasesTheOriginalDeferredAnswer() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "punctuation-deferred-test",
+                new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller); String turn = session.newTurn();
+            long generation = session.generation(), capturedAt = SystemClock.elapsedRealtime();
+            installVisualTask(controller, 309, turn, staleHudFrame(309, capturedAt, generation), false);
+            String capture = session.newCaptureTurn(); markAwaitingAsrResult(controller);
+            controller.visualResult(309, visualResult(session, generation, turn, 309, "先看队友位置。"));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(0, host.spoken);
+            controller.onLocalAsrResult(generation, capture, "。", 25);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals(1, host.spoken);
+            assertEquals(turn, host.last.turnId);
+            assertEquals("先看队友位置。", host.last.answer);
+            assertEquals(capturedAt, host.last.capturedAtMs);
+            assertTrue(session.owns(generation, turn));
+            assertEquals(0, countAudit(host, "AssistantInteraction event=QUESTION "));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void shortRealRepliesRemainUsableAfterNonSpeechFiltering() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "short-message-test",
+                new AssistantSettings(preferences), host);
+        try {
+            AssistantSession session = session(controller);
+            Field pending = AssistantController.class.getDeclaredField("pendingQuestion");
+            pending.setAccessible(true);
+            for (String message : new String[] { "好", "2", "A", "继续？", "劳驾捋一捋这个局面" }) {
+                String capture = session.newCaptureTurn(); markAwaitingAsrResult(controller);
+                controller.onLocalAsrResult(session.generation(), capture, message, 25);
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                assertEquals(message, pending.get(controller));
+            }
+            assertEquals(5, countAudit(host, "AssistantInteraction event=QUESTION "));
+            assertEquals(0, countAudit(host, "AssistantVoice event=RESULT_UNKNOWN"));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void directPunctuationQuestionsCannotReplaceAnExistingQuestion() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context); Host host = new Host();
+        AssistantController controller = new AssistantController(context, "punctuation-question-test",
+                new AssistantSettings(preferences), host);
+        try {
+            controller.question("看一下局势", false);
+            AssistantSession session = session(controller);
+            long generation = session.generation(); int cancelled = host.cancelled;
+            for (String noise : new String[] { ".", "。", "\u200b\u00a0", "？！" }) {
+                controller.question(noise, false);
+                assertEquals(generation, session.generation());
+                assertEquals(cancelled, host.cancelled);
+            }
+            Field pending = AssistantController.class.getDeclaredField("pendingQuestion");
+            pending.setAccessible(true); assertEquals("看一下局势", pending.get(controller));
+            assertEquals(0, host.spoken);
+            assertEquals(4, countAudit(host, "QUESTION_IGNORED reason=no_speech_content"));
+        } finally { controller.close(); preferences.edit().clear().commit(); }
+    }
+
+    @Test public void transportRejectsNonSpeechBeforeEncodingAnImageOrCreatingANetworkCall() {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences preferences = preferences(context);
+        List<String> failures = new ArrayList<>();
+        AssistantGatewayClient client = new AssistantGatewayClient(new AssistantSettings(preferences),
+                new AssistantGatewayClient.Listener() {
+                    public void audioMessage(JSONObject message) { fail("unexpected audio message"); }
+                    public void audioUnavailable(String reason) { fail("unexpected audio connection"); }
+                    public void visualResult(long id, JSONObject result) { fail("unexpected visual result"); }
+                    public void visualFailure(long id, String code) { failures.add(id + ":" + code); }
+                });
+        try {
+            // Null image/session arguments are deliberate: no encoding or ownership
+            // work is permitted when the request contains only non-speech text.
+            client.visual(901, null, "turn", null, null, "。", false, 0);
+            client.visual(902, null, "turn", null, null, "...", false, 0);
+            assertEquals(java.util.Arrays.asList("901:invalid_request", "902:invalid_request"), failures);
+        } finally { client.close(); preferences.edit().clear().commit(); }
+    }
+
     @Test public void completeMessageReplacesADeferredAnswerEvenWithoutQuestionWords() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         SharedPreferences preferences = preferences(context); Host host = new Host();

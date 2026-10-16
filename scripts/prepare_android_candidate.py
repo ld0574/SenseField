@@ -97,7 +97,10 @@ def prepare(apk: Path, output: Path, apk_url: str, docs: Path) -> dict:
         (staged / "installation-guide.txt").write_text(guide, encoding="utf-8")
         publishing = staged / "publishing"
         publishing.mkdir()
-        for name in ["RELEASE_NOTES.md", "复测说明.md"]:
+        note_names = ["RELEASE_NOTES.md"]
+        if (docs / "复测说明.md").is_file():
+            note_names.append("复测说明.md")
+        for name in note_names:
             base = f"https://github.com/ld0574/SenseField/blob/main/docs/releases/{VERSION_NAME}/{name}"
             body = (docs / name).read_text(encoding="utf-8")
             body = re.sub(r"\]\(([^\s()]+)\)", lambda m: "](" + urljoin(base, m[1]) + ")", body)

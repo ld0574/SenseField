@@ -105,7 +105,7 @@ output/releases/0.4.7/
 ├── installation-guide.txt
 ├── latest.json
 ├── SHA256SUMS.txt
-├── publishing/                 # 发布正文、上传与复测说明
+├── publishing/                 # 发布正文与上传说明
 └── validation/                 # 当前源码回执与历史验证记录
 ```
 

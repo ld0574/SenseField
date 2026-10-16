@@ -266,14 +266,20 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
                     + " inputMode=" + audioInputMode
                     + " monotonicMs=" + SystemClock.elapsedRealtime()
                     + " textChars=" + text.length());
-            if (text.isEmpty()) {
-                host.audit("AssistantVoice event=RESULT_UNKNOWN reason=empty_final generation="
+            String normalized = AssistantInputText.normalize(text);
+            if (normalized.isEmpty()) {
+                host.audit("AssistantVoice event=RESULT_UNKNOWN reason="
+                        + (text.isEmpty() ? "empty_final" : "no_speech_content") + " generation="
                         + generation + " monotonicMs=" + SystemClock.elapsedRealtime());
-                setStatus("没有听清，请重说"); releaseDeferredVisual(); return;
+                session.invalidateCapture();
+                // Background non-speech should stay silent and must not replace
+                // a real question or discard its waiting visual response.
+                if ("manual".equals(audioInputMode)) setStatus("没有听清，请重说");
+                releaseDeferredVisual(); return;
             }
-            // Every completed message enters the conversation. Local controls are handled
+            // Every completed linguistic message enters the conversation. Local controls are handled
             // by question(); the model interprets all other wording. PCM stays on device.
-            question(text, false);
+            question(normalized, false);
         } });
     }
     private void localAsrUnavailable(String reason) {
@@ -502,7 +508,11 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
                     + (closed ? "closed" : paused ? "paused" : "empty"));
             return;
         }
-        text = text.trim();
+        text = AssistantInputText.normalize(text);
+        if (text.isEmpty()) {
+            host.audit("AssistantInteraction event=QUESTION_IGNORED reason=no_speech_content");
+            return;
+        }
         cancelManualVoice("user_question");
         if (!proactive) proactiveQuietUntilMs = Math.max(proactiveQuietUntilMs,
                 SystemClock.elapsedRealtime() + MANUAL_QUIET_MS);
