@@ -28,6 +28,20 @@ SECTIONS: tuple[str, ...] = (
     "partners",
 )
 
+# 中文标签，位置与 SECTIONS 一一对应；与 CommunitySection 的 label 保持一致。
+SECTION_LABELS: tuple[str, ...] = (
+    "活动",
+    "优质影响力公众号推荐",
+    "最热度",
+    "探索发现",
+    "问题求助",
+    "分享交流",
+    "合作伙伴",
+)
+
+if len(SECTION_LABELS) != len(SECTIONS):  # pragma: no cover - 常量错位时的自检
+    raise AssertionError("SECTION_LABELS 与 SECTIONS 长度不一致，板块定义已经跑偏")
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS posts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

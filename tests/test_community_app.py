@@ -11,6 +11,7 @@ from mapassist.community import CommunityStore, create_app  # noqa: E402
 from mapassist.community.store import (  # noqa: E402
     AUTHOR_MAX,
     BODY_MAX,
+    SECTION_LABELS,
     TITLE_MAX,
 )
 
@@ -96,3 +97,21 @@ def test_get_limit_is_clamped_to_1_100(client):
 
 def test_unknown_section_on_get_is_422(client):
     assert client.get("/posts?section=nope").status_code == 422
+
+
+def test_root_page_lists_endpoints_and_every_section(client):
+    # 根路径以前没有路由，打开域名只看到 404，会被当成服务挂了。
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    for path in ("/docs", "/posts", "/health"):
+        assert path in body
+    for label in SECTION_LABELS:
+        assert label in body
+
+
+def test_health_reports_ok(client):
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}

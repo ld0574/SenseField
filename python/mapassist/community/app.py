@@ -10,11 +10,13 @@ import time
 from typing import Any, Callable, Literal, get_args
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from .store import (
     AUTHOR_MAX,
     BODY_MAX,
+    SECTION_LABELS,
     SECTIONS,
     TITLE_MAX,
     CommunityStore,
@@ -73,5 +75,32 @@ def create_app(
         limit: int = Query(default=50, ge=1, le=100),
     ) -> list[dict[str, Any]]:
         return store.list_posts(section=section, limit=limit)
+
+    @app.get("/health")
+    def health() -> dict[str, str]:
+        """存活探针：发布平台与手机端都可以先打这个确认服务活着。"""
+        return {"status": "ok"}
+
+    @app.get("/", include_in_schema=False)
+    def root() -> HTMLResponse:
+        # 根路径必须自己有内容：只给 /docs 的话，别人打开域名看到的是 404，
+        # 会以为服务挂了。这里直接列出能点的地方。
+        rows = "".join(
+            f"<li><code>{section}</code> — {label}</li>"
+            for section, label in zip(SECTIONS, SECTION_LABELS)
+        )
+        return HTMLResponse(
+            "<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\">"
+            "<title>听野社区服务</title>"
+            "<style>body{font-family:system-ui,sans-serif;max-width:640px;margin:40px auto;"
+            "line-height:1.7;padding:0 16px}a{color:#236874}code{background:#e7f2f2;"
+            "padding:2px 6px;border-radius:4px}</style>"
+            "<h1>听野社区服务</h1>"
+            "<p>接口可用：</p><ul>"
+            "<li><a href=\"/docs\">/docs</a> — 接口文档，可直接发请求</li>"
+            "<li><a href=\"/posts\">/posts</a> — 帖子列表（JSON）</li>"
+            "<li><a href=\"/health\">/health</a> — 存活探针</li>"
+            "</ul><p>七个板块：</p><ul>" + rows + "</ul></html>"
+        )
 
     return app
