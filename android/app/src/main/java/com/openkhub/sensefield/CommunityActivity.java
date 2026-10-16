@@ -3,6 +3,7 @@ package com.openkhub.sensefield;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Typeface;
+import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.View;
@@ -36,7 +37,11 @@ public final class CommunityActivity extends UiActivity {
     public static final String EXTRA_SECTION = "community_section";
 
     private static final String PREF_ENDPOINT = "community_endpoint";
-    private static final String DEFAULT_ENDPOINT = "http://127.0.0.1:8765";
+    /**
+     * 缺省指向已部署的社区测试服务，装上即可用，不必先在本机跑一份。
+     * 换成本机调试时在页面里改地址即可，这里只管缺省值。
+     */
+    private static final String DEFAULT_ENDPOINT = "https://sensefield-community.app.workbuddy.host";
     private static final int LIST_LIMIT = 20;
     private static final int THUMB_PX = 640;
     private static final int CONNECT_TIMEOUT_MS = 8000;
@@ -70,8 +75,14 @@ public final class CommunityActivity extends UiActivity {
             intent.putExtra(EXTRA_SECTION, activeSection);
             startActivity(intent);
         });
-        ((LinearLayout.LayoutParams) newPost.getLayoutParams()).bottomMargin = 0;
-        UiKit.add(compose, newPost, 0);
+        UiKit.add(compose, newPost, UiKit.GAP_CONTROL);
+
+        // 想在浏览器里看同一个社区时用这个；打不开也不影响上面的发帖。
+        Button openWeb = UiKit.button(this, "在浏览器中打开社区测试页", UiKit.ButtonStyle.OUTLINED);
+        openWeb.setContentDescription("用浏览器打开社区测试页");
+        openWeb.setOnClickListener(view -> openCommunityInBrowser());
+        ((LinearLayout.LayoutParams) openWeb.getLayoutParams()).bottomMargin = 0;
+        UiKit.add(compose, openWeb, 0);
         UiKit.add(page, compose, UiKit.GAP_SECTION);
 
         LinearLayout browse = UiKit.card(this);
@@ -108,7 +119,7 @@ public final class CommunityActivity extends UiActivity {
         endpointInput.setText(GameProfile.settings(this).getString(PREF_ENDPOINT, ""));
         UiKit.add(service, UiKit.field(this, "服务地址", endpointInput), UiKit.GAP_CONTROL);
         UiKit.add(service, UiKit.hint(this,
-                "留空则发往手机本机 " + DEFAULT_ENDPOINT + "；填电脑地址时手机要和电脑在同一网络。"),
+                "留空则使用默认社区服务；填本机地址（如 http://127.0.0.1:8765）时手机要和那台设备在同一网络。"),
                 UiKit.GAP_CONTROL);
 
         endpointStatus = UiKit.body(this, "");
@@ -278,6 +289,23 @@ public final class CommunityActivity extends UiActivity {
     }
 
     // ---------- 服务地址 ----------
+
+    /**
+     * 用系统浏览器打开当前配置的社区地址。
+     *
+     * <p>打不开就地说明，不弹 Toast 也不静默失败——用户按了按钮就该得到回应。
+     */
+    private void openCommunityInBrowser() {
+        String target = endpoint() + "/";
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(target)));
+            endpointStatus.setTextColor(UiKit.MUTED);
+            endpointStatus.setText("已在浏览器中打开 " + target);
+        } catch (android.content.ActivityNotFoundException noBrowser) {
+            endpointStatus.setTextColor(UiKit.DANGER);
+            endpointStatus.setText("这台手机上没有可用的浏览器。可手动打开：" + target);
+        }
+    }
 
     private String endpoint() {
         SharedPreferences preferences = GameProfile.settings(this);

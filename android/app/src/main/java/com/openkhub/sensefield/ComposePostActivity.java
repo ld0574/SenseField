@@ -42,7 +42,8 @@ import java.util.List;
  */
 public final class ComposePostActivity extends UiActivity {
     private static final String PREF_ENDPOINT = "community_endpoint";
-    private static final String DEFAULT_ENDPOINT = "http://127.0.0.1:8765";
+    // 与 CommunityActivity 的缺省值必须一致；用户改过的以 SharedPreferences 为准。
+    private static final String DEFAULT_ENDPOINT = "https://sensefield-community.app.workbuddy.host";
     private static final int TITLE_MAX = 80;
     private static final int BODY_MAX = 2000;
     private static final int AUTHOR_MAX = 40;
