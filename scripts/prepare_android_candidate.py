@@ -35,17 +35,25 @@ def write_json(path: Path, data: dict) -> None:
 
 
 def validate_urls(index_url: str, apk_url: str) -> None:
+    """清单与 APK 必须严格同源——与客户端 AppUpdateClient 的规则保持一致。
+
+    历史上这里对 ``888413.xyz`` → ``gitee.com/leda/SenseField`` 开过例外，
+    但客户端 AppUpdateClient.validateSameOriginApkUrl 没有这个例外，会以
+    「更新 APK 下载地址无效。」拒绝该清单；而且 Gitee 附件下载会 302 到
+    ``foruda.gitee.com``，重定向之后仍然跨源。例外因此只会产出必然失败的清单，
+    已删除。工具放行的每一种组合，客户端都必须能接受。
+    """
     validate_apk_url(index_url)
     validate_apk_url(apk_url)
     index, apk = urlsplit(index_url), urlsplit(apk_url)
     if index.query or index.fragment or apk.query or apk.fragment:
         raise ValueError("更新地址不能带查询参数或片段。")
     origin = lambda url: (url.scheme, url.hostname, url.port or 443)
-    project_release = (apk.hostname == "gitee.com" and apk.port in (None, 443)
-        and re.fullmatch(r"/leda/SenseField/releases/download/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*\.apk", apk.path))
-    owned_index = index_url == "https://888413.xyz/apk/latest.json"
-    if origin(index) != origin(apk) and not (owned_index and project_release):
-        raise ValueError("APK 必须同源，或由固定版本清单指向听野 Gitee Release。")
+    if origin(index) != origin(apk):
+        raise ValueError(
+            "APK 必须与版本清单严格同源，客户端不接受跨源下载地址"
+            f"（清单 {origin(index)}，APK {origin(apk)}）。"
+        )
 
 
 def begin(output: Path) -> None:
