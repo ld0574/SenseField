@@ -5,9 +5,11 @@ import pytest
 from mapassist.community.store import (
     AUTHOR_MAX,
     BODY_MAX,
+    IMAGE_MAX_BYTES,
     SECTIONS,
     TITLE_MAX,
     CommunityStore,
+    sniff_image,
 )
 
 
@@ -109,3 +111,86 @@ def test_created_ms_must_be_an_integer(store):
     for bad in ["1700000000000", 1.0, None, True]:
         with pytest.raises(ValueError):
             store.create_post("help", "标题", "正文", "小明", bad)
+
+
+# ---------- 图片 ----------
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 32
+WEBP = b"RIFF" + b"\x00\x00\x00\x00" + b"WEBP" + b"\x00" * 24
+
+
+def test_saves_png_jpeg_and_webp(store):
+    assert sniff_image(PNG) == (".png", "image/png")
+    assert sniff_image(JPEG) == (".jpg", "image/jpeg")
+    assert sniff_image(WEBP) == (".webp", "image/webp")
+    for payload in (PNG, JPEG, WEBP):
+        record = store.save_image(payload, 1700000000000)
+        assert record["byte_size"] == len(payload)
+        assert len(record["id"]) == 16
+
+
+def test_rejects_anything_that_is_not_an_image(store):
+    with pytest.raises(ValueError):
+        store.save_image(b"this is plain text, not an image", 1)
+    with pytest.raises(ValueError):
+        store.save_image(PNG[:4], 1)  # 只有文件头，截断的
+    with pytest.raises(ValueError):
+        store.save_image(PNG[:4] + b"\x00" * (IMAGE_MAX_BYTES + 1), 1)
+
+
+def test_image_bytes_round_trip_and_unknown_is_none(store):
+    record = store.save_image(PNG, 1)
+    payload, content_type = store.image_bytes(record["id"])
+    assert payload == PNG
+    assert content_type == "image/png"
+    assert store.image_bytes("0" * 16) is None
+    assert store.image_bytes("../../../etc/passwd") is None
+
+
+def test_post_carries_its_images_and_dedupes(store):
+    first = store.save_image(PNG, 1)["id"]
+    second = store.save_image(JPEG, 2)["id"]
+    created = store.create_post("help", "带图", "正文", "我", 3, image_ids=[first, second, first])
+    assert created["image_ids"] == [first, second]
+    assert store.list_posts()[0]["image_ids"] == [first, second]
+
+
+def test_post_refuses_unknown_or_too_many_images(store):
+    record = store.save_image(PNG, 1)["id"]
+    for bad in (["nope"], ["../etc/passwd"], [123], "notalist"):
+        with pytest.raises(ValueError):
+            store.create_post("help", "标题", "正文", "我", 2, image_ids=bad)
+    with pytest.raises(ValueError):
+        store.create_post("help", "标题", "正文", "我", 2, image_ids=[record] * 7)
+
+
+def test_old_database_gains_the_image_column_without_losing_posts(tmp_path):
+    # 上一轮的库没有 image_ids 列，升级时必须补上且老帖子照常读得出来。
+    import sqlite3
+
+    legacy = tmp_path / "legacy.db"
+    connection = sqlite3.connect(legacy)
+    connection.execute(
+        "CREATE TABLE posts (id INTEGER PRIMARY KEY AUTOINCREMENT, section TEXT NOT NULL,"
+        " title TEXT NOT NULL, body TEXT NOT NULL, author TEXT NOT NULL,"
+        " created_ms INTEGER NOT NULL)"
+    )
+    connection.execute(
+        "INSERT INTO posts (section, title, body, author, created_ms)"
+        " VALUES ('help', '老帖子', '正文', '老用户', 5)"
+    )
+    connection.commit()
+    connection.close()
+
+    opened = CommunityStore(str(legacy))
+    try:
+        posts = opened.list_posts()
+        assert len(posts) == 1
+        assert posts[0]["title"] == "老帖子"
+        assert posts[0]["image_ids"] == []
+        created = opened.create_post("help", "新帖子", "正文", "我", 6,
+                                     image_ids=[opened.save_image(PNG, 6)["id"]])
+        assert len(created["image_ids"]) == 1
+    finally:
+        opened.close()

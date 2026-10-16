@@ -110,7 +110,8 @@ def test_root_page_is_a_usable_ui_not_just_a_pointer(client):
     for marker in ("按板块筛选", "发一条", "f-section", "f-title", "f-body", "f-author", "send"):
         assert marker in body, marker
     # 无障碍与「不替用户做决定」：错误就地说明，且明确不清空已写内容。
-    for marker in ("aria-invalid", "role=\"alert\"", "写好的内容都还在", "aria-label"):
+    # 文案后来补上了「选好的图」，所以这里只断言共同的那部分。
+    for marker in ("aria-invalid", "role=\"alert\"", "都还在", "aria-label"):
         assert marker in body, marker
     for path in ("/posts", "/sections", "/health", "/docs"):
         assert path in body
@@ -129,3 +130,56 @@ def test_health_reports_ok(client):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+# ---------- 图片 ----------
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+
+
+def test_upload_image_then_attach_it_to_a_post(client):
+    uploaded = client.post("/images", content=PNG, headers={"Content-Type": "image/png"})
+    assert uploaded.status_code == 201
+    record = uploaded.json()
+    assert record["content_type"] == "image/png"
+    assert record["url"] == "/images/" + record["id"]
+
+    created = client.post("/posts", json={
+        "section": "discovery", "title": "带图帖", "body": "看图", "author": "我",
+        "image_ids": [record["id"]],
+    })
+    assert created.status_code == 201
+    assert created.json()["images"] == [{"id": record["id"], "url": record["url"]}]
+    assert client.get("/posts").json()[0]["images"][0]["url"] == record["url"]
+
+
+def test_uploaded_image_is_served_back_verbatim(client):
+    record = client.post("/images", content=PNG, headers={"Content-Type": "image/png"}).json()
+    served = client.get("/images/" + record["id"])
+    assert served.status_code == 200
+    assert served.headers["content-type"] == "image/png"
+    assert served.content == PNG
+
+
+def test_upload_refuses_non_images_empty_and_oversized(client):
+    assert client.post("/images", content=b"just text").status_code == 422
+    assert client.post("/images", content=PNG[:4]).status_code == 422
+    oversized = PNG[:8] + b"\x00" * (5 * 1024 * 1024)
+    assert client.post("/images", content=oversized).status_code == 422
+
+
+def test_unknown_or_hostile_image_ids_are_refused(client):
+    assert client.get("/images/deadbeefdeadbeef").status_code == 404
+    assert client.get("/images/..%2F..%2FWindows%2Fwin.ini").status_code == 404
+    response = client.post("/posts", json={
+        "section": "help", "title": "标题", "body": "正文", "author": "我",
+        "image_ids": ["deadbeefdeadbeef"],
+    })
+    assert response.status_code == 422
+
+
+def test_page_offers_paste_and_file_picker_for_images(client):
+    body = client.get("/").text
+    for marker in ("paste", "f-file", 'type="file"', "URL.createObjectURL",
+                   "选好的图都还在", 'accept="image/png,image/jpeg,image/webp"'):
+        assert marker in body, marker

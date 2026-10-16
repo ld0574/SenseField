@@ -2,7 +2,7 @@
 
 单文件、无框架、无构建步骤：发布时整份源码直接上传即可。
 设计取向沿用端侧：字大、对比强、每个输入项都有可见标签、错误就地说明而不是弹窗，
-**任何失败都不清空用户已经写下的内容**。
+**任何失败都不清空用户已经写下的内容**（包括已经选好的图片）。
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ PAGE = """<!doctype html>
   input, select, textarea { font: inherit; width: 100%; color: #193139; background: #fff;
     border: 2px solid #dae5e4; border-radius: 10px; padding: 12px 14px; min-height: 52px; }
   textarea { min-height: 140px; resize: vertical; }
+  input[type="file"] { padding: 10px; }
   input[aria-invalid="true"], textarea[aria-invalid="true"], select[aria-invalid="true"] { border-color: #aa2d23; }
   .field { margin: 0 0 18px; }
   label { display: block; font-weight: 700; margin-bottom: 6px; }
@@ -42,6 +43,14 @@ PAGE = """<!doctype html>
   ol.posts .title { font-size: 20px; font-weight: 700; margin: 0 0 6px; }
   ol.posts .text { margin: 0; white-space: pre-wrap; }
   .badge { display: inline-block; background: #e7f2f2; color: #236874; border-radius: 999px; padding: 2px 10px; font-size: 14px; margin-right: 8px; }
+  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; }
+  .gallery img { width: 100%; height: 150px; object-fit: cover; border-radius: 10px; border: 1px solid #dae5e4; background: #f0f4f3; }
+  .drop { border: 2px dashed #9ab4b7; border-radius: 12px; padding: 14px; background: #fff; }
+  .drop.paste-armed { border-color: #236874; background: #e7f2f2; }
+  .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-top: 12px; }
+  .thumb { border: 1px solid #dae5e4; border-radius: 10px; padding: 8px; background: #fff; }
+  .thumb img { width: 100%; height: 110px; object-fit: cover; border-radius: 8px; }
+  .thumb button { width: 100%; margin-top: 6px; min-height: 44px; padding: 6px 10px; font-size: 16px; }
   footer { margin-top: 40px; color: #546b72; font-size: 16px; border-top: 1px solid #dae5e4; padding-top: 16px; }
   a { color: #236874; }
 </style>
@@ -79,25 +88,43 @@ PAGE = """<!doctype html>
       <input id="f-author" type="text" autocomplete="off" aria-describedby="f-author-error">
       <span class="err" id="f-author-error" role="alert"></span>
     </p>
+
+    <div class="field">
+      <span class="label-like" id="images-label">配图（可不填）</span>
+      <div class="drop" id="drop" tabindex="0" role="group" aria-labelledby="images-label"
+           aria-describedby="images-hint">
+        <p id="images-hint" class="lead">点一下这块再按 Ctrl+V 粘贴图片；也可以用下面的按钮从文件里选。
+          一条帖子最多 6 张，每张不超过 5 MB，只认 PNG、JPEG、WebP。</p>
+        <label for="f-file" class="sr-only" hidden>选择图片文件</label>
+        <input id="f-file" type="file" accept="image/png,image/jpeg,image/webp" multiple
+               aria-label="选择图片文件">
+      </div>
+      <div class="thumbs" id="thumbs" aria-live="polite"></div>
+      <span class="err" id="f-images-error" role="alert"></span>
+    </div>
+
     <button type="submit" class="primary" id="send">发布</button>
     <p class="status" id="form-status" role="status"></p>
   </form>
 
   <footer>
-    <p>接口：<a href="/posts">/posts</a>（帖子列表）、<a href="/sections">/sections</a>（板块）、
-      <a href="/health">/health</a>（存活）、<a href="/docs">/docs</a>（接口文档）。</p>
+    <p>接口：<a href="/posts">/posts</a>（帖子列表）、<a href="/images">/images</a>（上传图片）、
+      <a href="/sections">/sections</a>（板块）、<a href="/health">/health</a>（存活）、
+      <a href="/docs">/docs</a>（接口文档）。</p>
     <p>这个页面与听野 App 共用同一套服务端校验：字数越界会明确告诉你哪一项不合规，不会替你截断。</p>
   </footer>
 </div>
 <script>
 const LIMITS = { title: 80, body: 2000, author: 40 };
+const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const IMAGES_MAX = 6;
 const state = { sections: [], filter: "" };
+// 已选但还没上传的图片。发布失败时它们原样留着，不清空。
+const pending = [];
 
 function $(id) { return document.getElementById(id); }
-
 function trimmed(value) { return (value || "").trim(); }
 
-// 与服务端 store.py 同款的字数边界：越界只说明，不截断。
 function problem(field, value, max) {
   const text = trimmed(value);
   if (!text) return field + "不能为空";
@@ -151,6 +178,82 @@ function buildTabs() {
   }
 }
 
+function renderThumbs() {
+  const box = $("thumbs");
+  box.textContent = "";
+  pending.forEach((entry, index) => {
+    const card = document.createElement("div");
+    card.className = "thumb";
+    const img = document.createElement("img");
+    img.src = entry.preview;
+    img.alt = "待发布配图第 " + (index + 1) + " 张";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "移除第 " + (index + 1) + " 张";
+    remove.addEventListener("click", () => {
+      URL.revokeObjectURL(entry.preview);
+      pending.splice(index, 1);
+      renderThumbs();
+    });
+    card.appendChild(img);
+    card.appendChild(remove);
+    box.appendChild(card);
+  });
+}
+
+function addImages(files) {
+  const problems = [];
+  let room = IMAGES_MAX - pending.length;
+  Array.from(files).forEach((file) => {
+    if (room <= 0) { problems.push("一条帖子最多 " + IMAGES_MAX + " 张，多出来的没有加入"); return; }
+    if (file.size > IMAGE_MAX_BYTES) {
+      problems.push(file.name + " 超过 5 MB，没有加入");
+      return;
+    }
+    pending.push({ file: file, preview: URL.createObjectURL(file) });
+    room -= 1;
+  });
+  renderThumbs();
+  setError("f-file", "f-images-error", problems.join("；"));
+  return problems.length === 0;
+}
+
+async function uploadImages() {
+  const ids = [];
+  for (const entry of pending) {
+    const response = await fetch("/images", {
+      method: "POST",
+      headers: { "Content-Type": entry.file.type || "application/octet-stream" },
+      body: entry.file
+    });
+    if (response.status !== 201) {
+      let detail = "服务端没接受（" + response.status + "）";
+      try {
+        const payload = await response.json();
+        if (payload && payload.detail) detail = String(payload.detail);
+      } catch (ignored) { /* 错误正文不是 JSON，就用状态码说明 */ }
+      throw new Error(detail);
+    }
+    const record = await response.json();
+    ids.push(record.id);
+  }
+  return ids;
+}
+
+function gallery(post) {
+  if (!post.images || !post.images.length) return null;
+  const box = document.createElement("div");
+  box.className = "gallery";
+  post.images.forEach((image, index) => {
+    const img = document.createElement("img");
+    img.src = image.url;
+    img.alt = post.title + " 的配图 " + (index + 1);
+    img.loading = "lazy";
+    box.appendChild(img);
+  });
+  return box;
+}
+
 async function loadPosts() {
   say("list-status", "正在读取帖子…");
   const query = state.filter ? "?section=" + encodeURIComponent(state.filter) : "";
@@ -183,6 +286,8 @@ async function loadPosts() {
       item.appendChild(meta);
       item.appendChild(title);
       item.appendChild(text);
+      const shots = gallery(post);
+      if (shots) item.appendChild(shots);
       list.appendChild(item);
     });
   } catch (error) {
@@ -203,14 +308,15 @@ async function submit(event) {
   setError("f-body", "f-body-error", bodyProblem);
   setError("f-author", "f-author-error", authorProblem);
   if (titleProblem || bodyProblem || authorProblem) {
-    // 只说明哪一项不合规。已经写的内容一个字都不动。
-    say("form-status", "还有没填好的地方，写好的内容都还在，改完可以接着发布。", true);
+    // 只说明哪一项不合规。已经写的内容与已选图片一个字都不动。
+    say("form-status", "还有没填好的地方，写好的内容和选好的图都还在，改完可以接着发布。", true);
     return;
   }
 
   $("send").disabled = true;
-  say("form-status", "正在发布…");
+  say("form-status", pending.length ? "正在上传配图…" : "正在发布…");
   try {
+    const imageIds = await uploadImages();
     const response = await fetch("/posts", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -218,12 +324,16 @@ async function submit(event) {
         section: $("f-section").value,
         title: trimmed(title),
         body: body,
-        author: trimmed(author)
+        author: trimmed(author),
+        image_ids: imageIds
       })
     });
     if (response.status === 201) {
       $("f-title").value = "";
       $("f-body").value = "";
+      pending.forEach((entry) => URL.revokeObjectURL(entry.preview));
+      pending.length = 0;
+      renderThumbs();
       say("form-status", "发布成功。");
       loadPosts();
       return;
@@ -233,12 +343,19 @@ async function submit(event) {
       const payload = await response.json();
       if (payload && payload.detail) detail = String(payload.detail);
     } catch (ignored) { /* 错误正文不是 JSON，就用状态码说明 */ }
-    say("form-status", "没能发出去：" + detail + "。写好的内容都还在。", true);
+    say("form-status", "没能发出去：" + detail + "。写好的内容和选好的图都还在。", true);
   } catch (error) {
-    say("form-status", "连不上社区服务：" + error.message + "。写好的内容都还在。", true);
+    say("form-status", "没能发出去：" + error.message + "。写好的内容和选好的图都还在。", true);
   } finally {
     $("send").disabled = false;
   }
+}
+
+function armPaste() {
+  $("drop").classList.add("paste-armed");
+}
+function disarmPaste() {
+  $("drop").classList.remove("paste-armed");
 }
 
 async function start() {
@@ -255,6 +372,26 @@ async function start() {
 
 $("refresh").addEventListener("click", loadPosts);
 $("compose").addEventListener("submit", submit);
+$("f-file").addEventListener("change", (event) => {
+  if (event.target.files && event.target.files.length) addImages(event.target.files);
+  event.target.value = "";
+});
+$("drop").addEventListener("paste", (event) => {
+  const items = event.clipboardData && event.clipboardData.items;
+  if (!items) return;
+  const files = [];
+  for (const item of items) {
+    if (item.kind === "file" && item.type && item.type.indexOf("image/") === 0) {
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+  }
+  if (files.length) { event.preventDefault(); addImages(files); }
+});
+$("drop").addEventListener("focus", armPaste);
+$("drop").addEventListener("blur", disarmPaste);
+$("drop").addEventListener("mouseenter", armPaste);
+$("drop").addEventListener("mouseleave", disarmPaste);
 start();
 </script>
 </body>
