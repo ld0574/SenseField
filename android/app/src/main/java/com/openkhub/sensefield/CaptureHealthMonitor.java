@@ -10,6 +10,7 @@ final class CaptureHealthMonitor {
     private static final long[] BACKOFF_MS = {500, 1000, 2000};
 
     private State state = State.HEALTHY;
+    private boolean lastExpectFrames = true;
     private long startedAtMs;
     private long lastFrameAtMs = -1;
     private long lastProcessedAtMs = -1;
@@ -44,13 +45,24 @@ final class CaptureHealthMonitor {
     /** Portrait setup screens may be static while the player opens the game. */
     State check(long nowMs, boolean expectFrames) {
         if (!expectFrames) {
-            // Give the next landscape reader a fresh startup window without
-            // spending recovery attempts on an inactive recognition screen.
-            // Waiting must never undo a real failure, revocation or user pause.
-            if (state != State.REVOKED && state != State.FAILED && state != State.PAUSED)
+            // Give the next reader a fresh startup window without spending
+            // recovery attempts on an inactive recognition screen. Waiting must
+            // never undo a real failure, revocation or user pause.
+            //
+            // Reset only on the edge into "not expecting frames". Resetting on
+            // every tick slid startedAtMs forward forever, so a session that lost
+            // its frame stream while idle could never reach STARVATION_MS and was
+            // never detected, recovered from, or reported.
+            if (lastExpectFrames
+                    && state != State.REVOKED && state != State.FAILED && state != State.PAUSED) {
                 start(nowMs);
+            }
+            lastExpectFrames = false;
             return state;
         }
+        // Resuming expectation keeps the window opened when the screen went idle;
+        // the existing portrait-setup contract depends on that.
+        lastExpectFrames = true;
         return check(nowMs);
     }
 

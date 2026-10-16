@@ -163,6 +163,8 @@ public final class CaptureService extends Service {
     private final CaptureHealthMonitor captureHealth = new CaptureHealthMonitor();
     private int readerGeneration;
     private int starvationCount;
+    /** Last health state the watchdog reported, so transitions are logged once. */
+    private CaptureHealthMonitor.State lastHealthState = CaptureHealthMonitor.State.HEALTHY;
     private int recoveryAttempts;
     private int recoverySuccesses;
     private Runnable recoveryRunnable;
@@ -205,15 +207,32 @@ public final class CaptureService extends Service {
                         // Rotation can stop frame callbacks before the old reader
                         // reaches its next periodic size check.
                         resizeIfNeeded();
-                        boolean expectFrames = frameWidth > frameHeight;
+                        // 识别会话进行中就该期待帧。开心消消乐是竖屏识别，
+                        // 旧判定只看 frameWidth > frameHeight，于是竖屏下永远
+                        // expectFrames=false：CaptureHealthMonitor 每 500ms 重置一次
+                        // 时钟，从不判 STARVED，结果帧停摆既不自愈、不留痕、
+                        // 也不收尾——诊断包里表现为会话仍在心跳而画面停在几十秒前。
+                        boolean expectFrames = frameWidth > frameHeight
+                                || Match3LiveService.isRunning();
                         if (!expectFrames && recoveryRunnable != null) {
                             worker.removeCallbacks(recoveryRunnable);
                             recoveryRunnable = null;
                         }
                         long nowMs = SystemClock.elapsedRealtime();
-                        if (captureHealth.check(nowMs, expectFrames) ==
-                                CaptureHealthMonitor.State.STARVED) {
-                            starvationCount++;
+                        CaptureHealthMonitor.State health = captureHealth.check(nowMs, expectFrames);
+                        if (health != lastHealthState) {
+                            // 状态变化必须留痕，否则导出诊断时只看到"画面突然停了"。
+                            CaptureHealthMonitor.State previous = lastHealthState;
+                            lastHealthState = health;
+                            if (health == CaptureHealthMonitor.State.STARVED) {
+                                starvationCount++;
+                                logCaptureHealth(health.name(), "frames_overdue_"
+                                        + (expectFrames ? "while_expecting" : "idle"));
+                            } else {
+                                logCaptureHealth(health.name(), "after_" + previous.name());
+                            }
+                        }
+                        if (health == CaptureHealthMonitor.State.STARVED) {
                             scheduleRecoveryLocked(expectedSessionGeneration);
                         }
                         logCaptureWorkLocked(nowMs, false);
