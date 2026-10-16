@@ -1,6 +1,6 @@
 # 参与开发
 
-感谢参与地图感知助手。先阅读 [团队协作与本地运行](docs/development/团队协作与本地运行.md) 和 [当前验证状态](validation/STATUS.md)。
+欢迎参与听野 SenseField 开发。先阅读 [团队协作与本地运行](docs/development/团队协作与本地运行.md) 和 [验证方式与使用条件](validation/STATUS.md)。
 
 ## 开发流程
 

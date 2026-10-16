@@ -35,8 +35,8 @@ assert(!field.includes('THREE.Points') && !field.includes('./particles'), 'The h
 assert(!html.includes('feature-trigger'), 'Feature descriptions remain visible while scrolling.');
 const faqs = [...html.matchAll(/<details class="faq-item reveal"([^>]*)>/g)];
 assert(faqs.length === 5 && faqs.every(([, attrs]) => !/\bopen\b/.test(attrs)), 'The five FAQs are native disclosures, collapsed by default.');
-assert(!html.includes('体验版') && !html.includes('Preview feature') && html.includes('已测通 100 关'), 'Reflect the completed 100-level Anipop playthrough without preview labels.');
-assert((html.match(/100 关/g) ?? []).length === 1 && (html.match(/100 levels/g) ?? []).length === 1, 'Mention the 100-level Anipop result only once in each language.');
+assert(!html.includes('体验版') && !html.includes('Preview feature') && html.includes('已测通 120 关'), 'Reflect the completed 120-level Anipop playthrough without preview labels.');
+assert((html.match(/120 关/g) ?? []).length === 1 && (html.match(/120 levels/g) ?? []).length === 1, 'Mention the 120-level Anipop result only once in each language.');
 assert((html.match(/class="hero-channel"/g) ?? []).length === 4 && html.includes('data-en="Visual"'), 'Present sound, speech, touch and visual highlights in the hero.');
 assert((html.match(/class="feature-row reveal"/g) ?? []).length === 3, 'Show all three features.');
 assert(html.includes('少一点寻找。') && html.includes('多一点尽兴。') && !html.includes('多一点，尽兴。'), 'Keep the feature headline parallel.');
@@ -49,4 +49,4 @@ assert(html.includes('class="language-toggle"') && code.includes('initLanguage')
 assert(html.includes('lang="zh-CN"'), 'Declare the page language.');
 assert(html.includes('class="skip-link"'), 'Keep keyboard skip navigation.');
 assert(!html.includes('<svg'), 'Use Lucide for interface icons.');
-console.log('Website checks passed: brand colors, bilingual controls, perception lens, expanded features, collapsed FAQs, 100-level Anipop copy, dynamic downloads, assets, Lucide and accessibility hooks.');
+console.log('Website checks passed: brand colors, bilingual controls, perception lens, expanded features, collapsed FAQs, 120-level Anipop copy, dynamic downloads, assets, Lucide and accessibility hooks.');

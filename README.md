@@ -45,12 +45,12 @@
 | --- | --- |
 | 王者荣耀辅助 | 在手机本地识别小地图中可见的敌方信息，筛选、去重后提供附近敌人与方位提醒；核心预警不依赖网络。 |
 | 离线提醒与说明 | 高频固定提示内置「游戏解说 · 男声」和「游戏向导 · 女声」，默认男声；固定提示和完整说明无需手机 TTS，可调整语速与音量。 |
-| 开心消消乐辅助 | 自动确认棋盘，播报行列并高亮需要交换的两颗棋子；依据已确认的任务贡献排序，可靠时提供靠近目标的准备建议。已在前 100 关范围内多个典型关卡完成真机实测，动态提示使用玩家选择的手机语音引擎。 |
+| 开心消消乐辅助 | 自动确认棋盘，以亮框、箭头和方位语音提示交换位置；依据已确认的规则与任务贡献排序，动态提示使用玩家选择的手机语音引擎。 |
 | 大字与学习 | 页面遵循系统字号，分组说明按需展开；完整说明支持按段听、暂停继续和跳过。 |
-| 语音与画面助手（实验） | 默认关闭，可在设置中开启；语音在手机识别，画面问答通过线上服务处理，上传范围需单独授权。响应速度、回答质量与可听性仍待改进。 |
+| 语音与画面助手 | 在设置中开启后，可读画面、回答游戏问题并解释选择；语音在手机识别，画面问答通过线上服务处理，上传范围单独授权。 |
 | 更新与反馈 | 从固定网站读取版本清单、从 Gitee 下载 APK，校验后交给系统安装器；诊断包和试用记录由玩家或测试负责人导出。 |
 
-消消乐已完成前 100 关范围内多个典型关卡的真机实测；更多关卡、设备与游戏版本的覆盖仍在持续扩展。交换建议不保证所有场景中的最优解。[0.4.5 试用与整改记录](validation/match3/MATCH3_TASK_FEEDBACK_0_4_5_2026-10-10.md)保留该版本的问题及工程证据。王者提醒的独立准确率、范围标定、跨设备声音和受控温升也继续验证，不用开发回放替代实际体验。
+消消乐已测通 120 关。提示以可见画面和已确认规则为依据；不同关卡、设备与游戏版本的表现需结合实际使用确认。
 
 ## 系统架构
 
@@ -72,7 +72,7 @@ AI 助手需另行开启。连续语音首次使用会下载约 153 MiB 的识�
 ```
 
 - 屏幕采集使用 Android `MediaProjection`，每次由玩家授权；本地预警不上传画面，不读取游戏进程或内存。
-- 可选助手的语音音频在手机内存中处理，不上传。开启画面理解后，问题文字、当前截图和最多两张近期缩图经 HTTPS 发送到助手网关与视觉模型；低频主动观察还需额外开启。
+- 助手的语音音频在手机内存中处理，不上传。开启画面理解后，问题文字、当前截图和最多两张近期缩图经 HTTPS 发送到助手网关与视觉模型；低频主动观察需额外开启。
 - 上传画面可能包含聊天或通知；服务端与模型供应商的日志及留存以实际部署和账户条款为准。模型 API 密钥留在服务端。
 - 工具不注入游戏、不模拟触控、不代替玩家操作。原始录像、诊断截图、标注和私有实验材料不纳入公开仓库。
 
@@ -129,21 +129,20 @@ python -m pip install -e '.[test]'
 | `training/`、`profiles/` | 模型工具、识别区域与配置 |
 | `deploy/assistant/` | 助手部署与分发脚本、反代模板和说明 |
 | `docs/` | 产品、设计、开发与发布文档 |
-| `validation/` | 按主题整理的验证与排查记录 |
+| `validation/` | 测试方法、反馈工具与格式样例 |
 
 [完整文档索引](docs/README.md) · [贡献指南](CONTRIBUTING.md)
 
 | 主题 | 入口 |
 | --- | --- |
 | 产品与设计 | [赛题背景](docs/design/赛题背景.md) · [技术方案](docs/design/技术方案.md) · [视野记忆设计](docs/design/视野记忆.md) |
-| 实施与符合度 | [实施路线](docs/plans/黑客松方案收敛与实施路线.md) · [符合度改造方案](docs/plans/符合度改造方案.md) |
-| 0.4.7 规划 | [提示稳定性、视觉感知与发热](docs/plans/0.4.7版本规划.md) |
-| 消消乐改进 | [目标价值排序](docs/plans/消消乐目标价值排序.md) · [新元素可信识别](docs/plans/消消乐新元素可信识别.md) · [自动回归](docs/development/match3-regression.md) |
+| 路演与演示 | [演示指引](docs/demo/录制说明.md) · [系统架构图](assets/sensefield-architecture.png) |
+| 消消乐实现 | [规则引擎](docs/development/match3-rules.md) · [元素扩展](docs/development/match3-element-evidence.md) · [自动回归](docs/development/match3-regression.md) |
 | 安装与发布 | [0.4.7 使用说明](docs/releases/0.4.7/RELEASE_NOTES.md) · [发布索引](docs/releases/README.md) · [Gitee 分发步骤](deploy/assistant/CDN发布.md) |
 | 助手与更新 | [助手部署](deploy/assistant/README.md) · [Android 自动更新](docs/development/app-update.md) |
-| 测试与反馈 | [当前验证状态](validation/STATUS.md) · [验证索引](validation/README.md) · [离线诊断](validation/protocols/DIAGNOSTIC_REPORT.md) · [玩家试用套件](validation/protocols/PLAYER_TRIAL_KIT.md) |
+| 测试与反馈 | [验证方式](validation/STATUS.md) · [测试与反馈工具](validation/README.md) · [离线诊断](validation/protocols/DIAGNOSTIC_REPORT.md) · [玩家试用套件](validation/protocols/PLAYER_TRIAL_KIT.md) |
 
-历史模型指标和逐局记录保留在对应验证文档中，不作为当前版本的独立验收结果。`docs/` 只保存文档，APK 与交付文件留在 `output/releases/`。
+`docs/` 保存产品、使用和开发文档，APK 与交付文件留在 `output/releases/`；内部会话记录和原始测试材料保留本地。
 
 ## 开源许可
 

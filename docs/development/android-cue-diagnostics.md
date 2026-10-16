@@ -26,6 +26,4 @@ JSON 和 HTML 保留 cue ID 供本地配对；HTML 会内嵌诊断画面。对�
 
 消消乐入口记录定位后的采样、确认／HUD 和规则排名成本；其固定图工作量每张图会清空 HUD 缓存，不能当作实局的完整功耗。两种入口都排除游戏、采集与实际播放，不用于温升或外部发声结论。
 
-`Match3FunctionalCostInstrumentedTest` 另外读取 `baseline-assets.json` 所绑定的旧固定／反馈／HUD 目录，在同一进程交替测量旧／新目录；三组均需满足墙钟与 worker P95 增幅 ≤10%。它用于分离局部图库增量，不能撤销另行记录的整包重装或最终包成本失败。默认回归不暗中依赖私有清单，专项运行须主动选择对应类。
-
-第一轮的修复、开发回放和成本结论见[工程记录](../../validation/performance/ENGINEERING_0_4_7_ROUND1_2026-10-13.md)。
+`Match3FunctionalCostInstrumentedTest` 另外读取 `baseline-assets.json` 所绑定的旧固定／反馈／HUD 目录，在同一进程交替测量旧／新目录；三组均需满足墙钟与 worker P95 增幅 ≤10%。它用于区分局部图库增量与整包开销，两者分别记录。默认回归不暗中依赖私有清单，专项运行须主动选择对应类。

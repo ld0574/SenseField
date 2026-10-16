@@ -50,7 +50,7 @@ adb -s "$SENSEFIELD_ADB_SERIAL" shell am instrument -w -r \
 
 负载保持800ms间隔、2712长边、19图循环、生产异步诊断的隔离目录及43°C／SEVERE热停止条件。每帧执行自动定位、识别、确认、排序与诊断请求；墙钟／线程CPU计时不含图像读取／解码／放大、投屏、浮层及TTS。只有结束、排空、原会话名称和偏好检查均成功才通过，不用短时成功代替900秒。
 
-驱动不创建UiAutomation、不借shell权限身份。历史崩溃栈落在 `Instrumentation.finish → UiAutomation.disconnect → IUiAutomationConnection.disconnect → DeadObjectException`；不能由此确定shell桥接进程为何死亡。旧心跳方案的失败样本保留，不将其归因于用户操作或生产引擎。
+驱动不创建UiAutomation、不借shell权限身份。
 
 ## 完整回执
 

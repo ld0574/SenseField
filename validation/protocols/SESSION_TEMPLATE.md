@@ -1,8 +1,6 @@
 # 真机与玩家测试记录
 
-> **当前只用于开发试装记录。** Debug APK 内置 HD 实验 profile；本机构建包含匹配模型时，首装默认启用小地图识别和新头像提醒，无需导入 profile。缺少模型权重时不能运行识别；保存过的关闭设置会保留。候选仍未通过严格 parity，也未达到 `release_ready`，使用该候选的会话不能作为最终门禁证据。
->
-> **最终门禁暂不执行。** 只有未来构建并冻结一个将已验证 profile、匹配模型和 native library 内置的 APK，且其候选 metadata 标记可发布、parity 门禁通过后，才按本页最终采集流程操作。该最终会话必须使用 APK 内置 profile，不导入外部配置；当前开发安装脚本不适用于最终门禁。
+记录本次实际设备、APK、场景和提示条件。开发会话与正式独立验收分别标记；下文验收流程仅在模型、profile 和签名 APK 冻结后使用，不代表已有验收结论。
 
 - 日期／测试人：
 - 手机型号／Android 版本：
@@ -45,17 +43,17 @@
 
 ## 最终门禁采集（仅冻结 APK 准备完成后）
 
-开始前确认已有通过模型和 parity 门禁的发布候选，并确认它把本轮冻结 profile、param/bin 与 native library 一并打包。当前开发 APK 不满足这些条件；不要用开发 APK、导入 profile 或开发安装脚本提交最终门禁。准备好最终 APK 后，先复制并固定待测文件，再安装这一个文件；测试结束前不要重新构建或覆盖它：
+开始前确认模型、profile 与 native library 通过对应检查，并冻结最终签名 APK。复制实际待测文件并核对摘要，测试结束前保持包和配置不变：
 
 ```sh
 mkdir -p validation/private
-cp android/app/build/outputs/apk/debug/app-debug.apk \
+cp /path/to/frozen-release.apk \
   validation/private/mapassist-tested.apk
 shasum -a 256 validation/private/mapassist-tested.apk
 adb install -r validation/private/mapassist-tested.apk
 ```
 
-最终门禁要求本次会话使用该 APK 内置的 `profile.json`，并确认实际安装 APK、profile、param/bin 和离线留出预测的哈希完全一致。若手机曾导入过开发配置，先清除应用数据，再安装冻结 APK；不要再导入其他 profile。当前开发 APK 内置的 profile 启用实验检测器；这不替代未来将已验证 profile 和匹配模型冻结进 APK 的构建。
+最终门禁要求本次会话使用该 APK 内置的 `profile.json`，并确认实际安装 APK、profile、param/bin 和离线留出预测的哈希完全一致。使用已确认的测试配置，不在会话中导入其他 profile；记录实际运行配置与 APK 内置配置的对应关系。
 
 连接手机后，先清空旧日志，再在电脑上持续保存本次会话的 logcat：
 

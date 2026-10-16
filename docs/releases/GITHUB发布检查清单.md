@@ -1,102 +1,42 @@
 # GitHub 发布检查清单
 
-本清单用于公开仓库和比赛提交前的最后检查。自有代码已采用 Apache License 2.0；题方资料、录像、游戏画面、模型数据来源和第三方组件仍需分别核对授权边界。
+用于源码公开与版本交付。当前版本为 `0.4.7 / versionCode 24`；应用支持 Android 10 及以上的 arm64 设备。
 
-## 交付状态与构建版本
+## 源码与素材
 
-2026-10-15 按用户要求进行 [0.4.7／code24 最终修订](https://github.com/ld0574/SenseField/releases/tag/v0.4.7)：修复近敌语音抢播，合入消消乐分支，取消采录实验，保留正常语音提问，APK 为 `84b3fd40…`。继续使用普通 Release、Latest 和 APK／使用说明两个附件；main、同版本标签及公开下载的实际核对结果见[最终记录](../../validation/releases/GITHUB_RELEASE_0_4_7_FINAL_2026-10-15.md)。Gitee 与公网清单由用户同步，完整物理和独立验收不因公开分发改为通过。
+- 按 [公开文档范围](../公开文档范围.md) 检查暂存文件；原始会议、逐局日志和研究草稿保留本地。
+- 不提交原始录像、玩家身份、标注数据库、训练数据、模型权重、预测结果或私有 profile。
+- 不提交 API 密钥、签名材料、`.env`、`local.properties` 和服务端运行数据。
+- 检查截图与演示视频的授权，遮盖账号、昵称及其他个人信息。
+- 新增第三方代码、模型、声音和图片时，登记来源及许可范围，参见 [第三方声明](../../THIRD_PARTY_NOTICES.md)。项目自有代码采用 Apache License 2.0，外部素材按各自许可使用。
 
-2026-10-13 发布的 [0.4.6／code23](0.4.6/RELEASE_NOTES.md)已合入并推送 `main`，[GitHub v0.4.6](https://github.com/ld0574/SenseField/releases/tag/v0.4.6) 发布时为普通 Release、Latest，标签及四个附件核对见[发布记录](../../validation/releases/GITHUB_RELEASE_0_4_6_2026-10-13.md)。唯一交付目录为 `output/releases/0.4.6/`，旧包和重复交付已[清理](../../validation/releases/ANDROID_ARTIFACT_CLEANUP_0_4_6_2026-10-13.md)。[听野 0.4.5](https://github.com/ld0574/SenseField/releases/tag/v0.4.5)（`versionCode 22`，2026-10-10 发布）的原标签、附件及公网清单历史核对保留。本轮 Gitee 同版本附件和公网清单由用户同步。历史主线 `v0.4.3-main` 和消消乐独立发布保留，完整历史见[发布索引](README.md)。公开分发不自动改变 `verified`／`release_ready`，版本名称继续使用 `a.b.c`。
+## 功能与说明
 
-发布前核对 `android/app/build.gradle`、`scripts/build_android_preview.sh` 和实际 APK 的版本、升级序号与签名，准备新版本交付时同步配置与脚本。发布说明必须对应实际 APK 和该版本的验证证据。历史 [0.3.0-alpha.1 发布说明](0.3.0-alpha.1/RELEASE_NOTES.md)与[检查记录](0.3.0-alpha.1/CHECKLIST.md)保留原始信息。
+- README、架构图和安装说明与交付功能对应，写明权限用途和停止方式。
+- 助手由用户单独开启；说明手机端语音识别、授权截图和服务端模型调用的边界。
+- 测试结果对应实际设备、对局和 APK；合成与模拟器验证不作为真实准确率或听感结果。
+- 数据分组保持独立，参与调参的对局不再列为独立留出。
+- 当前说明与素材授权范围见 [验证方式与使用条件](../../validation/STATUS.md)。
 
-已交付候选只支持 Android 10（API 29）及以上的 `arm64-v8a` 设备。实验小地图模型尚未通过独立留出验收，主画面边缘候选分支默认关闭；按[当前验证状态](../../validation/STATUS.md)复核功能与证据边界。README 与随包使用说明应写明 `MediaProjection`、悬浮窗、通知权限的用途，以及本地识别和可选上传的范围。Release 正文使用三行、100 字符以内的玩家更新摘要，完整用法放在 `.txt` 附件及版本说明中。
+## 构建与核对
 
-构建优先使用 `bash scripts/build_android_preview.sh`。当前 0.4.7 交付必须提供四个 `SENSEFIELD_KEYSTORE_PATH`、`SENSEFIELD_KEY_ALIAS`、`SENSEFIELD_KEYSTORE_PASSWORD`、`SENSEFIELD_KEY_PASSWORD` 环境变量和完整内置语音；缺少时停止，不回退 Debug。脚本构建并校验签名 Release，当前上传路径使用 `sensefieldv<版本>.apk`，不靠文件名声称签名类型。本地原 Android debug 证书的混淆候选验证单独注明签名范围；已有同一字节完成工程验证时，发布前核对摘要、签名与源码对应后可直接分发，不为上传另行重建。脚本不生成或上传发布 keystore，不发布 GitHub Release。
-
-## 1. 权利和隐私
-
-- [x] 团队已在根目录加入 Apache License 2.0，并填写 2026 年团队版权信息。
-- [ ] 按[公开文档范围](../公开文档范围.md)复核本次提交。`requirements/` 的题方 PDF 与赛手手册、项目自写方案、开发与发布文档及整理后的调研摘要按文件放行；原始会议与完整检索稿继续保留本地。
-- [ ] 确认录像中所有玩家、账号名、语音和聊天内容的授权范围。原始录像默认永久留在 `video/` 或 `data/private/`，不进入公开仓库。
-- [ ] 检查截图、演示视频和 README 图片，遮盖玩家昵称、账号、群号及其他个人信息。
-- [ ] 不提交标注数据库、私有 profile、预测结果、训练数据、签名密钥、`.env` 或 `local.properties`。
-- [ ] 确认公开 Git 仓库不包含 Roboflow 图片、模型权重、训练检查点或其他训练产物；如另行分发 APK，单独核对其中模型的来源、训练数据授权和可分发范围。
-- [ ] 当前 GitHub 仓库已公开，旧提交 `e887714` 含有模型文件。团队需决定是否要从公开历史彻底移除；这需要确认历史改写与 force-push，并通知协作者重新同步。当前索引删除不会清理旧提交，本次未改写历史。
-- [x] ncnn、YOLOX 与 pnnx 的版本、用途和许可证已登记在根目录 `THIRD_PARTY_NOTICES.md`，完整上游许可文本同时打包进 APK。
-
-如果获得某份资料的公开授权，应单独记录授权来源、范围和日期，再精确调整 `.gitignore`；不要一次放开整个 `docs/` 或 `data/` 目录。
-
-## 2. 内容和结果表述
-
-- [ ] README 明确当前功能、默认开关状态、未验证项和关闭方式。
-- [ ] `video1` 至 `video6` 全部标为开发数据，不作为独立测试成绩。
-- [ ] video6 的均匀盲测只作为历史过程；后续已参与模型和阈值选择。
-- [ ] 合成录像和模拟器结果只描述为链路验证。
-- [ ] 真实准确率、召回率、方向正确率只引用冻结后的独立留出对局。
-- [ ] P95 端到端延迟只引用实体 Android 13/14 手机上，外部录像测得的“可见证据到实际发声”时间。
-- [ ] 没有通过验收的事件类型在现场配置中保持关闭。
-
-## 3. 自动和人工检查
-
-从仓库根目录执行：
+从仓库根目录执行公开扫描和相关检查：
 
 ```sh
 python3 scripts/check_public_repo.py
-PYTHONPATH=python python3 -m pytest -q
-```
-
-安卓代码有改动时再执行：
-
-```sh
-cd android
-export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
-export ANDROID_HOME="$HOME/Library/Android/sdk"
-./gradlew assembleDebug lintDebug
-cd ..
-```
-
-人工查看即将提交的文件：
-
-```sh
-git status --short --ignored
 git diff --check
-git diff --cached --stat
-git diff --cached
-```
-
-抽查关键私有路径确实被忽略：
-
-```sh
-git check-ignore -v video/video1hd.mp4
-git check-ignore -v data/private/minimap-review-v3/annotations.sqlite3
-git check-ignore -v android/local.properties
-```
-
-`scripts/check_public_repo.py` 会检查准备提交的文件、过大文件、常见密钥格式和许可证。自动扫描不能证明没有隐私信息，发布前仍需逐个查看暂存区。
-
-## 4. 首个公开版本
-
-许可证和授权完成后：
-
-```sh
-git add .
-python3 scripts/check_public_repo.py
 git status --short
-git commit -m "Initial public prototype"
-git remote add origin <GitHub 仓库地址>
-git push -u origin main
+git diff --cached --stat
 ```
 
-建议先在 GitHub 创建空仓库，不自动生成 README、`.gitignore` 或 LICENSE，以免首次推送产生冲突。仓库可见性先设为 Private，团队复核暂存文件和 GitHub 页面后再切换为 Public。
+Python 改动运行相关测试；Android 改动按对应模块完成单元测试、构建、lint 与设备验证。正式包使用 `bash scripts/build_android_preview.sh`，需要匹配模型、完整内置语音与本机签名配置，不能以测试素材替代。
 
-## 5. Release 和比赛交付
+## 附件与发布
 
-- [ ] 需要公开 Release 时，用对应版本的 Git tag 标记，例如 `v0.3.8`；本地候选交付不要求创建 tag。
-- [ ] APK、ZIP 和校验文件保存在 `output/releases/<版本>/`，公开交付时上传到 GitHub Release 附件；`docs/` 只保存说明和发布记录。
-- [ ] 在 `docs/releases/<版本>/RELEASE_NOTES.md` 记录变化、使用方式、验证边界、文件名、大小与 SHA-256，并更新[发布索引](README.md)。
-- [ ] 各上传目录使用一份 `SHA256SUMS.txt` 核对该目录中的产物（哈希、两个空格、文件名，清单不含自身）。上传前逐项核对，上传后再与 GitHub 附件的 `digest` 字段核对；不把构建输出提交到源码仓库。
-- [ ] 同时发布 APK 的 SHA-256、Android 最低版本、测试设备和已知限制。
-- [ ] Release 不包含私有 profile；如需演示配置，只发布不含玩家数据、经过复核的配置。
-- [ ] 保留一段可复现的合成演示；真实录像只有在取得授权后才能作为公开演示。
-- [ ] 核对 [当前验证状态](../../validation/STATUS.md)，避免把待验证项目写成已完成。
+1. 从最终签名 APK 生成版本清单和 SHA-256，核对包名、版本、架构及签名。
+2. 更新版本说明、三行以内的更新摘要和安装指引，维护 [发布索引](README.md)。
+3. 将 APK、使用说明和对应校验信息上传至相应 Release；构建物不进入源码 Git。
+4. 下载公开附件，逐项核对字节数、SHA-256 与本地最终制品。
+5. 按 [CDN 发布流程](../../deploy/assistant/CDN发布.md) 更新固定版本清单并核对下载入口。
+
+发布记录与完整原始测试材料保存在本地，公开说明只引用能对应到实际制品的结论。
