@@ -33,9 +33,9 @@
 
 ## 3 分钟实机演示
 
-[![观看听野 3 分钟实机演示：王者荣耀与开心消消乐](website/public/images/demo-3min-poster.jpg)](https://khub-sensefield.ms.show/web/videos/sensefield-demo-3min-v5-55875bd1.mp4)
+[![观看听野 3 分钟实机演示：王者荣耀与开心消消乐](website/public/images/demo-3min-poster.jpg)](https://ld0574.github.io/SenseField/#demo)
 
-[直接播放视频](https://khub-sensefield.ms.show/web/videos/sensefield-demo-3min-v5-55875bd1.mp4) · [在官网观看](https://ld0574.github.io/SenseField/#demo) · [魔搭创空间](https://www.modelscope.cn/studios/Khub/SenseField)
+[视频文件直链（MP4）](https://www.modelscope.cn/api/v1/studio/Khub/SenseField/repo?Revision=master&FilePath=web/videos/sensefield-demo-3min-v5-55875bd1.mp4) · [在线观看](https://ld0574.github.io/SenseField/#demo) · [魔搭创空间](https://www.modelscope.cn/studios/Khub/SenseField)
 
 《王者荣耀》展示小地图方位提醒、画面问答与玩家操作；《开心消消乐》展示棋盘识别、语音提示、交换高亮与手动交换。视频保留真实游戏及听野原声，内含中文字幕，建议佩戴耳机。
 
