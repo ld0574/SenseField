@@ -85,6 +85,7 @@ docs/**
 !docs/references/
 !docs/releases/
 !docs/releases/0.4.7/
+!docs/releases/0.4.9/
 !docs/requirements/
 !docs/research/
 !docs/README.md
@@ -108,6 +109,9 @@ docs/**
 !docs/releases/0.4.7/RELEASE_NOTES.md
 !docs/releases/0.4.7/UPDATE_SUMMARY.txt
 !docs/releases/0.4.7/installation-guide.txt
+!docs/releases/0.4.9/RELEASE_NOTES.md
+!docs/releases/0.4.9/UPDATE_SUMMARY.txt
+!docs/releases/0.4.9/installation-guide.txt
 !docs/releases/GITHUB发布检查清单.md
 !docs/releases/README.md
 !docs/releases/版本命名规范.md

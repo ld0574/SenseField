@@ -4,6 +4,9 @@ from pathlib import Path
 import pytest
 
 from scripts import prepare_android_candidate as candidate
+from scripts.verify_android_release import VERSION_CODE
+
+VERSION = candidate.VERSION_NAME
 
 
 @pytest.fixture
@@ -25,34 +28,34 @@ def handoff(tmp_path, monkeypatch):
 
     def verified(path, _allow_fixture):
         return {"sha256": candidate.sha(path), "bytes": path.stat().st_size,
-                "certificate_sha256": "cert", "version_name": "0.4.7", "version_code": 24}
+                "certificate_sha256": "cert", "version_name": VERSION, "version_code": VERSION_CODE}
 
     def manifest(path, url, _tool, _notes):
         return {"apk_sha256": candidate.sha(path), "apk_bytes": path.stat().st_size,
-                "version_name": "0.4.7", "version_code": 24, "apk_url": url}
+                "version_name": VERSION, "version_code": VERSION_CODE, "apk_url": url}
 
     monkeypatch.setattr(candidate, "verify", verified)
     monkeypatch.setattr(candidate, "create_manifest", manifest)
-    output = tmp_path / "output/releases/0.4.7"
+    output = tmp_path / "output/releases" / VERSION
     candidate.begin(output)
     return apk, docs, output
 
 
 def prepare(handoff):
     apk, docs, output = handoff
-    return candidate.prepare(apk, output, "https://updates.example/sensefieldv0.4.7.apk", docs)
+    return candidate.prepare(apk, output, f"https://updates.example/sensefieldv{VERSION}.apk", docs)
 
 
 def test_one_handoff_binds_manifest_checksums_and_source_to_verified_copy(handoff):
     result = prepare(handoff)
     apk, docs, output = handoff
     files = list(output.rglob("*.apk"))
-    assert files == [output / "sensefieldv0.4.7.apk"]
+    assert files == [output / f"sensefieldv{VERSION}.apk"]
     assert files[0].read_bytes() == apk.read_bytes()
     manifest = json.loads((output / "latest.json").read_text())
     receipt = json.loads((output / "validation/current-package/release-package.json").read_text())
     assert manifest["apk_sha256"] == receipt["sha256"] == result["sha256"]
-    assert manifest["version_code"] == receipt["version_code"] == 24
+    assert manifest["version_code"] == receipt["version_code"] == VERSION_CODE
     for line in (output / "SHA256SUMS.txt").read_text().splitlines():
         digest, name = line.split("  ")
         assert candidate.sha(output / name) == digest

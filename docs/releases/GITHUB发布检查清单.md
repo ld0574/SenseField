@@ -1,6 +1,6 @@
 # GitHub 发布检查清单
 
-用于源码公开与版本交付。当前版本为 `0.4.7 / versionCode 24`；应用支持 Android 10 及以上的 arm64 设备。
+用于源码公开与版本交付。当前测试候选为 `0.4.9 / versionCode 26`，公开版仍为 `0.4.7 / versionCode 24`；应用支持 Android 10 及以上的 arm64 设备。
 
 ## 源码与素材
 

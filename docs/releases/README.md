@@ -2,6 +2,8 @@
 
 当前版本为 [听野 0.4.7](0.4.7/RELEASE_NOTES.md)，Android `versionCode 24`，支持 Android 10 及以上的 arm64 设备。
 
+下一测试候选为 [0.4.9 / versionCode 26](0.4.9/RELEASE_NOTES.md)，尚未公开发布；版本配置已合入主分支，签名交付和真机复测按成品记录。
+
 | 材料 | 用途 |
 | --- | --- |
 | [版本说明](0.4.7/RELEASE_NOTES.md) | 当前功能与使用方式 |

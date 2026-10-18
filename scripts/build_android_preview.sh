@@ -2,10 +2,7 @@
 
 set -euo pipefail
 
-readonly PREVIEW_VERSION_NAME='0.4.7'
-readonly PREVIEW_VERSION_CODE='24'
 readonly DEFAULT_UPDATE_MANIFEST_URL='https://888413.xyz/apk/latest.json'
-readonly DEFAULT_UPDATE_APK_URL="https://gitee.com/leda/SenseField/releases/download/${PREVIEW_VERSION_NAME}/sensefieldv${PREVIEW_VERSION_NAME}.apk"
 readonly PREVIEW_ABI='arm64-v8a'
 readonly PREVIEW_MIN_SDK='29'
 readonly PREVIEW_TARGET_SDK='35'
@@ -20,10 +17,11 @@ usage() {
 用法：bash scripts/build_android_preview.sh
 
 默认版本清单：https://888413.xyz/apk/latest.json
-APK 默认从听野 Gitee Release 下载。如需更换清单地址，设置 SENSEFIELD_UPDATE_MANIFEST_URL。
+版本号从 android/app/build.gradle 读取；APK 默认使用与清单同源的下载地址。
+如需更换清单地址，设置 SENSEFIELD_UPDATE_MANIFEST_URL。
 构建后生成 output/releases/<版本>/ 下的唯一 APK、使用说明、latest.json、SHA256SUMS.txt 与核验回执。
 这是本地候选；脚本不发布版本，也不更新公网清单。
-更换 APK 地址时设置 SENSEFIELD_UPDATE_APK_URL；允许同源 HTTPS，或固定清单搭配听野 Gitee Release。
+更换 APK 地址时设置 SENSEFIELD_UPDATE_APK_URL；APK 与清单必须严格同源 HTTPS。
 
 只构建并核验 Release candidate，请在环境变量中同时提供现有签名：
 
@@ -64,7 +62,6 @@ gradle_wrapper="$android_dir/gradlew"
 [[ -z "${ORG_GRADLE_PROJECT_sensefieldTestVersionCode:-}${ORG_GRADLE_PROJECT_sensefieldTestVersionName:-}${ORG_GRADLE_PROJECT_sensefieldUpdateManifestUrl:-}" ]] || fail \
   "交付构建不能继承升级测试的版本或更新源覆盖参数。"
 export SENSEFIELD_UPDATE_MANIFEST_URL="${SENSEFIELD_UPDATE_MANIFEST_URL:-$DEFAULT_UPDATE_MANIFEST_URL}"
-export SENSEFIELD_UPDATE_APK_URL="${SENSEFIELD_UPDATE_APK_URL:-$DEFAULT_UPDATE_APK_URL}"
 
 configured_version_code="$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]+([0-9]+).*/\1/p' "$build_gradle" | head -n 1)"
 configured_version_name="$(sed -nE "s/^[[:space:]]*versionName[[:space:]]+['\"]([^'\"]+)['\"].*/\1/p" "$build_gradle" | head -n 1)"
@@ -72,10 +69,11 @@ configured_min_sdk="$(sed -nE 's/^[[:space:]]*minSdk[[:space:]]+([0-9]+).*/\1/p'
 configured_target_sdk="$(sed -nE 's/^[[:space:]]*targetSdk[[:space:]]+([0-9]+).*/\1/p' "$build_gradle" | head -n 1)"
 [[ "$configured_version_name" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail \
   "versionName 必须使用 a.b.c 三段数字；用途标签请写在交付说明中。"
-[[ "$configured_version_code" == "$PREVIEW_VERSION_CODE" ]] || fail \
-  "android/app/build.gradle 的 versionCode 为 ${configured_version_code:-空值}，预期为 $PREVIEW_VERSION_CODE。"
-[[ "$configured_version_name" == "$PREVIEW_VERSION_NAME" ]] || fail \
-  "android/app/build.gradle 的 versionName 为 ${configured_version_name:-空值}，预期为 $PREVIEW_VERSION_NAME。"
+[[ "$configured_version_code" =~ ^[1-9][0-9]*$ ]] || fail "versionCode 必须为正整数。"
+readonly PREVIEW_VERSION_NAME="$configured_version_name"
+readonly PREVIEW_VERSION_CODE="$configured_version_code"
+readonly DEFAULT_UPDATE_APK_URL="${DEFAULT_UPDATE_MANIFEST_URL%/*}/sensefieldv${PREVIEW_VERSION_NAME}.apk"
+export SENSEFIELD_UPDATE_APK_URL="${SENSEFIELD_UPDATE_APK_URL:-$DEFAULT_UPDATE_APK_URL}"
 [[ "$configured_min_sdk" == "$PREVIEW_MIN_SDK" ]] || fail \
   "android/app/build.gradle 的 minSdk 为 ${configured_min_sdk:-空值}，预期为 $PREVIEW_MIN_SDK。"
 [[ "$configured_target_sdk" == "$PREVIEW_TARGET_SDK" ]] || fail \
