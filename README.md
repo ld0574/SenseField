@@ -14,6 +14,7 @@
   <a href="https://github.com/ld0574/SenseField/releases/download/v0.4.7/sensefieldv0.4.7.apk"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD%E5%AE%89%E5%8D%93%E5%AE%89%E8%A3%85%E5%8C%85-236874?style=for-the-badge&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj4gPHBhdGggZD0iTTIxIDE1djRhMiAyIDAgMCAxLTIgMkg1YTIgMiAwIDAgMS0yLTJ2LTQiLz4gPHBvbHlsaW5lIHBvaW50cz0iNyAxMCAxMiAxNSAxNyAxMCIvPiA8bGluZSB4MT0iMTIiIHgyPSIxMiIgeTE9IjE1IiB5Mj0iMyIvPgo8L3N2Zz4%3D" alt="下载安卓安装包" align="middle"></a>
   <a href="https://ld0574.github.io/SenseField/"><img src="https://img.shields.io/badge/%E5%90%AC%E9%87%8E%E5%AE%98%E7%BD%91-236874?style=for-the-badge&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj4gPGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiLz4gPHBhdGggZD0iTTEyIDJhMTQuNSAxNC41IDAgMCAwIDAgMjAgMTQuNSAxNC41IDAgMCAwIDAtMjAiLz4gPHBhdGggZD0iTTIgMTJoMjAiLz4KPC9zdmc%2B" alt="听野官网" align="middle"></a>
   <a href="https://ld0574.github.io/SenseField/#voices"><img src="https://img.shields.io/badge/%E7%94%A8%E6%88%B7%E5%BF%83%E5%A3%B0%E4%B8%8E%E6%B8%B8%E6%88%8F%E9%80%82%E9%85%8D%E5%8F%8D%E9%A6%88-236874?style=for-the-badge&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj4gPHBhdGggZD0iTTcuOSAyMEE5IDkgMCAxIDAgNCAxNi4xTDIgMjJaIi8%2BCjwvc3ZnPg%3D%3D" alt="用户心声与游戏适配反馈" align="middle"></a>
+  <a href="https://ld0574.github.io/SenseField/#demo"><img src="https://img.shields.io/badge/3%E5%88%86%E9%92%9F%E5%AE%9E%E6%9C%BA%E6%BC%94%E7%A4%BA-236874?style=for-the-badge&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIxMCIvPjxwb2x5Z29uIHBvaW50cz0iMTAgOCAxNiAxMiAxMCAxNiAxMCA4Ii8%2BPC9zdmc%2B" alt="3 分钟实机演示" align="middle"></a>
 </p>
 
 <p align="center">
@@ -30,14 +31,6 @@
 ---
 
 **听野（SenseField）** 是面向视野狭窄和低视力玩家的 Android 游戏辅助工具。它把玩家难以持续观察的游戏信息转成声音、语音、触觉和清晰的视觉提示。目前支持《王者荣耀》和《开心消消乐》两款游戏。
-
-## 3 分钟实机演示
-
-[![观看听野 3 分钟实机演示：王者荣耀与开心消消乐](website/public/images/demo-3min-poster.jpg)](https://ld0574.github.io/SenseField/#demo)
-
-[视频文件直链（MP4）](https://www.modelscope.cn/api/v1/studio/Khub/SenseField/repo?Revision=master&FilePath=web/videos/sensefield-demo-3min-v5-55875bd1.mp4) · [在线观看](https://ld0574.github.io/SenseField/#demo) · [魔搭创空间](https://www.modelscope.cn/studios/Khub/SenseField)
-
-《王者荣耀》展示小地图方位提醒、画面问答与玩家操作；《开心消消乐》展示棋盘识别、语音提示、交换高亮与手动交换。视频保留真实游戏及听野原声，内含中文字幕，建议佩戴耳机。
 
 ## 为什么做听野
 
