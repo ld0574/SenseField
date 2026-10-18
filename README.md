@@ -31,6 +31,14 @@
 
 **听野（SenseField）** 是面向视野狭窄和低视力玩家的 Android 游戏辅助工具。它把玩家难以持续观察的游戏信息转成声音、语音、触觉和清晰的视觉提示。目前支持《王者荣耀》和《开心消消乐》两款游戏。
 
+## 3 分钟实机演示
+
+[![观看听野 3 分钟实机演示：王者荣耀与开心消消乐](website/public/images/demo-3min-poster.jpg)](https://khub-sensefield.ms.show/web/videos/sensefield-demo-3min-v5-55875bd1.mp4)
+
+[直接播放视频](https://khub-sensefield.ms.show/web/videos/sensefield-demo-3min-v5-55875bd1.mp4) · [在官网观看](https://ld0574.github.io/SenseField/#demo) · [魔搭创空间](https://www.modelscope.cn/studios/Khub/SenseField)
+
+《王者荣耀》展示小地图方位提醒、画面问答与玩家操作；《开心消消乐》展示棋盘识别、语音提示、交换高亮与手动交换。视频保留真实游戏及听野原声，内含中文字幕，建议佩戴耳机。
+
 ## 为什么做听野
 
 对视野狭窄和低视力玩家来说，放大屏幕可能让同一时刻可见的范围更小，通用读屏又难以跟上实时对局。屏幕边缘的事件、小地图上的敌人和棋盘中的交换位置，都可能需要反复寻找。

@@ -209,6 +209,15 @@ svg { display: block; flex-shrink: 0; width: 22px; height: 22px; stroke-width: 1
 .lab-bottom p { font-size: 20px; line-height: 1.8; color: #c1d0d3; }
 .lab-signoff { color: var(--peach); font-size: 22px; text-align: right; }
 
+.real-demo { padding-top: 88px; padding-bottom: 18px; }
+.real-demo-heading { display: grid; grid-template-columns: .95fr 1.05fr; gap: 7%; align-items: center; padding: 36px 0; }
+.real-demo-heading h2 { font-size: clamp(36px, 4.4vw, 64px); line-height: 1.35; font-weight: 500; letter-spacing: -.04em; }
+.real-demo-heading > p { max-width: 620px; color: var(--muted); font-size: 18px; line-height: 1.9; }
+.real-demo-player video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; background: #0b1c1a; object-fit: contain; border: 1px solid var(--line); border-radius: 5px; }
+.real-demo-player video:focus-visible { outline: 3px solid var(--primary); outline-offset: 5px; }
+.real-demo-caption { display: flex; justify-content: space-between; align-items: center; gap: 14px 28px; padding-top: 16px; }
+.real-demo-caption p { color: var(--muted); font-size: 15px; line-height: 1.8; }
+.real-demo-caption > a { white-space: nowrap; flex-shrink: 0; }
 .features { padding-top: 106px; padding-bottom: 98px; }
 .features-heading { display: grid; grid-template-columns: .95fr 1.05fr; align-items: center; gap: 7%; padding-top: 44px; padding-bottom: 44px; }
 .features-heading h2 { font-size: clamp(40px, 4.8vw, 73px); font-weight: 500; letter-spacing: -.05em; line-height: 1.35; }
@@ -503,6 +512,11 @@ html[data-language='en'] .hero-kicker { letter-spacing: 0; }
   .lab-bottom { padding-top: 35px; flex-direction: column; align-items: flex-start; gap: 17px; }
   .lab-bottom p { font-size: 18px; }
   .lab-signoff { font-size: 18px; text-align: left; }
+  .real-demo { padding-top: 54px; padding-bottom: 10px; }
+  .real-demo-heading { grid-template-columns: 1fr; gap: 20px; padding: 28px 0; }
+  .real-demo-heading > p { font-size: 17px; }
+  .real-demo-caption { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .real-demo-caption p { font-size: 14px; }
   .features { padding-top: 62px; padding-bottom: 64px; }
   .features-heading { padding-top: 34px; padding-bottom: 34px; gap: 22px; grid-template-columns: 1fr; align-items: start; }
   .features-heading h2 { font-size: clamp(36px, 8.5vw, 55px); }

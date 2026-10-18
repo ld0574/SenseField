@@ -175,8 +175,16 @@ function updateAudioUI() {
   audioNote.textContent = t(soundEnabled ? 'audioHintOn' : 'audioHintOff');
   renderIcons();
 }
+// Keep the real recording clear of the separate synthetic sound experiment.
+const gameplayVideo = document.querySelector<HTMLVideoElement>('#gameplay-video')!;
+gameplayVideo.addEventListener('play', () => {
+  soundEnabled = false;
+  stopCue();
+  updateAudioUI();
+});
 audioToggle.addEventListener('click', async () => {
   if (soundEnabled) { soundEnabled = false; stopCue(); updateAudioUI(); return; }
+  gameplayVideo.pause();
   try {
     audio ??= new AudioContext();
     await audio.resume();
