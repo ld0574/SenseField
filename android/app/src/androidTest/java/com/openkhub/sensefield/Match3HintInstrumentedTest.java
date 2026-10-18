@@ -333,6 +333,92 @@ public final class Match3HintInstrumentedTest {
                     evidence.toString(2).getBytes(java.nio.charset.StandardCharsets.UTF_8));
         } finally {command(Match3LiveService.ACTION_STOP);await("Stopped",5000,()->!Match3LiveService.isRunning());}
     }
+    @Test public void boardRefreshFinishesTheStartedSentenceBeforeDrawingTheNextHint() throws Exception {
+        SyntheticGame[] game = new SyntheticGame[1];
+        java.util.concurrent.CopyOnWriteArrayList<CueRequest> spoken = new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.concurrent.atomic.AtomicReference<CueDispatcher.PlaybackCallback> playback =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<Throwable> failure = new java.util.concurrent.atomic.AtomicReference<>();
+        AtomicInteger stopped = new AtomicInteger();
+        CountDownLatch installed = new CountDownLatch(1);
+        try (ActivityScenario<Match3AssistActivity> scenario = ActivityScenario.launch(Match3AssistActivity.class)) {
+            Object session = startProjection(scenario, game);
+            Match3LiveService service = Match3LiveService.testInstance();
+            Match3Hint originalHint = (Match3Hint) get(session, "currentHint");
+            ((android.os.Handler) get(service, "handler")).post(() -> {
+                try {
+                    Method ensure = Match3LiveService.class.getDeclaredMethod("ensureDispatcher", session.getClass());
+                    ensure.setAccessible(true); ensure.invoke(service, session);
+                    CueDispatcher original = (CueDispatcher) get(service, "dispatcher");
+                    CueDispatcher.Listener listener = (CueDispatcher.Listener) get(original, "listener");
+                    original.close();
+                    CueDispatcher.Renderer renderer = new CueDispatcher.Renderer() {
+                        public boolean playTone(CueRequest r, CueDispatcher.PlaybackCallback c) { return false; }
+                        public boolean vibrate(CueRequest r) { return false; }
+                        public boolean speak(CueRequest r, boolean interrupt, CueDispatcher.PlaybackCallback c) {
+                            spoken.add(r); playback.set(c); c.onStarted(SystemClock.elapsedRealtime()); return true;
+                        }
+                        public void stopSpeech() { stopped.incrementAndGet(); }
+                    };
+                    CueDispatcher.Policy policy = new CueDispatcher.Policy() {
+                        public boolean categoryEnabled(CueRequest.Category c) { return true; }
+                        public int enabledChannels() { return CueRequest.CHANNEL_SPEECH; }
+                        public long dedupeWindowMs(CueRequest.Category c) { return 1500; }
+                    };
+                    set(service, "dispatcher", new CueDispatcher(renderer, policy, listener, SystemClock::elapsedRealtime));
+                    set(session, "hintCueId", null); set(session, "lastAnnounceAt", 0L);
+                    set(session, "lastHintSpokenRevision", -1L); set(session, "hintAttempts", 0);
+                    Method announce = Match3LiveService.class.getDeclaredMethod("maybeAnnounceHint", session.getClass(), boolean.class);
+                    announce.setAccessible(true); announce.invoke(service, session, false);
+                } catch (Throwable error) { failure.set(error); }
+                finally { installed.countDown(); }
+            });
+            assertTrue(installed.await(5, TimeUnit.SECONDS)); assertNull(failure.get());
+            await("Controlled first utterance starts", 5000, () -> spoken.size() == 1);
+            CueRequest first = spoken.get(0);
+            CueDispatcher.PlaybackCallback firstPlayback = playback.get();
+            scenario.onActivity(a -> { game[0].singleCellChanged = true; game[0].invalidate(); });
+            await("The old hint retires but the sentence keeps playing", 6000,
+                    () -> first.cueId.equals(get(session, "finishingHintCueId")));
+            await("Fresh stable evidence waits for speech completion", 6000,
+                    () -> "speech_finishing".equals(get(session, "recommendationGate")));
+            assertNull("No replacement rectangle while the preceding direction is spoken", get(session, "currentHint"));
+            Match3HintOverlay overlay = (Match3HintOverlay) get(session, "overlay");
+            if (overlay != null) assertNull("An invalid old rectangle disappears", overlay.renderedHint());
+            assertEquals(1, spoken.size()); assertEquals(0, stopped.get());
+
+            firstPlayback.onFinished(SystemClock.elapsedRealtime(), true);
+            await("The next fresh hint is selected only after completion", 6000,
+                    () -> get(session, "currentHint") != null && get(session, "currentHint") != originalHint);
+            await("The replacement utterance starts", 6500, () -> spoken.size() >= 2);
+            CueDispatcher.PlaybackCallback secondPlayback = playback.get();
+            CountDownLatch retired = new CountDownLatch(1);
+            ((android.os.Handler) get(service, "handler")).post(() -> {
+                try {
+                    Method invalidate = Match3LiveService.class.getDeclaredMethod("invalidateHint", session.getClass(), String.class);
+                    invalidate.setAccessible(true); invalidate.invoke(service, session, "HINT_EVIDENCE_CHANGED");
+                } catch (Throwable error) { failure.set(error); }
+                finally { retired.countDown(); }
+            });
+            assertTrue(retired.await(5, TimeUnit.SECONDS)); assertNull(failure.get());
+            assertNotNull(get(session, "finishingHintCueId"));
+            command(Match3LiveService.ACTION_STOP);
+            await("An explicit stop still cancels the finishing sentence", 5000,
+                    () -> !Match3LiveService.isRunning() && stopped.get() > 0);
+            secondPlayback.onFinished(SystemClock.elapsedRealtime(), true);
+            DiagnosticRecorder.IO.submit(() -> {}).get(5, TimeUnit.SECONDS);
+            String events = new String(java.nio.file.Files.readAllBytes(
+                    new java.io.File(((DiagnosticRecorder) get(session, "diagnostics")).directory, "events.jsonl").toPath()),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            assertTrue(events.contains("Match3SpeechFinishing"));
+            assertTrue(events.contains("speech_finishing"));
+            assertFalse(events.contains("result=CANCELLED_BOARD_MOTION"));
+        } finally {
+            command(Match3LiveService.ACTION_STOP);
+            await("Stopped", 5000, () -> !Match3LiveService.isRunning());
+        }
+    }
+
     private static void command(String action) {
         context().startService(new Intent(context(), Match3LiveService.class).setAction(action));
     }

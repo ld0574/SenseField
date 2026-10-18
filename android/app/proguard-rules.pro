@@ -53,6 +53,22 @@
 -keep,allowobfuscation class com.openkhub.sensefield.CueRequest { <init>(...); }
 -keep enum com.openkhub.sensefield.CueRequest$Category { *; }
 -keep,allowobfuscation interface com.openkhub.sensefield.CueDispatcher$PlaybackCallback { *; }
+# The real-voice completion check calls the same dispatch boundary in the
+# minified Release. Retain only its constructor and exercised entry points.
+-keep,allowobfuscation class com.openkhub.sensefield.CueDispatcher {
+    <init>(com.openkhub.sensefield.CueDispatcher$Renderer,com.openkhub.sensefield.CueDispatcher$Policy,com.openkhub.sensefield.CueDispatcher$Listener,com.openkhub.sensefield.CueDispatcher$Clock);
+    synchronized com.openkhub.sensefield.CueDispatcher$DispatchResult submit(com.openkhub.sensefield.CueRequest);
+    synchronized boolean retireCue(java.lang.String,java.lang.String,boolean);
+    synchronized boolean isCueSpeaking(java.lang.String);
+    synchronized void cancelCue(java.lang.String,java.lang.String);
+    public synchronized void close();
+}
+-keep,allowobfuscation interface com.openkhub.sensefield.CueDispatcher$Policy { *; }
+-keep,allowobfuscation interface com.openkhub.sensefield.CueDispatcher$Listener { *; }
+-keep,allowobfuscation interface com.openkhub.sensefield.CueDispatcher$Clock { *; }
+-keep,allowobfuscation class com.openkhub.sensefield.CueDispatcher$DispatchResult {
+    boolean audioQueued();
+}
 -keep,allowobfuscation class com.openkhub.sensefield.BundledSpeechCatalog {
     static java.lang.String[] VOICES;
     static java.util.List guide();

@@ -109,6 +109,7 @@ final class CueDispatcher implements AutoCloseable {
                     .thenComparingLong(value -> value.sequence));
     private long sequence;
     private CueRequest speaking;
+    private CueRequest startedSpeech;
     private long lastHapticAtMs = Long.MIN_VALUE / 2;
     private volatile long lastAlertAtMs = Long.MIN_VALUE;
     private volatile boolean closed;
@@ -352,6 +353,7 @@ final class CueDispatcher implements AutoCloseable {
             }
             cancelledSpeech.remove(next.cueId);
             speaking = next;
+            startedSpeech = null;
             boolean accepted = renderer.speak(next, next.priority >= 90, speechCallback(next,pending));
             pending.admitted = accepted;
             if (accepted) return;
@@ -394,6 +396,7 @@ final class CueDispatcher implements AutoCloseable {
                         return;
                     }
                     started[0] = true;
+                    startedSpeech = request;
                     lastSpeechStarted.put(request.category, atMs);
                     if (isAlert(request.category)) lastAlertAtMs = atMs;
                     listener.onPlayback(request, "SPEECH", atMs,
@@ -450,6 +453,7 @@ final class CueDispatcher implements AutoCloseable {
     private boolean startSynchronized(CueRequest request) {
         cancelledSpeech.remove(request.cueId);
         speaking = request;
+        startedSpeech = null;
         boolean accepted = renderer.speakSynchronized(request, toneCallback(request), speechCallback(request));
         if (!accepted && speaking == request) speaking = null;
         return accepted;
@@ -491,6 +495,9 @@ final class CueDispatcher implements AutoCloseable {
     }
 
     synchronized boolean isSpeaking() { return speaking != null; }
+    synchronized boolean isCueSpeaking(String cueId) {
+        return speaking != null && speaking.cueId.equals(cueId);
+    }
     synchronized boolean hasAssistantSpeech() {
         if (speaking != null && speaking.category == CueRequest.Category.ASSISTANT) return true;
         for (Pending pending : speechQueue)
@@ -501,15 +508,33 @@ final class CueDispatcher implements AutoCloseable {
     /** Start time of the most recently started near/peripheral/danger alert. */
     long recentAlertAtMs() { return lastAlertAtMs; }
 
-    /** Clear output queued for one category when its feature is disabled/reset. */
-    /** Retire one stale recommendation without interrupting unrelated status speech. */
-    synchronized void cancelCue(String cueId, String reason) {
-        if (closed || cueId == null) return;
+    /** Retire a hint before playback, or let its already-started sentence finish once.
+     * The caller must withhold replacement guidance until isCueSpeaking becomes false.
+     * Session stops and explicit cancellation continue to use cancelCue/clearAll.
+     */
+    synchronized boolean retireCue(String cueId, String reason, boolean finishStarted) {
+        if (closed || cueId == null) return false;
+        if (finishStarted && speaking != null && speaking == startedSpeech
+                && cueId.equals(speaking.cueId)) {
+            cancelQueuedCue(cueId, reason);
+            return true;
+        }
+        cancelCue(cueId, reason);
+        return false;
+    }
+
+    private void cancelQueuedCue(String cueId, String reason) {
         speechQueue.removeIf(pending -> {
             if (!cueId.equals(pending.request.cueId)) return false;
             listener.onPlayback(pending.request, "SPEECH", clock.nowMs(), "CANCELLED_" + reason);
             return true;
         });
+    }
+
+    /** Retire one stale recommendation without interrupting unrelated status speech. */
+    synchronized void cancelCue(String cueId, String reason) {
+        if (closed || cueId == null) return;
+        cancelQueuedCue(cueId, reason);
         if (speaking != null && cueId.equals(speaking.cueId)) {
             CueRequest previous = speaking;
             cancelledSpeech.add(previous.cueId);

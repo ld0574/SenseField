@@ -86,6 +86,7 @@ public class Match3LiveService extends Service {
         final Match3GeometryConfirmation geometryConfirmation = new Match3GeometryConfirmation();
         volatile Match3Hint currentHint;
         volatile String hintCueId;
+        volatile String finishingHintCueId;
         long boardRevision, lastHintSpokenRevision = -1;
         int hintAttempts;
         char[][] lastStableMatrix;
@@ -628,6 +629,13 @@ public class Match3LiveService extends Service {
                 invalidateHint(s,"GOAL_CHANGED");
         }
         if(goalsConfirming && s.currentHint == null) { recommendationGate(s,"goal_confirming");return; }
+        // An invalidated exchange loses its rectangle immediately. Finish only
+        // the sentence already heard, then select from fresh confirmed evidence;
+        // never show a new direction underneath the preceding spoken direction.
+        if (s.currentHint == null && hintSpeechFinishing(s)) {
+            recommendationGate(s, "speech_finishing");
+            return;
+        }
         if (s.currentHint == null && s.lastSwaps != null && !s.lastSwaps.isEmpty()) {
             s.currentHint = new Match3Hint(s.diagnostics.sessionId, ++s.hintRevision, s.frameAt,
                     s.geometry, s.rankedMoves.get(0),s.goals.key());
@@ -747,13 +755,32 @@ public class Match3LiveService extends Service {
         s.currentHint = null;
         s.hintPosition=null;s.hintGoals=null;
         String cueId = s.hintCueId; s.hintCueId = null;
-        if (dispatcher != null && cueId != null) dispatcher.cancelCue(cueId, reason);
+        boolean finishStarted = Match3HintPlaybackPolicy.finishStartedSentence(reason);
+        if (dispatcher != null && cueId != null) {
+            if (dispatcher.retireCue(cueId, reason, finishStarted)) {
+                s.finishingHintCueId = cueId;
+                s.diagnostics.audit("Match3SpeechFinishing cue_id=" + cueId + " reason=" + reason
+                        + " replacement=after_completion old_highlight=hidden");
+            }
+        }
+        if (!finishStarted && s.finishingHintCueId != null) {
+            if (dispatcher != null) dispatcher.cancelCue(s.finishingHintCueId, reason);
+            s.finishingHintCueId = null;
+        }
         if (s.overlay != null) s.overlay.clear();
         if (s.overlayFilter != null) s.overlayFilter.retire();
         if (old != null) s.diagnostics.audit("Match3HintCleared revision=" + old.revision
                 + " reason=" + reason + " highlight_visible_ms=" + visibleMs);
         if(old!=null && ("BOARD_MOTION".equals(reason) || "HINT_EVIDENCE_CHANGED".equals(reason)))
             s.diagnostics.match3HintContext(old.revision,true);
+    }
+
+    private boolean hintSpeechFinishing(Session s) {
+        String cueId = s.finishingHintCueId;
+        if (cueId == null) return false;
+        if (dispatcher != null && dispatcher.isCueSpeaking(cueId)) return true;
+        s.finishingHintCueId = null;
+        return false;
     }
 
     private void invalidateBoard(Session s, String reason) {
@@ -835,6 +862,9 @@ public class Match3LiveService extends Service {
         if (hint == null || !s.boardValid || now - s.frameAt > 5000
                 || now - s.lastAnnounceAt < MIN_ANNOUNCE_GAP_MS
                 || s.hintAttempts >= 3 || !repeat && s.lastHintSpokenRevision == hint.revision) return;
+        // A slow voice can exceed the idle repeat interval. Repeating the same
+        // hint must not flush its active or not-yet-started utterance either.
+        if (dispatcher != null && dispatcher.isCueSpeaking(s.hintCueId)) return;
         // Initial status speech can be ahead of this one; the playback guard rejects old boards.
         ensureDispatcher(s);
         String cueId = hint.sessionId + ":hint:" + hint.revision + ":" + now;
