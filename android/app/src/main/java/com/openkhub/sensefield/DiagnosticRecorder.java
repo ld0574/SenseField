@@ -64,6 +64,8 @@ final class DiagnosticRecorder {
     private final Context context;
     private final boolean allowPortrait;
     private DiagnosticArchive archive;
+    private final LocalIssueReport.Writer issueReports;
+    private volatile String appVersion = LocalIssueReport.UNAVAILABLE;
     private final AtomicInteger pending = new AtomicInteger();
     private final AtomicInteger dropped = new AtomicInteger();
     private final AtomicInteger imageDrops = new AtomicInteger();
@@ -99,6 +101,11 @@ final class DiagnosticRecorder {
     private volatile JSONObject lastDeviceSample;
     private volatile JSONObject latestState;
     private volatile LoadSample latestLoadSample = new LoadSample(-1, -1, -1);
+    /** Projection status as the capture service last reported it; read only by the device chain. */
+    private volatile HyperOsHealthSnapshot.ProjectionStatus hyperOsProjection =
+            HyperOsHealthSnapshot.ProjectionStatus.IDLE;
+    /** Latest vendor-OS silent-stop reading, published with the device sample. */
+    private volatile HyperOsHealthSnapshot lastHyperOsSnapshot;
     private ScheduledFuture<?> heartbeat;
 
     /** Immutable device load snapshot for readers outside the capture worker. */
@@ -164,6 +171,7 @@ final class DiagnosticRecorder {
                 "processed_frames", 0, "landscape_processed_frames", 0);
         imagesEnabled = imagesEnabledPreference(context);
         directory = new File(root(context), "diag-" + System.currentTimeMillis() + "-" + sessionId);
+        issueReports = new LocalIssueReport.Writer(directory);
         DisplayMetrics display = context.getResources().getDisplayMetrics();
         String versionName;
         try {
@@ -172,6 +180,7 @@ final class DiagnosticRecorder {
         } catch (Exception e) {
             versionName = "unknown";
         }
+        appVersion = versionName;
         JSONObject metadata = object("schema", "sensefield.diagnostics", "schema_version", 1,
                 "game_id", game.id, "game_name", game.label,
                 "session_id", sessionId, "started_elapsed_ms", startedAtMs,
@@ -329,6 +338,7 @@ final class DiagnosticRecorder {
     void elementSample(Bitmap frame,BoardGeometry geometry,Match3UnknownElements.Sample sample,
                        Match3VisualCatalog.Admission admission) {
         record("Match3ElementObserved",elementObservedData(sample,admission));
+        issueReports.observe(LocalIssueReport.read(game, geometry, sample, appVersion), sample.at, this::deliverIssueReport);
         synchronized(imageStateLock) {
             if(finished || !failure.isEmpty() || !imagesEnabled || imageLimit) {
                 record("Match3ElementSample",object("family_id",sample.familyId,"status","images_disabled_or_closed"));return;
@@ -370,6 +380,37 @@ final class DiagnosticRecorder {
                 if(!submitted)imageBudget.release(bytes);
             }
         }
+    }
+
+    /**
+     * 本地未识别界面记录只投递到既有诊断 IO 工作线程；处理线程上一个字节也不落盘，
+     * 写坏了也一律静默，播报链路与画面采样都不因为它停下来。
+     */
+    private void deliverIssueReport(LocalIssueReport.Pending job) {
+        IO.execute(() -> {
+            String status;
+            try {
+                status = issueReports.settle(job);
+            } catch (Exception unexpected) {
+                status = LocalIssueReport.STATUS_NOT_WRITTEN;
+            }
+            record("LocalIssueReport", issueReportData(job, status, issueReports));
+        });
+    }
+
+    /** Pure so a unit test can prove the "这次没写成" readout really reaches the diagnostic line. */
+    static JSONObject issueReportData(LocalIssueReport.Pending job, String status, LocalIssueReport.Writer writer) {
+        return object("record", LocalIssueReport.RECORD_TAG, "status", status,
+                "file", job == null ? JSONObject.NULL : job.fileName,
+                "written_bytes", job == null ? 0 : job.bytes,
+                "unknown_families", writer.familyCount(), "unknown_samples", writer.sampleCount(),
+                "report_files", writer.fileCount(), "not_written", writer.notWrittenCount(),
+                "desens_replacements", writer.desensitizationCount(),
+                "written", LocalIssueReport.STATUS_WRITTEN.equals(status),
+                "not_written_this_time", LocalIssueReport.STATUS_NOT_WRITTEN.equals(status),
+                "scope", "local_file_only_no_upload_no_share_no_prompt",
+                "delivery_note", "attached file inside the existing diagnostic session directory; "
+                        + "no network call, no share intent, no consent prompt");
     }
 
     void dispatch(CueRequest request, String outcome, String reason, int acceptedChannels) {
@@ -691,6 +732,11 @@ final class DiagnosticRecorder {
                             BatteryManager.BATTERY_STATUS_UNKNOWN);
             int batteryPlugged = battery == null ? -1 :
                     battery.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1);
+            // Vendor-OS silent-stop reading rides this existing periodic chain: no new task,
+            // no new thread. The guidance action leaves through the existing guidance page only.
+            HyperOsHealthSnapshot hyperOs = HyperOsSystemProbe.sample(context, hyperOsProjection);
+            lastHyperOsSnapshot = hyperOs;
+            HyperOsSystemProbe.deliverGuidanceEdge(context, hyperOs.action());
             JSONObject sample = object("battery_temp_tenths_c", batteryTempTenthsC,
                     "battery_level", battery == null ? -1 : battery.getIntExtra(BatteryManager.EXTRA_LEVEL, -1),
                     "battery_status", batteryStatus,
@@ -700,7 +746,17 @@ final class DiagnosticRecorder {
                     "media_volume", audio == null ? -1 : audio.getStreamVolume(AudioManager.STREAM_MUSIC),
                     "media_volume_max", audio == null ? -1 : audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC),
                     "thermal_status", thermalStatus,
-                    "thermal_status_name", thermalStatusName(thermalStatus));
+                    "thermal_status_name", thermalStatusName(thermalStatus),
+                    HyperOsHealthSnapshot.READING_KEY, hyperOs.line(),
+                    HyperOsHealthSnapshot.GUIDANCE_KEY, hyperOs.action().name(),
+                    // Foreground-promotion readings ride this existing device chain: no new task,
+                    // no new thread, no new channel. The gate line is the local conclusion, the
+                    // decline line is the runtime observation, and an empty decline line means
+                    // "not observed" — never "promotion succeeded".
+                    HyperOsHealthSnapshot.FGS_GATE_KEY, HyperOsHealthSnapshot.fgsTypeGateReading(
+                            Build.VERSION.SDK_INT, SenseFieldReaderService.MANIFEST_DECLARED_TYPES),
+                    HyperOsHealthSnapshot.FGS_DEGRADATION_KEY,
+                            SenseFieldReaderService.fgsDegradationReading());
             lastDeviceSample = sample;
             latestLoadSample = new LoadSample(batteryTempTenthsC, thermalStatus,
                     SystemClock.elapsedRealtime());
@@ -709,6 +765,13 @@ final class DiagnosticRecorder {
     }
 
     LoadSample latestLoadSample() { return latestLoadSample; }
+
+    /** The capture service reports projection changes here; the device chain only reads them. */
+    void noteHyperOsProjection(HyperOsHealthSnapshot.ProjectionStatus status) {
+        if (status != null) hyperOsProjection = status;
+    }
+
+    HyperOsHealthSnapshot lastHyperOsSnapshot() { return lastHyperOsSnapshot; }
 
     private static String thermalStatusName(int status) {
         switch (status) {

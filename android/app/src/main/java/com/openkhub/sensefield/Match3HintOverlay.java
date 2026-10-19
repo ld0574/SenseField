@@ -69,6 +69,9 @@ final class Match3HintOverlay implements AutoCloseable {
             params.width = Math.max(1, (int) Math.ceil((g.right - g.left) * sx));
             params.height = Math.max(1, (int) Math.ceil((g.bottom - g.top) * sy));
             view.hint = hint; view.sx = sx; view.sy = sy;
+            // Label for screen readers only: the drawn pixels, the window flags and the touch
+            // behaviour of this window are unchanged by this line.
+            view.setContentDescription(HintLabel.forHint(hint));
             try {
                 if (attached) windows.updateViewLayout(view, params);
                 else { windows.addView(view, params); attached = true; }
@@ -81,6 +84,8 @@ final class Match3HintOverlay implements AutoCloseable {
     private void clearOnMain() {
         if (attached) try { windows.removeViewImmediate(view); } catch (RuntimeException ignored) { }
         attached = false; rendered = null; view.hint = null;
+        // A label that outlives the highlight would claim a move the user can no longer see.
+        view.setContentDescription("");
     }
     @Override public void close() { closed = true; rendered = null; main.post(this::clearOnMain); }
 
@@ -112,7 +117,12 @@ final class Match3HintOverlay implements AutoCloseable {
         Match3Hint hint; float sx = 1, sy = 1;
         HintView(Context context) {
             super(context); density = context.getResources().getDisplayMetrics().density;
-            setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+            // The layer used to opt out of the accessibility tree altogether, which is why a
+            // contentDescription on it could never be read. Being visible to accessibility adds no
+            // focus and no touch behaviour to a FLAG_NOT_TOUCHABLE window; POLITE is the same live
+            // region level the rest of this app already uses for status text that changes.
+            setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
+            setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         }
         @Override protected void onDraw(Canvas canvas) {
             drawHint(canvas);

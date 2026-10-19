@@ -64,12 +64,15 @@ public final class CaptureService extends Service {
     }
 
     private static final String TAG = "MapAssistCapture";
-    private static final String CHANNEL = "mapassist_capture";
+    static final String CHANNEL = "mapassist_capture";
     private static final int NOTIFICATION_ID = 104;
     private static final long FRAME_PERIOD_MS = 83; // Upper sampling limit; completion-based rest also applies.
     private static final long DISPLAY_CHECK_PERIOD_MS = 500;
     private final Object processingLock = new Object();
     private final FrameProcessingPolicy frameProcessing = new FrameProcessingPolicy();
+    /** One-shot budget for re-asking projection consent after the system releases it. */
+    private final HyperOsHealthSnapshot.ReauthLatch projectionReauthLatch =
+            new HyperOsHealthSnapshot.ReauthLatch();
     private long lastLoadSampleAtMs = -1;
     private long loadSkippedFrames;
     private long totalProcessingWallMs;
@@ -347,6 +350,15 @@ public final class CaptureService extends Service {
                     if (message.startsWith("AlertTts status=") && worker != null) worker.post(() -> {
                         if (!stopping && audioSessionId.equals(auditSessionId)) refreshNotification();
                     });
+                    // Second hop for the same reading, riding the slot this lambda already occupies:
+                    // hand the broadcast-sound sentence to the assistant this service already holds,
+                    // so it folds into the persistent status line instead of only flashing a toast.
+                    if (message.startsWith(CuePlayer.BROADCAST_METER_AUDIT_PREFIX)
+                            && audioSessionId.equals(auditSessionId)) {
+                        AssistantController current = assistant;
+                        if (current != null) current.showSoundIndicator(message.substring(
+                                CuePlayer.BROADCAST_METER_AUDIT_PREFIX.length()));
+                    }
                 });
                 cueSettings = new CueSettings(this);
                 cueDispatcher = new CueDispatcher(cuePlayer, cueSettings,
@@ -478,6 +490,9 @@ public final class CaptureService extends Service {
                         // Do not let a delayed callback from an older capture
                         // session stop a newer start command.
                         stopSelfResult(stopThroughStartId);
+                        // Recovery layer: the system released the projection, so read the
+                        // vendor-OS state out and hand the player one guidance action.
+                        attemptProjectionRecoveryAfterRevocation();
                     }
                 };
                 projection.registerCallback(projectionCallback, worker);
@@ -495,6 +510,12 @@ public final class CaptureService extends Service {
                         .putBoolean("capture_waiting_for_image", false)
                         .apply();
                 captureHealth.start(SystemClock.elapsedRealtime());
+                // A fresh consent re-arms the one-shot vendor-OS recovery budget.
+                HyperOsSystemProbe.markProjectionGranted(this);
+                HyperOsSystemProbe.resetGuidanceEdge();
+                projectionReauthLatch.reset();
+                if (diagnostics != null) diagnostics.noteHyperOsProjection(
+                        HyperOsHealthSnapshot.ProjectionStatus.ACTIVE);
                 publishDiagnosticStateLocked();
                 scheduleDisplayWatchdogLocked(sessionGeneration);
                 refreshNotification();
@@ -581,6 +602,7 @@ public final class CaptureService extends Service {
                 CueRequest.Category.PERIPHERAL_THREAT);
         boolean peripheralWasEnabled = cueArbiter.isPeripheralThreatEnabled();
         cueArbiter.setPeripheralThreatEnabled(peripheralEnabled);
+        cueArbiter.setFieldLossSelfReport(cueSettings.fieldLossSelfReport());
         if (peripheralWasEnabled && !peripheralEnabled && cueDispatcher != null) {
             cueDispatcher.clearCategory(CueRequest.Category.PERIPHERAL_THREAT);
         }
@@ -660,6 +682,8 @@ public final class CaptureService extends Service {
         long delay = captureHealth.beginRecovery();
         if (delay < 0) {
             logCaptureHealth("FAILED", "attempts_exhausted");
+            if (diagnostics != null) diagnostics.noteHyperOsProjection(
+                    HyperOsHealthSnapshot.ProjectionStatus.FAILED);
             dispatchSystemCue("CAPTURE_FAILED", "截屏恢复失败，请重新授权",
                     100, 2000, CueRequest.CHANNEL_SPEECH | CueRequest.CHANNEL_HAPTIC);
             stopWithStatus("截屏画面中断且恢复失败，请重新授权");
@@ -707,6 +731,32 @@ public final class CaptureService extends Service {
             }
         };
         worker.postDelayed(recoveryRunnable, delay);
+    }
+
+    /**
+     * 投影被系统释放之后的恢复层。只自动重走一次授权流程（复用既有引导页出口），
+     * 额度用完则只落 {@code capture_revoked_final} 读数，不循环重试、不再弹第二次。
+     */
+    private void attemptProjectionRecoveryAfterRevocation() {
+        synchronized (processingLock) {
+            if (diagnostics != null) diagnostics.noteHyperOsProjection(
+                    HyperOsHealthSnapshot.ProjectionStatus.REVOKED);
+        }
+        HyperOsHealthSnapshot snapshot = HyperOsSystemProbe.sample(this,
+                HyperOsHealthSnapshot.ProjectionStatus.REVOKED);
+        String recovery = HyperOsHealthSnapshot.recoveryReadingFor(snapshot, projectionReauthLatch);
+        logHyperOsReading(recovery, snapshot);
+        if (HyperOsHealthSnapshot.REASK_READING.equals(recovery))
+            HyperOsSystemProbe.deliverGuidance(this, snapshot.action());
+    }
+
+    /** 读数落点：与 logCaptureHealth 同一条既有出口（日志＋诊断归档），不新增事件类型。 */
+    private void logHyperOsReading(String recovery, HyperOsHealthSnapshot snapshot) {
+        String message = "HyperOsHealth " + snapshot.line() + " recovery="
+                + (recovery.isEmpty() ? "none" : recovery);
+        Log.i(TAG, message);
+        DiagnosticRecorder recorder = diagnostics;
+        if (recorder != null && !recorder.finished) recorder.audit(message);
     }
 
     private void logCaptureHealth(String state, String reason) {
@@ -1283,6 +1333,17 @@ public final class CaptureService extends Service {
         long ttl = kind == 4 ? 2000 : kind == 5 ? 2500
                 : kind == 3 ? 1200 : maxObservationAgeMs;
         int channels = CueRouting.directCueRequestedChannels(kind, direction);
+        // 自陈视野轴的接线下沉到实际构造 CueRequest 的唯一出口：默认档时 decide 原样
+        // 返回入参掩码与优先级，这里逐字节不改变既有请求；周边档时边缘线索（edge 即
+        // 上面既成的 peripheralThreat 判定）请求位加一、优先级抬到既成危险档。
+        // categoryEnabled 入参恒真——能走到这里说明 arbiter 的类别闸门已经放行。
+        FieldLossPolicy.Outcome fieldLoss = FieldLossPolicy.decide(
+                cueSettings == null ? FieldLossPolicy.TIER_NONE : cueSettings.fieldLossSelfReport(),
+                peripheralThreat, channels, Float.NaN, Float.NaN, Float.NaN, true);
+        channels = fieldLoss.channels;
+        if (fieldLoss.elevatedPriority) {
+            priority = Math.max(priority, FieldLossPolicy.PROMOTION_PRIORITY_FLOOR);
+        }
         String speech = null;
         if (kind == 4) {
             speech = "你已阵亡";
@@ -1383,6 +1444,13 @@ public final class CaptureService extends Service {
 
     private final class AssistantHost implements AssistantController.Host {
         @Override public boolean speechReady() { CuePlayer player = cuePlayer; return player != null && player.assistantSpeechReady(); }
+        // Last hop of the noise-floor transport: the cue player classifies the very reading the
+        // speech gate produced, and its own speak() carries critical cues on the existing haptic
+        // path when the level reaches NOISY. Null-safe: capture may stop while a frame is in flight.
+        @Override public void noiseFloor(double floor) {
+            CuePlayer player = cuePlayer;
+            if (player != null) player.acceptNoiseFloor(floor);
+        }
         @Override public void speak(AssistantReply reply) {
             CueDispatcher dispatcher = cueDispatcher;
             AssistantController current = assistant;

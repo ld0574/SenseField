@@ -42,6 +42,9 @@ import java.util.function.Consumer;
 final class CuePlayer implements CueDispatcher.Renderer {
     static final String PREF_TTS_ENGINE = "cue_tts_engine";
     static final String PREF_TTS_RATE = "cue_speech_rate_percent";
+    // Player-chosen offline Chinese voice name. Blank, unknown, unavailable or non-Chinese
+    // names must never alter the automatic selection path below.
+    static final String PREF_VOICE_NAME = "cue_voice_name";
     // The bundled game voice already uses the deliberately slower audition pace.
     // Explicitly saved rates still take precedence; do not speed up a fresh install again.
     static final int DEFAULT_TTS_RATE_PERCENT = 100;
@@ -116,11 +119,22 @@ final class CuePlayer implements CueDispatcher.Renderer {
     private volatile String speechStatus = "正在检查离线中文语音……";
     private volatile String ttsAuditState;
     private String requestedVoiceEngine = "";
+    private volatile String requestedVoiceName = "";
     private volatile Consumer<String> audioAuditListener;
     private volatile int ttsPreparationGeneration;
     private final Set<String> attemptedVoiceEngines = ConcurrentHashMap.newKeySet();
     private List<String> voiceEngines = Collections.emptyList();
     private int activeVoiceEngineIndex = -1;
+    /**
+     * Adaptive Audio Context: the noise floor handed over by {@link VoiceActivityGate} is
+     * classified here and only its <em>channel</em> half is used. The gain half of
+     * {@link AudioContextLevel}'s decision is deliberately never read on the playback path —
+     * see {@link #volume()}, which stays a pure function of the player's own setting.
+     * Leaf lock: never held while an engine call or a haptic request is submitted.
+     */
+    private final AudioContextLevel audioContext = AudioContextLevel.create();
+    private final Object audioContextLock = new Object();
+    private String lastTouchFallbackCueId;
 
     interface AssistantPlaybackListener {
         /** Receives a copied 160-sample mono render frame at 16 kHz. */
@@ -570,6 +584,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
     }
 
     private void ensureDynamicVoice() {
+        requestedVoiceName = GameProfile.settings(context).getString(PREF_VOICE_NAME, "");
         synchronized (audioLock) {
             if (closed || dynamicVoiceRequested) return;
             dynamicVoiceRequested = true;
@@ -635,6 +650,62 @@ final class CuePlayer implements CueDispatcher.Renderer {
                         .thenComparing(Voice::getName)).findFirst().orElse(null);
     }
 
+    /**
+     * Player voice choice layered on the automatic offline selection. A blank or unknown
+     * preference, or one naming a voice that is not currently an available offline Chinese
+     * voice, must return exactly what {@link #selectedOfflineVoice} returns; no exceptions.
+     */
+    static Voice applyVoicePreference(String preference, Voice current, Set<Voice> available) {
+        if (preference != null && !preference.isEmpty() && available != null) {
+            for (Voice voice : available)
+                if (voice != null && offlineChinese(voice) && preference.equals(voice.getName())) return voice;
+        }
+        return selectedOfflineVoice(current, available);
+    }
+
+    /**
+     * The voice the engine is asked to install. An explicit player choice is resolved against
+     * the enumerated voices even when the engine's current voice already passes the offline
+     * Chinese guard, so the choice can never be bypassed by that guard; only a blank
+     * preference keeps the engine default and therefore the previous behaviour.
+     */
+    static Voice resolveOfflineVoice(String preference, Voice current, Set<Voice> engineVoices) {
+        boolean explicitChoice = preference != null && !preference.isEmpty();
+        return applyVoicePreference(preference, current,
+                explicitChoice || !offlineChinese(current) ? engineVoices : null);
+    }
+
+    /**
+     * Ordered, duplicate-free offline Chinese voice names for the tuning picker. Network-only,
+     * uninstalled and non-Chinese voices are never listed, so they can never be chosen.
+     */
+    static List<String> offlineChineseVoiceNames(Set<Voice> available) {
+        List<String> names = new ArrayList<>();
+        if (available == null) return names;
+        List<Voice> candidates = new ArrayList<>();
+        for (Voice voice : available) {
+            // Drop the unusable entries before sorting, not after: the ordering comparator
+            // dereferences Voice.getName() directly, so an unnamed voice must never reach it.
+            if (voice == null || !offlineChinese(voice)) continue;
+            String name = voice.getName();
+            if (name == null || name.isEmpty()) continue;
+            candidates.add(voice);
+        }
+        candidates.sort(java.util.Comparator.<Voice>comparingInt(value -> OfflineTtsPolicy.localeOrder(value.getLocale()))
+                .thenComparing(Voice::getName));
+        for (Voice voice : candidates) {
+            String name = voice.getName();
+            if (!names.contains(name)) names.add(name);
+        }
+        return names;
+    }
+
+    /** Status line shown after the player picks a dynamic speech voice. */
+    static String voicePreferenceStatusText(String preference) {
+        return "动态文本音色：" + (preference == null || preference.isEmpty()
+                ? "自动（跟随引擎）" : preference) + "。";
+    }
+
     /** Voice discovery and synthesis never hold the lock used by the recognition thread. */
     private void configureOfflineVoice(TextToSpeech engine, String selected, int index, int generation) {
         try {
@@ -644,10 +715,10 @@ final class CuePlayer implements CueDispatcher.Renderer {
                 return;
             }
             Voice current = engine.getVoice();
-            boolean preserveEngineVoice = offlineChinese(current);
-            Voice offline = selectedOfflineVoice(current, preserveEngineVoice ? null : engine.getVoices());
+            Voice offline = resolveOfflineVoice(requestedVoiceName, current, engine.getVoices());
             // MultiTTS owns its selected voice. Do not overwrite a valid engine default
             // with the first alphabetically enumerated voice or a redundant setVoice call.
+            boolean preserveEngineVoice = offline == current && offlineChinese(current);
             if (offline == null || (!preserveEngineVoice && engine.setVoice(offline) != TextToSpeech.SUCCESS)
                     || !offlineChinese(engine.getVoice())) {
                 mainHandler.post(() -> advanceVoiceEngine(engine, index, generation));
@@ -714,8 +785,8 @@ final class CuePlayer implements CueDispatcher.Renderer {
                     CueRequest request = speechRequests.get(id);
                     // Synthesis and playback have separate deadlines. A 4 s synthesis budget
                     // must not cut speech that has already started and is still playing.
-                    long duration = request == null ? 30_000 : Math.min(30_000, Math.max(4000,
-                            request.speech.length() * 700L + 3000));
+                    long duration = playbackBudgetMs(
+                            request == null ? null : request.speech);
                     mainHandler.postDelayed(() -> timeoutDynamicSpeech(id, callback, engine, "PLAYBACK_TIMEOUT"), duration);
                 }
             }
@@ -786,6 +857,38 @@ final class CuePlayer implements CueDispatcher.Renderer {
         }
     }
 
+    /**
+     * Line prefix that carries one {@link BroadcastSoundMeter} sentence out through the
+     * <em>existing</em> audio-audit listener slot. The persistent outlet recognises the reading by
+     * this prefix, so no new listener field, bus, singleton, or broadcast is introduced.
+     */
+    static final String BROADCAST_METER_AUDIT_PREFIX = "BroadcastMeter sentence=";
+
+    /**
+     * Additive on-screen outlet for {@link BroadcastSoundMeter}: one broadcast, one sentence.
+     * It reuses the app's existing player-visible text outlet for audio events — the same short
+     * toast channel the audio-audit listener already drives from
+     * {@code Match3LiveService} and {@code Match3SettingsActivity} — so no new setting control,
+     * window, permission, or storage key is introduced and no cue's order, duration, tone or
+     * haptic branch is touched. A fully silent or unavailable reading never reaches the screen.
+     */
+    private void reportBroadcastMeter(String sentence) {
+        if (closed || sentence == null || sentence.isEmpty()) return;
+        // Second outlet, additive: the transient toast below stays exactly as it was, and the same
+        // sentence additionally rides the audit listener slot already installed by CaptureService,
+        // which folds it into the persistent status line.
+        auditAudio(BROADCAST_METER_AUDIT_PREFIX + sentence);
+        mainHandler.post(() -> {
+            if (closed) return;
+            try {
+                android.widget.Toast.makeText(context, sentence,
+                        android.widget.Toast.LENGTH_SHORT).show();
+            } catch (RuntimeException ignored) {
+                Log.w(TAG, "Broadcast meter outlet unavailable");
+            }
+        });
+    }
+
     @Override public boolean hasPreparedSpeech(CueRequest request) {
         return !closed && !preparedPcmFailed && request.category == CueRequest.Category.NEAR_ZONE
                 && AlertSpeechCache.get(alertVoiceKey, request.speech) != null;
@@ -847,6 +950,9 @@ final class CuePlayer implements CueDispatcher.Renderer {
             if (playback.cancelled || closed) return;
             short[] tone = playback.toneCallback == null ? null : preparedTone(playback.request);
             short[] mixed = AlertSpeechCache.mix(speech, tone);
+            // Read the very buffer that is about to be handed to the audio system, before it is
+            // consumed, so a hearing-impaired player gets one on-screen line per broadcast.
+            String broadcastMeter = BroadcastSoundMeter.describe(mixed);
             float speed = narration ? BundledSpeechCatalog.rate(GameProfile.settings(context)
                     .getInt(PREF_TTS_RATE, DEFAULT_TTS_RATE_PERCENT)) / 100f : 1f;
             track = new AudioTrack.Builder()
@@ -859,6 +965,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
             track.setVolume(volume());
             if (track.write(mixed, 0, mixed.length, AudioTrack.WRITE_BLOCKING) != mixed.length)
                 throw new IllegalStateException("Incomplete alert PCM write");
+            reportBroadcastMeter(broadcastMeter);
             synchronized (audioLock) {
                 if (closed || playback.cancelled || preparedAlert != playback
                         || !playback.request.playbackAllowedAt(SystemClock.elapsedRealtime())) return;
@@ -1000,6 +1107,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
     private boolean enqueueSpatialToneLocked(CueRequest request,
                                              CueDispatcher.PlaybackCallback callback,
                                              long now, short[] samples) {
+        String broadcastMeter = BroadcastSoundMeter.describe(samples);
         AudioTrack track = null;
         try {
             int minBuffer = AudioTrack.getMinBufferSize(48_000,
@@ -1024,6 +1132,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
                 track.release();
                 return false;
             }
+            reportBroadcastMeter(broadcastMeter);
             track.play();
             spatialToneTracks.put(track, new SpatialTonePlayback(request.category, callback,
                     samples.length / 2, now + samples.length * 1000L / (48000 * 2) + 2000));
@@ -1108,6 +1217,58 @@ final class CuePlayer implements CueDispatcher.Renderer {
         }
     }
 
+    /**
+     * Feed one adaptive noise-floor reading from the perception side. The value is the very
+     * floor {@link VoiceActivityGate} gates speech on; the hysteresis lives in
+     * {@link AudioContextLevel}, so a passing siren cannot flip the delivery mode. Audited on a
+     * level change only, so a noisy room does not produce one line per frame.
+     */
+    void acceptNoiseFloor(double floor) {
+        AudioContextLevel.Level before;
+        AudioContextLevel.Level after;
+        synchronized (audioContextLock) {
+            before = audioContext.level();
+            after = audioContext.accept((float) floor);
+        }
+        if (before != after) {
+            auditAudio("AacContext previous=" + before + " level=" + after);
+        }
+    }
+
+    /**
+     * Pure fallback judgement: environment class plus cue category decides whether this cue must
+     * also be carried by touch. Only NOISY declares the speech channel untrustworthy, and the
+     * locally generated conversation category is the only chatter here, so a spoken answer
+     * never adds a pulse on its own.
+     */
+    static boolean needsTouchFallback(AudioContextLevel.Level level,
+                                      CueRequest.Category category) {
+        return level == AudioContextLevel.Level.NOISY
+                && category != CueRequest.Category.ASSISTANT;
+    }
+
+    /**
+     * Hand one cue to the existing haptic path in addition to speech. No new pattern, no new
+     * permission and no new capability probe: this goes through {@link #vibrate(CueRequest)},
+     * which reuses {@link HapticPolicy} and the device's own vibrator. The volume path is not
+     * part of this chain — the gain half of the decision is never read here.
+     */
+    private void carryTouchFallbackIfNoisy(CueRequest request) {
+        final boolean required;
+        final boolean alreadyCarried;
+        synchronized (audioContextLock) {
+            required = needsTouchFallback(audioContext.level(), request.category)
+                    && audioContext.decision().channel
+                            == AudioContextLevel.Channel.SPEECH_PLUS_TOUCH;
+            alreadyCarried = request.cueId.equals(lastTouchFallbackCueId);
+        }
+        if (!required || alreadyCarried) return;
+        // Submitted outside both locks: a haptic request must never run under audioLock.
+        if (vibrate(request)) {
+            synchronized (audioContextLock) { lastTouchFallbackCueId = request.cueId; }
+        }
+    }
+
     /** Duration of the configured effect on this device, for preview stop timers. */
     long hapticDurationMs(CueRequest request) {
         try {
@@ -1147,6 +1308,9 @@ final class CuePlayer implements CueDispatcher.Renderer {
         if (tonePreviewMode) return false;
         if (request.category == CueRequest.Category.ASSISTANT)
             return synthesizeAssistant(request, callback);
+        // Noisy environment: this cue goes out on touch as well as on speech. Assistant
+        // chatter returned above and can never reach here.
+        carryTouchFallbackIfNoisy(request);
         if (!dynamicVoiceProbe && (BundledSpeechCatalog.isFixed(request.speech)
                 || ReminderGuide.NARRATION_KIND.equals(request.kind)))
             return enqueuePreparedAlert(request, null, callback);
@@ -1837,6 +2001,19 @@ final class CuePlayer implements CueDispatcher.Renderer {
         return request.category == CueRequest.Category.SYSTEM
                 && ReminderGuide.NARRATION_KIND.equals(request.kind)
                 ? ReminderGuide.NARRATION_TIMEOUT_MS : SPEECH_TIMEOUT_MS;
+    }
+
+    /**
+     * Playback budget for speech that has already started. This is the second, separate
+     * deadline from {@link #speechTimeoutMs(CueRequest)}: the synthesis watchdog must not
+     * cut a sentence that is still playing, so the allowance grows with the sentence.
+     * The four constants are load-bearing - 700 ms per character, a 3000 ms base, the
+     * 4000 ms floor and the 30000 ms ceiling - and only a missing sentence falls back to
+     * the ceiling, as the pre-extraction call site did.
+     */
+    static long playbackBudgetMs(String speech) {
+        return speech == null ? 30_000 : Math.min(30_000, Math.max(4000,
+                speech.length() * 700L + 3000));
     }
 
     static int alertQueueMode(CueRequest request, boolean interrupt, boolean warming) {

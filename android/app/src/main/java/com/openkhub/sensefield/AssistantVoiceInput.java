@@ -25,6 +25,8 @@ final class AssistantVoiceInput implements AutoCloseable {
         default void safetyMetadata(int flags, int routedDeviceType) { }
         default void acousticSummary(int frames, int speechFrames, int rms, int peak,
                 int clippedSamples, int inputDeviceType) { }
+        /** The gate's adaptive floor after a recomputed frame; carried to the cue classifier. */
+        default void noiseFloor(double floor) { }
         void unavailable(String status);
     }
 
@@ -65,6 +67,9 @@ final class AssistantVoiceInput implements AutoCloseable {
         this.context = context;
         this.listener = listener;
         this.gate = new VoiceActivityGate(listener);
+        // Perception-to-output transport: whenever the gate recomputes its one EMA noise floor,
+        // hand that same reading on. No sampling starts here; the mic is already running.
+        gate.observeNoiseFloor(() -> listener.noiseFloor(gate.noiseFloor()));
         manager = context.getSystemService(AudioManager.class);
     }
 
