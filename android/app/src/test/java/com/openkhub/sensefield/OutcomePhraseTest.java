@@ -179,7 +179,15 @@ public final class OutcomePhraseTest {
     @Test
     public void emptyPhraseKeepsTheRealCoachSentenceByteForByte() {
         Match3Board.Swap swap = new Match3Board.Swap(2, 1, 2, 2, 0, 0, 0, 0);
-        String speech = Match3Coach.swapSpeechWithQuadrant(swap, 8, 8) + "。";
+        char[] pieces = {'R', 'O', 'Y', 'G', 'B', 'P'};
+        Match3Position.Cell[][] cells = new Match3Position.Cell[8][8];
+        for (int r = 0; r < 8; r++) for (int c = 0; c < 8; c++)
+                cells[r][c] = Match3Position.Cell.animal(pieces[(r + c) % pieces.length]);
+        Match3Position position = new Match3Position(cells);
+        String speech = Match3Coach.swapSpeechWithDirection(swap, position.rows, position.cols, position) + "。";
+        assertEquals("基准必须仍是 coach 对这块盘的真实出句（左上方＋青蛙和河马＋同行左右交换），"
+                + "谁把它换成手写固定串或非生产同形的调用，这条当场红",
+                "左上方可以消除，青蛙和河马左右交换。", speech);
         assertEquals("接上这一跳之后，无读数的推荐句一个字也不许多出来",
                 speech, speech + OutcomePhrase.forSwap(swap));
         String withData = speech + OutcomePhrase.forSwap(new Match3Board.Swap(2, 1, 2, 2, 2, 5, 4, 1));
