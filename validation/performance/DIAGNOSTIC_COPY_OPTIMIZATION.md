@@ -16,7 +16,7 @@ ROI clamp、`min(maxEdge, 1280)` 限幅、`Math.round` 输出宽高、整数 flo
 
 ```text
 JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' \
-ANDROID_HOME='/Users/ada/Library/Android/sdk' \
+ANDROID_HOME='<HOME>/Library/Android/sdk' \
 ./gradlew :app:testDebugUnitTest --tests com.openkhub.sensefield.DiagnosticPixelsTest
 BUILD SUCCESSFUL
 ```

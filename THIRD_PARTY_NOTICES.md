@@ -123,3 +123,42 @@ license), and the Manrope and Instrument Serif fonts (SIL Open Font License
 1.1). Its editorial photograph is used under the Unsplash License. Website
 asset provenance and upstream license links are listed in
 [website/ASSETS.md](website/ASSETS.md).
+
+## Bundled fixed-prompt and guide speech (audio provenance limitation)
+
+The `.ogg` cue and guide audio bundled under
+`android/app/src/main/assets/speech/fixed/` and
+`android/app/src/main/assets/speech/guide/` are packaged assets. They are not
+licensed under this repository's Apache License 2.0, and they should not be
+read as already cleared for redistribution or commercial use. This section only
+relocates an existing, already-written limitation into the notices a reader
+sees after cloning; it does not make any new authorization judgement.
+
+- Point, do not copy: the per-batch source records and verification values are
+  kept in `android/app/src/main/assets/speech/manifest.json` (top-level keys
+  `sources` and `source_rights`), and the full pipeline is documented in
+  `docs/development/offline-speech.md`. The manifest is deliberately referenced
+  rather than duplicated here, so a single copy stays authoritative and the
+  two records cannot drift apart.
+
+- License limitation, quoted verbatim from `docs/development/offline-speech.md`
+  (reproduced exactly, neither softened into "authorized / freely
+  redistributable" nor strengthened into "infringing"):
+  "Fish 的免费导出成功不证明 APK 分发或商业使用授权，具体范围尚未独立验证。"
+  "后续商业使用需换入具有相应授权的素材并重新构建、验证。"
+  Whether this batch may be used commercially is not decided in this notice.
+
+- Default voice: when no voice is set, or a stored value is unrecognized,
+  playback falls back to the male narration voice. The selectable in-game
+  voices are labelled by gender only; the current UI no longer advertises any
+  third-party engine voice name as the default, and any legacy engine
+  voice-name preference values are retained solely as backward-compatible
+  aliases. The current default voice must not be described with those engine
+  voice names.
+
+- Scope: this limitation applies to the built-in fixed-prompt cues and the
+  complete-guide audio under `speech/fixed/` and `speech/guide/`. Speech
+  synthesized from dynamic text is generated at run time by the offline speech
+  engine running on the user's own device, which is a different path with
+  different terms. The two must not be merged into one statement such as "all
+  voice is available offline".

@@ -37,13 +37,13 @@
 ```sh
 cd android
 JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' \
-ANDROID_HOME='/Users/ada/Library/Android/sdk' \
-ANDROID_SDK_ROOT='/Users/ada/Library/Android/sdk' \
+ANDROID_HOME='<HOME>/Library/Android/sdk' \
+ANDROID_SDK_ROOT='<HOME>/Library/Android/sdk' \
 ./gradlew :app:lintDebug :app:testDebugUnitTest :app:assembleDebug
 cd ..
 JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' \
-ANDROID_HOME='/Users/ada/Library/Android/sdk' \
-ANDROID_SDK_ROOT='/Users/ada/Library/Android/sdk' \
+ANDROID_HOME='<HOME>/Library/Android/sdk' \
+ANDROID_SDK_ROOT='<HOME>/Library/Android/sdk' \
 bash scripts/build_android_preview.sh
 PYTHONPATH=python .venv/bin/python -m pytest -q tests/test_check_public_repo.py tests/test_public_repo.py
 python3 scripts/check_public_repo.py
