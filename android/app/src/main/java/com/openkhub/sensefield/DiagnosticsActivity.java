@@ -24,11 +24,17 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /** Bottom settings entry with large controls; no computer or second recorder. */
 public final class DiagnosticsActivity extends UiActivity {
@@ -38,12 +44,14 @@ public final class DiagnosticsActivity extends UiActivity {
     private RadioGroup sessions;
     private EditText feedback;
     private Button share, save, clear;
+    private Button annotate;
     private String selected;
     private File prepared;
     private boolean busy;
     private boolean hasGameRecords;
     private DiagnosticGame game;
     private String recoveryError = "";
+    private String annotationNote = "";
     private final Runnable refresh = new Runnable() {
         @Override public void run() {
             refreshState();
@@ -131,6 +139,10 @@ public final class DiagnosticsActivity extends UiActivity {
         save = button(export, "保存诊断包到文件", UiKit.ButtonStyle.OUTLINED);
         ((LinearLayout.LayoutParams) save.getLayoutParams()).bottomMargin = 0;
         save.setOnClickListener(v -> prepare(false));
+        // Desensitised annotation export sits right below the save button and reuses its save path.
+        annotate = button(export, "导出脱敏标注到文件", UiKit.ButtonStyle.OUTLINED);
+        ((LinearLayout.LayoutParams) annotate.getLayoutParams()).topMargin = UiKit.dp(this, UiKit.GAP_CONTROL);
+        annotate.setOnClickListener(v -> prepareAnnotations());
         UiKit.add(page, export, 24);
         // Deleting is irreversible: keep it apart from export and mark it as destructive.
         clear = button(page, "删除" + game.label + "记录", UiKit.ButtonStyle.DANGER);
@@ -165,11 +177,13 @@ public final class DiagnosticsActivity extends UiActivity {
         boolean active = recording();
         share.setEnabled(!busy && !active && selected != null);
         save.setEnabled(!busy && !active && selected != null);
+        annotate.setEnabled(!busy && !active && selected != null);
         clear.setEnabled(!busy && !active && hasGameRecords);
         if (busy) return;
         DiagnosticRecorder recorder = DiagnosticRecorder.current;
         if (recorder != null && !recorder.failure.isEmpty()) UiKit.setTextIfChanged(status, recorder.failure);
         else if (!active && !recoveryError.isEmpty()) UiKit.setTextIfChanged(status, recoveryError);
+        else if (!active && !annotationNote.isEmpty()) UiKit.setTextIfChanged(status, annotationNote);
         else UiKit.setTextIfChanged(status, active
                 ? (recorder == null ? "辅助正在记录" : recorder.game.label + "正在记录") + "，请停止辅助后再导出"
                 : selected == null ? "还没有" + game.label + "记录，请先开始一局辅助" : "选择一局，导出诊断包");
@@ -236,6 +250,7 @@ public final class DiagnosticsActivity extends UiActivity {
                 sessions.setOnCheckedChangeListener((g, id) -> {
                     RadioButton b = g.findViewById(id);
                     if (b != null) selected = String.valueOf(b.getTag());
+                    annotationNote = "";
                     refreshState();
                 });
                 refreshState();
@@ -282,6 +297,86 @@ public final class DiagnosticsActivity extends UiActivity {
                     } catch (RuntimeException error) { toast("无法打开分享方式，可尝试保存到文件"); }
                 });
             } catch (Exception error) { showError("导出失败：" + error.getMessage()); }
+        });
+    }
+
+    /**
+     * 挑出这一条会话里该进标注的文本：<b>白名单只有</b> {@code metadata.json} 与 {@code summary.json}
+     * 两份结构化读数，所以图片二进制（{@code images/}、{@code elements/} 两个子目录里的 jpg／png）与
+     * 整段原始事件日志（{@code events.jsonl}）都进不来；单份文本再叠一道长度上限，防的是
+     * 「原始日志被改名塞进白名单」这类形状。
+     *
+     * <p>纯函数：不碰界面、不起线程、不读写文件。输入是调用方已经从会话目录里读出的「文件名 → 文本」，
+     * 空会话（空映射，或白名单文件全是空白）返回<b>空列表</b>而不是抛异常 —— 导出器对空文本与非 JSON
+     * 对象会抛 {@link IllegalArgumentException}，所以空挡在这里先拦掉，界面上才播得出人话。
+     */
+    private static List<JevAnnotationExporter.Source> annotationSources(Map<String, String> texts) {
+        List<JevAnnotationExporter.Source> out = new ArrayList<>();
+        if (texts == null) return out;
+        for (String name : new String[]{"metadata.json", "summary.json"}) {
+            String text = texts.get(name);
+            if (text == null) continue;
+            String trimmed = text.trim();
+            if (trimmed.isEmpty() || trimmed.length() > 65536) continue;
+            out.add(new JevAnnotationExporter.Source(name, text));
+        }
+        return out;
+    }
+
+    /** 状态行的人话读数：「几条」与「替换了几处」两个数都要在，后者是玩家同意的凭据。 */
+    private static String annotationReadout(JevAnnotationExporter.Result result) {
+        return "已挑出 " + result.unitCount + " 条脱敏标注，机器替换了 " + result.replacementCount
+                + " 处身份路径，请在下一步选择保存位置";
+    }
+
+    /**
+     * 接上「保存诊断包」那条已经存在的路：本机把 JSONL 落到与 zip 同一个 {@code diagnostic-exports}
+     * 缓存目录、同一套 {@code System.currentTimeMillis()} 命名，再交给既有的创建文档意图，
+     * 由玩家自己选保存位置。不新增清单条目、不发网络、不自动分享、不起新线程。
+     */
+    private void prepareAnnotations() {
+        if (recording() || selected == null || busy) return;
+        busy = true;
+        annotationNote = "";
+        UiKit.setTextIfChanged(status, "正在整理脱敏标注…");
+        refreshState();
+        String id = selected;
+        DiagnosticRecorder.IO.execute(() -> {
+            try {
+                if (recording()) throw new IOException("请先停止辅助再导出");
+                File directory = DiagnosticArchive.session(DiagnosticRecorder.root(this), id);
+                Map<String, String> texts = new LinkedHashMap<>();
+                File[] children = directory.listFiles();
+                if (children != null) {
+                    Arrays.sort(children, Comparator.comparing(File::getName));
+                    for (File child : children) {
+                        if (!child.isFile() || Files.isSymbolicLink(child.toPath())
+                                || child.length() > 262144) continue;
+                        texts.put(child.getName(), new String(
+                                Files.readAllBytes(child.toPath()), StandardCharsets.UTF_8));
+                    }
+                }
+                List<JevAnnotationExporter.Source> sources = annotationSources(texts);
+                if (sources.isEmpty()) throw new IOException("这条记录里没有可标注的文本读数");
+                JevAnnotationExporter.Result result = JevAnnotationExporter.export(sources);
+                File output = new File(new File(getCacheDir(), "diagnostic-exports"),
+                        "sensefield-" + id + "-" + System.currentTimeMillis() + ".jsonl");
+                Files.createDirectories(output.getParentFile().toPath());
+                Files.write(output.toPath(), result.jsonLines.getBytes(StandardCharsets.UTF_8));
+                runOnUiThread(() -> {
+                    busy = false;
+                    if (isFinishing() || isDestroyed()) return;
+                    prepared = output;
+                    annotationNote = annotationReadout(result);
+                    refreshState();
+                    try {
+                        Intent target = new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/json");
+                        target.addCategory(Intent.CATEGORY_OPENABLE);
+                        target.putExtra(Intent.EXTRA_TITLE, output.getName());
+                        startActivityForResult(target, SAVE_REPORT);
+                    } catch (RuntimeException error) { toast("无法打开保存位置，可重新导出一次"); }
+                });
+            } catch (Exception error) { showError("脱敏标注导出失败：" + error.getMessage()); }
         });
     }
 

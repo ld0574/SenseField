@@ -49,6 +49,7 @@ public final class GameTuningActivity extends UiActivity {
     private final Handler voiceCheckHandler = new Handler(Looper.getMainLooper());
     private CuePlayer voiceProbe;
     private TextView voiceStatus;
+    private TextToSpeech voicePickerEngine;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -260,6 +261,10 @@ public final class GameTuningActivity extends UiActivity {
         Button engines = button("动态文本语音引擎", false);
         engines.setOnClickListener(view -> chooseVoiceEngine());
         UiKit.add(parent, engines, 8);
+        Button voices = button("动态文本音色", false);
+        voices.setTag("dynamic_voice_picker");
+        voices.setOnClickListener(view -> chooseDynamicVoice());
+        UiKit.add(parent, voices, 8);
         voiceStatus = UiKit.hint(this, "正在检查离线中文语音……");
         voiceStatus.setTag("offline_tts_status");
         voiceStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
@@ -268,6 +273,57 @@ public final class GameTuningActivity extends UiActivity {
         voiceData.setOnClickListener(view -> manageOfflineVoice());
         UiKit.add(parent, voiceData, 16);
         addSpeechRateControl(parent);
+    }
+
+    /** Enumerates the engine voices; only the pure offline Chinese filter decides the menu. */
+    private void chooseDynamicVoice() {
+        stopVoicePickerEngine();
+        final String saved = GameProfile.settings(this).getString(CuePlayer.PREF_VOICE_NAME, "");
+        final TextToSpeech[] holder = new TextToSpeech[1];
+        TextToSpeech engine = new TextToSpeech(this, status -> {
+            TextToSpeech probe = holder[0];
+            // Identity guard, not a null guard: the callback only owns the picker while the
+            // field still points at its own engine. onPause (which always precedes onDestroy)
+            // or a newer picker click moves the field away, and a stale callback would
+            // otherwise enumerate voices on a shut-down engine and release the live one.
+            if (probe == null || probe != voicePickerEngine) return;
+            List<String> names = CuePlayer.offlineChineseVoiceNames(
+                    status == TextToSpeech.SUCCESS ? probe.getVoices() : null);
+            stopVoicePickerEngine();
+            showDynamicVoicePicker(names, saved);
+        });
+        holder[0] = engine;
+        voicePickerEngine = engine;
+    }
+
+    private void showDynamicVoicePicker(List<String> offlineNames, String saved) {
+        String[] labels = new String[offlineNames.size() + 1];
+        String[] values = new String[labels.length];
+        labels[0] = "自动（跟随引擎）";
+        values[0] = "";
+        int current = 0;
+        for (int i = 0; i < offlineNames.size(); i++) {
+            labels[i + 1] = offlineNames.get(i);
+            values[i + 1] = offlineNames.get(i);
+            if (values[i + 1].equals(saved)) current = i + 1;
+        }
+        AlertDialog picker = new AlertDialog.Builder(this).setTitle("动态文本音色")
+                .setSingleChoiceItems(UiKit.singleChoiceAdapter(this, labels), current, (dialog, which) -> {
+                    stopTestCue();
+                    GameProfile.settings(this).edit()
+                            .putString(CuePlayer.PREF_VOICE_NAME, values[which]).apply();
+                    testStatus.setText(CuePlayer.voicePreferenceStatusText(values[which]));
+                    dialog.dismiss();
+                    previewDynamicVoice();
+                }).setNegativeButton("取消", null).show();
+        UiKit.styleDialog(picker, UiKit.ButtonStyle.OUTLINED);
+    }
+
+    private void stopVoicePickerEngine() {
+        if (voicePickerEngine != null) {
+            voicePickerEngine.shutdown();
+            voicePickerEngine = null;
+        }
     }
 
     private void chooseVoiceEngine() {
@@ -418,6 +474,7 @@ public final class GameTuningActivity extends UiActivity {
     @Override protected void onPause() {
         stopTestCue();
         stopVoiceProbe();
+        stopVoicePickerEngine();
         super.onPause();
     }
 

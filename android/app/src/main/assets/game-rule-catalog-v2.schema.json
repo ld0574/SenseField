@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "android/app/src/main/assets/game-rule-catalog-v2.schema.json",
+  "title": "Game rule catalog envelope v2 (cross-game), also accepting the legacy match3-rule-catalog-v1",
+  "description": "A declarative rule catalog for any game. The 13 per-rule field names and the five answer-value enumerations are inherited verbatim from match3-rule-catalog-v1 and are frozen here: game-specific concepts may only ever appear inside the VALUES of mechanism, parameters and engineering_scope, never as new field names or new enum members. This document is the normative input for scripts/game_rule_catalog.py, which interprets the JSON Schema subset used here (type, enum, pattern, minLength, minimum, minItems, minProperties, required, properties, items, additionalProperties as boolean or allowed-key list) plus the x-envelope section, which the validator executes by name and refuses to ignore.",
+  "type": "object",
+  "required": ["format", "id", "version", "source", "rules"],
+  "additionalProperties": false,
+  "properties": {
+    "format": {
+      "description": "Both the legacy v1 catalogs and new v2 catalogs are accepted. Accepting v1 here does not license editing the v1 catalog file; it stays byte-frozen and is validated as-is.",
+      "enum": ["match3-rule-catalog-v1", "game-rule-catalog-v2"]
+    },
+    "id": {"type": "string", "minLength": 1, "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+    "game": {
+      "description": "Which game this catalog describes. Required for v2; the v1 catalog predates the field and is exempted by its format profile.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "version": {"type": "integer", "minimum": 1},
+    "source": {"$ref": "#/$defs/source"},
+    "engineering_entry": {
+      "description": "Repo-relative path of the file that consumes this catalog. Must exist. For a catalog whose rules are not yet wired to an engine, point at the component that actually reads the evidence surface, and let per-rule engine_status carry the truth.",
+      "type": "string",
+      "minLength": 1
+    },
+    "search_budget": {"$ref": "#/$defs/budget"},
+    "settlement_budget": {"$ref": "#/$defs/budget"},
+    "budgets": {
+      "description": "v2 replacement for the two hard-coded match3 budget keys. Any game names its own budgets here, so budget vocabulary stays in the keys of this map rather than in the envelope.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/budget"}
+    },
+    "rules": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/rule"}}
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "required": ["path", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "Repo-relative path of the primary evidence document. For match3 it is the human-reviewed reference note; for a second game it is whatever artifact actually holds the evidence.",
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "description": "Byte digest of source.path. This is what makes reference_evidence traceable: the envelope is pinned to one exact revision of the evidence.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "title": {"type": "string", "minLength": 1}
+      }
+    },
+    "budget": {
+      "description": "Free-form finite resource declaration. Keys are game-specific by design and therefore live inside a map, not at the envelope top level.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": true
+    },
+    "rule": {
+      "type": "object",
+      "required": [
+        "rule_id",
+        "version",
+        "source_entries",
+        "mechanism",
+        "reference_evidence",
+        "parameter_completeness",
+        "parameters",
+        "abilities",
+        "required_evidence",
+        "engine_status",
+        "visual_status",
+        "live_validation",
+        "engineering_scope"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "rule_id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "version": {"type": "integer", "minimum": 1},
+        "source_entries": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "description": "Named entries of source.path that this rule answers. May be empty only when legacy_source is supplied. Under the v2 profile every entry must also occur verbatim in the source bytes."
+        },
+        "mechanism": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Game-specific vocabulary is legal here and only here (plus parameters and engineering_scope values)."
+        },
+        "reference_evidence": {
+          "description": "Question 1: where does the evidence come from. Enumerated values inherited verbatim from v1; merging, widening or adding an intermediate grade is out of scope for the envelope.",
+          "enum": ["documented", "confirmed", "partial", "unverified", "legacy_reviewed"]
+        },
+        "parameter_completeness": {
+          "description": "Question 2: are the parameters complete.",
+          "enum": ["complete", "partial", "missing"]
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Open container: game-specific parameter names and values live inside it, which is what keeps them out of the field-name layer."
+        },
+        "abilities": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Open container for the permission vocabulary a game's engine actually grants. May be empty when nothing is granted. Openness is declared, never defaulted."
+        },
+        "required_evidence": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "description": "What would have to be observed to raise this rule's evidence grade. May be empty."
+        },
+        "engine_status": {
+          "description": "Question 3: how far the engine supports it.",
+          "enum": ["direct_effect", "partial_effect", "direct_opportunity", "state_only", "pending"]
+        },
+        "visual_status": {
+          "description": "Question 4: is the element visually recognised. v1 allows only pending and the envelope keeps that closed rather than widening it; opening it is a separate decision with its own evidence.",
+          "enum": ["pending"]
+        },
+        "live_validation": {
+          "description": "Question 5: has it been validated on a real device. Same closed enumeration as v1.",
+          "enum": ["pending"]
+        },
+        "engineering_scope": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Game-specific scope prose."
+        },
+        "legacy_source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional 14th field, already present in 4 of the 68 v1 rules. Repo-relative path of an earlier human-reviewed artifact; used when source_entries is empty."
+        }
+      }
+    }
+  },
+  "x-envelope": {
+    "comment": "Executable envelope rules. scripts/game_rule_catalog.py implements each invariant by name and fails closed on any name it does not recognise, so this block is load-bearing and not documentation.",
+    "formats": {
+      "match3-rule-catalog-v1": {
+        "required_top_level": ["format", "id", "version", "source", "rules", "engineering_entry", "search_budget", "settlement_budget"],
+        "forbidden_top_level": ["game", "budgets"],
+        "entry_anchor_check": false,
+        "entry_anchor_note": "Legacy: 17 of the 69 v1 source_entries carry a synthesised namespace prefix (the reference-document parser prepends the section markers for combo and tool entries), so they are names produced by the ruler rather than verbatim substrings of the reference. Verbatim anchoring is therefore only demanded of new v2 catalogs; full entry coverage of the reference stays with scripts/match3_rules.py."
+      },
+      "game-rule-catalog-v2": {
+        "required_top_level": ["format", "game", "id", "version", "source", "rules", "engineering_entry"],
+        "forbidden_top_level": ["search_budget", "settlement_budget"],
+        "entry_anchor_check": true,
+        "entry_anchor_note": "Every non-empty source_entries string must occur verbatim in the bytes of source.path."
+      }
+    },
+    "five_questions": {
+      "reference_evidence": "where the evidence comes from",
+      "parameter_completeness": "whether the parameters are complete",
+      "engine_status": "how far the engine supports it",
+      "visual_status": "whether it is visually recognisable",
+      "live_validation": "whether it was validated on a real device"
+    },
+    "enum_policy": "The five enumerations above are inherited verbatim from match3-rule-catalog-v1. A catalog that fails one of these value sets is invalid; no catalog may relax them, merge two grades, or insert an intermediate grade.",
+    "invariants": [
+      {
+        "name": "unique_rule_ids",
+        "message": "rule_id must be unique inside one catalog"
+      },
+      {
+        "name": "source_sha256_matches_file",
+        "message": "source.sha256 must equal the byte digest of the file at source.path"
+      },
+      {
+        "name": "referenced_paths_exist",
+        "message": "source.path, engineering_entry and any legacy_source must exist in the repository"
+      },
+      {
+        "name": "unanchored_rule_provenance",
+        "message": "a rule with no source_entries must either cite a legacy_source or declare reference_evidence unverified while naming the evidence it still lacks",
+        "escape_reference_evidence": "unverified",
+        "escape_non_empty_field": "required_evidence",
+        "note": "The legacy v1 catalog needs the escape in practice: all four of its unanchored rules do cite legacy_source, so v1 validates identically under either wording. A second game with no reviewed predecessor can therefore register the mechanics it cannot yet evidence as explicit unverified placeholders instead of dropping them or dressing them up with borrowed anchors."
+      },
+      {
+        "name": "direct_effect_needs_reference_evidence",
+        "message": "engine_status direct_effect may not rest on partial or unverified reference evidence",
+        "guarded_engine_status": "direct_effect",
+        "allowed_reference_evidence": ["documented", "confirmed", "legacy_reviewed"]
+      },
+      {
+        "name": "verbatim_entry_anchor_when_enabled",
+        "message": "v2 source_entries must be verbatim anchors into the pinned source bytes"
+      }
+    ]
+  }
+}
