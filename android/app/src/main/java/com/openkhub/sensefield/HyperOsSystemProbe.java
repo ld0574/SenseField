@@ -2,6 +2,9 @@ package com.openkhub.sensefield;
 
 import android.content.Context;
 import android.content.Intent;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
@@ -11,6 +14,9 @@ import android.util.Log;
 import android.view.accessibility.AccessibilityManager;
 import android.accessibilityservice.AccessibilityServiceInfo;
 
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
@@ -37,9 +43,14 @@ final class HyperOsSystemProbe {
 
     private static volatile HyperOsHealthSnapshot.Guidance lastDelivered = HyperOsHealthSnapshot.Guidance.NONE;
 
+    /** 网络那一行的最后一条读数：没采过就是 {@code unknown}，不是一条编出来的「有网」。 */
+    private static volatile String lastNetworkReading =
+            NetworkPathology.reading(-1L, null, null, null);
+    static final String NETWORK_READING_KEY = NetworkPathology.READING_KEY;
+
     private HyperOsSystemProbe() { /* 采集侧只暴露静态只读方法。 */ }
 
-    /** 取一次现场读数：屏幕、无障碍授权列表、后台弹出操作现值，全部只读。 */
+    /** 取一次现场读数：屏幕、无障碍授权列表、后台弹出操作现值、网络现值，全部只读。 */
     static HyperOsHealthSnapshot sample(Context context,
                                         HyperOsHealthSnapshot.ProjectionStatus projection) {
         if (context == null) return idleReading();
@@ -47,6 +58,9 @@ final class HyperOsSystemProbe {
         boolean previouslyGranted = wasProjectionGranted(context);
         boolean accessibilityEnabled = isAccessibilityServiceEnabled(context);
         int backgroundStartMode = backgroundStartMode(context);
+        // 网络这一跳挂在既有 device 采样链上：读数由采集侧渲染并发布，不新增周期任务、线程、事件名，
+        // 也不在这里做任何请求——它只读系统现值。
+        networkReading(context);
         return HyperOsHealthSnapshot.evaluate(SystemClock.elapsedRealtime(), projection, screenOn,
                 previouslyGranted, accessibilityEnabled, backgroundStartMode,
                 HyperOsHealthSnapshot.needsBackgroundStartPrompt(projection, accessibilityEnabled));
@@ -108,6 +122,50 @@ final class HyperOsSystemProbe {
             return HyperOsHealthSnapshot.OP_MODE_UNREADABLE;
         }
     }
+
+    /**
+     * 网络这一跳：只<b>读</b>系统现值——活动网络的传输类型、VALIDATED 能力、下行带宽估计。
+     * 不发起任何请求、不注册任何网络回调、不起线程；读不到一律交纯函数落 {@code unknown}，
+     * 与「系统说没有网络」的 {@code none} 分成两档，谁也不替谁圆场。
+     */
+    static String networkReading(Context context) {
+        long atMs = SystemClock.elapsedRealtime();
+        if (context == null) return publishNetworkReading(atMs, null, null, null);
+        try {
+            ConnectivityManager manager = context.getSystemService(ConnectivityManager.class);
+            if (manager == null) return publishNetworkReading(atMs, null, null, null);
+            Network active = manager.getActiveNetwork();
+            if (active == null)
+                // 系统明说当前没有活动网络：这一档才是 none，不是 unknown。
+                return publishNetworkReading(atMs, Collections.<Integer>emptyList(), null, null);
+            NetworkCapabilities capabilities = manager.getNetworkCapabilities(active);
+            if (capabilities == null) return publishNetworkReading(atMs, null, null, null);
+            Collection<Integer> transports = new LinkedHashSet<>();
+            for (int code : NetworkPathology.MIRRORED_TRANSPORTS)
+                if (capabilities.hasTransport(code)) transports.add(Integer.valueOf(code));
+            if (transports.isEmpty())
+                // 有活动网络却一个传输类型也叫不出来：这是读不到，不许播成「没有网络」。
+                return publishNetworkReading(atMs, null, null, null);
+            Boolean validated = Boolean.valueOf(
+                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED));
+            // 平台取不到时返回 0：这里原样交给纯函数判 0＝unknown，不自己把它播成弱网。
+            Integer downKbps = Integer.valueOf(capabilities.getLinkDownstreamBandwidthKbps());
+            return publishNetworkReading(atMs, transports, validated, downKbps);
+        } catch (RuntimeException unreadable) {
+            Log.i(TAG, "网络现值不可读: " + unreadable.getClass().getSimpleName());
+            return publishNetworkReading(atMs, null, null, null);
+        }
+    }
+
+    /** 渲染并发布那一行读数；既有 device 面要取的就是这一格。 */
+    private static String publishNetworkReading(long atMs, Collection<Integer> transports,
+                                                Boolean validated, Integer downKbps) {
+        lastNetworkReading = NetworkPathology.reading(atMs, transports, validated, downKbps);
+        return lastNetworkReading;
+    }
+
+    /** 网络那一行的最后一条读数，采集侧唯一的出口；本卷不改它的取值口径。 */
+    static String lastNetworkReading() { return lastNetworkReading; }
 
     /** 投影授权成功过一次的记忆位，供「此前已授权」判定；不新增任何系统权限。 */
     static void markProjectionGranted(Context context) {

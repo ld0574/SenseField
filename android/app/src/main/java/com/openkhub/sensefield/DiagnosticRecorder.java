@@ -100,6 +100,8 @@ final class DiagnosticRecorder {
     private volatile long imageJobCpuMicros;
     private volatile JSONObject lastDeviceSample;
     private volatile JSONObject latestState;
+    /** Read-only "frames arrive but processed_frames never moves" meter, driven by the checkpoint tick. */
+    private final FrameProgressStall frameProgressStall = new FrameProgressStall();
     private volatile LoadSample latestLoadSample = new LoadSample(-1, -1, -1);
     /** Projection status as the capture service last reported it; read only by the device chain. */
     private volatile HyperOsHealthSnapshot.ProjectionStatus hyperOsProjection =
@@ -755,6 +757,7 @@ final class DiagnosticRecorder {
                     // "not observed" — never "promotion succeeded".
                     HyperOsHealthSnapshot.FGS_GATE_KEY, HyperOsHealthSnapshot.fgsTypeGateReading(
                             Build.VERSION.SDK_INT, SenseFieldReaderService.MANIFEST_DECLARED_TYPES),
+                    HyperOsSystemProbe.NETWORK_READING_KEY, HyperOsSystemProbe.lastNetworkReading(),
                     HyperOsHealthSnapshot.FGS_DEGRADATION_KEY,
                             SenseFieldReaderService.fgsDegradationReading());
             lastDeviceSample = sample;
@@ -826,6 +829,7 @@ final class DiagnosticRecorder {
             data.put("dropped_image_requests", imageDrops.get());
             data.put("image_context_stats", imageContextStats());
             data.put("last_device", lastDeviceSample == null ? JSONObject.NULL : lastDeviceSample);
+            frameProgressStall.recordInto(data, nowMs);
             record("checkpoint", data);
             IO.execute(() -> {
                 try {

@@ -36,9 +36,9 @@ public final class HyperOsForegroundPromotionTest {
 
     private static final long AT = 123456L;
 
-    /** 派单/开工前实测的清单原文摘要（换行归一后的 sha256），路线 B 的逐字节不动锁。 */
+    /** 清单原文摘要（换行归一后的 sha256），逐字节不动锁；基准随任务书 48 已批的那行权限前移，哨的形状未动。 */
     private static final String MANIFEST_SHA256 =
-            "cca6ec5ae7224718d9530eee6a901c1cc9ef84f145ceaa5f5867a67542d131a1";
+            "6b7bf9cfb9b8824c8b5f56fdb74f3115778c76dd42d346386cf0eaad1445da84";
 
     /* ---------- ① 纯函数：类型闸门读数的形状（静态结论，不需要真机） ---------- */
 
@@ -332,7 +332,7 @@ public final class HyperOsForegroundPromotionTest {
         assertEquals("清单条目不许新增（service 元素）", 3, countOccurrences(text, "<service"));
         assertEquals("清单条目不许新增（activity 元素）", 18, countOccurrences(text, "<activity"));
         assertEquals("清单条目不许新增（provider 元素）", 2, countOccurrences(text, "<provider"));
-        assertEquals("清单条目不许新增（uses-permission）", 9, countOccurrences(text, "<uses-permission"));
+        assertEquals("清单条目不许新增（uses-permission）", 10, countOccurrences(text, "<uses-permission"));
         assertEquals("SPECIAL_USE 要补的 property 条目本卷一条也不许加", 0, countOccurrences(text, "<property"));
     }
 
