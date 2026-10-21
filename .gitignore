@@ -126,6 +126,7 @@ validation/**
 !validation/match3/holdout/
 !validation/match3/holdout/examples/
 !validation/protocols/
+!validation/protocols/**
 !validation/FINAL_EVIDENCE.example.json
 !validation/LATENCY.example.csv
 !validation/README.md

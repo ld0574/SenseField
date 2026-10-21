@@ -1,0 +1,250 @@
+{
+  "format": "game-rule-catalog-v2",
+  "game": "xiangqi",
+  "id": "jev-xiangqi-state-2026-10-19-v2",
+  "version": 1,
+  "source": {
+    "path": "android/app/src/main/assets/jev/chess.json",
+    "sha256": "47ceee76ebac8694ee94b803efc2fdb78c5b467d9cbb9e5926b65112aa5059fa",
+    "title": "象棋局面读数样例（文件自述：模拟样例，供测试判定用，非真实抓取）"
+  },
+  "engineering_entry": "android/app/src/main/java/com/openkhub/sensefield/JevAnnotationExporter.java",
+  "rules": [
+    {
+      "rule_id": "xiangqi_board_geometry",
+      "version": 1,
+      "source_entries": ["9 列 × 10 行", "行 0 在黑方底线"],
+      "mechanism": "board_geometry",
+      "reference_evidence": "confirmed",
+      "parameter_completeness": "complete",
+      "parameters": {
+        "rows": 10,
+        "cols": 9,
+        "row_origin": "row 0 is the black home rank",
+        "cells_measured": 90,
+        "occupied_cells_measured": 32,
+        "empty_cells_measured": 58
+      },
+      "abilities": {"read": "yes", "legal_move": "no"},
+      "required_evidence": ["a real screen capture of a xiangqi board rather than the bundled simulated sample"],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "The state.board array is read as 10 rows of 9 cells with row 0 on the black home rank. Only geometry is granted; nothing here authorises a move or a legal-position judgement."
+    },
+    {
+      "rule_id": "xiangqi_side_prefix_encoding",
+      "version": 1,
+      "source_entries": ["棋子前缀 b=黑方 r=红方", "b車", "r帥"],
+      "mechanism": "side_prefix_encoding",
+      "reference_evidence": "confirmed",
+      "parameter_completeness": "complete",
+      "parameters": {
+        "prefixes": {"b": "黑方", "r": "红方"},
+        "distinct_piece_tokens_measured": 14,
+        "token_form": "single-letter side prefix followed by one piece glyph"
+      },
+      "abilities": {"read": "yes", "side_attribution": "yes", "legal_move": "no"},
+      "required_evidence": ["a real capture whose side prefix is confirmed against the rendered colour of the piece"],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "The leading character of every non-empty cell assigns the piece to a side. The exporter's side map consumes this; no gameplay consequence is asserted."
+    },
+    {
+      "rule_id": "xiangqi_empty_cell_null",
+      "version": 1,
+      "source_entries": ["null=空位"],
+      "mechanism": "empty_cell_representation",
+      "reference_evidence": "confirmed",
+      "parameter_completeness": "complete",
+      "parameters": {
+        "empty_token": "null",
+        "empty_cells_measured": 58,
+        "null_is_not_a_piece": true
+      },
+      "abilities": {"read": "yes", "treat_as_occupied": "no"},
+      "required_evidence": ["a real capture where an empty intersection is confirmed empty rather than merely unread"],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "A null cell is an empty intersection and yields no annotation unit. An unread cell must not be collapsed into this representation; that distinction stays unvalidated."
+    },
+    {
+      "rule_id": "xiangqi_faction_piece_name_pairing",
+      "version": 1,
+      "source_entries": ["b將", "r帥", "b士", "r仕", "b象", "r相"],
+      "mechanism": "piece_identity_naming",
+      "reference_evidence": "documented",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "paired_names": [["將", "帥"], ["士", "仕"], ["象", "相"]],
+        "shared_names": ["車", "馬", "炮", "兵"],
+        "black_general_measured": "b將",
+        "red_general_measured": "r帥"
+      },
+      "abilities": {"read": "yes", "identity_equivalence": "unknown"},
+      "required_evidence": ["a rules source stating whether the paired glyphs share movement law", "a capture of the opposite-colour setup"],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Both armies use different glyphs for the general, the adviser and the elephant; the other four names are shared. Observed in the sample array. Whether the glyph pairs are movement-equivalent is not evidenced here and is not assumed."
+    },
+    {
+      "rule_id": "xiangqi_sample_opening_array",
+      "version": 1,
+      "source_entries": ["模拟样例，供测试判定用，非真实抓取", "b車", "b馬", "r炮"],
+      "mechanism": "opening_arrangement",
+      "reference_evidence": "partial",
+      "parameter_completeness": "partial",
+      "parameters": {
+        "black_back_rank_row0": ["車", "馬", "象", "士", "將", "士", "象", "馬", "車"],
+        "red_back_rank_row9": ["車", "馬", "相", "仕", "帥", "仕", "相", "馬", "車"],
+        "cannon_cells_measured": [[2, 1], [2, 7], [7, 1], [7, 7]],
+        "soldier_rows_measured": [3, 6],
+        "piece_count_measured": 32
+      },
+      "abilities": {"read": "yes", "legal_move": "no"},
+      "required_evidence": ["an authoritative competition-rules text for the initial array", "a real capture taken before the first move"],
+      "engine_status": "pending",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "The sample array is measured and is internally symmetric, which is what an opening setup looks like. The file itself declares the board a simulated sample, so this registers an observation, not a confirmed opening rule, and no engine consumes it."
+    },
+    {
+      "rule_id": "xiangqi_recorded_move_reflected_in_board",
+      "version": 1,
+      "source_entries": ["\"last_move\": \"炮二平五\"", "r炮", "\"turn\": \"red\""],
+      "mechanism": "move_state_consistency",
+      "reference_evidence": "partial",
+      "parameter_completeness": "missing",
+      "parameters": {
+        "recorded_move": "炮二平五",
+        "red_cannon_cols_measured": [1, 7],
+        "board_reflects_recorded_move": "no",
+        "turn_after_recorded_red_move": "red"
+      },
+      "abilities": {"read": "yes", "validate_state": "no"},
+      "required_evidence": ["a real capture where the recorded move is replayed against the preceding board", "a source defining whose turn follows a recorded move"],
+      "engine_status": "pending",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "A recorded move is expected to show up in the board array and to flip the side to move. The bundled sample contradicts both: the red cannons are still on their original files and turn still reads red. Recorded as an open gap, not as accepted behaviour."
+    },
+    {
+      "rule_id": "xiangqi_turn_read_slot",
+      "version": 1,
+      "source_entries": ["\"turn\": \"red\"", "\"game\": \"chess\""],
+      "mechanism": "side_to_move_reading",
+      "reference_evidence": "partial",
+      "parameter_completeness": "missing",
+      "parameters": {
+        "state_key": "turn",
+        "observed_values": ["red"],
+        "domain_of_legal_values": "unknown"
+      },
+      "abilities": {"read": "yes", "enforce_turn": "no"},
+      "required_evidence": ["a capture corpus containing both values", "a rules source for whose turn it is after each side moves"],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "One side-token slot is read and annotated. Its value domain and its relation to move legality are not established by anything in this repository."
+    },
+    {
+      "rule_id": "xiangqi_last_move_notation",
+      "version": 1,
+      "source_entries": ["炮二平五", "\"last_move\": \"炮二平五\""],
+      "mechanism": "move_notation",
+      "reference_evidence": "partial",
+      "parameter_completeness": "missing",
+      "parameters": {
+        "state_key": "last_move",
+        "observed_value": "炮二平五",
+        "observed_shape": "piece glyph + file + direction verb + file",
+        "notation_grammar": "unknown"
+      },
+      "abilities": {"read": "yes", "parse_into_move": "no"},
+      "required_evidence": ["an authoritative notation source covering the full verb and file set", "several recorded moves of both armies"],
+      "engine_status": "pending",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "The last-move slot carries a Chinese-notation string. One sample string evidences the shape, not the grammar, so nothing parses it into a source and destination."
+    },
+    {
+      "rule_id": "xiangqi_check_state_slot",
+      "version": 1,
+      "source_entries": ["\"in_check\": false"],
+      "mechanism": "check_state",
+      "reference_evidence": "partial",
+      "parameter_completeness": "missing",
+      "parameters": {
+        "state_key": "in_check",
+        "observed_type": "boolean",
+        "observed_values": [false],
+        "condition_for_true": "unknown"
+      },
+      "abilities": {"read": "yes", "detect_check": "no"},
+      "required_evidence": ["a rules source defining the check condition", "a capture of a position that is actually in check"],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "A boolean check slot is read and labelled. The sample only ever shows false, so the condition that would set it true is unverified and no check detection is claimed."
+    },
+    {
+      "rule_id": "xiangqi_captured_recent_slot",
+      "version": 1,
+      "source_entries": ["\"captured_recently\": null"],
+      "mechanism": "capture_recency_reading",
+      "reference_evidence": "partial",
+      "parameter_completeness": "missing",
+      "parameters": {
+        "state_key": "captured_recently",
+        "observed_values": [null],
+        "value_shape_when_populated": "unknown",
+        "window_length": "unknown"
+      },
+      "abilities": {"read": "yes", "derive_capture_count": "no"},
+      "required_evidence": ["a capture taken immediately after a piece is lost", "a source fixing what recent means here"],
+      "engine_status": "state_only",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "The slot exists and is nullable; a null yields no annotation unit. Because it is never populated in the evidence, neither its shape nor its window is verified."
+    },
+    {
+      "rule_id": "xiangqi_piece_movement_legality",
+      "version": 1,
+      "source_entries": [],
+      "mechanism": "piece_movement_legality",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {},
+      "abilities": {"read": "no", "legal_move": "unknown"},
+      "required_evidence": [
+        "a primary rules source for each piece's movement law, held in this repository and pinned by digest",
+        "a per-piece legal-move generator to bind engine_status to"
+      ],
+      "engine_status": "pending",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Reserved for the per-piece movement laws of the game. No in-repo artifact states them, so this rule carries no anchor and grants nothing: it is a declared hole, kept visible instead of being filled with a borrowed or invented citation."
+    },
+    {
+      "rule_id": "xiangqi_checkmate_resolution",
+      "version": 1,
+      "source_entries": [],
+      "mechanism": "game_ending",
+      "reference_evidence": "unverified",
+      "parameter_completeness": "missing",
+      "parameters": {},
+      "abilities": {"read": "no", "declare_outcome": "no"},
+      "required_evidence": [
+        "a primary rules source covering checkmate, stalemate and repetition",
+        "device evidence of an ending being reached"
+      ],
+      "engine_status": "pending",
+      "visual_status": "pending",
+      "live_validation": "pending",
+      "engineering_scope": "Reserved for how a game ends. The evidence surface exposes only an in-check boolean, which is not enough to derive an outcome, so no ending rule is claimed."
+    }
+  ]
+}

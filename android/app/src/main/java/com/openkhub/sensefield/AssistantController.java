@@ -27,6 +27,8 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
         void mark();
         void status(String status);
         void audit(String metadata);
+        /** One recomputed noise-floor reading from the speech gate, bound for the cue classifier. */
+        default void noiseFloor(double floor) { }
     }
     private final Context context;
     private final AssistantSettings settings;
@@ -69,6 +71,10 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
     private AssistantReply lastReply;
     private String lastAutomaticAnswer = "";
     private String currentStatus = "助手正在连接";
+    /** Raw base last handed to {@link #setStatus}, kept so a late sound reading can re-run the chain. */
+    private String statusBase = currentStatus;
+    /** Latest broadcast-sound reading folded into the standing status line; empty means "none yet". */
+    private String soundIndicator = "";
     private static final String EXPIRED_FRAME_PROMPT = "画面返回太慢，旧画面已丢弃。";
     static final long MANUAL_QUIET_MS = 60_000;
     static final String SCREEN_QUESTION = "请根据当前截图，说明最值得注意的一条可见信息。只有画面依据明确且与这条信息直接相关时，再补一句游戏建议；看不清就说明缺少哪条依据。";
@@ -171,6 +177,7 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
                     @Override public void manualFinished(long token, String reason, boolean hadSpeech) {
                         manualVoiceFinished(token, reason, hadSpeech);
                     }
+                    @Override public void noiseFloor(double floor) { host.noiseFloor(floor); }
                     @Override public void unavailable(String value) { main.post(() -> voiceInputUnavailable(value)); }
                 });
                 voice.start();
@@ -894,11 +901,38 @@ final class AssistantController implements AutoCloseable, AssistantGatewayClient
                 && (host.lastAlertAtMs() < 0 || SystemClock.elapsedRealtime() - host.lastAlertAtMs() >= AssistantPolicy.ALERT_QUIET_MS))); }
     private void append(String line) { while (history.size() >= 12) history.removeFirst(); history.addLast(line);
         if (overlay != null) overlay.history(String.join("\n\n", history)); }
+    /**
+     * Second, persistent outlet for one broadcast-sound reading. This is not a new pathway: it
+     * re-enters the very same {@link #setStatus} chain every other assistant status already uses,
+     * so the reading lands on the standing overlay line instead of only flashing. Written and read
+     * on the main thread, like the rest of the status writers.
+     */
+    void showSoundIndicator(String sentence) {
+        main.post(() -> {
+            soundIndicator = sentence == null ? "" : sentence;
+            setStatus(statusBase);
+        });
+    }
+    /**
+     * The single place the shared status line learns about the sound indicator, and deliberately
+     * free of Android types so a JVM unit test can stand on both directions of the merge. An absent
+     * reading leaves the line byte-identical — the input-state segment is untouched — while a
+     * present one is appended last with the existing fullwidth semicolon, so the input state can
+     * never be pushed off the line. Order is fixed: base status, input state, sound indicator.
+     */
+    static String mergeSoundIndicator(String status, String indicator) {
+        if (indicator == null || indicator.isEmpty()) return status;
+        if (status == null || status.isEmpty()) return indicator;
+        if (status.equals(indicator) || status.endsWith("；" + indicator)) return status;
+        return status + "；" + indicator;
+    }
     private void setStatus(String value) {
         if (closed) return;
+        statusBase = value;
         VoiceInputSafetyPolicy.InputState state = inputState;
         if (voiceEnabled && !manualVoiceActive && state != null && state != VoiceInputSafetyPolicy.InputState.READY
                 && !value.equals(state.status)) value += "；" + state.status;
+        value = mergeSoundIndicator(value, soundIndicator);
         currentStatus = value;
         host.status(value);
         if (overlay != null) overlay.status(value);
