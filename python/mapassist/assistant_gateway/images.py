@@ -13,6 +13,9 @@ from PIL import Image, UnidentifiedImageError
 MAX_IMAGE_BYTES = 512 * 1024
 MAX_IMAGE_DIMENSION = 1280
 _MAX_ENCODED_BYTES = ((MAX_IMAGE_BYTES + 2) // 3) * 4
+# Screen JPEGs may carry a color profile. Annotated or non-RGB images still
+# use the RGB transcode path, with EXIF and comments removed before saving.
+_SCREEN_JPEG_INFO = {"jfif", "jfif_version", "jfif_unit", "jfif_density", "dpi", "icc_profile"}
 
 
 class InvalidImage(ValueError):
@@ -25,6 +28,7 @@ class NormalizedImage:
     jpeg_base64: str
     width: int
     height: int
+    transcoded: bool = True
 
 
 def normalize_image(image_base64: str) -> NormalizedImage:
@@ -51,7 +55,16 @@ def normalize_image(image_base64: str) -> NormalizedImage:
                     raise InvalidImage("image dimensions may not exceed 1280 by 1280")
                 probe.verify()
             with Image.open(io.BytesIO(source)) as decoded:
+                if (image_format == "JPEG" and decoded.mode == "RGB"
+                        and decoded.info.keys() <= _SCREEN_JPEG_INFO):
+                    # verify() alone does not decode JPEG pixels. Keep the full
+                    # decode check before forwarding the original compressed bytes.
+                    decoded.load()
+                    return NormalizedImage(
+                        source, base64.b64encode(source).decode("ascii"), width, height, False,
+                    )
                 image = decoded.convert("RGB")
+                image.info.clear()
     except InvalidImage:
         raise
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:

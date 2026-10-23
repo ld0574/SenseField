@@ -10,7 +10,6 @@ import android.os.SystemClock;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -24,8 +23,6 @@ import org.json.JSONObject;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -33,7 +30,7 @@ import java.util.Map;
  * 场景卡在设置卡上方：填完设置点「保存设置」即自动滚到结果区，不会被软键盘挡住。
  * 本页只在用户显式开启判定层并配置渠道后才会发起网络请求；默认关闭。
  */
-public class JudgmentSelfTestActivity extends Activity {
+public class JudgmentSelfTestActivity extends UiActivity {
     private Switch enabledSwitch;
     private Spinner channelSpinner;
     private Spinner langSpinner;
@@ -45,22 +42,21 @@ public class JudgmentSelfTestActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        UiKit.configureWindow(this);
         LinearLayout page = UiKit.page(this);
         ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setFitsSystemWindows(true);
+        scroll.setBackgroundColor(UiKit.PAGE);
         scroll.addView(page, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT));
+                ViewGroup.LayoutParams.WRAP_CONTENT));
         setContentView(scroll);
 
-        TextView title = new TextView(this);
-        title.setText("判定自测台 · Jev L2");
-        title.setTextSize(20);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        page.addView(title);
-        page.addView(note("问题语言默认简体中文（可切 English 对照）。判定经所选渠道真发请求，低置信按铁律出声播报「没看清」。"));
+        UiKit.pageHeader(this, page, "判定自测", "消消乐 · 实验功能");
+        UiKit.add(page, note("问题语言默认简体中文（可切 English 对照）。判定经所选渠道真发请求，低置信按铁律出声播报「没看清」。"), 20);
 
         /* ---------- 多场景测试（放在最上，避免被软键盘挡住） ---------- */
-        LinearLayout scenarios = UiKit.card(this);
-        scenarios.addView(sectionLabel("多场景测试（先在下方保存设置，再点场景）"));
+        LinearLayout scenarios = card(page, "多场景测试（先在下方保存设置，再点场景）");
         Button match3 = UiKit.button(this, "场景 1：消消乐五问", true);
         match3.setOnClickListener(v -> runScenario("match3", false));
         scenarios.addView(match3);
@@ -73,61 +69,70 @@ public class JudgmentSelfTestActivity extends Activity {
         Button demoCue = UiKit.button(this, "演示播报（真实 TTS／音调／震动，不需要游戏画面）", false);
         demoCue.setOnClickListener(v -> runDemoAnnouncements());
         scenarios.addView(demoCue);
-        page.addView(scenarios);
 
         /* ---------- 设置卡片 ---------- */
-        LinearLayout settings = UiKit.card(this);
-        settings.addView(sectionLabel("启用判定层（默认关闭；开启后按所选渠道发起网络请求）"));
+        LinearLayout settings = card(page, "启用判定层（默认关闭；开启后按所选渠道发起网络请求）");
         enabledSwitch = new Switch(this);
         enabledSwitch.setText("启用 Jev 判定层");
+        enabledSwitch.setTextSize(UiKit.TEXT_BODY);
+        enabledSwitch.setTextColor(UiKit.INK);
         enabledSwitch.setChecked(JevSettings.enabled(this));
+        UiKit.styleCheckable(enabledSwitch, this);
         settings.addView(enabledSwitch);
-        settings.addView(sectionLabel("渠道"));
         channelSpinner = new Spinner(this);
-        List<String> channels = new ArrayList<>();
-        channels.add("openrouter（OpenRouter typesafe/jev-1.13）");
-        channels.add("edgeone（腾讯 EdgeOne Makers @makers/jev）");
-        channels.add("local（本机薄适配服务，模拟器访问宿主机用 http://10.0.2.2:8080）");
-        channelSpinner.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, channels));
+        UiKit.styleSpinner(channelSpinner, new String[] {
+                "openrouter（OpenRouter typesafe/jev-1.13）",
+                "edgeone（腾讯 EdgeOne Makers @makers/jev）",
+                "local（本机薄适配服务，模拟器访问宿主机用 http://10.0.2.2:8080）"});
         int savedIndex = channelIndex(JevSettings.channel(this));
         channelSpinner.setSelection(savedIndex < 0 ? 0 : savedIndex);
-        settings.addView(channelSpinner);
-        settings.addView(sectionLabel("问题语言（默认简体中文；English 用于与英文训练语言对照实测）"));
+        settings.addView(UiKit.field(this, "渠道", channelSpinner));
         langSpinner = new Spinner(this);
-        List<String> langs = new ArrayList<>();
-        langs.add("简体中文（默认）");
-        langs.add("English");
-        langSpinner.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, langs));
+        UiKit.styleSpinner(langSpinner, new String[] {"简体中文（默认）", "English"});
         langSpinner.setSelection(JevSettings.LANG_EN.equals(JevSettings.lang(this)) ? 1 : 0);
-        settings.addView(langSpinner);
-        settings.addView(sectionLabel("API Key（仅存本机 SharedPreferences）"));
+        settings.addView(UiKit.field(this,
+                "问题语言（默认简体中文；English 用于与英文训练语言对照实测）", langSpinner));
         apiKeyInput = new EditText(this);
         apiKeyInput.setHint("sk-or-v1-… 或 EdgeOne 的 key");
         apiKeyInput.setText(JevSettings.apiKey(this));
         apiKeyInput.setSingleLine(true);
         apiKeyInput.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
-        settings.addView(apiKeyInput);
-        settings.addView(sectionLabel("本地服务 baseUrl（local 渠道用）"));
+        UiKit.styleInput(apiKeyInput);
+        settings.addView(UiKit.field(this, "API Key（仅存本机 SharedPreferences）", apiKeyInput));
         localBaseUrlInput = new EditText(this);
         localBaseUrlInput.setHint("http://10.0.2.2:8080");
         localBaseUrlInput.setText(JevSettings.localBaseUrl(this));
         localBaseUrlInput.setSingleLine(true);
         localBaseUrlInput.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
-        settings.addView(localBaseUrlInput);
-        Button save = UiKit.button(this, "保存设置", false);
+        UiKit.styleInput(localBaseUrlInput);
+        settings.addView(UiKit.field(this, "本地服务 baseUrl（local 渠道用）", localBaseUrlInput));
+        Button save = UiKit.button(this, "保存设置", true);
         save.setOnClickListener(v -> saveSettings());
         settings.addView(save);
-        page.addView(settings);
 
         /* ---------- 输出卡片 ---------- */
-        LinearLayout out = UiKit.card(this);
+        LinearLayout out = card(page, "运行结果");
         output = new TextView(this);
         output.setTypeface(Typeface.MONOSPACE);
-        output.setTextSize(12);
+        output.setTextSize(18);
+        output.setTextColor(UiKit.INK);
+        output.setLineSpacing(UiKit.dp(this, 2), 1f);
         output.setTextIsSelectable(true);
+        output.setFocusable(true);
+        output.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         output.setText("等待运行…");
         out.addView(output);
-        page.addView(out);
+    }
+
+    /** Adds a titled card; every child is separated by the standard control gap. */
+    private LinearLayout card(LinearLayout page, String title) {
+        LinearLayout card = UiKit.card(this);
+        UiKit.add(card, UiKit.heading(this, title), 12);
+        LinearLayout content = UiKit.vertical(this);
+        UiKit.spaceChildren(content, UiKit.GAP_CONTROL);
+        UiKit.add(card, content, 0);
+        UiKit.add(page, card, UiKit.GAP_SECTION);
+        return content;
     }
 
     private void saveSettings() {
@@ -293,19 +298,8 @@ public class JudgmentSelfTestActivity extends Activity {
         }
     }
 
-    private TextView sectionLabel(String text) {
-        TextView t = new TextView(this);
-        t.setText(text);
-        t.setTextSize(13);
-        t.setPadding(0, UiKit.dp(this, 10), 0, UiKit.dp(this, 4));
-        return t;
-    }
-
     private TextView note(String text) {
-        TextView t = new TextView(this);
-        t.setText(text);
-        t.setTextSize(12);
-        return t;
+        return UiKit.body(this, text);
     }
 
     private static int channelIndex(String channel) {

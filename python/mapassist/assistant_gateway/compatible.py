@@ -18,6 +18,7 @@ class CompatibleVisionClient(GlmVisionClient):
         base_url: str,
         model: str,
         max_tokens: int = 256,
+        disable_thinking: bool = False,
         **kwargs: Any,
     ):
         if not isinstance(api_key, str) or not api_key.strip():
@@ -29,6 +30,9 @@ class CompatibleVisionClient(GlmVisionClient):
         if isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or not 64 <= max_tokens <= 1024:
             raise ValueError("Compatible vision max_tokens must be between 64 and 1024")
         self._max_tokens = max_tokens
+        if not isinstance(disable_thinking, bool):
+            raise ValueError("disable_thinking must be boolean")
+        self._disable_thinking = disable_thinking
         parsed = urlsplit(base_url.strip())
         if (
             parsed.scheme != "https"
@@ -57,9 +61,15 @@ class CompatibleVisionClient(GlmVisionClient):
             image_base64=image_base64,
             context_images=context_images,
         )
-        # Optional vendor extensions are sent only for the exact documented model.
+        # Vendor extension only for the known model or explicit server opt-in.
         body.pop("thinking", None)
-        if self._model.lower() == "minimax-m3":
+        model_name = self._model.lower().rsplit("/", 1)[-1]
+        if self._disable_thinking and model_name == "qwen3.8-flash":
+            # Qwen's compatible API uses a top-level enable_thinking flag;
+            # OpenAI SDK examples put it in extra_body to reach that same field.
+            body["enable_thinking"] = False
+            body["response_format"] = {"type": "json_object"}
+        elif self._disable_thinking or self._model.lower() == "minimax-m3":
             body["thinking"] = {"type": "disabled"}
         body["max_tokens"] = self._max_tokens
         return body

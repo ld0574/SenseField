@@ -56,6 +56,52 @@ def test_compatible_client_uses_openai_streaming_shape_and_jpeg_data_uri() -> No
     assert image == "data:image/jpeg;base64,/9j/TESTIMAGE"
 
 
+@pytest.mark.parametrize("model", ["qwen3.8-flash", "Qwen3.8-Flash", "qwen/qwen3.8-flash"])
+@pytest.mark.parametrize("disable_thinking", [False, True])
+def test_qwen_flash_uses_its_documented_thinking_flag_on_the_wire(model, disable_thinking) -> None:
+    seen = {}
+
+    async def scenario() -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            seen.update(json.loads(request.content))
+            return httpx.Response(200, headers={"content-type": "text/event-stream"},
+                                  content=_sse('{"kind":"hud","answer":"当前缺少中路。","uncertain":false}'))
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+            client = CompatibleVisionClient("server-only-test-key", base_url="https://vision.example/v1",
+                                            model=model, disable_thinking=disable_thinking,
+                                            http_client=http_client)
+            try:
+                await client.complete(question="当前画面有什么信息？", image_base64="/9j/TESTIMAGE")
+            finally:
+                await client.close()
+
+    asyncio.run(scenario())
+    assert seen["model"] == model
+    assert seen["stream"] is True and seen["max_tokens"] == 256
+    assert "thinking" not in seen and "extra_body" not in seen
+    if disable_thinking:
+        assert seen["enable_thinking"] is False
+        assert seen["response_format"] == {"type": "json_object"}
+    else:
+        assert "enable_thinking" not in seen
+        assert "response_format" not in seen
+
+
+@pytest.mark.parametrize("model", ["Kimi-K3", "MiniMax-M3", "glm-5.3-flash",
+                                   "qwen3.8-flash-other", "qwen3.8-omni-flash"])
+def test_qwen_flash_parameter_does_not_change_other_models(model) -> None:
+    client = CompatibleVisionClient("test", base_url="https://vision.example/v1",
+                                    model=model, disable_thinking=True)
+    try:
+        body = client._request_body(question="q", image_base64="a")
+        assert body["thinking"] == {"type": "disabled"}
+        assert "enable_thinking" not in body
+        assert "response_format" not in body
+    finally:
+        asyncio.run(client.close())
+
+
 @pytest.mark.parametrize("first_has_content", [False, True])
 def test_empty_finish_reason_keeps_stream_open_until_the_final_answer(first_has_content: bool) -> None:
     answer = '{"kind":"ui_text","answer":"点击单人练习场。","uncertain":false}'

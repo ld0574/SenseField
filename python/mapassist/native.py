@@ -34,7 +34,7 @@ MA_RADAR_STATUS = 8
 RELATION_SCHEMA = "mapassist.minimap_relation"
 RELATION_STATE_NAMES = {0: "UNKNOWN", 1: "CLEAR", 2: "PENDING", 3: "OCCUPIED", 4: "REARM"}
 RELATION_EVENT_NAMES = {0: None, 1: "NEAR_ENTER", 2: "RADAR_PAUSED",
-                        3: "RADAR_RESUMED", 4: "SUPPRESSED"}
+                        3: "RADAR_RESUMED", 4: "SUPPRESSED", 5: "APPROACH"}
 RELATION_SUPPRESSION_NAMES = {0: None, 1: "rearm_pending", 2: "short_gap"}
 RELATION_SECTOR_NAMES = {0: None, 1: "right", 2: "up_right", 3: "up", 4: "up_left",
                          5: "left", 6: "down_left", 7: "down", 8: "down_right"}

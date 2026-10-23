@@ -30,20 +30,10 @@ final class PresentationAudioPolicy {
     }
 
     static int distanceHapticAmplitude(float distance, float urgency) {
-        return Math.max(1, Math.min(255,
-                Math.round(80f + 175f * distanceHapticIntensity(distance, urgency))));
+        return HapticPolicy.distanceHapticAmplitude(distance, urgency);
     }
 
     static long distanceHapticDurationMs(float distance, float urgency) {
-        return Math.round(50f + 60f * distanceHapticIntensity(distance, urgency));
-    }
-
-    private static float distanceHapticIntensity(float distance, float urgency) {
-        float distanceLevel = NearZoneRouting.presentationDistanceLevel(distance);
-        float boundedUrgency = Float.isFinite(urgency)
-                ? Math.max(0f, Math.min(2f, urgency)) : 0f;
-        float intensity = 0.25f + 0.55f * (1f - distanceLevel)
-                + 0.20f * boundedUrgency / 2f;
-        return Math.max(0.25f, Math.min(1f, intensity));
+        return HapticPolicy.distanceHapticDurationMs(distance, urgency);
     }
 }

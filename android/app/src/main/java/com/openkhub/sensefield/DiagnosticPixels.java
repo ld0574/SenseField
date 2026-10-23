@@ -15,6 +15,21 @@ final class DiagnosticPixels {
         this.argb = argb;
     }
 
+    /** Largest thumbnail edge that fits the ARGB budget, including dimension rounding. */
+    static int boundedEdge(int width, int height, int maxEdge, long maxBytes) {
+        if (width <= 0 || height <= 0 || maxEdge <= 0 || maxBytes < 4) return 0;
+        int low = 0, high = Math.min(maxEdge, 1280);
+        while (low < high) {
+            int edge = low + (high - low + 1) / 2;
+            double scale = Math.min(1.0, (double) edge / Math.max(width, height));
+            long outputWidth = Math.max(1, Math.round(width * scale));
+            long outputHeight = Math.max(1, Math.round(height * scale));
+            if (outputWidth * outputHeight * 4 <= maxBytes) low = edge;
+            else high = edge - 1;
+        }
+        return low;
+    }
+
     static DiagnosticPixels copy(ByteBuffer rgba, int width, int height, int rowStride,
                                  int x0, int y0, int x1, int y1, int maxEdge) {
         if (rgba == null || width <= 0 || height <= 0 || maxEdge <= 0

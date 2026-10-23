@@ -74,6 +74,13 @@ public final class CaptureService extends Service {
     private long loadSkippedFrames;
     private long totalProcessingWallMs;
     private long lastProcessingWallMs;
+    private long receivedImages;
+    private long nativeRuns;
+    private long nativeWallMicros;
+    private long diagnosticWallMicros;
+    private long maxDiagnosticWallMicros;
+    private long workerCpuMs;
+    private long lastWorkLogAtMs;
     private HandlerThread workerThread;
     private Handler worker;
     private NotificationManager notificationManager;
@@ -164,6 +171,7 @@ public final class CaptureService extends Service {
     private long nativeResetGeneration;
     // Near-zone relation layer state for routing and the session audit.
     private boolean nearZoneActive;
+    private long nearZoneApproaches;
     private boolean nearCategoryWasEnabled = true;
     private int lastRelationState = Integer.MIN_VALUE;
     private final int[] nearZoneStateFrames = new int[5];
@@ -202,11 +210,13 @@ public final class CaptureService extends Service {
                             worker.removeCallbacks(recoveryRunnable);
                             recoveryRunnable = null;
                         }
-                        if (captureHealth.check(SystemClock.elapsedRealtime(), expectFrames) ==
+                        long nowMs = SystemClock.elapsedRealtime();
+                        if (captureHealth.check(nowMs, expectFrames) ==
                                 CaptureHealthMonitor.State.STARVED) {
                             starvationCount++;
                             scheduleRecoveryLocked(expectedSessionGeneration);
                         }
+                        logCaptureWorkLocked(nowMs, false);
                         publishDiagnosticStateLocked();
                     } catch (RuntimeException error) {
                         Log.e(TAG, "Could not resize capture after display change", error);
@@ -281,6 +291,10 @@ public final class CaptureService extends Service {
                 GameProfile.settings(this).edit().putBoolean("capture_paused", paused).apply();
                 resetNativeLocked();
                 captureHealth.pause(paused, SystemClock.elapsedRealtime());
+                String pauseMessage = "CapturePause sessionId=" + auditSessionId
+                        + " paused=" + paused + " nativeRuns=" + nativeRuns;
+                Log.i(TAG, pauseMessage);
+                if (diagnostics != null) diagnostics.audit(pauseMessage);
                 publishDiagnosticStateLocked();
                 if (paused && minimapOverlay != null) minimapOverlay.clear();
                 if (cueDispatcher != null) {
@@ -323,7 +337,17 @@ public final class CaptureService extends Service {
             if (stopping || expectedSessionGeneration != captureGeneration) return false;
             try {
                 AssistantSettings assistantConfig = AssistantSettings.from(this);
-                if (cuePlayer == null) cuePlayer = new CuePlayer(this);
+                if (cuePlayer == null) cuePlayer = new CuePlayer(this,
+                        (new CueSettings(this).nearRequestedChannels() & CueRequest.CHANNEL_SPEECH) != 0);
+                final String audioSessionId = auditSessionId;
+                cuePlayer.setAudioAuditListener(message -> {
+                    DiagnosticRecorder recorder = diagnostics;
+                    if (recorder != null && !recorder.finished && audioSessionId.equals(auditSessionId))
+                        recorder.audit(message);
+                    if (message.startsWith("AlertTts status=") && worker != null) worker.post(() -> {
+                        if (!stopping && audioSessionId.equals(auditSessionId)) refreshNotification();
+                    });
+                });
                 cueSettings = new CueSettings(this);
                 cueDispatcher = new CueDispatcher(cuePlayer, cueSettings,
                         new CueAuditListener(), SystemClock::elapsedRealtime);
@@ -410,6 +434,7 @@ public final class CaptureService extends Service {
                         + " profileVersion=" + profile.version
                         + " verified=" + profile.verified
                         + " minimapYolox=" + profile.minimapYolox
+                        + " modelInputSize=" + profile.yoloxInputSize
                         + " confidence=" + profile.yoloxConfidence
                         + " nms=" + profile.yoloxNms
                         + " minimapMinGapMs=" + minimapAppearMinGapMs
@@ -706,6 +731,7 @@ public final class CaptureService extends Service {
     }
 
     private void onImageAvailable(ImageReader source, int generation) {
+        long callbackCpuAtMs = SystemClock.currentThreadTimeMillis();
         Image image = null;
         boolean resizeAfterClose = false;
         boolean refreshAfterFrame = false;
@@ -717,6 +743,7 @@ public final class CaptureService extends Service {
             final long now = SystemClock.elapsedRealtime();
             synchronized (processingLock) {
                 if (stopping || source != reader || generation != readerGeneration) return;
+                receivedImages++;
                 CaptureHealthMonitor.State previous = captureHealth.state();
                 captureHealth.frameArrived(now);
                 lastDiagnosticFrameArrivedAtMs = now;
@@ -844,18 +871,25 @@ public final class CaptureService extends Service {
                     processingStartedAtMs = SystemClock.elapsedRealtime();
                     diagnosticProcessing = true;
                     publishDiagnosticStateLocked();
+                    long nativeStartedNs = System.nanoTime();
                     int[] result = NativeBridge.nativeProcess(nativeSession, pixels,
                             width, height, plane.getRowStride(), observedAtMs, now);
+                    nativeWallMicros += (System.nanoTime() - nativeStartedNs) / 1000;
+                    nativeRuns++;
                     if (result != null && result.length >= 5) {
                         NativeFrameResult frame = NativeBridge.parseFrameResult(result, observedAtMs);
                         assistantRelation = frame.relation;
                         assistantRelationAtMs = observedAtMs;
                         if (diagnostics != null) {
+                            long diagnosticStartedNs = System.nanoTime();
                             DiagnosticSnapshot raw = DiagnosticSnapshot.parse(
                                     NativeBridge.nativeReadDiagnosticSnapshot(nativeSession));
                             diagnostics.frame(frame, raw, pixels, width, height,
                                     plane.getRowStride(), observedAtMs,
                                     SystemClock.elapsedRealtime(), maxObservationAgeMs);
+                            long costMicros = (System.nanoTime() - diagnosticStartedNs) / 1000;
+                            diagnosticWallMicros += costMicros;
+                            maxDiagnosticWallMicros = Math.max(maxDiagnosticWallMicros, costMicros);
                         }
                         if (frame.observationCount < 0) Log.e(TAG, "Invalid direct image buffer");
                         latestNativeMicros = frame.processingMicros;
@@ -896,7 +930,8 @@ public final class CaptureService extends Service {
                         playVisionMemoryTransitions(frame, decision.minimapAppearances,
                                 observedAtMs, decision.suppressedMinimap, combat);
                         // Near-zone events bypass the minimap APPEAR cooldown:
-                        // native occupancy episodes and REARM are their dedupe.
+                        // native appearance batches own their dedupe. A LOST
+                        // return gets a new batch even while others stay near.
                         handleNearZone(frame, observedAtMs, combat);
                     } else if (diagnostics != null) {
                         diagnostics.frame(NativeFrameResult.empty(), DiagnosticSnapshot.parse(null),
@@ -935,13 +970,14 @@ public final class CaptureService extends Service {
                     long completedAtMs = SystemClock.elapsedRealtime();
                     lastProcessingWallMs = Math.max(0, completedAtMs - processingStartedAtMs);
                     totalProcessingWallMs += lastProcessingWallMs;
-                    // Delay only the next admission. This image is already closed;
-                    // incoming callbacks still acquire/drain the latest frame and
-                    // feed capture health, without sleeping or queueing old pixels.
+                    // Keep draining while the unchanged admission policy rests;
+                    // detaching the projection failed fresh-frame experiments.
                     frameProcessing.recordProcessed(processingStartedAtMs, completedAtMs);
                     diagnosticProcessing = false;
                     publishDiagnosticStateLocked();
                 }
+                if (!stopping && source == reader && generation == readerGeneration)
+                    workerCpuMs += Math.max(0, SystemClock.currentThreadTimeMillis() - callbackCpuAtMs);
                 // Skipped callbacks do not rebuild a JSON checkpoint snapshot.
                 // The independent 500 ms watchdog publishes their arrival state.
             }
@@ -957,6 +993,26 @@ public final class CaptureService extends Service {
                 }
             }
         }
+    }
+
+    private void logCaptureWorkLocked(long nowMs, boolean force) {
+        if (!auditSessionActive || (!force && nowMs - lastWorkLogAtMs < 10000)) return;
+        lastWorkLogAtMs = nowMs;
+        String message = "CaptureWork elapsedMs=" + Math.max(0, nowMs - startedAtMs)
+                + " paused=" + paused + " captureWidth=" + frameWidth
+                + " captureHeight=" + frameHeight + " loadMode=" + frameProcessing.mode().name()
+                + " receivedImages=" + receivedImages
+                + " loadSkipped=" + loadSkippedFrames + " nativeRuns=" + nativeRuns
+                + " nativeWallMicros=" + nativeWallMicros
+                + " diagnosticWallMicros=" + diagnosticWallMicros
+                + " maxDiagnosticWallMicros=" + maxDiagnosticWallMicros
+                + " workerCpuMs=" + workerCpuMs
+                + " imageWork=" + java.util.Arrays.toString(diagnostics == null ? null
+                        : diagnostics.imageWorkStats())
+                + " detectorWork=" + java.util.Arrays.toString(nativeSession == 0 ? null
+                        : NativeBridge.nativeReadWorkStats(nativeSession));
+        Log.i(TAG, message);
+        if (diagnostics != null) diagnostics.audit(message);
     }
 
     /** Reuse the recorder's independent device sampling; never poll in the pixel loop. */
@@ -1095,6 +1151,10 @@ public final class CaptureService extends Service {
             lastRelationState = relation.state;
         }
         switch (relation.event) {
+            case NearZoneRouting.EVENT_APPROACH:
+                nearZoneApproaches++;
+                dispatchNearZoneCue(relation, observedAtMs, combat);
+                break;
             case NearZoneRouting.EVENT_NEAR_ENTER:
                 nearZoneEnters++;
                 dispatchNearZoneCue(relation, observedAtMs, combat);
@@ -1124,25 +1184,19 @@ public final class CaptureService extends Service {
             return;
         }
         int channels = cueSettings.nearRequestedChannels();
-        if (combat != null && combat.dense && !combat.allowSpeech) {
-            channels &= ~CueRequest.CHANNEL_SPEECH;
-            if (diagnostics != null) diagnostics.audit("CombatSuppressed kind=NEAR_ZONE"
-                    + " reason=lower_priority_in_window score=" + combat.score
-                    + " bestWindowScore=" + combat.bestWindowScore
-                    + " windowMs=" + NearZoneCombatPolicy.DENSE_WINDOW_MS);
-        }
-        int priority = combat == null ? NearZoneRouting.NEAR_PRIORITY : combat.priority;
+        // Confirmed new/returning near targets retain their configured speech
+        // channel even during dense combat. Playback still expires old cues
+        // and keeps only the newest pending near utterance.
         String cueId = auditSessionId + ":" + nextCueId++;
-        CueRequest request = new CueRequest(auditSessionId, cueId,
-                CueEventKeys.nearZone(nativeResetGeneration, relation.episodeId),
-                "NEAR_ZONE", CueRequest.Category.NEAR_ZONE, priority,
-                observedAtMs, observedAtMs + NearZoneRouting.NEAR_TTL_MS,
-                channels,
-                NearZoneRouting.TONE_NEAR, 0, 0,
-                GameProfile.settings(this).getBoolean("near_two_word", false)
-                        ? NearZoneRouting.twoWordSpeech(relation.sector) : NearZoneRouting.speech(relation.sector),
-                relation.pan, relation.nearestDistance, combat != null && combat.dense ? 2f : 1f,
-                combat == null ? -1 : combat.freshEnemyCount, () -> true);
+        boolean preferTwoWord = GameProfile.settings(this)
+                .getBoolean(PresentationAudioPolicy.PREF_NEAR_TWO_WORD, false);
+        CueRequest request = NearZoneCuePolicy.request(auditSessionId, cueId,
+                nativeResetGeneration, relation, combat, observedAtMs, channels,
+                preferTwoWord);
+        String presentation = NearZoneCuePolicy.presentationAudit(request, relation.sector,
+                combat != null && combat.dense, preferTwoWord, relation.event);
+        Log.i(TAG, presentation);
+        if (diagnostics != null) diagnostics.audit(presentation);
         submitRelationCue(request, NearZoneRouting.KIND_NEAR_ZONE, relation, observedAtMs,
                 combat);
     }
@@ -1187,6 +1241,7 @@ public final class CaptureService extends Service {
                                   String cueId, String outcome) {
         Log.i(TAG, "NearZoneEvent sessionId=" + auditSessionId
                 + " event=" + NearZoneRouting.eventName(relation.event)
+                + " policy=" + NearZoneRouting.EVENT_POLICY
                 + " episode=" + relation.episodeId
                 + " sector=" + relation.sector
                 + " panMilli=" + Math.round(relation.pan * 1000f)
@@ -1196,9 +1251,13 @@ public final class CaptureService extends Service {
                 + " outcome=" + outcome
                 + " atMs=" + observedAtMs);
         if (diagnostics != null) diagnostics.audit("NearZoneEvent event="
-                + NearZoneRouting.eventName(relation.event) + " episode=" + relation.episodeId
+                + NearZoneRouting.eventName(relation.event) + " policy="
+                + NearZoneRouting.EVENT_POLICY + " episode=" + relation.episodeId
                 + " sector=" + relation.sector + " suppression="
-                + NearZoneRouting.suppressionName(relation.suppression) + " outcome=" + outcome);
+                + NearZoneRouting.suppressionName(relation.suppression) + " outcome=" + outcome
+                + " cueId=" + cueId + " atMs=" + observedAtMs
+                + " panMilli=" + Math.round(relation.pan * 1000f)
+                + " distanceMilli=" + Math.round(relation.nearestDistance * 1000f));
     }
 
     private boolean dispatchNativeCue(int kind, int direction, int nativePriority,
@@ -1290,16 +1349,16 @@ public final class CaptureService extends Service {
                     + " acceptedMask=" + result.acceptedChannels
                     + " outcome=" + result.outcome
                     + " dropReason=" + result.reason);
-            if (diagnostics != null) {
-                long dispatchAtMs = SystemClock.elapsedRealtime();
-                diagnostics.audit("CueDispatch cueId=" + request.cueId
-                    + " kind=" + request.kind + " category=" + request.category
-                    + " createdAtMs=" + request.createdAtMs
-                    + " dispatchAtMs=" + dispatchAtMs
-                    + " dispatchDelayMs=" + Math.max(0, dispatchAtMs - request.createdAtMs)
-                    + " requestedMask=" + request.requestedChannels
-                    + " acceptedMask=" + result.acceptedChannels
-                    + " outcome=" + result.outcome + " dropReason=" + result.reason);
+            DiagnosticRecorder recorder=diagnostics;
+            if (recorder != null && recorder.sessionId.equals(request.sessionId)) {
+                recorder.dispatch(request,result.outcome,result.reason,result.acceptedChannels);
+                CueSettings settings=cueSettings;
+                if(settings!=null)recorder.record("CuePolicy",DiagnosticRecorder.object(
+                        "cue_id",request.cueId,"category_enabled",settings.categoryEnabled(request.category),
+                        "enabled_channels",settings.enabledChannels(request.category),
+                        "near_two_word_enabled",GameProfile.settings(CaptureService.this)
+                                .getBoolean(PresentationAudioPolicy.PREF_NEAR_TWO_WORD,false),
+                        "near_haptic_enabled",settings.nearHapticEnabled()));
             }
         }
 
@@ -1310,10 +1369,9 @@ public final class CaptureService extends Service {
                     + " channel=" + channel
                     + " atMs=" + atMs
                     + " result=" + result);
-            if (diagnostics != null) diagnostics.audit("CuePlayback cueId=" + request.cueId
-                    + " channel=" + channel + " atMs=" + atMs
-                    + " playbackDelayMs=" + Math.max(0, atMs - request.createdAtMs)
-                    + " result=" + result);
+            DiagnosticRecorder recorder=diagnostics;
+            if (recorder != null && recorder.sessionId.equals(request.sessionId))
+                recorder.playback(request,channel,atMs,result);
             if (request.category == CueRequest.Category.ASSISTANT
                     && "SPEECH".equals(channel) && "EXPIRED".equals(result)) {
                 AssistantController current = assistant;
@@ -1330,9 +1388,10 @@ public final class CaptureService extends Service {
             AssistantController current = assistant;
             if (dispatcher == null || current == null || !current.allows(reply)) return;
             String cueId = auditSessionId + ":assistant:" + reply.turnId;
+            long now = SystemClock.elapsedRealtime();
             dispatcher.submit(new CueRequest(auditSessionId, cueId, cueId, "ASSISTANT",
-                    CueRequest.Category.ASSISTANT, 20, SystemClock.elapsedRealtime(), reply.expiresAtMs(),
-                    CueRequest.CHANNEL_SPEECH, 0, 0, 0, reply.answer, Float.NaN,
+                    CueRequest.Category.ASSISTANT, 20, now, reply.expiresAtMs(),
+                    CueRequest.CHANNEL_SPEECH, 0, 0, 0, reply.spokenAnswerAt(now), Float.NaN,
                     Float.NaN, 0f, -1, () -> assistant == current && current.allows(reply)));
         }
         @Override public void cancelSpeech() { CueDispatcher dispatcher = cueDispatcher; if (dispatcher != null) dispatcher.cancelAssistantSpeech(); }
@@ -1391,6 +1450,12 @@ public final class CaptureService extends Service {
                 new Intent(this, MainActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         String help = "展开通知可标记问题、暂停或停止";
         String detail = "遇到漏报或误报，请尽快点“标记问题”，帮助保存问题附近的记录。";
+        CuePlayer audio = cuePlayer;
+        if (audio != null && audio.speechPreparationFinished() && !audio.speechReady()
+                && (new CueSettings(this).enabledChannels() & CueRequest.CHANNEL_SPEECH) != 0) {
+            help = "离线中文语音不可用；请在声音配置中安装语音数据";
+            detail = audio.speechStatusText() + "\n" + detail;
+        }
         if (!assistantStatus.isEmpty()) detail += "\n助手：" + assistantStatus;
         if (frameProcessing.mode() != FrameProcessingPolicy.Mode.NORMAL) {
             help = "温度较高，提醒可能变慢；展开可标记问题";
@@ -1454,6 +1519,9 @@ public final class CaptureService extends Service {
             loadSkippedFrames = 0;
             totalProcessingWallMs = 0;
             lastProcessingWallMs = 0;
+            receivedImages = nativeRuns = 0;
+            nativeWallMicros = diagnosticWallMicros = maxDiagnosticWallMicros = workerCpuMs = 0;
+            lastWorkLogAtMs = startedAtMs;
             lastDiagnosticFrameArrivedAtMs = -1;
             lastDiagnosticFrameObservedAtMs = -1;
             lastDiagnosticFrameCompletedAtMs = -1;
@@ -1480,6 +1548,7 @@ public final class CaptureService extends Service {
             lastFrameLandscape = false;
             visionMemoryEnabled = false;
             nearZoneActive = false;
+            nearZoneApproaches = 0;
             nearCategoryWasEnabled = true;
             lastRelationState = Integer.MIN_VALUE;
             java.util.Arrays.fill(nearZoneStateFrames, 0);
@@ -1555,6 +1624,7 @@ public final class CaptureService extends Service {
 
     private void finishAuditSessionLocked(String reason) {
         if (!auditSessionActive) return;
+        logCaptureWorkLocked(SystemClock.elapsedRealtime(), true);
         publishDiagnosticStateLocked();
         long endedAtMs = SystemClock.elapsedRealtime();
         if (nearZoneActive) {
@@ -1567,6 +1637,7 @@ public final class CaptureService extends Service {
                     + " occupiedFrames=" + nearZoneStateFrames[3]
                     + " rearmFrames=" + nearZoneStateFrames[4]
                     + " nearEnters=" + nearZoneEnters
+                    + " approaches=" + nearZoneApproaches
                     + " suppressed=" + nearZoneSuppressed
                     + " radarPauses=" + radarPauses
                     + " radarResumes=" + radarResumes);
@@ -1574,7 +1645,8 @@ public final class CaptureService extends Service {
                     + nearZoneStateFrames[0] + " clearFrames=" + nearZoneStateFrames[1]
                     + " pendingFrames=" + nearZoneStateFrames[2] + " occupiedFrames="
                     + nearZoneStateFrames[3] + " rearmFrames=" + nearZoneStateFrames[4]
-                    + " nearEnters=" + nearZoneEnters + " suppressed=" + nearZoneSuppressed
+                    + " nearEnters=" + nearZoneEnters + " approaches=" + nearZoneApproaches
+                    + " suppressed=" + nearZoneSuppressed
                     + " radarPauses=" + radarPauses + " radarResumes=" + radarResumes);
         }
         Log.i(TAG, "SessionSummary sessionId=" + auditSessionId

@@ -11,6 +11,7 @@ import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.widget.Button;
@@ -20,6 +21,7 @@ import android.widget.TextView;
 
 /** Small touchable window; never repurposes the full-screen marker overlay. Main-thread only. */
 final class AssistantOverlay implements AutoCloseable {
+    static final int HANDLE_DP = 56;
     interface Listener { void readScreen(); void repeat(); void mark(); void pauseVoice(); }
     private final Context context;
     private final Listener listener;
@@ -43,7 +45,7 @@ final class AssistantOverlay implements AutoCloseable {
         if (!Settings.canDrawOverlays(context)) return;
         try {
             manager = context.getSystemService(WindowManager.class);
-            layout = new WindowManager.LayoutParams(dp(48), dp(48), WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            layout = new WindowManager.LayoutParams(dp(HANDLE_DP), dp(HANDLE_DP), WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
                             | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                     PixelFormat.TRANSLUCENT);
@@ -76,13 +78,16 @@ final class AssistantOverlay implements AutoCloseable {
     }
     private void render() {
         if (root == null) return;
+        // Keep the small handle light; expanded text/control contrast must not
+        // depend on the game's colours beneath this window.
+        layout.alpha = expanded ? 1f : .8f;
         root.removeAllViews();
         if (expanded) {
             root.setGravity(Gravity.TOP | Gravity.LEFT);
             root.setOnClickListener(null);
             root.setClickable(false);
-            GradientDrawable background = new GradientDrawable(); background.setColor(Color.rgb(18, 35, 50));
-            background.setCornerRadius(dp(14)); root.setBackground(background);
+            root.setBackground(UiKit.shape(context, UiKit.SURFACE, UiKit.OUTLINE, 22));
+            root.setContentDescription(null);
             root.setOnTouchListener((view, event) -> {
                 if (event.getAction() == MotionEvent.ACTION_OUTSIDE) {
                     setExpanded(false);
@@ -105,8 +110,8 @@ final class AssistantOverlay implements AutoCloseable {
                     if (Math.abs(dx) + Math.abs(dy) > dp(8)) dragged = true;
                     if (dragged) {
                         DisplayMetrics metrics = screenMetrics();
-                        layout.x = Math.max(0, Math.min(metrics.widthPixels - dp(48), originalX + (int) dx));
-                        int maxY = metrics.heightPixels - safeInsets.bottom - dp(48);
+                        layout.x = Math.max(0, Math.min(metrics.widthPixels - dp(HANDLE_DP), originalX + (int) dx));
+                        int maxY = metrics.heightPixels - safeInsets.bottom - dp(HANDLE_DP);
                         layout.y = Math.max(safeInsets.top, Math.min(maxY, originalY + (int) dy)); update();
                     }
                     return true;
@@ -139,13 +144,23 @@ final class AssistantOverlay implements AutoCloseable {
             dot.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
             root.addView(dot, new LinearLayout.LayoutParams(dp(36), dp(36)));
         } else {
-            root.setPadding(dp(12), dp(8), dp(12), dp(8));
-            status = label(lastStatus, 18); root.addView(status);
-            ScrollView scroll = new ScrollView(context); history = label(lastHistory, 18); scroll.addView(history);
-            root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-            LinearLayout first = row(); addButton(first, "读画面", listener::readScreen); addButton(first, "重说", listener::repeat); root.addView(first);
-            LinearLayout second = row(); addButton(second, "标记问题", listener::mark);
-            voiceControl = addButton(second, voicePaused ? "恢复语音" : "暂停语音", listener::pauseVoice); root.addView(second);
+            root.setPadding(0, 0, 0, 0);
+            ScrollView scroll = new ScrollView(context);
+            LinearLayout content = UiKit.vertical(context);
+            content.setPadding(dp(12), dp(12), dp(12), dp(12));
+            status = label(lastStatus, 18);
+            status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+            UiKit.add(content, status, 12);
+            ReminderSampleGrid buttons = UiKit.actionRow(context);
+            addButton(buttons, "读画面", listener::readScreen);
+            addButton(buttons, "重说", listener::repeat);
+            addButton(buttons, "标记问题", listener::mark);
+            voiceControl = addButton(buttons, voicePaused ? "恢复语音" : "暂停语音", listener::pauseVoice);
+            UiKit.add(content, buttons, 12);
+            history = label(lastHistory, 16);
+            UiKit.add(content, history, 0);
+            scroll.addView(content);
+            root.addView(scroll, new LinearLayout.LayoutParams(-1, -1));
         }
         layout.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
@@ -155,8 +170,8 @@ final class AssistantOverlay implements AutoCloseable {
     }
     private void dockToNearestEdge() {
         int width = screenMetrics().widthPixels;
-        rightDocked = layout.x + dp(24) >= width / 2;
-        layout.x = rightDocked ? Math.max(0, width - dp(48)) : 0;
+        rightDocked = layout.x + dp(HANDLE_DP / 2) >= width / 2;
+        layout.x = rightDocked ? Math.max(0, width - dp(HANDLE_DP)) : 0;
         root.setGravity((rightDocked ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
     }
     private DisplayMetrics screenMetrics() {
@@ -191,8 +206,8 @@ final class AssistantOverlay implements AutoCloseable {
         if (layout == null) return;
         refreshSafeInsets();
         DisplayMetrics metrics = screenMetrics();
-        int width = Math.max(dp(48), metrics.widthPixels);
-        int height = Math.max(dp(48), metrics.heightPixels);
+        int width = Math.max(dp(HANDLE_DP), metrics.widthPixels);
+        int height = Math.max(dp(HANDLE_DP), metrics.heightPixels);
         if (expanded) {
             int margin = dp(8);
             int safeWidth = Math.max(1, width - safeInsets.left - safeInsets.right - margin * 2);
@@ -208,7 +223,7 @@ final class AssistantOverlay implements AutoCloseable {
             if (maxY < minY) maxY = minY;
             layout.y = Math.max(minY, Math.min(layout.y, maxY));
         } else {
-            layout.width = dp(48); layout.height = dp(48);
+            layout.width = dp(HANDLE_DP); layout.height = dp(HANDLE_DP);
             layout.x = rightDocked ? Math.max(0, width - layout.width) : 0;
             int minY = safeInsets.top;
             int maxY = height - safeInsets.bottom - layout.height;
@@ -217,15 +232,13 @@ final class AssistantOverlay implements AutoCloseable {
         }
         update();
     }
-    private LinearLayout row() { LinearLayout row = new LinearLayout(context); row.setOrientation(LinearLayout.HORIZONTAL); return row; }
-    private Button addButton(LinearLayout page, String title, Runnable action) {
-        Button button = new Button(context); button.setText(title); button.setTextSize(16); button.setMinHeight(dp(48));
+    private Button addButton(ViewGroup page, String title, Runnable action) {
+        Button button = UiKit.button(context, title, false);
         button.setOnClickListener(v -> action.run());
-        page.addView(button, new LinearLayout.LayoutParams(page.getOrientation() == LinearLayout.HORIZONTAL ? 0 : -1, -2,
-                page.getOrientation() == LinearLayout.HORIZONTAL ? 1 : 0));
+        page.addView(button);
         return button;
     }
-    private TextView label(String text, int size) { TextView label = new TextView(context); label.setText(text); label.setTextSize(size); label.setTextColor(Color.WHITE); return label; }
+    private TextView label(String text, int size) { return UiKit.text(context, text, size, UiKit.INK, false); }
     private int dp(int value) { return Math.round(value * context.getResources().getDisplayMetrics().density); }
     private void update() {
         try {
@@ -243,8 +256,8 @@ final class AssistantOverlay implements AutoCloseable {
     void setExpanded(boolean value) { expanded = value; render(); }
     boolean isExpanded() { return root != null && expanded; }
     Rect bounds() { return new Rect(bounds); }
-    void status(String value) { lastStatus = value; if (status != null) status.setText(value); }
-    void history(String value) { lastHistory = value; if (history != null) history.setText(value); }
+    void status(String value) { lastStatus = value; if (status != null) UiKit.setTextIfChanged(status, value); }
+    void history(String value) { lastHistory = value; if (history != null) UiKit.setTextIfChanged(history, value); }
     void voicePaused(boolean value) { voicePaused = value; if (voiceControl != null) voiceControl.setText(value ? "恢复语音" : "暂停语音"); }
     @Override public void close() {
         if (manager != null && root != null) try { manager.removeViewImmediate(root); } catch (RuntimeException ignored) { }

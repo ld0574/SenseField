@@ -105,7 +105,7 @@ public class AssistantOverlayInstrumentedTest {
             WindowManager windows = context.getSystemService(WindowManager.class);
             DisplayMetrics display = new DisplayMetrics();
             windows.getDefaultDisplay().getRealMetrics(display);
-            int collapsedSize = Math.round(48 * context.getResources().getDisplayMetrics().density);
+            int collapsedSize = Math.round(AssistantOverlay.HANDLE_DP * context.getResources().getDisplayMetrics().density);
             int margin = Math.round(8 * context.getResources().getDisplayMetrics().density);
             Insets safe = windows.getMaximumWindowMetrics().getWindowInsets()
                     .getInsetsIgnoringVisibility(WindowInsets.Type.systemBars()
@@ -228,7 +228,7 @@ public class AssistantOverlayInstrumentedTest {
             UiAutomation automation = InstrumentationRegistry.getInstrumentation().getUiAutomation();
             DisplayMetrics display = new DisplayMetrics();
             windows.getDefaultDisplay().getRealMetrics(display);
-            int collapsedSize = Math.round(48 * context.getResources().getDisplayMetrics().density);
+            int collapsedSize = Math.round(AssistantOverlay.HANDLE_DP * context.getResources().getDisplayMetrics().density);
             int margin = Math.round(8 * context.getResources().getDisplayMetrics().density);
             Insets safe = windows.getMaximumWindowMetrics().getWindowInsets()
                     .getInsetsIgnoringVisibility(WindowInsets.Type.systemBars()
@@ -309,5 +309,59 @@ public class AssistantOverlayInstrumentedTest {
                 if (backplate.getParent() != null) windows.removeViewImmediate(backplate);
             });
         }
+    }
+
+    @Test public void largeTextControlsStayScrollableWithoutMovingTheDock() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        assertTrue(Settings.canDrawOverlays(context));
+        AtomicReference<AssistantOverlay> reference = new AtomicReference<>();
+        final int[] marks = new int[1];
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+            AssistantOverlay overlay = new AssistantOverlay(context, new AssistantOverlay.Listener() {
+                public void readScreen() { }
+                public void repeat() { }
+                public void mark() { marks[0]++; }
+                public void pauseVoice() { }
+            });
+            reference.set(overlay); overlay.show();
+            overlay.history("这里保留最近的问答。大字时所有操作和回复仍可滚动查看。");
+            overlay.setExpanded(true);
+        });
+        AssistantOverlay overlay = reference.get();
+        try {
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            View root = (View) field(overlay, "root");
+            WindowManager.LayoutParams params = (WindowManager.LayoutParams) field(overlay, "layout");
+            int[] before = geometry(root, params);
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                android.widget.ScrollView scroll = (android.widget.ScrollView) ((android.view.ViewGroup) root).getChildAt(0);
+                android.view.ViewGroup content = (android.view.ViewGroup) scroll.getChildAt(0);
+                ReminderSampleGrid buttons = (ReminderSampleGrid) content.getChildAt(1);
+                assertEquals(4, buttons.getChildCount());
+                for (int i = 0; i < buttons.getChildCount(); i++) {
+                    android.widget.Button button = (android.widget.Button) buttons.getChildAt(i);
+                    assertTrue(button.getHeight() >= UiKit.dp(context, 56));
+                    assertTrue(button.getRight() <= buttons.getWidth());
+                    assertTrue(button.getLayout().getHeight() <= button.getHeight()
+                            - button.getCompoundPaddingTop() - button.getCompoundPaddingBottom());
+                }
+                buttons.getChildAt(2).performClick();
+                View last = buttons.getChildAt(3);
+                scroll.scrollTo(0, Math.max(0, buttons.getTop() + last.getBottom() - scroll.getHeight()));
+                android.graphics.Rect visible = new android.graphics.Rect();
+                assertTrue("The last control remains reachable by scrolling", buttons.getChildAt(3).getGlobalVisibleRect(visible));
+            });
+            assertEquals(1, marks[0]);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertArrayEquals("Text reflow never changes the overlay's dock", before, geometry(root, params));
+            android.graphics.Bitmap capture = InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();
+            assertNotNull(capture);
+            String phase = InstrumentationRegistry.getArguments().getString("preview_phase", "after").replaceAll("[^a-zA-Z0-9._-]", "_");
+            java.io.File dir = new java.io.File(context.getExternalFilesDir("ui-0.4.3"), phase);
+            assertTrue(dir.isDirectory() || dir.mkdirs());
+            try (java.io.FileOutputStream output = new java.io.FileOutputStream(new java.io.File(dir, "assistant-overlay.png"))) {
+                assertTrue(capture.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output));
+            } finally { capture.recycle(); }
+        } finally { InstrumentationRegistry.getInstrumentation().runOnMainSync(overlay::close); }
     }
 }

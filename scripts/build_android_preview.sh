@@ -2,10 +2,10 @@
 
 set -euo pipefail
 
-readonly PREVIEW_VERSION_NAME='0.4.1'
-readonly PREVIEW_VERSION_CODE='18'
+readonly PREVIEW_VERSION_NAME='0.4.7'
+readonly PREVIEW_VERSION_CODE='24'
 readonly DEFAULT_UPDATE_MANIFEST_URL='https://888413.xyz/apk/latest.json'
-readonly DEFAULT_UPDATE_APK_URL="https://888413.xyz/apk/sensefieldv${PREVIEW_VERSION_NAME}.apk"
+readonly DEFAULT_UPDATE_APK_URL="https://gitee.com/leda/SenseField/releases/download/${PREVIEW_VERSION_NAME}/sensefieldv${PREVIEW_VERSION_NAME}.apk"
 readonly PREVIEW_ABI='arm64-v8a'
 readonly PREVIEW_MIN_SDK='29'
 readonly PREVIEW_TARGET_SDK='35'
@@ -20,19 +20,19 @@ usage() {
 用法：bash scripts/build_android_preview.sh
 
 默认版本清单：https://888413.xyz/apk/latest.json
-APK 从清单中的同源 HTTPS 地址下载。如需更换清单地址，设置 SENSEFIELD_UPDATE_MANIFEST_URL。
-构建后自动生成 cdn-upload/ 中的 APK 和 latest.json；无需手写清单。
-更换 APK 地址时设置 SENSEFIELD_UPDATE_APK_URL，两个地址须同源。
+APK 默认从听野 Gitee Release 下载。如需更换清单地址，设置 SENSEFIELD_UPDATE_MANIFEST_URL。
+构建后生成 output/releases/<版本>/ 下的唯一 APK、使用说明、latest.json、SHA256SUMS.txt 与核验回执。
+这是本地候选；脚本不发布版本，也不更新公网清单。
+更换 APK 地址时设置 SENSEFIELD_UPDATE_APK_URL；允许同源 HTTPS，或固定清单搭配听野 Gitee Release。
 
-默认只构建并核验 Debug candidate，输出文件名包含 debug-candidate。
-如需构建签名的 release candidate，请在环境变量中同时提供：
+只构建并核验 Release candidate，请在环境变量中同时提供现有签名：
 
   SENSEFIELD_KEYSTORE_PATH
   SENSEFIELD_KEY_ALIAS
   SENSEFIELD_KEYSTORE_PASSWORD
   SENSEFIELD_KEY_PASSWORD
 
-脚本只读取已有发布 keystore，不创建、复制或提交发布 keystore；无签名参数时沿用 Android Gradle 的标准 debug signing。
+脚本只读取已有 keystore，不创建、复制或提交 keystore。缺少签名或完整内置语音时停止，不退回 Debug。
 EOF
 }
 
@@ -96,21 +96,14 @@ for value in "${signing_values[@]}"; do
   fi
 done
 
-if ((provided_signing_values != 0 && provided_signing_values != 4)); then
-  fail "签名参数不完整。请同时设置四个 SENSEFIELD_* 变量，或全部留空以构建 Debug candidate。"
+if ((provided_signing_values != 4)); then
+  fail "发布必须提供四个 SENSEFIELD_* 签名变量；不得退回 Debug。请沿用 0.4.3 的证书。"
 fi
 
-signed_candidate=0
-if ((provided_signing_values == 4)); then
-  signed_candidate=1
-  [[ -f "$SENSEFIELD_KEYSTORE_PATH" ]] || fail \
-    "SENSEFIELD_KEYSTORE_PATH 不存在或不是文件；脚本不会创建 keystore。"
-  # Gradle resolves relative file() paths from the app project, while this
-  # wrapper validates paths from the caller's directory. Export one canonical
-  # absolute path so both checks always refer to the same keystore.
-  keystore_dir="$(cd "$(dirname "$SENSEFIELD_KEYSTORE_PATH")" && pwd -P)"
-  export SENSEFIELD_KEYSTORE_PATH="$keystore_dir/$(basename "$SENSEFIELD_KEYSTORE_PATH")"
-fi
+[[ -f "$SENSEFIELD_KEYSTORE_PATH" ]] || fail \
+  "SENSEFIELD_KEYSTORE_PATH 不存在或不是文件；脚本不会创建 keystore。"
+keystore_dir="$(cd "$(dirname "$SENSEFIELD_KEYSTORE_PATH")" && pwd -P)"
+export SENSEFIELD_KEYSTORE_PATH="$keystore_dir/$(basename "$SENSEFIELD_KEYSTORE_PATH")"
 
 if [[ -n "${JAVA_HOME:-}" ]]; then
   [[ -x "$JAVA_HOME/bin/java" ]] || fail "JAVA_HOME 未指向包含 bin/java 的 JDK。"
@@ -147,88 +140,57 @@ for sdk_root in "${sdk_candidates[@]}"; do
     [[ -x "$candidate" ]] || continue
     apksigner_bin="$candidate"
   done
-  [[ -n "$apksigner_bin" ]] && break
+  if [[ -n "$apksigner_bin" ]]; then
+    # The SDK used for signature tools must also reach AGP, even without local.properties.
+    export ANDROID_HOME="$sdk_root"
+    break
+  fi
 done
 [[ -n "$apksigner_bin" ]] || fail \
   "找不到 apksigner。请安装 Android SDK Build-Tools，或把 apksigner 放入 PATH。"
 
-if ((signed_candidate)); then
-  variant='release'
-  gradle_task=':app:assembleRelease'
-  candidate_label='signed-candidate'
-  source_apk="$android_dir/app/build/outputs/apk/release/app-release.apk"
-else
-  variant='debug'
-  gradle_task=':app:assembleDebug'
-  candidate_label='debug-candidate'
-  source_apk="$android_dir/app/build/outputs/apk/debug/app-debug.apk"
-fi
+variant='release'
+gradle_task=':app:assembleRelease'
+candidate_label='signed-release-candidate'
+source_apk="$android_dir/app/build/outputs/apk/release/app-release.apk"
 
-preview_dir="$android_dir/app/build/outputs/preview"
-candidate_apk="$preview_dir/sensefield-${PREVIEW_VERSION_NAME}-${PREVIEW_ABI}-${candidate_label}.apk"
-# Remove any prior handoff before starting a new build. A failed build must not
-# leave an older candidate at the path that the release checklist uploads.
-rm -rf "$preview_dir"
+preview_dir="$repo_root/output/releases/${PREVIEW_VERSION_NAME}"
+candidate_apk="$preview_dir/sensefieldv${PREVIEW_VERSION_NAME}.apk"
+python_bin="$repo_root/.venv/bin/python"
+if [[ ! -x "$python_bin" ]]; then
+  python_bin="$(command -v python3)" || fail "生成候选需要 Python 3。"
+fi
+handoff_tool="$repo_root/scripts/prepare_android_candidate.py"
+"$python_bin" "$handoff_tool" check-urls \
+  --index-url "$SENSEFIELD_UPDATE_MANIFEST_URL" --apk-url "$SENSEFIELD_UPDATE_APK_URL"
+"$python_bin" "$repo_root/scripts/prepare_bundled_speech.py" verify
+"$python_bin" "$handoff_tool" begin --output "$preview_dir"
+
+record_build_failure() {
+  build_exit=$?
+  trap - EXIT
+  if ((build_exit != 0)); then
+    "$python_bin" "$handoff_tool" failed --output "$preview_dir" --exit-code "$build_exit" || \
+      printf '%s\n' '无法写入构建失败回执；原错误和先前候选归档仍保留。' >&2
+  fi
+  exit "$build_exit"
+}
+trap record_build_failure EXIT
 
 printf '==> 构建 SenseField %s（versionCode %s，%s，%s）\n' \
   "$PREVIEW_VERSION_NAME" "$PREVIEW_VERSION_CODE" "$PREVIEW_ABI" "$variant"
-if ((signed_candidate)); then
-  printf '%s\n' '==> 使用已有发布 keystore；不会打印密码或创建发布 keystore。'
-else
-  printf '%s\n' '==> 未提供完整签名环境变量；只构建 Debug candidate，使用标准 debug signing。'
-fi
-
+printf '%s\n' '==> 使用已有签名；不会打印密码或创建 keystore。'
 (
   cd "$android_dir"
   ./gradlew --no-daemon "-PsensefieldAbi=$PREVIEW_ABI" \
     "-PsensefieldUpdateManifestUrl=$SENSEFIELD_UPDATE_MANIFEST_URL" "$gradle_task"
 )
-
 [[ -f "$source_apk" ]] || fail "Gradle 完成但没有生成预期 APK：$source_apk"
-
-mkdir -p "$preview_dir"
-cp "$source_apk" "$candidate_apk"
-
-printf '==> 核验 APK 签名：%s\n' "$candidate_apk"
-"$apksigner_bin" verify --verbose --print-certs "$candidate_apk"
-
-apk_sha256=''
-if command -v shasum >/dev/null 2>&1; then
-  apk_sha256="$(shasum -a 256 "$candidate_apk" | awk '{print $1}')"
-elif command -v sha256sum >/dev/null 2>&1; then
-  apk_sha256="$(sha256sum "$candidate_apk" | awk '{print $1}')"
-else
-  fail "找不到 shasum 或 sha256sum，无法输出 APK SHA-256。"
-fi
-apk_bytes="$(wc -c < "$candidate_apk" | tr -d '[:space:]')"
-checksum_file="${candidate_apk}.sha256"
-printf '%s  %s\n' "$apk_sha256" "$(basename "$candidate_apk")" > "$checksum_file"
-
+"$python_bin" "$handoff_tool" prepare --output "$preview_dir" --apk "$source_apk" \
+  --apk-url "$SENSEFIELD_UPDATE_APK_URL" --docs "$repo_root/docs/releases/${PREVIEW_VERSION_NAME}"
+trap - EXIT
 printf '\n完成：%s\n' "$candidate_apk"
-printf '候选类型：%s\n' "$candidate_label"
-printf '文件大小：%s bytes\n' "$apk_bytes"
-printf 'SHA-256：%s\n' "$apk_sha256"
-printf '校验文件：%s\n' "$checksum_file"
-printf '%s\n' '脚本未创建或上传发布 keystore，也未上传 CDN 文件。'
-
-# Hash the exact signed candidate; never hand-maintain a revision checksum.
-python_bin="$repo_root/.venv/bin/python"
-if [[ ! -x "$python_bin" ]]; then
-  python_bin="$(command -v python3)" || fail "生成 CDN 清单需要 Python 3。"
-fi
-"$python_bin" - <<'PY'
-import os
-from urllib.parse import urlsplit
-def origin(name):
-    value = urlsplit(os.environ[name])
-    return value.scheme, value.hostname, value.port or 443
-if origin('SENSEFIELD_UPDATE_MANIFEST_URL') != origin('SENSEFIELD_UPDATE_APK_URL'):
-    raise SystemExit('CDN APK 与版本清单必须同源。')
-PY
-cdn_dir="$preview_dir/cdn-upload"
-mkdir -p "$cdn_dir"
-cp "$candidate_apk" "$cdn_dir/sensefieldv${PREVIEW_VERSION_NAME}.apk"
-"$python_bin" "$repo_root/scripts/build_app_update_manifest.py" \
-  --apk "$cdn_dir/sensefieldv${PREVIEW_VERSION_NAME}.apk" \
-  --apk-url "$SENSEFIELD_UPDATE_APK_URL" --output "$cdn_dir/latest.json"
-printf 'CDN 上传文件：%s\n' "$cdn_dir"
+printf '候选类型：%s；完整工程验收以 validation/current-package/ 的最终回执为准。\n' "$candidate_label"
+printf '校验文件：%s/SHA256SUMS.txt\n' "$preview_dir"
+printf '本地版本清单：%s/latest.json\n' "$preview_dir"
+printf '%s\n' '本脚本未公开发布 APK，也未更新公网清单。'

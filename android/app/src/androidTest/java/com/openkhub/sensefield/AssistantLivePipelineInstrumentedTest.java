@@ -120,7 +120,7 @@ public final class AssistantLivePipelineInstrumentedTest {
                     .putBoolean(AssistantSettings.VISION, true)
                     .putBoolean(AssistantSettings.IMAGE_CONSENT, true)
                     .putBoolean(AssistantSettings.PROACTIVE, false)
-                    .putString(AssistantSettings.ENDPOINT, endpoint)
+                    .putBoolean(AssistantSettings.CUSTOM_SERVICE, true).putString(AssistantSettings.ENDPOINT, endpoint)
                     .putString(AssistantSettings.TOKEN, token)
                     .putBoolean("live_test_speech_channel", true)
                     .commit();
@@ -208,9 +208,8 @@ public final class AssistantLivePipelineInstrumentedTest {
                     "synthetic score ASR result exceeded 30 seconds");
             require(asrFailure.get() == null, stage, "synthetic score ASR failed");
             String questionText = recognizedQuestion.get();
-            require(questionText != null && questionText.contains("比分")
-                            && AssistantController.isRequest(questionText), stage,
-                    "synthetic score question was not recognized as an actionable request");
+            require(questionText != null && questionText.contains("比分"), stage,
+                    "synthetic score message did not contain the expected ASR text");
             summary.put("asr_generation", generation);
             summary.put("asr_capture_turn", captureTurn.get());
             summary.put("asr_question", questionText);

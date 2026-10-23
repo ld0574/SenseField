@@ -20,6 +20,8 @@ from urllib.parse import urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[1]
+MAX_UPDATE_SUMMARY_CHARS = 100
+MAX_UPDATE_SUMMARY_LINES = 3
 _PACKAGE_RE = re.compile(r"^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$")
 _BADGING_FIELD_RE = re.compile(r"([A-Za-z][A-Za-z0-9]*)='([^']*)'")
 _NATIVE_CODE_RE = re.compile(r"native-code:\s*(.*)$")
@@ -234,9 +236,16 @@ def create_manifest(
     }
     if notes_file is not None:
         try:
-            manifest["release_notes"] = Path(notes_file).expanduser().read_text(encoding="utf-8").strip()
+            notes = Path(notes_file).expanduser().read_text(encoding="utf-8").strip()
         except (OSError, UnicodeError) as exc:
             raise ManifestError(f"Could not read release notes file: {exc}") from exc
+        if len(notes) > MAX_UPDATE_SUMMARY_CHARS or len(notes.splitlines()) > MAX_UPDATE_SUMMARY_LINES:
+            raise ManifestError(
+                f"Update dialog summary must be at most {MAX_UPDATE_SUMMARY_LINES} lines and "
+                f"{MAX_UPDATE_SUMMARY_CHARS} characters including punctuation and line breaks. "
+                "Use --notes-file for a short player-facing summary; keep full release notes on the release page."
+            )
+        manifest["release_notes"] = notes
     return manifest
 
 
@@ -256,7 +265,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--apk", type=Path, required=True, help="Signed APK to describe and hash")
     parser.add_argument("--apk-url", required=True, help="HTTPS URL clients use to download this APK")
     parser.add_argument("--output", type=Path, required=True, help="Named JSON manifest output path")
-    parser.add_argument("--notes-file", type=Path, help="Optional UTF-8 release-notes text file")
+    parser.add_argument(
+        "--notes-file", type=Path,
+        help="Optional UTF-8 update dialog summary (at most 3 lines / 100 characters)",
+    )
     parser.add_argument("--aapt2", help="aapt2 executable; otherwise discovered from Android SDK build-tools")
     args = parser.parse_args(argv)
     try:

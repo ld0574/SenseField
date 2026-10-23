@@ -14,21 +14,28 @@ final class AssistantPolicy {
     private long lastAutomatic = -1;
     private long throttledUntil;
     private long lastSignature = Long.MIN_VALUE;
+    private boolean serviceRepairRequired;
 
     synchronized boolean automaticDue(long now, FrameProcessingPolicy.Mode mode,
             boolean speaking, boolean panel, long lastAlert, long signature) {
         refreshWindow(now);
         long interval = mode == FrameProcessingPolicy.Mode.WARM ? WARM_INTERVAL_MS : NORMAL_INTERVAL_MS;
-        return mode != FrameProcessingPolicy.Mode.HOT && now >= throttledUntil && !speaking && !panel
+        return !serviceRepairRequired && mode != FrameProcessingPolicy.Mode.HOT && now >= throttledUntil && !speaking && !panel
                 && (lastAlert < 0 || now - lastAlert >= ALERT_QUIET_MS)
                 && (lastAutomatic < 0 || now - lastAutomatic >= interval)
                 && signature != lastSignature && automaticCalls < 60 && totalCalls < 120;
     }
     synchronized boolean manualAllowed(long now, FrameProcessingPolicy.Mode mode) {
         refreshWindow(now);
-        return mode != FrameProcessingPolicy.Mode.HOT && now >= throttledUntil && totalCalls < 120;
+        // Heat reduces unattended observation, not a deliberate one-shot request.
+        return now >= throttledUntil && totalCalls < 120;
     }
     synchronized long retryAfterMs(long now) { return Math.max(0, throttledUntil - now); }
+    /** Stop unattended failures; a deliberate manual request can verify service recovery. */
+    synchronized void serviceFailed(String code) {
+        if (AssistantVisualFailure.requiresServiceRepair(code)) serviceRepairRequired = true;
+    }
+    synchronized void serviceRecovered() { serviceRepairRequired = false; }
     synchronized void started(long now, boolean proactive, long signature) {
         refreshWindow(now); totalCalls++;
         if (proactive) { automaticCalls++; lastAutomatic = now; lastSignature = signature; }

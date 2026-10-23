@@ -1,0 +1,27 @@
+// Opt-in test source only. The production source sets, permissions and signer stay unchanged.
+gradle.afterProject { p, state ->
+    if (p.path == ':app') {
+        def soakTools = new File(p.rootProject.projectDir.parentFile, 'tools/android-soak')
+        p.android.sourceSets.androidTest.java.srcDir(new File(soakTools, 'androidTest'))
+        p.android.sourceSets.androidTest.manifest.srcFile(new File(soakTools, 'androidTest/AndroidManifest.xml'))
+        p.android.buildTypes.release.testProguardFiles(new File(soakTools, 'soak-proguard-rules.pro'))
+        // AGP rewrites instrumentation in androidTest's input Manifest to its sole
+        // configured runner. Add the second, self-targeted entry to the test-only
+        // merged artifact before packaging; never touch a production Manifest.
+        p.tasks.matching { it.name.startsWith('merge') && it.name.endsWith('AndroidTestManifest') }.configureEach { t ->
+            t.inputs.property('soakBootstrapInstrumentation', 'com.openkhub.sensefield.Match3SoakWakeBootstrapInstrumentation')
+            t.doLast {
+                def manifest = t.mergedManifestFile.get().asFile
+                def contents = manifest.getText('UTF-8')
+                def helper = 'com.openkhub.sensefield.Match3SoakWakeBootstrapInstrumentation'
+                if (!contents.contains('androidx.test.runner.AndroidJUnitRunner') || !contents.contains('</manifest>')) {
+                    throw new GradleException('Expected AndroidJUnitRunner test manifest')
+                }
+                if (!contents.contains(helper)) {
+                    def entry = '    <instrumentation android:name="' + helper + '" android:targetPackage="' + t.testApplicationId.get() + '" />\n'
+                    manifest.setText(contents.replace('</manifest>', entry + '</manifest>'), 'UTF-8')
+                }
+            }
+        }
+    }
+}

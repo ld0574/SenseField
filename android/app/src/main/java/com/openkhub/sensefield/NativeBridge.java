@@ -35,6 +35,12 @@ final class NativeBridge {
 
     /** Same worker/processing lock as nativeProcess; read before the next frame. */
     static native long[] nativeReadDiagnosticSnapshot(long session);
+    /** Cumulative detector work; does not modify recognition or cue state. */
+    static native long[] nativeReadWorkStats(long session);
+    static native void nativeSetDetectorCache(long session, boolean enabled);
+    /** Test-only; reloads the model with the requested precision for paired regressions. */
+    static native boolean nativeReloadDetectorPrecision(long session, AssetManager assets,
+                            boolean halfStorage, boolean halfArithmetic, boolean pooling);
 
     static NativeFrameResult parseFrameResult(int[] packed, long frameTimestampMs) {
         return NativeFrameResult.parse(packed, frameTimestampMs);

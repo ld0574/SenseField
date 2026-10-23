@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import io
 import json
 import logging
@@ -124,6 +125,72 @@ def test_health_and_visual_auth_and_response_ids() -> None:
     assert not vision.calls[0][1].startswith("data:")
 
 
+def test_screen_jpeg_reaches_vision_unchanged_and_logs_only_input_metadata(caplog) -> None:
+    output = io.BytesIO()
+    Image.new("RGB", (1280, 576), "navy").save(output, format="JPEG", quality=75)
+    source = output.getvalue()
+    encoded = base64.b64encode(source).decode("ascii")
+    vision = FakeVision()
+    caplog.set_level(logging.INFO, logger="mapassist.assistant_gateway.audit")
+    with TestClient(create_app(_settings(), recognizer=FakeRecognizer(), vision_client=vision)) as client:
+        response = client.post("/v1/visual", json=_visual_payload(
+            question="PRIVATE_USER_QUESTION", image_base64=encoded, snapshot_read=True,
+        ), headers={"Authorization": f"Bearer {TOKEN}"})
+    assert response.status_code == 200
+    assert vision.calls[0][1] == encoded
+    audit = "\n".join(record.getMessage() for record in caplog.records)
+    assert "image_width=1280 image_height=576" in audit
+    assert f"image_bytes={len(source)}" in audit
+    assert f"image_sha256={hashlib.sha256(source).hexdigest()}" in audit
+    assert "image_transcoded=false frame_age_ms=40 context_count=0" in audit
+    assert encoded not in audit and "PRIVATE_USER_QUESTION" not in audit
+    assert TOKEN not in audit and "弹药 24 发" not in audit
+    assert "image_sha256" not in response.json()
+
+
+def test_snapshot_request_is_optional_and_manual_only() -> None:
+    assert not validate_visual_request(_visual_payload()).snapshot_read
+    assert validate_visual_request(_visual_payload(snapshot_read=True)).snapshot_read
+    assert not validate_visual_request(_visual_payload(snapshot_read=False, proactive=True)).snapshot_read
+    with pytest.raises(InvalidRequest, match="snapshot_read"):
+        validate_visual_request(_visual_payload(snapshot_read=True, proactive=True))
+
+
+@pytest.mark.parametrize("flag", [None, "true", 0, 1, [], {}])
+def test_snapshot_request_rejects_non_boolean_flags(flag) -> None:
+    with pytest.raises(InvalidRequest, match="snapshot_read"):
+        validate_visual_request(_visual_payload(snapshot_read=flag))
+
+
+@pytest.mark.parametrize(("kind", "uncertain", "snapshot_read", "proactive", "expected_scope"), [
+    ("hud", False, True, False, "snapshot"),
+    ("hud", False, False, False, None),
+    ("hud", False, False, True, None),
+    ("ui_text", False, True, False, None),
+    ("hud", True, True, False, None),
+    ("unknown", True, True, False, None),
+])
+def test_snapshot_scope_is_granted_only_to_explicit_manual_grounded_hud_reads(
+    kind, uncertain, snapshot_read, proactive, expected_scope,
+) -> None:
+    vision = FakeVision(json.dumps({"kind": kind, "answer": "截图里有一个标记。", "uncertain": uncertain}))
+    with TestClient(create_app(_settings(), recognizer=FakeRecognizer(), vision_client=vision)) as client:
+        response = client.post("/v1/visual", json=_visual_payload(
+            question="朗读文字", snapshot_read=snapshot_read, proactive=proactive,
+        ), headers={"Authorization": f"Bearer {TOKEN}"})
+    assert response.status_code == 200
+    assert response.json().get("answer_scope") == expected_scope
+
+
+def test_model_cannot_assign_snapshot_scope_to_a_legacy_request() -> None:
+    vision = FakeVision('{"kind":"hud","answer":"敌人标记。","uncertain":false,"answer_scope":"snapshot"}')
+    with TestClient(create_app(_settings(), recognizer=FakeRecognizer(), vision_client=vision)) as client:
+        response = client.post("/v1/visual", json=_visual_payload(), headers={"Authorization": f"Bearer {TOKEN}"})
+    assert response.status_code == 200
+    assert response.json()["uncertain"] is True
+    assert "answer_scope" not in response.json()
+
+
 def test_opt_in_private_text_trace_records_visual_request_lifecycle(tmp_path) -> None:
     raw_answer = '{"kind":"hud","answer":"PRIVATE_MODEL_ADVICE","uncertain":false}'
     vision = FakeVision(raw_answer)
@@ -207,6 +274,47 @@ def test_structured_tactical_answer_is_not_rejected_by_a_keyword_filter() -> Non
     assert response.json()["kind"] == "hud"
     assert response.json()["answer"] == "建议利用掩体推进，先补足防御装备。"
     assert response.json()["uncertain"] is False
+
+
+def test_selection_metadata_survives_gateway_without_changing_legacy_kind() -> None:
+    advice = FakeVision('{"kind":"hud","answer":"补对抗路，当前队友缺前排。","uncertain":false,"decision_scene":"hero_selection"}')
+    with TestClient(create_app(_settings(), recognizer=FakeRecognizer(), vision_client=advice)) as client:
+        payload = _visual_payload()
+        payload["question"] = "当前选人界面我选哪个？"
+        response = client.post("/v1/visual", json=payload, headers={"Authorization": f"Bearer {TOKEN}"})
+    assert response.status_code == 200
+    assert response.json()["kind"] == "hud"
+    assert response.json()["decision_scene"] == "hero_selection"
+
+
+@pytest.mark.parametrize(("question", "scene", "expected_scene"), [
+    ("现在团战中，升级二技能还是三技能？", "game_decision", "game_decision"),
+    ("观察打野区域有没有敌人", "game_decision", None),
+    ("现在团战旁边的野区有没有敌人？", "game_decision", None),
+])
+def test_general_questions_reach_the_model_unchanged_and_keep_the_correct_lifetime(question, scene, expected_scene):
+    vision = FakeVision(json.dumps({"kind": "hud", "answer": "这是基于刚才截图的分析。",
+                                   "uncertain": False, "decision_scene": scene}))
+    with TestClient(create_app(_settings(), recognizer=FakeRecognizer(), vision_client=vision)) as client:
+        response = client.post("/v1/visual", json=_visual_payload(question=question), headers={"Authorization": f"Bearer {TOKEN}"})
+    assert response.status_code == 200
+    assert vision.calls[0][0] == question
+    assert response.json()["kind"] == "hud"
+    assert response.json().get("decision_scene") == expected_scene
+
+
+def test_immediate_combat_request_does_not_wait_for_or_call_cloud_model() -> None:
+    class MustNotCall:
+        async def complete(self, **kwargs):
+            raise AssertionError("Instant combat advice must not call the vision model")
+    with TestClient(create_app(_settings(), recognizer=FakeRecognizer(), vision_client=MustNotCall())) as client:
+        payload = _visual_payload(snapshot_read=True)
+        payload["question"] = "现在团战我应该立即怎么操作？"
+        response = client.post("/v1/visual", json=payload, headers={"Authorization": f"Bearer {TOKEN}"})
+    assert response.status_code == 200
+    assert "本地预警" in response.json()["answer"]
+    assert "decision_scene" not in response.json()
+    assert "answer_scope" not in response.json()
 
 
 @pytest.mark.parametrize(
@@ -469,11 +577,14 @@ def test_context_images_are_forwarded_in_order_and_redacted_audit_has_only_scala
         .image.jpeg_base64,
     )
     assert primary_image == validate_visual_request(_visual_payload(image_base64=payload["image_base64"])).image.jpeg_base64
-    assert "5000 ms before" in question and "2000 ms before" in question and "100 ms old" in question
+    assert "背景截图1已过去5000毫秒" in question
+    assert "背景截图2已过去2000毫秒" in question
+    assert "当前主截图已过去100毫秒" in question
     assert "PRIVATE_USER_QUESTION" not in " ".join(record.getMessage() for record in caplog.records)
     audit = " ".join(record.getMessage() for record in caplog.records)
     assert "event=request_accepted" in audit and "event=response_validated" in audit
     assert "context_count=2" in audit and "answer_chars=7" in audit
+    assert "image_width=32 image_height=20" in audit and "image_transcoded=true" in audit
     assert "建议先补护甲" not in audit and _image_base64("red") not in audit
 
 

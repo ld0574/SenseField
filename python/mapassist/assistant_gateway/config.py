@@ -11,6 +11,11 @@ from urllib.parse import urlsplit
 
 @dataclass(frozen=True)
 class GatewaySettings:
+    public_access: bool = False
+    public_quota_db: Path | None = None
+    public_global_daily: int = 1000
+    public_installation_daily: int = 300
+    public_installation_minute: int = 12
     device_tokens: tuple[str, ...] = field(default_factory=tuple, repr=False)
     zhipu_api_key: str = field(default="", repr=False)
     zhipu_model: str = "glm-4.6v-flash"
@@ -19,18 +24,27 @@ class GatewaySettings:
     vision_model: str = ""
     vision_api_key: str = field(default="", repr=False)
     vision_max_tokens: int = 256
+    vision_prompt_file: Path | None = None
+    vision_disable_thinking: bool = False
     model_cache_dir: Path | None = None
     asr_backend: str = "paraformer_streaming"
     sensevoice_model_dir: Path | None = None
     account_concurrency: int = 1
-    request_timeout_seconds: float = 8.0
+    request_timeout_seconds: float = 12.0
+    snapshot_timeout_seconds: float = 17.0
     require_tls: bool = True
+    local_tls_proxy: bool = False
     mode: str = "production"
     # Explicit opt-in for supervised tests, including production-provider tests.
     test_text_log_dir: Path | None = field(default=None, repr=False)
     test_text_log_seconds: int = 3600
 
     def __post_init__(self) -> None:
+        for value in (self.public_global_daily, self.public_installation_daily, self.public_installation_minute):
+            if type(value) is not int or not 1 <= value <= 1000000:
+                raise ValueError("Public access quotas must be integers between 1 and 1000000")
+        if self.public_access and (self.asr_backend != "disabled" or self.public_quota_db is None):
+            raise ValueError("Public access requires vision-only mode and a persistent quota database")
         if (isinstance(self.test_text_log_seconds, bool)
                 or not isinstance(self.test_text_log_seconds, int)
                 or not 1 <= self.test_text_log_seconds <= 3600):
@@ -44,6 +58,14 @@ class GatewaySettings:
         if (isinstance(self.vision_max_tokens, bool) or not isinstance(self.vision_max_tokens, int)
                 or not 64 <= self.vision_max_tokens <= 1024):
             raise ValueError("ASSISTANT_GATEWAY_VISION_MAX_TOKENS must be between 64 and 1024")
+        if (isinstance(self.request_timeout_seconds, bool)
+                or not isinstance(self.request_timeout_seconds, (int, float))
+                or not 2 <= self.request_timeout_seconds <= 30):
+            raise ValueError("ASSISTANT_GATEWAY_VISION_TIMEOUT_SECONDS must be between 2 and 30")
+        if (isinstance(self.snapshot_timeout_seconds, bool)
+                or not isinstance(self.snapshot_timeout_seconds, (int, float))
+                or not 2 <= self.snapshot_timeout_seconds <= 18):
+            raise ValueError("ASSISTANT_GATEWAY_SNAPSHOT_TIMEOUT_SECONDS must be between 2 and 18")
         if self.vision_provider == "compatible":
             url = urlsplit(self.vision_base_url)
             if (url.scheme != "https" or not url.hostname or url.username or url.password
@@ -53,7 +75,10 @@ class GatewaySettings:
                 raise ValueError("ASSISTANT_GATEWAY_VISION_MODEL must be a model identifier")
 
     @classmethod
-    def from_env(cls, *, require_tls: bool = True, mode: str = "production") -> "GatewaySettings":
+    def from_env(
+        cls, *, require_tls: bool = True, local_tls_proxy: bool = False,
+        mode: str = "production",
+    ) -> "GatewaySettings":
         values: list[str] = []
         for key in ("ASSISTANT_GATEWAY_DEVICE_TOKENS", "ASSISTANT_GATEWAY_DEVICE_TOKEN"):
             raw = os.environ.get(key, "")
@@ -78,7 +103,27 @@ class GatewaySettings:
             vision_max_tokens = int(os.environ.get("ASSISTANT_GATEWAY_VISION_MAX_TOKENS", "256"))
         except ValueError as exc:
             raise ValueError("ASSISTANT_GATEWAY_VISION_MAX_TOKENS must be an integer") from exc
+        try:
+            vision_timeout = float(os.environ.get("ASSISTANT_GATEWAY_VISION_TIMEOUT_SECONDS", "12"))
+        except ValueError as exc:
+            raise ValueError("ASSISTANT_GATEWAY_VISION_TIMEOUT_SECONDS must be a number") from exc
+        try:
+            snapshot_timeout = float(os.environ.get("ASSISTANT_GATEWAY_SNAPSHOT_TIMEOUT_SECONDS", "17"))
+        except ValueError as exc:
+            raise ValueError("ASSISTANT_GATEWAY_SNAPSHOT_TIMEOUT_SECONDS must be a number") from exc
+        public_raw = os.environ.get("ASSISTANT_GATEWAY_PUBLIC_ACCESS", "0")
+        if public_raw not in {"0", "1"}:
+            raise ValueError("ASSISTANT_GATEWAY_PUBLIC_ACCESS must be 0 or 1")
+        thinking_raw = os.environ.get("ASSISTANT_GATEWAY_VISION_DISABLE_THINKING", "0")
+        if thinking_raw not in {"0", "1"}:
+            raise ValueError("ASSISTANT_GATEWAY_VISION_DISABLE_THINKING must be 0 or 1")
+        quota_path = os.environ.get("ASSISTANT_GATEWAY_PUBLIC_QUOTA_DB", "").strip()
         return cls(
+            public_access=public_raw == "1",
+            public_quota_db=Path(quota_path).expanduser() if quota_path else None,
+            public_global_daily=int(os.environ.get("ASSISTANT_GATEWAY_PUBLIC_GLOBAL_DAILY", "1000")),
+            public_installation_daily=int(os.environ.get("ASSISTANT_GATEWAY_PUBLIC_INSTALLATION_DAILY", "300")),
+            public_installation_minute=int(os.environ.get("ASSISTANT_GATEWAY_PUBLIC_INSTALLATION_MINUTE", "12")),
             device_tokens=tokens,
             zhipu_api_key=os.environ.get("ZHIPU_API_KEY", "").strip(),
             zhipu_model=os.environ.get("ASSISTANT_GATEWAY_GLM_MODEL", "glm-4.6v-flash").strip(),
@@ -87,11 +132,17 @@ class GatewaySettings:
             vision_model=os.environ.get("ASSISTANT_GATEWAY_VISION_MODEL", "").strip(),
             vision_api_key=os.environ.get("ASSISTANT_GATEWAY_VISION_API_KEY", "").strip(),
             vision_max_tokens=vision_max_tokens,
+            vision_disable_thinking=thinking_raw == "1",
+            request_timeout_seconds=vision_timeout,
+            snapshot_timeout_seconds=snapshot_timeout,
+            vision_prompt_file=Path(os.environ["ASSISTANT_GATEWAY_VISION_PROMPT_FILE"]).expanduser()
+                if os.environ.get("ASSISTANT_GATEWAY_VISION_PROMPT_FILE", "").strip() else None,
             model_cache_dir=Path(cache).expanduser() if cache else None,
             asr_backend=os.environ.get("ASSISTANT_GATEWAY_ASR_BACKEND", "paraformer_streaming").strip(),
             sensevoice_model_dir=Path(sensevoice_dir).expanduser() if sensevoice_dir else None,
             account_concurrency=concurrency,
             require_tls=require_tls,
+            local_tls_proxy=local_tls_proxy,
             mode=mode,
             test_text_log_dir=Path(text_log_dir).expanduser() if text_log_dir else None,
             test_text_log_seconds=text_log_seconds,
@@ -100,9 +151,11 @@ class GatewaySettings:
     def validate_production(self) -> None:
         if self.mode != "production":
             raise ValueError("Production startup requires production mode")
-        if not self.device_tokens:
+        if not self.device_tokens and not self.public_access:
             raise ValueError("Set ASSISTANT_GATEWAY_DEVICE_TOKEN or ASSISTANT_GATEWAY_DEVICE_TOKENS")
-        if not self.require_tls:
+        if self.local_tls_proxy and (self.require_tls or self.asr_backend != "disabled"):
+            raise ValueError("Local TLS proxy mode requires an HTTP vision-only loopback backend")
+        if not self.require_tls and not self.local_tls_proxy:
             raise ValueError("Production startup requires TLS for HTTPS and WSS")
 
 
@@ -111,7 +164,7 @@ def safe_configuration_status(settings: GatewaySettings, *, asr_ready: bool, vis
     ready = authenticated_asr_ready and vision_ready
     if settings.mode == "development_mock":
         status = "development_mock"
-    elif settings.asr_backend == "disabled" and settings.device_tokens and vision_ready:
+    elif settings.asr_backend == "disabled" and (settings.device_tokens or settings.public_access) and vision_ready:
         status = "vision_only"
     elif authenticated_asr_ready and not vision_ready:
         status = "asr_only"
@@ -123,9 +176,14 @@ def safe_configuration_status(settings: GatewaySettings, *, asr_ready: bool, vis
         "asr_backend": settings.asr_backend,
         "vision_ready": vision_ready,
         "authentication_configured": bool(settings.device_tokens),
+        "public_vision_access": settings.public_access,
         "mode": settings.mode,
         "vision_provider": settings.vision_provider,
         "vision_max_tokens": settings.vision_max_tokens if settings.vision_provider == "compatible" else 256,
+        "vision_timeout_seconds": settings.request_timeout_seconds,
+        "snapshot_timeout_seconds": settings.snapshot_timeout_seconds,
+        "vision_disable_thinking": (settings.vision_provider == "zhipu"
+            or settings.vision_disable_thinking or settings.vision_model.lower() == "minimax-m3"),
         "vision_model": (settings.vision_model if settings.vision_api_key else None)
             if settings.vision_provider == "compatible" else (settings.zhipu_model if settings.zhipu_api_key else None),
     }

@@ -122,6 +122,8 @@ public final class NativeFrameResultTest {
         assertEquals(3, result.relation.episodeId);
         assertTrue(result.relation.reliable);
         assertEquals(9, result.entities.get(0).trackId);
+        packet[17] = NearZoneRouting.EVENT_APPROACH;
+        assertEquals(NearZoneRouting.EVENT_APPROACH, NativeFrameResult.parse(packet, 1000).relation.event);
     }
 
     @Test public void relationOffIsUnavailableInBothVersions() {

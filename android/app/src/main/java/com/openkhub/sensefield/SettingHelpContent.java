@@ -1,0 +1,301 @@
+package com.openkhub.sensefield;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
+/** Chinese help copy for setting-specific pages. Kept separate from UI and behavior. */
+final class SettingHelpContent {
+    private SettingHelpContent() {}
+
+    static String title(String key) {
+        switch (key) {
+            case "voice_group": return "提醒测试与语音";
+            case "speech_bundled_voice": return "游戏提醒音色";
+            case "speech_engine": return "动态文本语音引擎";
+            case "speech_offline_data": return "管理离线中文语音";
+            case "speech_rate": return "语速";
+            case "cue_sound_settings": return "提醒音效";
+            case "test_cue": return "测试提醒与振动";
+            case "haptic_settings_link": return "震感与节奏";
+            case "before_start_read": return "每次开始前重听完整说明";
+            case "reminder_guide": return "提醒说明与试听";
+            case "recognition_group": return "识别功能";
+            case "recognition_experiment": return "启用小地图识别（实验）";
+            case "new_avatar": return "提醒新出现的敌方头像";
+            case "preset_group": return "提示方案";
+            case "preset_compact": return "精简";
+            case "preset_standard": return "标准";
+            case "preset_detailed": return "详细";
+            case "preset_channels_events": return "提示通道与事件";
+            case "tuning_group": return "提示调节";
+            case "tuning_volume": return "提示音量";
+            case "tuning_interval": return "最短提示间隔";
+            case "tuning_center": return "中央免提示区";
+            case "channel_group": return "输出方式";
+            case "channel_visual": return "视觉提示";
+            case "channel_tone": return "提示音";
+            case "channel_speech": return "语音";
+            case "channel_haptic": return "触觉";
+            case "events_group": return "事件提示";
+            case "event_near": return "附近敌人提醒（小地图近区）";
+            case "event_near_haptic": return "附近敌人震动";
+            case "event_far_appear": return "远处新敌人提示音";
+            case "event_new_target": return "小地图新目标";
+            case "event_edge": return "屏幕边缘威胁";
+            case "event_danger": return "危险接近";
+            case "event_player": return "玩家死亡／复活";
+            case "event_system": return "系统状态";
+            case "assistant_connection": return "画面服务连接";
+            case "assistant_online_service": return "听野线上服务";
+            case "assistant_group": return "语音与画面交互";
+            case "assistant_enabled": return "启用实验 AI 助手";
+            case "assistant_voice": return "连续语音（可以插话）";
+            case "assistant_resources": return "准备语音资源／重试";
+            case "assistant_vision": return "画面理解";
+            case "assistant_proactive": return "低频主动描述（需要画面理解）";
+            case "assistant_overlay": return "授权左侧小圆点";
+            case "presentation_group": return "呈现层实验（默认关闭）";
+            case "presentation_spatial": return "左右双耳线索（需双耳耳机）";
+            case "presentation_haptic": return "距离强度与节奏震动";
+            case "presentation_two_word": return "两字方位提示";
+            case "capture_screen": return "屏幕采集";
+            case "capture_screen_grant": return "授权截屏并开始";
+            case "capture_notifications": return "运行通知";
+            case "capture_notifications_grant": return "授权运行通知";
+            case "capture_overlay": return "置顶视觉提示";
+            case "capture_visual": return "允许使用视觉提示";
+            case "capture_overlay_grant": return "授权置顶显示";
+            case "capture_battery": return "后台省电策略";
+            case "capture_battery_app": return "设置后台省电策略";
+            case "capture_battery_system": return "系统省电优化设置";
+            case "haptic_rhythm": return "提醒节奏";
+            case "haptic_rhythm_original": return "保留原有节奏（默认）";
+            case "haptic_rhythm_short": return "短促节奏（保留单／双震）";
+            case "haptic_rhythm_directional": return "方位节奏（单马达）";
+            case "haptic_strength": return "震感档位";
+            case "haptic_strength_system": return "设备默认（默认）";
+            case "haptic_strength_light": return "较轻";
+            case "haptic_strength_strong": return "较强";
+            case "haptic_preview": return "试听";
+            case "haptic_preview_button": return "试听当前触觉设置";
+            default: return "设置";
+        }
+    }
+
+    /** One-sentence descriptions shown beside each group's help entry. */
+    static String summary(String key) {
+        switch (key) {
+            case "voice_group": return "选择语音、测试提醒与振动，并查看试听。";
+            case "recognition_group": return "设置实验识别与新头像提醒。";
+            case "preset_group": return "选择预设，调整通道与事件。";
+            case "tuning_group": return "调整音量、间隔和中央免提示区。";
+            case "channel_group": return "选择视觉、提示音、语音和触觉。";
+            case "events_group": return "开启或关闭各类提醒事件。";
+            case "assistant_connection": return "默认使用听野线上服务，无需连接码。";
+            case "assistant_group": return "助手默认关闭，开启后选择语音和画面功能。";
+            case "presentation_group": return "调整仍在验证中的实验呈现方式。";
+            case "capture_screen": return "每次启动辅助前，按系统提示授权屏幕。";
+            case "capture_notifications": return "查看运行状态，并暂停或停止辅助。";
+            case "capture_overlay": return "视觉提醒需打开通道并授权置顶显示。";
+            case "capture_battery": return "调整后台运行设置，减少意外中断。";
+            case "haptic_rhythm": return "可保留原有节奏、缩短震动，或用单马达节奏表达方位。";
+            case "haptic_strength": return "选择默认、较轻或较强的震感。";
+            case "haptic_preview": return "试听当前节奏与震感。";
+            default: return "查看本组各项设置的作用与使用说明。";
+        }
+    }
+
+    /** Ordered setting keys explained by a group. */
+    static List<String> itemKeys(String key) {
+        switch (key) {
+            case "voice_group":
+                return keys("speech_bundled_voice", "speech_engine", "speech_offline_data", "speech_rate", "cue_sound_settings", "test_cue",
+                        "haptic_settings_link", "before_start_read", "reminder_guide");
+            case "recognition_group":
+                return keys("recognition_experiment", "new_avatar");
+            case "preset_group":
+                return keys("preset_compact", "preset_standard", "preset_detailed",
+                        "preset_channels_events");
+            case "tuning_group":
+                return keys("tuning_volume", "tuning_interval", "tuning_center");
+            case "channel_group":
+                return keys("channel_visual", "channel_tone", "channel_speech", "channel_haptic");
+            case "events_group":
+                return keys("event_near", "event_near_haptic", "event_far_appear",
+                        "event_new_target", "event_edge", "event_danger", "event_player",
+                        "event_system");
+            case "assistant_connection": return keys("assistant_online_service");
+            case "assistant_group":
+                return keys("assistant_enabled", "assistant_voice", "assistant_resources", "assistant_vision", "assistant_proactive",
+                        "assistant_overlay");
+            case "presentation_group":
+                return keys("presentation_spatial", "presentation_haptic", "presentation_two_word");
+            case "capture_screen":
+                return keys("capture_screen_grant");
+            case "capture_notifications":
+                return keys("capture_notifications_grant");
+            case "capture_overlay":
+                return keys("capture_visual", "capture_overlay_grant");
+            case "capture_battery":
+                return keys("capture_battery_app", "capture_battery_system");
+            case "haptic_rhythm":
+                return keys("haptic_rhythm_original", "haptic_rhythm_short", "haptic_rhythm_directional");
+            case "haptic_strength":
+                return keys("haptic_strength_system", "haptic_strength_light",
+                        "haptic_strength_strong");
+            case "haptic_preview":
+                return keys("haptic_preview_button");
+            default:
+                return Collections.emptyList();
+        }
+    }
+
+    private static List<String> keys(String... keys) {
+        return Collections.unmodifiableList(Arrays.asList(keys));
+    }
+
+    static String text(String key) {
+        switch (key) {
+            case "voice_group":
+                return "游戏提醒内置游戏解说女声和男声两种离线音色，完整说明使用晓晓。可以调整语速、音量，为不同提醒选择音效并试听；内置方位短句准备好后，提示音与语音可一起播放。动态文本和助手回答才使用手机语音引擎。首次说明可跳过并开始，之后默认直接开始；设置里可分段重听、暂停后继续。测试或试听时请先停止游戏辅助或实时对局。";
+            case "speech_bundled_voice":
+                return "游戏解说有男声和女声，默认使用男声。固定游戏提示随安装包离线提供，不依赖手机语音引擎或网络。切换音色后会直接测试当前提醒与振动，重新开始辅助后生效；完整说明始终使用晓晓。";
+            case "speech_engine":
+                return "仅用于消消乐动态坐标、建议和助手回答等实时文本，不影响内置游戏提醒与完整说明。先检查所选引擎是否有已安装的离线中文声音；不可用时自动尝试其他已安装引擎。更换后自动试听，并显示实际结果；重新开始辅助后生效。";
+            case "speech_offline_data":
+                return "打开手机的文字转语音设置，在语音引擎设置中安装或下载中文离线语音数据，再返回听野查看检查结果。不同手机的入口名称可能不同；仅有联网中文声音还不能用于实时语音提醒。";
+            case "speech_rate":
+                return "页面会显示当前语速倍数。这个滑杆只调整听野提醒语音的播放速度，不改变识别速度或提示音；数值越大，语音越快。如果方向词不容易听清，可以适当调慢。";
+            case "cue_sound_settings":
+                return "为附近敌人、新出现的敌方头像、主画面边缘敌人、危险信号分别选择原版电子音、柔和轻音、清亮铃音或短促脉冲，并试听。附近敌人保留双声，其余保留单声。只改变音效，不改变识别参数、提醒范围或输出通道。保存后重新开始辅助生效；语音同时播放时提示音会减弱，避免盖住方位词。";
+            case "test_cue":
+                return "点击“测试提醒与振动”会按当前附近敌人事件、提示方案和输出通道，发送一次近区提醒示例，并使用当前震感档位与节奏。声音与振动可一起测试；媒体静音或媒体／应用提示音量为 0 时会跳过声音，仍可测试已开启的振动。辅助或实时对局运行时不能测试。请确认是否听到声音或感觉到振动。";
+            case "haptic_settings_link":
+                return "打开“震感与节奏”后，可以调整所有触觉提醒使用的节奏和震感档位，并试听当前设置。";
+            case "before_start_read":
+                return "首次开始辅助会播放完整说明，可随时点击“跳过并开始”。听完或主动跳过后，之后默认直接开始；跳过不会记为听完。此开关默认关闭，开启后每次开始都重听，仍可跳过。完整说明支持分段播放和暂停后继续；试听目录可单独听某项示例。中文语音不可用或使用系统屏幕阅读器时，也可以直接跳过并进入授权。";
+            case "reminder_guide":
+                return "目录列出当前开启的声音、语音和振动示例，并显示各项名称；方位语音只保留一个方向示例。每项可以单独反复播放与停止；完整说明有独立入口，可按段收听、播放全文和暂停后继续。示例使用当前设置，辅助运行时请先停止对局辅助再试听。";
+            case "recognition_group":
+                return "识别配置由应用自动选择，画面位置会按屏幕比例适配；如果设备不支持高清模型，会自动回退到兼容配置。实验开关和新头像开关分别控制实验识别器与新头像提醒。";
+            case "recognition_experiment":
+                return "此开关允许游戏配置中标记为实验的识别器参与识别。关闭后，未验证配置中的实验识别器不会启用；已验证配置不受此开关限制。不同机型和游戏画面可能影响识别效果。";
+            case "new_avatar":
+                return "开启后，识别到小地图新出现的敌方头像时可以发出提醒。新头像只说明观察到头像变化，不代表敌人距离近或正在接近。若选择视觉提示，还需要置顶显示权限。";
+            case "preset_group":
+                return "“精简”“标准”和“详细”是预设，会一起设置多项输出通道和事件开关。“提示通道与事件”可逐项自定义这些设置。选择预设后再单独更改开关，会形成自定义方案；阅读此说明不会应用或重置预设。";
+            case "preset_compact":
+                return "“精简”会保留附近敌人提醒，用短音提示且不启用近区震动；小地图新头像使用视觉标记。其他提醒仍受对应事件和输出通道设置限制。";
+            case "preset_standard":
+                return "“标准”会用方位语音和震动提醒附近敌人；小地图新头像使用视觉标记和短音，远处新敌提示音与危险接近默认关闭。其他提醒仍受对应事件和输出通道设置限制。";
+            case "preset_detailed":
+                return "“详细”会用方位语音和震动提醒附近敌人；小地图新头像可使用视觉、短音、语音和触觉提示，并开启远处新敌提示音与危险接近。各提醒仍受对应事件和输出通道设置限制。";
+            case "preset_channels_events":
+                return "打开“提示通道与事件”可以分别设置视觉提示、提示音、语音、触觉，以及每类提醒事件。";
+            case "tuning_group":
+                return "页面滑杆依次为“提示音量”“最短提示间隔”“中央免提示区”。提示音量调整应用提醒声音，手机媒体音量也会影响实际声音。最短提示间隔主要用于画面事件；小地图附近敌人有独立的去重与再次提醒规则。中央免提示区用于画面边缘提示，不改变小地图近区范围。滑杆改动会保存到当前游戏配置。";
+            case "tuning_volume":
+                return "“提示音量”调整应用提醒声音的音量。手机媒体音量也会影响实际声音。";
+            case "tuning_interval":
+                return "“最短提示间隔”主要用于限制画面事件提示的频率；小地图附近敌人有独立的去重与再次提醒规则。";
+            case "tuning_center":
+                return "“中央免提示区”用于画面边缘提示，不改变小地图近区范围。";
+            case "channel_group":
+                return "输出通道决定提醒可以用什么方式呈现。一个事件还需要自身开启，并且其方案支持该通道，才会实际发出。视觉提示另需系统置顶权限。";
+            case "channel_visual":
+                return "开启后，支持视觉呈现的提醒可以显示为屏幕上的视觉标记。它需要系统允许听野置顶显示；关闭此通道不会关闭语音、提示音或触觉。";
+            case "channel_tone":
+                return "开启后，支持提示音的事件可以播放短音。手机媒体音量、应用提示音量和具体事件设置也会影响是否听到声音。";
+            case "channel_speech":
+                return "开启后，支持语音的事件通过已安装的离线中文声音播报，不回退到联网声音。缺少离线中文数据时提示音和振动仍可使用；请在“提醒测试与语音”里检查、管理语音数据并试听。";
+            case "channel_haptic":
+                return "开启后，支持触觉提示的事件可以请求手机震动。实际感觉受手机硬件和系统设置影响；此通道不提供可靠的左右方向信息。";
+            case "events_group":
+                return "事件开关决定哪些已识别情况可以提醒。关闭某一事件后，该类提醒会停用；输出方式还会受上方通道和当前提示方案影响。";
+            case "event_near":
+                return "控制小地图近区敌人的提醒。敌我连续可见且稳定接近时，可以在入圈前提醒；缺少运动证据时仍等待近圈确认。它只能推断已观察到的相对接近，不能预知技能或隐藏敌人。持续可见时只提醒一次，进出范围也不重复；连续可靠缺席3秒后，返回会再提醒。方向按小地图中以玩家为中心的位置判断；没有提醒不能说明周围没有敌人。声音、语音和震动仍遵循对应设置。";
+            case "event_near_haptic":
+                return "单独控制附近敌人事件的震动。总触觉通道也需要开启；此项只影响附近敌人，不控制其他事件的震动。震动不表示左右方向。";
+            case "event_far_appear":
+                return "控制附近以外出现新敌方头像时的提示音。它表示小地图观察到新头像，不提供距离判断，也不替代附近敌人提醒。";
+            case "event_new_target":
+                return "控制识别到小地图新敌方头像后的提醒。该事件与“提醒新出现的敌方头像”识别开关需要同时开启；提醒方式还会受提示方案和输出通道影响。";
+            case "event_edge":
+                return "控制主画面边缘威胁提示。此类提示通常通过短音呈现，方向来自画面边缘位置；不代表小地图中的敌人位置。";
+            case "event_danger":
+                return "控制游戏危险标记的提醒。它表示识别到相应的游戏提示标记，不是对战局风险的独立判断。";
+            case "event_player":
+                return "控制玩家阵亡或复活状态的提醒。识别结果可能受游戏画面遮挡或显示变化影响；可以按需要关闭这类提示。";
+            case "event_system":
+                return "控制辅助运行状态类提示，例如截屏授权结束或恢复失败时的状态语音。遇到重新授权提示时，请返回授权页面重新开始。";
+            case "assistant_connection":
+            case "assistant_online_service":
+                return "画面理解默认连接听野线上服务，无需填写服务地址或连接码。开启画面理解后，问题文字和授权画面才会上传。服务设有请求频率和每日体验额度；超过额度时稍后再试，本地预警继续。";
+            case "assistant_group":
+                return "AI助手默认关闭，开启“启用实验 AI 助手”后再分别选择连续语音、画面理解和低频主动描述。当前回复可能较慢、较长或被中断，仍属于实验功能；本地敌人提醒可独立使用。连续语音首次使用会下载约153 MiB资源，需要麦克风权限、耳机和已从耳机播放的游戏声音；游戏开麦或录音路线不明时会暂停输入。开启画面理解后，问题文字与授权画面才会上传，近期画面只缓存在内存。低频主动描述需要同时开启画面理解。";
+            case "assistant_enabled":
+                return "总开关默认关闭，旧版测试时开启的语音、画面理解和主动描述也不会自动启用。手动开启后会保留选择，并按已保存的分项设置运行；开启后需重新开始辅助。关闭会停止助手录音、画面请求和回复播放，并收起小圆点；本地敌人提醒继续运行。当前响应速度和回答完整性仍待改进。";
+            case "assistant_voice":
+                return "开启后，听野会使用手机侧语音识别处理连续语音，首次开启会从听野 CDN 下载约153 MiB语音资源（请预留约400 MiB空间），之后离线识别；可通过“准备语音资源／重试”重新下载，并需要麦克风权限。音频在识别过程中临时处理；若同时使用画面理解，问题文字可能随请求发送到配置的画面服务。游戏开麦或录音路线不明确时，输入会暂停。";
+            case "assistant_resources":
+                return "首次准备会从听野 CDN 下载约153 MiB资源，请预留约400 MiB空间。下载进度会显示在此处，中断后可重试并续传。资源经过校验才会使用；准备完成后重新开始辅助，之后无需重复下载。关闭助手总开关或连续语音会停止下载，已下载部分保留。";
+            case "assistant_vision":
+                return "听野是为低视力用户服务的游戏搭子，结合共享画面回答游戏问题、解释可见信息并帮助判断。云端回答可能等待5～10秒，依据截取时的画面，不能确认视野外或回答到达时的敌人状态；即时敌人提醒由本地预警负责。默认发送当前共享画面，明确询问近期对比时才加最多两张近期缩图；页面明显变化后旧建议会撤销。画面可能带有聊天或通知，请先确认共享范围。近期画面只缓存在内存，服务方按其条款处理收到的数据。";
+            case "assistant_proactive":
+                return "开启后，助手会在低频观察中主动描述画面。此功能需要同时开启画面理解，会把当前共享画面发送到配置的画面服务；不需要时可关闭主动描述或画面理解。";
+            case "assistant_overlay":
+                return "“授权左侧小圆点”用于申请置顶权限，以显示助手左侧小圆点。没有此权限时，连续语音仍可使用，也可以通过运行通知查看或操作辅助状态。授权系统设置由手机显示。";
+            case "presentation_group":
+                return "“呈现层实验（默认关闭）”包括“左右双耳线索（需双耳耳机）”“距离强度与节奏震动”和“两字方位提示”。不同手机、耳机和游戏画面会影响体验，开启或更改后请按页面提示重新开始辅助，并自行确认是否清楚。";
+            case "presentation_spatial":
+                return "开启后会尝试用立体声左右线索呈现方向，需使用支持立体声的双耳耳机。它不等同于完整 HRTF；单声道播放或外放可能听不出左右差异。";
+            case "presentation_haptic":
+                return "开启后会尝试用震动强度和节奏表达距离层级。此呈现仍需玩家验证，实际强弱和节奏感受受手机马达及系统设置影响，不能据此判断精确距离。";
+            case "presentation_two_word":
+                return "开启后，附近敌人提醒使用“左上”“右侧”等两字方位；关闭后使用“左上有敌人”等完整提示。密集模式也遵循此选择。方向按小地图解释，请根据听感选择。";
+            case "capture_screen":
+                return "每次开始新的辅助会话，系统都会单独询问是否共享屏幕。请先阅读系统对共享范围的说明，再点击“授权截屏并开始”；运行通知中可以暂停或停止辅助。";
+            case "capture_screen_grant":
+                return "点击“授权截屏并开始”后，系统会单独询问是否共享屏幕。授权范围由系统弹窗说明；开始前请确认共享内容。";
+            case "capture_notifications":
+                return "“运行通知”用于显示辅助当前状态，并提供暂停、继续或停止等操作。Android 13 及以上需要单独允许通知；未允许时，部分设备也会阻止辅助正常启动。";
+            case "capture_notifications_grant":
+                return "点击“授权运行通知”可按系统版本请求通知权限或打开应用通知设置。";
+            case "capture_overlay":
+                return "“置顶视觉提示”组中的“允许使用视觉提示”控制视觉提示通道；打开后还要点击“授权置顶显示”并允许听野显示在其他应用上方。";
+            case "capture_visual":
+                return "此项控制视觉提示通道。开启视觉提示并启用小地图新头像标记时，需要置顶显示授权；只使用语音、提示音或触觉时，可以关闭此项。";
+            case "capture_overlay_grant":
+                return "点击“授权置顶显示”会打开系统置顶权限设置。授权后，听野才可以在其他应用上方显示视觉标记。";
+            case "capture_battery":
+                return "后台省电策略组提供“设置后台省电策略”和“系统省电优化设置”两个入口。建议允许后台运行；具体选项名称和效果由手机系统与厂商决定。";
+            case "capture_battery_app":
+                return "“设置后台省电策略”打开听野的应用详情页，可检查电池和后台运行限制。不同品牌的菜单名称不同，按手机系统提供的选项允许后台运行即可。";
+            case "capture_battery_system":
+                return "“系统省电优化设置”打开系统省电优化设置。允许后台运行可能有帮助，但标准省电状态无法代表所有厂商的后台限制；如仍中断，请查看手机厂商的应用管理设置。";
+            case "haptic_rhythm":
+                return "“保留原有节奏（默认）”和“短促节奏”保留原有规则。“方位节奏（单马达）”用脉冲顺序区分附近敌人：左侧短后长，右侧长后短，上方短一次，下方短两次，斜向按左右侧。方向不明仍用中性双震。这些是一个马达的节奏，不是手机左右两处震动。";
+            case "haptic_rhythm_original":
+                return "保留各类提醒原有的震动节奏，不额外缩短震动和间隔。";
+            case "haptic_rhythm_short":
+                return "按原有的单震或双震数量与顺序缩短脉冲和间隔。";
+            case "haptic_rhythm_directional":
+                return "用同一个振动器的不同节奏表达小地图方位：左侧短后长、右侧长后短、上方短一次、下方短两次。斜向按左右侧，未知方位使用中性双震。实际辨识效果需要自行确认。";
+            case "haptic_strength":
+                return "“设备默认（默认）”使用设备默认振幅或原有脉冲时长；“较轻”和“较强”会按设备能力调整振幅，或缩短、延长脉冲时长。";
+            case "haptic_strength_system":
+                return "使用设备默认振幅或原有脉冲时长。";
+            case "haptic_strength_light":
+                return "请求较轻的振幅；不支持可调振幅时缩短脉冲。";
+            case "haptic_strength_strong":
+                return "请求较强的振幅；不支持可调振幅时延长脉冲。";
+            case "haptic_preview":
+                return "先选左、右、上、下或方向不明，再点击“试听当前触觉设置”。方位节奏模式会按所选方向发出不同节奏，原有与短促模式使用中性附近双震。辅助或实时对局运行时无法试听。";
+            case "haptic_preview_button":
+                return "“试听当前触觉设置”会使用当前节奏与震感档位发送一次触觉试听。实际感觉受设备振动能力和系统设置影响。";
+            default:
+                return "此说明只介绍当前功能，不会更改任何设置。返回后可以继续使用原来的设置页面。";
+        }
+    }
+}

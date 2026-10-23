@@ -1,0 +1,442 @@
+{
+  "schema": "sensefield.compliance_reassessment",
+  "schema_version": 1,
+  "date": "2026-10-13",
+  "baseline_commit": "cc7281a9c099d8bd11060df5a859308ee49a1dc7",
+  "android_version": "0.4.6",
+  "version_code": 23,
+  "status": "team_prechange_review_not_official_or_release_gate",
+  "items": [
+    {
+      "id": 1,
+      "requirement": "不遮挡视野",
+      "original_score": 100,
+      "current_score": 75
+    },
+    {
+      "id": 2,
+      "requirement": "极低实时延迟",
+      "original_score": 75,
+      "current_score": 50
+    },
+    {
+      "id": 3,
+      "requirement": "提示不代思考",
+      "original_score": 100,
+      "current_score": 100
+    },
+    {
+      "id": 4,
+      "requirement": "外挂式兼容",
+      "original_score": 100,
+      "current_score": 100
+    },
+    {
+      "id": 5,
+      "requirement": "高度可定制",
+      "original_score": 100,
+      "current_score": 100
+    },
+    {
+      "id": 6,
+      "requirement": "隐私与尊严",
+      "original_score": 100,
+      "current_score": 75
+    },
+    {
+      "id": 7,
+      "requirement": "只读不操作／守伦理边界",
+      "original_score": 100,
+      "current_score": 75
+    },
+    {
+      "id": 8,
+      "requirement": "截屏捕获",
+      "original_score": 100,
+      "current_score": 100
+    },
+    {
+      "id": 9,
+      "requirement": "小地图定位与标定",
+      "original_score": 75,
+      "current_score": 75
+    },
+    {
+      "id": 10,
+      "requirement": "检测敌方图标",
+      "original_score": 75,
+      "current_score": 75
+    },
+    {
+      "id": 11,
+      "requirement": "VLM 生成语义描述",
+      "original_score": 0,
+      "current_score": 50
+    },
+    {
+      "id": 12,
+      "requirement": "聚合威胁事件",
+      "original_score": 50,
+      "current_score": 75
+    },
+    {
+      "id": 13,
+      "requirement": "威胁×紧迫度÷距离",
+      "original_score": 0,
+      "current_score": 75
+    },
+    {
+      "id": 14,
+      "requirement": "合并、去重、冷却",
+      "original_score": 100,
+      "current_score": 100
+    },
+    {
+      "id": 15,
+      "requirement": "团战检测与自动降级",
+      "original_score": 0,
+      "current_score": 50
+    },
+    {
+      "id": 16,
+      "requirement": "HRTF、最多三声源",
+      "original_score": 25,
+      "current_score": 50
+    },
+    {
+      "id": 17,
+      "requirement": "左右马达方位／距离触觉",
+      "original_score": 0,
+      "current_score": 25
+    },
+    {
+      "id": 18,
+      "requirement": "语音 Top1、两字",
+      "original_score": 50,
+      "current_score": 50
+    },
+    {
+      "id": 19,
+      "requirement": "从小地图切入",
+      "original_score": 100,
+      "current_score": 100
+    },
+    {
+      "id": 20,
+      "requirement": "相对坐标／玩家朝向",
+      "original_score": 75,
+      "current_score": 75
+    },
+    {
+      "id": 21,
+      "requirement": "方位、距离、人数表达",
+      "original_score": 50,
+      "current_score": 50
+    },
+    {
+      "id": 22,
+      "requirement": "缩放归一化与旋转",
+      "original_score": 25,
+      "current_score": 50
+    },
+    {
+      "id": 23,
+      "requirement": "首次手动框选并记忆",
+      "original_score": 0,
+      "current_score": 25
+    },
+    {
+      "id": 24,
+      "requirement": "防误识别",
+      "original_score": 50,
+      "current_score": 75
+    },
+    {
+      "id": 25,
+      "requirement": "四级提示与主动查询",
+      "original_score": 25,
+      "current_score": 50
+    },
+    {
+      "id": 26,
+      "requirement": "骨传导保留环境音",
+      "original_score": 25,
+      "current_score": 25
+    },
+    {
+      "id": 27,
+      "requirement": "物理边缘低亮低频光效",
+      "original_score": 0,
+      "current_score": 0
+    },
+    {
+      "id": 28,
+      "requirement": "提前 0.3–0.5 秒预测",
+      "original_score": 0,
+      "current_score": 0
+    },
+    {
+      "id": 29,
+      "requirement": "推理／实际延迟",
+      "original_score": 50,
+      "current_score": 50
+    },
+    {
+      "id": 30,
+      "requirement": "不遮挡",
+      "original_score": 100,
+      "current_score": 75
+    },
+    {
+      "id": 31,
+      "requirement": "显存、普通设备、稳定性",
+      "original_score": 25,
+      "current_score": 50
+    },
+    {
+      "id": 32,
+      "requirement": "个性化",
+      "original_score": 100,
+      "current_score": 100
+    },
+    {
+      "id": 33,
+      "requirement": "合规",
+      "original_score": 100,
+      "current_score": 75
+    },
+    {
+      "id": 34,
+      "requirement": "隐私",
+      "original_score": 100,
+      "current_score": 75
+    },
+    {
+      "id": 35,
+      "requirement": "跨游戏通用",
+      "original_score": 75,
+      "current_score": 75
+    }
+  ],
+  "modules": [
+    {
+      "id": "design_constraints",
+      "item_ids": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "weight_percent": 20,
+      "original_average": 96.42857142857143,
+      "current_average": 82.14285714285714,
+      "weighted_current": 16.428571428571427
+    },
+    {
+      "id": "perception",
+      "item_ids": [
+        8,
+        9,
+        10,
+        11
+      ],
+      "weight_percent": 20,
+      "original_average": 62.5,
+      "current_average": 75.0,
+      "weighted_current": 15.0
+    },
+    {
+      "id": "scheduling",
+      "item_ids": [
+        12,
+        13,
+        14,
+        15
+      ],
+      "weight_percent": 20,
+      "original_average": 37.5,
+      "current_average": 75.0,
+      "weighted_current": 15.0
+    },
+    {
+      "id": "presentation",
+      "item_ids": [
+        16,
+        17,
+        18
+      ],
+      "weight_percent": 25,
+      "original_average": 25.0,
+      "current_average": 41.666666666666664,
+      "weighted_current": 10.416666666666666
+    },
+    {
+      "id": "other_design",
+      "item_ids": [
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28
+      ],
+      "weight_percent": 10,
+      "original_average": 35.0,
+      "current_average": 45.0,
+      "weighted_current": 4.5
+    },
+    {
+      "id": "nonfunctional",
+      "item_ids": [
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35
+      ],
+      "weight_percent": 5,
+      "original_average": 78.57142857142857,
+      "current_average": 71.42857142857143,
+      "weighted_current": 3.5714285714285716
+    }
+  ],
+  "sources": [
+    {
+      "path": "docs/requirements/符合度评估书03_听野_项目6_符合度53.0pct.pdf",
+      "sha256": "24890fee6b119ce2c99971f088d4c01f8dd77903e7d73c16a981f750119b9904"
+    },
+    {
+      "path": "docs/requirements/【必看】视力障碍玩家全屏地图识别工具_产品需求书_V1.0.pdf",
+      "sha256": "13b61c81b3fdcce7f81c488f0065716de6a9a528c922d33d4023111ed31e7b27"
+    }
+  ],
+  "code_baseline": [
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/AsrModelStore.java",
+      "sha256": "fdc280139bf997a4313bcda9b03fbc6fb4a6c2603b02f59682e311b0f55f0a3b"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/AssistantController.java",
+      "sha256": "f4aca2df6aa9340bc6fd6b99fd94a8f79ccb076923231d41daf130dcf2282e5d"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/AssistantSettings.java",
+      "sha256": "06df1b97dc275545f0b08d4104bc29149b82cf9a4696267076a519bf83e7777e"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/AssistantTtsCache.java",
+      "sha256": "0c25b141bb7f101e44694f2a0f81ea86aeb2f32e7513dbe90470a1f3578b1a3f"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/CaptureService.java",
+      "sha256": "99dcd106db7446e85c2872feeb10bf1ba5128fb705f58bd47646525d090abeb5"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/CueDispatcher.java",
+      "sha256": "90cad686ddc61a26888ed401bea6ecd381cc4e2c7db392f750becadeec70b45d"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/CuePlayer.java",
+      "sha256": "fb315f4c82097ef2e18a228c887d64b9c0e30a544c46066ce4785618682d2892"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/CueRequest.java",
+      "sha256": "64fbc1023d959bfa1d733b23590665fb549f12de73b71fe228f26c1997d9267d"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/CueSettings.java",
+      "sha256": "3112fb1e8964c9ca6c507b027683994537f89776ff098018bb27b70b04775e45"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/DiagnosticRecorder.java",
+      "sha256": "20fb0df99e7f08e3f846dc65bd6dc7347eb2c6aafdda1bbd4bbd544264b12532"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/FrameProcessingPolicy.java",
+      "sha256": "125f208bd8814b8e6bfd340b8a941269d7ff44c60a45dba4b384dee1ec59bbab"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/GameProfile.java",
+      "sha256": "3d82b1e9d6172210cf75c974475c16e47ac68d959a058d89b77d2de1df1c1631"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/HapticPolicy.java",
+      "sha256": "cb5af05ae510f585af7a5ea6ca0b6ea5c8f08f5d0f876519ac003e201c44363b"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/HapticSettingsActivity.java",
+      "sha256": "cc8426fc9d1a1424dd7619b098906cc9a24329c4b5eb89ca9d228a6e496755df"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/Match3LiveService.java",
+      "sha256": "8c0067cb06b0e64ec9cd2fd435cdc37226094802daf3e8b5f125db2afb9c0316"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/Match3MoveRanker.java",
+      "sha256": "5d0530094dc6bb59e93815936f47cb4488c4993a1248eefbe1fdb970d6df211e"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/Match3RuleEngine.java",
+      "sha256": "6a2eecf2252d0ff454090513cfcc7a038f74f3582f2749aeac490902370b7bdb"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/Match3SettingsActivity.java",
+      "sha256": "afb0866912db8aa9f3dd521249ff094353c4589c03b3c21649319f5c4c632589"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/MinimapOverlay.java",
+      "sha256": "9a26adc69ade47777f653b88e88a4ab2c1e661e9da17b8ef58d10583f4227d53"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/NearZoneCombatPolicy.java",
+      "sha256": "0eb5dfddc41151ba8783969f991c04f37c5e7400a25c5a6bbc3f0f6cd6e463a0"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/NearZoneRouting.java",
+      "sha256": "d4b039baf9841a936e05ee3b7749a628d3c28dbfd98826e4b7958f233caadccf"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/OnDeviceAsr.java",
+      "sha256": "b75687f7c31c00d92c08d0048843d5b1a81f67a2c77e11951f8a7297b9253c84"
+    },
+    {
+      "path": "native/src/layout_locator.cpp",
+      "sha256": "0a2790cac000d4c14c2ef7be03f53379c7b1ba9a658acfa4a39de81d7531d82d"
+    },
+    {
+      "path": "native/src/mapassist.cpp",
+      "sha256": "65afed3d4f5cd8e8567129f1e02b693adbe7452a62938aa22b76ec32e34cd81d"
+    },
+    {
+      "path": "native/src/minimap_relation.cpp",
+      "sha256": "9f5a24db62957b56f8101fc6b88656c4501260ace18b9ae78259d1e7b2ac79b8"
+    },
+    {
+      "path": "python/mapassist/assistant_gateway/app.py",
+      "sha256": "d18418494416c4461e573ecfee382649a73290055d7e47004a80bed981ff5610"
+    },
+    {
+      "path": "python/mapassist/assistant_gateway/glm.py",
+      "sha256": "bb07a69d31f32222033b43e6c180d41a1dfa0bcc33d71059ec4fe236488784b2"
+    },
+    {
+      "path": "python/mapassist/assistant_gateway/public_access.py",
+      "sha256": "eec2e1bf4eced8bff24399270dca159dc16d3a59d8018dd0b021c7e2429ad933"
+    },
+    {
+      "path": "python/mapassist/measure_latency.py",
+      "sha256": "11e4c34fa42e601ffcb32584b2f07334678c6051c5662ee7805086b2440985ae"
+    }
+  ],
+  "original_weighted_total": 52.964285714285715,
+  "current_weighted_total": 64.91666666666667
+}

@@ -1,0 +1,672 @@
+{
+  "schema": "sensefield.vision-relay-benchmark/1",
+  "date": "2026-10-14",
+  "endpoint": "https://www.tokens1688.com/v1/chat/completions",
+  "scope": "macOS to relay, synthetic 960x540 JPEG; not phone latency or game strategy accuracy",
+  "requests_total": 26,
+  "credential_persisted": false,
+  "conditions": {
+    "default": {
+      "private_receipt_sha256": "7dfa6f61ed32be8df564758732d2935daa577eeb04efaa7c45f0c5e3d96631eb",
+      "aggregates": [
+        {
+          "model": "glm-5.3-flash",
+          "requests": 3,
+          "correct": 3,
+          "first_content_median_ms": 3707.1,
+          "total_median_ms": 4031.3,
+          "total_range_ms": [
+            2781.8,
+            18393.6
+          ],
+          "outcomes": [
+            "completed",
+            "completed",
+            "completed"
+          ]
+        },
+        {
+          "model": "glm-5.3",
+          "requests": 3,
+          "correct": 0,
+          "first_content_median_ms": null,
+          "total_median_ms": null,
+          "total_range_ms": null,
+          "outcomes": [
+            "http_error",
+            "http_error",
+            "http_error"
+          ]
+        },
+        {
+          "model": "Kimi-K2.6",
+          "requests": 3,
+          "correct": 3,
+          "first_content_median_ms": 2222.4,
+          "total_median_ms": 2655.8,
+          "total_range_ms": [
+            2494.2,
+            2797.0
+          ],
+          "outcomes": [
+            "completed",
+            "completed",
+            "completed"
+          ]
+        },
+        {
+          "model": "Kimi-K3",
+          "requests": 3,
+          "correct": 3,
+          "first_content_median_ms": 1973.0,
+          "total_median_ms": 2396.2,
+          "total_range_ms": [
+            2000.2,
+            9775.6
+          ],
+          "outcomes": [
+            "completed",
+            "completed",
+            "completed"
+          ]
+        }
+      ],
+      "timeout_seconds": 40,
+      "max_tokens": 256,
+      "stream": true,
+      "parallel_requests": 1,
+      "requests": [
+        {
+          "model": "glm-5.3-flash",
+          "round": 1,
+          "correct": true,
+          "outcome": "completed",
+          "http_status": 200,
+          "first_content_ms": 17985.7,
+          "first_reasoning_ms": 14259.4,
+          "reasoning_chars": 366,
+          "total_ms": 18393.6,
+          "usage": {
+            "prompt_tokens": 805,
+            "completion_tokens": 159,
+            "total_tokens": 964,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 131
+            }
+          },
+          "finish_reason": "stop"
+        },
+        {
+          "model": "glm-5.3",
+          "round": 1,
+          "correct": false,
+          "outcome": "http_error",
+          "http_status": 400,
+          "first_content_ms": null,
+          "first_reasoning_ms": null,
+          "reasoning_chars": 0,
+          "total_ms": 151.8
+        },
+        {
+          "model": "Kimi-K2.6",
+          "round": 1,
+          "correct": true,
+          "outcome": "completed",
+          "http_status": 200,
+          "first_content_ms": 2418.8,
+          "first_reasoning_ms": null,
+          "reasoning_chars": 0,
+          "total_ms": 2797.0,
+          "usage": {
+            "prompt_tokens": 722,
+            "completion_tokens": 30,
+            "total_tokens": 752
+          },
+          "finish_reason": "stop"
+        },
+        {
+          "model": "Kimi-K3",
+          "round": 1,
+          "correct": true,
+          "outcome": "completed",
+          "http_status": 200,
+          "first_content_ms": 1717.3,
+          "first_reasoning_ms": null,
+          "reasoning_chars": 0,
+          "total_ms": 2000.2,
+          "usage": {
+            "prompt_tokens": 722,
+            "completion_tokens": 30,
+            "total_tokens": 752
+          },
+          "finish_reason": "stop"
+        },
+        {
+          "model": "Kimi-K3",
+          "round": 2,
+          "correct": true,
+          "outcome": "completed",
+          "http_status": 200,
+          "first_content_ms": 1973.0,
+          "first_reasoning_ms": null,
+          "reasoning_chars": 0,
+          "total_ms": 2396.2,
+          "usage": {
+            "prompt_tokens": 722,
+            "completion_tokens": 30,
+            "total_tokens": 752
+          },
+          "finish_reason": "stop"
+        },
+        {
+          "model": "Kimi-K2.6",
+          "round": 2,
+          "correct": true,
+          "outcome": "completed",
+          "http_status": 200,
+          "first_content_ms": 2075.7,
+          "first_reasoning_ms": null,
+          "reasoning_chars": 0,
+          "total_ms": 2494.2,
+          "usage": {
+            "prompt_tokens": 722,
+            "completion_tokens": 30,
+            "total_tokens": 752
+          },
+          "finish_reason": "stop"
+        },
+        {
+          "model": "glm-5.3",
+          "round": 2,
+          "correct": false,
+          "outcome": "http_error",
+          "http_status": 400,
+          "first_content_ms": null,
+          "first_reasoning_ms": null,
+          "reasoning_chars": 0,
+          "total_ms": 141.7
+        },
+        {
+          "model": "glm-5.3-flash",
+          "round": 2,
+          "correct": true,
+          "outcome": "completed",
+          "http_status": 200,
+          "first_content_ms": 2459.6,
+          "first_reasoning_ms": 1061.7,
+          "reasoning_chars": 173,
+          "total_ms": 2781.8,
+          "usage": {
+            "prompt_tokens": 805,
+            "completion_tokens": 97,
+            "total_tokens": 902,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 69
+            }
+          },
+          "finish_reason": "stop"
+        },
+        {
+          "model": "glm-5.3",
+          "round": 3,
+          "correct": false,
+          "outcome": "http_error",
+          "http_status": 400,
+          "first_content_ms": null,
+          "first_reasoning_ms": null,
+          "reasoning_chars": 0,
+          "total_ms": 118.5
+        },
+        {
+          "model": "Kimi-K2.6",
+          "round": 3,
+          "correct": true,
+          "outcome": "completed",
+          "http_status": 200,
+          "first_content_ms": 2222.4,
+          "first_reasoning_ms": null,
+          "reasoning_chars": 0,
+          "total_ms": 2655.8,
+          "usage": {
+            "prompt_tokens": 722,
+            "completion_tokens": 30,
+            "total_tokens": 752
+          },
+          "finish_reason": "stop"
+        },
+        {
+          "model": "Kimi-K3",
+          "round": 3,
+          "correct": true,
+          "outcome": "completed",
+          "http_status": 200,
+          "first_content_ms": 9295.5,
+          "first_reasoning_ms": 4412.1,
+          "reasoning_chars": 606,
+          "total_ms": 9775.6,
+          "usage": {
+            "completion_tokens": 226,
+            "prompt_tokens": 890,
+            "total_tokens": 1116,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 185
+            }
+          },
+          "finish_reason": "stop"
+        },
+        {
+          "model": "glm-5.3-flash",
+          "round": 3,
+          "correct": true,
+          "outcome": "completed",
+          "http_status": 200,
+          "first_content_ms": 3707.1,
+          "first_reasoning_ms": 1107.7,
+          "reasoning_chars": 284,
+          "total_ms": 4031.3,
+          "usage": {
+            "prompt_tokens": 805,
+            "completion_tokens": 129,
+            "total_tokens": 934,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 101
+            }
+          },
+          "finish_reason": "stop"
+        }
+      ]
+    },
+    "thinking-disabled": {
+      "private_receipt_sha256": "78dcf44430a6bdefa778627cfac19a981ee8afe34413ddb2d22d9be3c994bbf8",
+      "aggregates": [
+        {
+          "model": "glm-5.3-flash",
+          "requests": 3,
+          "correct": 3,
+          "first_content_median_ms": 2154.6,
+          "total_median_ms": 2476.6,
+          "total_range_ms": [
+            1549.0,
+            2870.4
+          ],
+          "outcomes": [
+            "completed",
+            "completed",
+            "completed"
+          ]
+        },
+        {
+          "model": "glm-5.3",
+          "requests": 1,
+          "correct": 0,
+          "first_content_median_ms": null,
+          "total_median_ms": null,
+          "total_range_ms": null,
+          "outcomes": [
+            "http_error"
+          ]
+        },
+        {
+          "model": "Kimi-K2.6",
+          "requests": 1,
+          "correct": 0,
+          "first_content_median_ms": null,
+          "total_median_ms": null,
+          "total_range_ms": null,
+          "outcomes": [
+            "http_error"
+          ]
+        },
+        {
+          "model": "Kimi-K3",
+          "requests": 3,
+          "correct": 3,
+          "first_content_median_ms": 1896.9,
+          "total_median_ms": 2122.5,
+          "total_range_ms": [
+            2114.6,
+            4574.4
+          ],
+          "outcomes": [
+            "completed",
+            "completed",
+            "completed"
+          ]
+        }
+      ],
+      "timeout_seconds": 40,
+      "max_tokens": 256,
+      "stream": true,
+      "parallel_requests": 1,
+      "requests": [
+        {
+          "model": "glm-5.3-flash",
+          "round": 1,
+          "correct": true,
+          "outcome": "completed",
+          "http_status": 200,
+          "first_content_ms": 2154.6,
+          "first_reasoning_ms": 1246.0,
+          "reasoning_chars": 73,
+          "total_ms": 2870.4,
+          "usage": {
+            "prompt_tokens": 805,
+            "completion_tokens": 50,
+            "total_tokens": 855,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 22
+            }
+          },
+          "finish_reason": "stop"
+        },
+        {
+          "model": "glm-5.3",
+          "round": 1,
+          "correct": false,
+          "outcome": "http_error",
+          "http_status": 400,
+          "first_content_ms": null,
+          "first_reasoning_ms": null,
+          "reasoning_chars": 0,
+          "total_ms": 144.8,
+          "error_code": "1210",
+          "error_type": "upstream_error"
+        },
+        {
+          "model": "Kimi-K2.6",
+          "round": 1,
+          "correct": false,
+          "outcome": "http_error",
+          "http_status": 400,
+          "first_content_ms": null,
+          "first_reasoning_ms": null,
+          "reasoning_chars": 0,
+          "total_ms": 511.4,
+          "error_code": "InvalidParameter",
+          "error_type": "BadRequest"
+        },
+        {
+          "model": "Kimi-K3",
+          "round": 1,
+          "correct": true,
+          "outcome": "completed",
+          "http_status": 200,
+          "first_content_ms": 4286.2,
+          "first_reasoning_ms": null,
+          "reasoning_chars": 0,
+          "total_ms": 4574.4,
+          "usage": {
+            "completion_tokens": 36,
+            "prompt_tokens": 823,
+            "total_tokens": 859,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "stop"
+        },
+        {
+          "model": "Kimi-K3",
+          "round": 2,
+          "correct": true,
+          "outcome": "completed",
+          "http_status": 200,
+          "first_content_ms": 1896.9,
+          "first_reasoning_ms": null,
+          "reasoning_chars": 0,
+          "total_ms": 2122.5,
+          "usage": {
+            "prompt_tokens": 722,
+            "completion_tokens": 30,
+            "total_tokens": 752
+          },
+          "finish_reason": "stop"
+        },
+        {
+          "model": "glm-5.3-flash",
+          "round": 2,
+          "correct": true,
+          "outcome": "completed",
+          "http_status": 200,
+          "first_content_ms": 2217.2,
+          "first_reasoning_ms": 857.7,
+          "reasoning_chars": 139,
+          "total_ms": 2476.6,
+          "usage": {
+            "prompt_tokens": 805,
+            "completion_tokens": 60,
+            "total_tokens": 865,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 32
+            }
+          },
+          "finish_reason": "stop"
+        },
+        {
+          "model": "Kimi-K3",
+          "round": 3,
+          "correct": true,
+          "outcome": "completed",
+          "http_status": 200,
+          "first_content_ms": 1893.4,
+          "first_reasoning_ms": null,
+          "reasoning_chars": 0,
+          "total_ms": 2114.6,
+          "usage": {
+            "prompt_tokens": 722,
+            "completion_tokens": 30,
+            "total_tokens": 752
+          },
+          "finish_reason": "stop"
+        },
+        {
+          "model": "glm-5.3-flash",
+          "round": 3,
+          "correct": true,
+          "outcome": "completed",
+          "http_status": 200,
+          "first_content_ms": 1110.4,
+          "first_reasoning_ms": null,
+          "reasoning_chars": 0,
+          "total_ms": 1549.0,
+          "usage": {
+            "prompt_tokens": 805,
+            "completion_tokens": 28,
+            "total_tokens": 833,
+            "prompt_tokens_details": {
+              "cached_tokens": 64
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "stop"
+        }
+      ]
+    },
+    "application": {
+      "private_receipt_sha256": "5ab44a2b79be5cf1b5a7461bf4a0fb147b476bfdd4e75224981b54a3652f1465",
+      "aggregates": [
+        {
+          "model": "Kimi-K2.6",
+          "requests": 3,
+          "correct": 3,
+          "first_content_median_ms": 3622,
+          "total_median_ms": 4093.9,
+          "total_range_ms": [
+            2309.9,
+            6341.7
+          ]
+        },
+        {
+          "model": "Kimi-K3",
+          "requests": 3,
+          "correct": 3,
+          "first_content_median_ms": 2046,
+          "total_median_ms": 2267.2,
+          "total_range_ms": [
+            1895.2,
+            3265.0
+          ]
+        }
+      ],
+      "timeout_seconds": 8.0,
+      "max_tokens": 256,
+      "stream": true,
+      "parallel_requests": 1,
+      "requests": [
+        {
+          "model": "Kimi-K2.6",
+          "round": 1,
+          "correct": true,
+          "outcome": "completed",
+          "total_ms": 4093.9,
+          "stream_metrics": {
+            "outcome": "success",
+            "upstream_http_status": 200,
+            "first_content_ms": 3622,
+            "reasoning_chars": 191,
+            "content_chars": 73,
+            "finish_reason": "stop"
+          },
+          "gateway_schema_valid": true,
+          "strict_json_valid": false
+        },
+        {
+          "model": "Kimi-K3",
+          "round": 1,
+          "correct": true,
+          "outcome": "completed",
+          "total_ms": 3265.0,
+          "stream_metrics": {
+            "outcome": "success",
+            "upstream_http_status": 200,
+            "first_content_ms": 3086,
+            "reasoning_chars": 0,
+            "content_chars": 61,
+            "finish_reason": "stop"
+          },
+          "gateway_schema_valid": true,
+          "strict_json_valid": true
+        },
+        {
+          "model": "Kimi-K3",
+          "round": 2,
+          "correct": true,
+          "outcome": "completed",
+          "total_ms": 2267.2,
+          "stream_metrics": {
+            "outcome": "success",
+            "upstream_http_status": 200,
+            "first_content_ms": 2046,
+            "reasoning_chars": 0,
+            "content_chars": 61,
+            "finish_reason": "stop"
+          },
+          "gateway_schema_valid": true,
+          "strict_json_valid": true
+        },
+        {
+          "model": "Kimi-K2.6",
+          "round": 2,
+          "correct": true,
+          "outcome": "completed",
+          "total_ms": 2309.9,
+          "stream_metrics": {
+            "outcome": "success",
+            "upstream_http_status": 200,
+            "first_content_ms": 1847,
+            "reasoning_chars": 0,
+            "content_chars": 61,
+            "finish_reason": "stop"
+          },
+          "gateway_schema_valid": true,
+          "strict_json_valid": true
+        },
+        {
+          "model": "Kimi-K2.6",
+          "round": 3,
+          "correct": true,
+          "outcome": "completed",
+          "total_ms": 6341.7,
+          "stream_metrics": {
+            "outcome": "success",
+            "upstream_http_status": 200,
+            "first_content_ms": 6222,
+            "reasoning_chars": 235,
+            "content_chars": 61,
+            "finish_reason": "stop"
+          },
+          "gateway_schema_valid": true,
+          "strict_json_valid": true
+        },
+        {
+          "model": "Kimi-K3",
+          "round": 3,
+          "correct": true,
+          "outcome": "completed",
+          "total_ms": 1895.2,
+          "stream_metrics": {
+            "outcome": "success",
+            "upstream_http_status": 200,
+            "first_content_ms": 1671,
+            "reasoning_chars": 0,
+            "content_chars": 61,
+            "finish_reason": "stop"
+          },
+          "gateway_schema_valid": true,
+          "strict_json_valid": true
+        }
+      ]
+    }
+  },
+  "recommended_model": "Kimi-K3",
+  "recommended_base_url": "https://www.tokens1688.com/v1",
+  "deployed": false,
+  "real_public_gateway_recovery_verified": false,
+  "fixtures": [
+    {
+      "round": 1,
+      "image_sha256": "99b9742ca606575e69a05bf54422a833b3140fcdeb1dba77df6a0da535db8db3",
+      "expected": "K7Q4|25%|3|右下"
+    },
+    {
+      "round": 2,
+      "image_sha256": "e2f18d71e1facad5b08a9f18ffc600af2e7c1183d41832a82917fab9208823ef",
+      "expected": "B2N9|40%|2|右下"
+    },
+    {
+      "round": 3,
+      "image_sha256": "5e00e06cc3030dc0e718afe9eb2bfe79b2db00455eca8e91a037bbbccc73c1a0",
+      "expected": "T8R5|15%|4|右下"
+    }
+  ],
+  "limitations": [
+    "Three samples per successful model and condition do not establish P95, high concurrency reliability, or game advice quality.",
+    "First content excludes hidden reasoning. Whole response is what the current gateway waits for.",
+    "Disabled-thinking flag left reasoning in 2/3 GLM Flash responses, and caused HTTP400 for Kimi-K2.6; not a general supported optimization.",
+    "Observed relay aliases and actual access; provider model identity was not independently verified.",
+    "Server configuration, production gateway and phone recovery were not changed or verified."
+  ]
+}

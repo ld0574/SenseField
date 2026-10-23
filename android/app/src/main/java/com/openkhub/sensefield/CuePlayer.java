@@ -2,8 +2,10 @@ package com.openkhub.sensefield;
 
 import android.content.Context;
 import android.media.AudioAttributes;
+import android.media.AudioDeviceInfo;
 import android.media.AudioFormat;
 import android.media.AudioTrack;
+import android.media.PlaybackParams;
 import android.media.SoundPool;
 import android.os.Bundle;
 import android.os.Handler;
@@ -25,6 +27,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -34,29 +37,60 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Consumer;
 
 final class CuePlayer implements CueDispatcher.Renderer {
     static final String PREF_TTS_ENGINE = "cue_tts_engine";
     static final String PREF_TTS_RATE = "cue_speech_rate_percent";
-    static final int DEFAULT_TTS_RATE_PERCENT = 180;
-    static final long NEAR_HAPTIC_ON_MS = 100;
-    static final long NEAR_HAPTIC_GAP_MS = 140;
+    // The bundled game voice already uses the deliberately slower audition pace.
+    // Explicitly saved rates still take precedence; do not speed up a fresh install again.
+    static final int DEFAULT_TTS_RATE_PERCENT = 100;
+    static final long NEAR_HAPTIC_ON_MS = HapticPolicy.NEAR_DEFAULT_ON_MS;
+    static final long NEAR_HAPTIC_GAP_MS = HapticPolicy.NEAR_DEFAULT_GAP_MS;
     private static final String TAG = "MapAssistAudio";
     private static final long TONE_DURATION_MS = 90;
     private static final long SPEECH_TIMEOUT_MS = 4000;
     private static final long ASSISTANT_SYNTHESIS_TIMEOUT_MS = 15_000;
     private static final long ASSISTANT_PLAYBACK_DRAIN_TIMEOUT_MS = 2_000;
+    private static final Object HAPTIC_OWNER_LOCK = new Object();
+    /** Vibrator.cancel() is process-wide for this app, so only the latest CuePlayer may cancel. */
+    private static CuePlayer activeHapticOwner;
 
     private final Context context;
     private final SoundPool pool;
     private final Object audioLock = new Object();
     private final Map<Integer, Integer> tones = new HashMap<>();
     private final Map<Integer, Long> toneDurations = new HashMap<>();
+    private final Map<Integer, String> toneStyles = new HashMap<>();
     private final Map<AudioTrack, SpatialTonePlayback> spatialToneTracks = new HashMap<>();
-    private final SpatialToneCache spatialToneCache = new SpatialToneCache();
+    private final SpatialToneCache spatialToneCache;
     private final boolean spatialEnabledAtStart;
+    private final boolean warmAlertSpeech;
+    private final boolean dynamicVoiceProbe;
+    private final boolean tonePreviewMode;
+    private final BundledSpeechAssets bundledSpeech;
+    private volatile boolean bundledReady;
+    private volatile boolean dynamicVoiceRequested;
+    private PendingDynamicSpeech pendingDynamicSpeech;
+    private final Map<String, short[]> previewToneCache = new HashMap<>();
+    private final String nearSoundAtStart;
+    private volatile String alertVoiceKey;
+    private final ExecutorService alertCacheWorker = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "local-alert-cache");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private final ExecutorService alertAudioWorker = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "local-alert-audio");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private PreparedAlertPlayback preparedAlert;
+    private volatile boolean preparedPcmFailed;
     private final Map<String, CueDispatcher.PlaybackCallback> speechCallbacks =
             new ConcurrentHashMap<>();
+    private final Map<String, Runnable> speechStartTimeouts = new ConcurrentHashMap<>();
+    private final Map<String, CueRequest> speechRequests = new ConcurrentHashMap<>();
     private final Map<String, AssistantReply> assistantGroups = new ConcurrentHashMap<>();
     private final Map<String, AssistantUtterance> assistantUtterances =
             new ConcurrentHashMap<>();
@@ -78,6 +112,15 @@ final class CuePlayer implements CueDispatcher.Renderer {
     private volatile boolean closed;
     private volatile boolean ttsReady;
     private volatile boolean offlineTtsReady;
+    private volatile boolean speechPreparationFinished;
+    private volatile String speechStatus = "正在检查离线中文语音……";
+    private volatile String ttsAuditState;
+    private String requestedVoiceEngine = "";
+    private volatile Consumer<String> audioAuditListener;
+    private volatile int ttsPreparationGeneration;
+    private final Set<String> attemptedVoiceEngines = ConcurrentHashMap.newKeySet();
+    private List<String> voiceEngines = Collections.emptyList();
+    private int activeVoiceEngineIndex = -1;
 
     interface AssistantPlaybackListener {
         /** Receives a copied 160-sample mono render frame at 16 kHz. */
@@ -144,18 +187,72 @@ final class CuePlayer implements CueDispatcher.Renderer {
     private static final class SpatialTonePlayback {
         final CueRequest.Category category;
         final CueDispatcher.PlaybackCallback callback;
+        final int frames;
+        final long deadlineMs;
 
         SpatialTonePlayback(CueRequest.Category category,
-                            CueDispatcher.PlaybackCallback callback) {
+                            CueDispatcher.PlaybackCallback callback, int frames, long deadlineMs) {
             this.category = category;
             this.callback = callback;
+            this.frames = frames;
+            this.deadlineMs = deadlineMs;
+        }
+    }
+
+    private static final class PendingDynamicSpeech {
+        final CueRequest request;
+        final boolean interrupt;
+        final CueDispatcher.PlaybackCallback callback;
+        PendingDynamicSpeech(CueRequest request, boolean interrupt, CueDispatcher.PlaybackCallback callback) {
+            this.request = request; this.interrupt = interrupt; this.callback = callback;
+        }
+    }
+
+    private static final class PreparedAlertPlayback {
+        final CueRequest request;
+        final short[] speech;
+        final CueDispatcher.PlaybackCallback toneCallback;
+        final CueDispatcher.PlaybackCallback speechCallback;
+        volatile boolean cancelled;
+        volatile AudioTrack track;
+        PreparedAlertPlayback(CueRequest request, short[] speech,
+                CueDispatcher.PlaybackCallback tone, CueDispatcher.PlaybackCallback voice) {
+            this.request = request; this.speech = speech;
+            this.toneCallback = tone; this.speechCallback = voice;
         }
     }
 
     CuePlayer(Context context) {
+        this(context, false, true);
+    }
+
+    CuePlayer(Context context, boolean warmAlertSpeech) {
+        this(context, warmAlertSpeech, true);
+    }
+
+    static CuePlayer tonePreview(Context context) { return new CuePlayer(context, false, false); }
+
+    static CuePlayer speechProbe(Context context) { return new CuePlayer(context, false, true, false); }
+
+    private CuePlayer(Context context, boolean warmAlertSpeech, boolean prepareSpeech) {
+        this(context, warmAlertSpeech, prepareSpeech, true);
+    }
+
+    private CuePlayer(Context context, boolean warmAlertSpeech, boolean prepareSpeech, boolean prepareTones) {
         this.context = context.getApplicationContext();
+        this.warmAlertSpeech = warmAlertSpeech;
+        dynamicVoiceProbe = prepareSpeech && !prepareTones;
+        tonePreviewMode = !prepareSpeech;
+        bundledSpeech = new BundledSpeechAssets(this.context,
+                GameProfile.settings(this.context).getString(BundledSpeechCatalog.PREF_VOICE,
+                        BundledSpeechCatalog.DEFAULT_VOICE), GameProfile.settings(this.context)
+                        .getInt(PREF_TTS_RATE, DEFAULT_TTS_RATE_PERCENT));
+        alertVoiceKey = bundledSpeech.profile();
+        nearSoundAtStart = CueSoundLibrary.valid(GameProfile.settings(this.context)
+                .getString(CueSoundLibrary.preferenceKey(7), "classic"));
+        spatialToneCache = new SpatialToneCache(nearSoundAtStart);
         scheduleAssistantTtsRecovery();
-        spatialEnabledAtStart = GameProfile.settings(this.context)
+        spatialEnabledAtStart = prepareSpeech && prepareTones && GameProfile.settings(this.context)
                 .getBoolean(PresentationAudioPolicy.PREF_SPATIAL, false);
         spatialTonePrewarmWorker = spatialEnabledAtStart
                 ? Executors.newSingleThreadExecutor(runnable -> {
@@ -188,7 +285,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
                 }
             }
         });
-        try {
+        if (prepareTones) try {
             loadTone(1, "main", 840);
             loadTone(2, "map", 600);
             loadTone(3, "ping", 1100);
@@ -199,7 +296,25 @@ final class CuePlayer implements CueDispatcher.Renderer {
         } catch (IOException error) {
             Log.e(TAG, "Cannot prepare cue tones", error);
         }
-        prepareVoices();
+        if (dynamicVoiceProbe) ensureDynamicVoice();
+        else if (prepareSpeech) {
+            speechStatus = "正在准备内置离线语音……";
+            alertCacheWorker.execute(() -> {
+                try {
+                    bundledSpeech.loadIndex();
+                    bundledReady = true;
+                    if (warmAlertSpeech) bundledSpeech.warmFixed(() -> closed);
+                    if (closed) return;
+                    bundledReady = true;
+                    speechStatus = "内置离线语音已就绪。";
+                    auditAudio("BundledSpeech ready profile=" + alertVoiceKey + " fixed="
+                            + AlertSpeechCache.readyCount(alertVoiceKey) + " tts=false asr=false");
+                } catch (IOException | RuntimeException error) {
+                    speechStatus = "内置语音资源不可用，提示音与振动仍可使用。";
+                    auditAudio("BundledSpeech unavailable reason=" + error.getClass().getSimpleName());
+                } finally { if (!closed) speechPreparationFinished = true; }
+            });
+        }
         if (spatialTonePrewarmWorker != null) {
             spatialTonePrewarmWorker.execute(() -> {
                 if (closed) return;
@@ -242,13 +357,41 @@ final class CuePlayer implements CueDispatcher.Renderer {
 
     private void loadTone(int kind, String name, int startFrequency, int endFrequency,
                           long durationMs, int pulses) throws IOException {
-        int sample = pool.load(writeTone(name, startFrequency, endFrequency, durationMs, pulses)
-                .getAbsolutePath(), 1);
+        String style = CueSoundLibrary.valid(GameProfile.settings(context)
+                .getString(CueSoundLibrary.preferenceKey(kind), "classic"));
+        toneStyles.put(kind, style);
+        long actualDuration = "classic".equals(style) ? durationMs : CueSoundLibrary.durationMs(kind, style);
+        File file = "classic".equals(style)
+                ? writeTone(name, startFrequency, endFrequency, durationMs, pulses)
+                : writeTonePcm(name + "_" + style, CueSoundLibrary.render(kind, style, 48000));
+        int sample = pool.load(file.getAbsolutePath(), 1);
         if (sample == 0) Log.e(TAG, "SoundPool rejected cue tone kind=" + kind);
         else {
             tones.put(kind, sample);
-            toneDurations.put(kind, durationMs);
+            toneDurations.put(kind, actualDuration);
         }
+    }
+
+    private File writeTonePcm(String name, short[] samples) throws IOException {
+        File file = new File(context.getCacheDir(), "cue_" + name + ".wav");
+        try (FileOutputStream output = new FileOutputStream(file)) {
+            output.write("RIFF".getBytes(StandardCharsets.US_ASCII));
+            littleEndian32(output, 36 + samples.length * 2);
+            output.write("WAVEfmt ".getBytes(StandardCharsets.US_ASCII));
+            littleEndian32(output, 16);
+            littleEndian16(output, 1); littleEndian16(output, 1);
+            littleEndian32(output, 48000); littleEndian32(output, 96000);
+            littleEndian16(output, 2); littleEndian16(output, 16);
+            output.write("data".getBytes(StandardCharsets.US_ASCII));
+            littleEndian32(output, samples.length * 2);
+            byte[] data = new byte[samples.length * 2];
+            for (int i = 0; i < samples.length; i++) {
+                data[i * 2] = (byte) samples[i];
+                data[i * 2 + 1] = (byte) (samples[i] >> 8);
+            }
+            output.write(data);
+        }
+        return file;
     }
 
     private File writeTone(String name, int startFrequency, int endFrequency,
@@ -275,6 +418,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
             double phase = 0.0;
             int gap = pulses > 1 ? sampleRate * 65 / 1000 : 0;
             int pulseSamples = (samples - gap * (pulses - 1)) / pulses;
+            byte[] data = new byte[dataBytes];
             for (int i = 0; i < samples; i++) {
                 int inPulse = i % (pulseSamples + gap);
                 double envelope = inPulse >= pulseSamples ? 0.0
@@ -284,8 +428,10 @@ final class CuePlayer implements CueDispatcher.Renderer {
                         + (endFrequency - startFrequency) * (double) i / samples;
                 short value = (short) (Math.sin(phase) * 13000 * envelope);
                 phase += 2 * Math.PI * frequency / sampleRate;
-                littleEndian16(output, value);
+                data[i * 2] = (byte) value;
+                data[i * 2 + 1] = (byte) (value >> 8);
             }
+            output.write(data);
         }
         return file;
     }
@@ -297,6 +443,9 @@ final class CuePlayer implements CueDispatcher.Renderer {
         private static final int DISTANCE_BINS = 4;
         private static final int URGENCY_BINS = 3;
         private static final int ENTRY_COUNT = PAN_BINS * DISTANCE_BINS * URGENCY_BINS;
+        private final String style;
+        SpatialToneCache() { this("classic"); }
+        SpatialToneCache(String style) { this.style = CueSoundLibrary.valid(style); }
         private volatile Map<Integer, short[]> pcm = Collections.emptyMap();
         private volatile boolean ready;
 
@@ -337,37 +486,45 @@ final class CuePlayer implements CueDispatcher.Renderer {
             return (panBin << 4) | (distanceBin << 2) | urgencyBin;
         }
 
-        private static short[] render(float pan, float distance, float urgency) {
-            double frequency = 780.0 + urgency * 120.0;
-            double phase = 0.0;
-            int pulseSamples = SAMPLE_RATE * 875 / 10_000;
-            int gapSamples = SAMPLE_RATE * 65 / 1000;
-            double[] source = new double[SAMPLE_COUNT];
-            for (int i = 0; i < SAMPLE_COUNT; i++) {
-                int pulseOffset = i < pulseSamples ? i
-                        : i >= pulseSamples + gapSamples ? i - pulseSamples - gapSamples : -1;
-                double envelope = pulseOffset < 0 || pulseOffset >= pulseSamples ? 0.0
-                        : Math.min(1.0, pulseOffset / 400.0)
-                        * Math.min(1.0, (pulseSamples - pulseOffset) / 800.0);
-                source[i] = Math.sin(phase) * 11_000.0 * envelope;
-                phase += 2.0 * Math.PI * frequency / SAMPLE_RATE;
+        private short[] render(float pan, float distance, float urgency) {
+            double[] source;
+            if (!"classic".equals(style)) {
+                short[] mono = CueSoundLibrary.render(7, style, SAMPLE_RATE);
+                source = new double[mono.length];
+                for (int i = 0; i < mono.length; i++) source[i] = mono[i];
+            } else {
+                double frequency = 780.0 + urgency * 120.0;
+                double phase = 0.0;
+                int pulseSamples = SAMPLE_RATE * 875 / 10_000;
+                int gapSamples = SAMPLE_RATE * 65 / 1000;
+                source = new double[SAMPLE_COUNT];
+                for (int i = 0; i < SAMPLE_COUNT; i++) {
+                    int pulseOffset = i < pulseSamples ? i
+                            : i >= pulseSamples + gapSamples ? i - pulseSamples - gapSamples : -1;
+                    double envelope = pulseOffset < 0 || pulseOffset >= pulseSamples ? 0.0
+                            : Math.min(1.0, pulseOffset / 400.0)
+                            * Math.min(1.0, (pulseSamples - pulseOffset) / 800.0);
+                    source[i] = Math.sin(phase) * 11_000.0 * envelope;
+                    phase += 2.0 * Math.PI * frequency / SAMPLE_RATE;
+                }
             }
+            int sampleCount = source.length;
 
             double panMagnitude = Math.abs(pan);
             int interauralDelay = (int) Math.round(panMagnitude * 18.0);
             double farAlpha = 1.0 - Math.exp(-2.0 * Math.PI
                     * (8_000.0 - 5_000.0 * distance) / SAMPLE_RATE);
-            double[] farFiltered = new double[SAMPLE_COUNT];
+            double[] farFiltered = new double[sampleCount];
             double previous = 0.0;
-            for (int i = 0; i < SAMPLE_COUNT; i++) {
+            for (int i = 0; i < sampleCount; i++) {
                 previous += farAlpha * (source[i] - previous);
                 farFiltered[i] = previous;
             }
 
             double distanceGain = 1.0 - 0.22 * distance;
             double farGain = 1.0 - 0.78 * panMagnitude;
-            short[] stereo = new short[SAMPLE_COUNT * 2];
-            for (int i = 0; i < SAMPLE_COUNT; i++) {
+            short[] stereo = new short[sampleCount * 2];
+            for (int i = 0; i < sampleCount; i++) {
                 int farIndex = i - interauralDelay;
                 double near = source[i] * distanceGain;
                 double far = (farIndex < 0 ? 0.0 : farFiltered[farIndex])
@@ -396,107 +553,382 @@ final class CuePlayer implements CueDispatcher.Renderer {
     }
 
     private void prepareVoices() {
-        try {
-            String selectedEngine = GameProfile.settings(context).getString(PREF_TTS_ENGINE, "");
-            tts = new TextToSpeech(context, status -> mainHandler.post(() -> {
-                synchronized (audioLock) {
-                    if (closed || status != TextToSpeech.SUCCESS || tts == null) return;
-                    try {
-                        if (tts.setLanguage(Locale.SIMPLIFIED_CHINESE)
-                                < TextToSpeech.LANG_AVAILABLE) {
-                            Log.w(TAG, "Chinese TTS voice unavailable; short tones remain active");
-                            return;
-                        }
-                        int speechRate = GameProfile.settings(context).getInt(PREF_TTS_RATE,
-                                DEFAULT_TTS_RATE_PERCENT);
-                        tts.setSpeechRate(Math.max(80, Math.min(240, speechRate)) / 100f);
-                        tts.setAudioAttributes(new AudioAttributes.Builder()
-                                .setUsage(AudioAttributes.USAGE_GAME)
-                                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
-                        // Prefer an installed Chinese voice that does not require a
-                        // network request. Keep the user's engine and language fallback.
-                        Set<Voice> voices = tts.getVoices();
-                        if (voices != null) {
-                            Voice offline = voices.stream()
-                                    .filter(value -> "zh".equals(value.getLocale().getLanguage())
-                                            && !value.isNetworkConnectionRequired())
-                                    .sorted(java.util.Comparator.comparing(Voice::getName))
-                                    .findFirst().orElse(null);
-                            if (offline != null)
-                                offlineTtsReady = tts.setVoice(offline) == TextToSpeech.SUCCESS;
-                        }
-                        Log.i(TAG, "TTS prepared engine=" + (selectedEngine.isEmpty()
-                                ? tts.getDefaultEngine() : selectedEngine)
-                                + " voice=" + tts.getVoice());
-                        ttsReady = true;
-                        tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                            @Override public void onStart(String id) {
-                                CueDispatcher.PlaybackCallback callback = speechCallbacks.get(id);
-                                if (callback != null) callback.onStarted(SystemClock.elapsedRealtime());
-                            }
-                            @Override public void onDone(String id) {
-                                AssistantUtterance assistant = assistantUtterances.get(id);
-                                if (assistant != null) {
-                                    boolean readyForPlayback;
-                                    synchronized (audioLock) {
-                                        readyForPlayback = isCurrentAssistantLocked(assistant)
-                                                && assistant.reply.group.synthesisReady(
-                                                assistant.segment.index);
-                                        if (readyForPlayback)
-                                            mainHandler.removeCallbacks(
-                                                    assistant.synthesisTimeout);
-                                    }
-                                    if (!readyForPlayback) return;
-                                    logAssistantSegment("ready", assistant);
-                                    notifyAssistantTtsTiming(assistant, "synthesis-ready");
-                                    try {
-                                        assistantAudioWorker.execute(
-                                                () -> playAssistantFile(assistant));
-                                    } catch (RuntimeException rejected) {
-                                        failAssistantSegment(assistant, "worker_rejected", false, true);
-                                    }
-                                    return;
-                                }
-                                CueDispatcher.PlaybackCallback callback = speechCallbacks.remove(id);
-                                if (callback != null)
-                                    callback.onFinished(SystemClock.elapsedRealtime(), true);
-                            }
-                            @Override public void onError(String id) {
-                                AssistantUtterance assistant = assistantUtterances.get(id);
-                                if (assistant != null) {
-                                    failAssistantSegment(assistant, "synthesis_error", false, true);
-                                    Log.w(TAG, "Offline assistant TTS synthesis failed for " + id);
-                                    return;
-                                }
-                                CueDispatcher.PlaybackCallback callback = speechCallbacks.remove(id);
-                                if (callback != null)
-                                    callback.onFinished(SystemClock.elapsedRealtime(), false);
-                                Log.w(TAG, "TTS failed for " + id);
-                            }
-                            @Override public void onStop(String id, boolean interrupted) {
-                                AssistantUtterance assistant = assistantUtterances.get(id);
-                                if (assistant != null) {
-                                    failAssistantSegment(assistant, "synthesis_stopped", false, true);
-                                    return;
-                                }
-                                CueDispatcher.PlaybackCallback callback = speechCallbacks.remove(id);
-                                if (callback != null)
-                                    callback.onFinished(SystemClock.elapsedRealtime(), false);
-                            }
-                        });
-                    } catch (RuntimeException error) {
-                        // TTS is optional. A broken or unavailable engine must
-                        // not crash the main thread or stop tones and haptics.
-                        ttsReady = false;
-                        Log.w(TAG, "Could not prepare optional TTS; short tones remain active", error);
-                    }
-                }
-            }), selectedEngine.isEmpty() ? null : selectedEngine);
-        } catch (RuntimeException error) {
-            tts = null;
-            ttsReady = false;
-            Log.w(TAG, "Could not initialize optional TTS; short tones remain active", error);
+        List<String> candidates = new ArrayList<>();
+        String selected = GameProfile.settings(context).getString(PREF_TTS_ENGINE, "");
+        requestedVoiceEngine = selected;
+        List<String> installed = new ArrayList<>();
+        for (android.content.pm.ResolveInfo info : context.getPackageManager().queryIntentServices(
+                new android.content.Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE), 0)) {
+            String name = info.serviceInfo.packageName;
+            if (!installed.contains(name)) installed.add(name);
         }
+        if (!selected.isEmpty() && installed.contains(selected)) candidates.add(selected);
+        candidates.add(""); // Try the system default before other installed engines.
+        for (String name : installed) if (!candidates.contains(name)) candidates.add(name);
+        voiceEngines = candidates;
+        prepareVoiceEngine(0);
+    }
+
+    private void ensureDynamicVoice() {
+        synchronized (audioLock) {
+            if (closed || dynamicVoiceRequested) return;
+            dynamicVoiceRequested = true;
+        }
+        mainHandler.post(() -> { if (!closed) prepareVoices(); });
+    }
+
+    private void prepareVoiceEngine(int index) {
+        if (closed) return;
+        if (index >= voiceEngines.size()) {
+            if (dynamicVoiceProbe) {
+                speechPreparationFinished = true;
+                speechStatus = "未找到已安装的离线中文语音。内置游戏提示不受影响。";
+            }
+            ttsAuditState = "AlertTts status=unavailable reason=no_installed_offline_chinese_voice";
+            auditAudio(ttsAuditState);
+            finishPendingDynamic(false);
+            return;
+        }
+        String selected = voiceEngines.get(index);
+        activeVoiceEngineIndex = index;
+        int generation = ++ttsPreparationGeneration;
+        final TextToSpeech[] holder = new TextToSpeech[1];
+        try {
+            TextToSpeech engine = new TextToSpeech(context, status -> mainHandler.post(() -> {
+                TextToSpeech voice = holder[0];
+                if (closed || generation != ttsPreparationGeneration || voice == null) return;
+                if (status != TextToSpeech.SUCCESS) {
+                    advanceVoiceEngine(voice, index, generation);
+                    return;
+                }
+                try {
+                    alertCacheWorker.execute(() -> configureOfflineVoice(voice, selected, index, generation));
+                } catch (RuntimeException stopped) {
+                    if (!closed) advanceVoiceEngine(voice, index, generation);
+                }
+            }), selected.isEmpty() ? null : selected);
+            holder[0] = engine;
+            synchronized (audioLock) { if (!closed) tts = engine; }
+            if (closed) { engine.shutdown(); return; }
+            mainHandler.postDelayed(() -> {
+                if (!closed && generation == ttsPreparationGeneration && !ttsReady) {
+                    auditAudio("AlertTts status=engine_timeout candidate=" + index);
+                    advanceVoiceEngine(engine, index, generation);
+                }
+            }, 5000);
+        } catch (RuntimeException error) {
+            auditAudio("AlertTts status=init_failed candidate=" + index);
+            prepareVoiceEngine(index + 1);
+        }
+    }
+
+    private static boolean offlineChinese(Voice voice) {
+        return voice != null && OfflineTtsPolicy.allows(voice.getLocale(),
+                voice.isNetworkConnectionRequired(), voice.getFeatures() != null
+                        && voice.getFeatures().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED));
+    }
+
+    static Voice selectedOfflineVoice(Voice current, Set<Voice> available) {
+        if (offlineChinese(current)) return current;
+        return available == null ? null : available.stream().filter(CuePlayer::offlineChinese)
+                .sorted(java.util.Comparator.<Voice>comparingInt(value -> OfflineTtsPolicy.localeOrder(value.getLocale()))
+                        .thenComparing(Voice::getName)).findFirst().orElse(null);
+    }
+
+    /** Voice discovery and synthesis never hold the lock used by the recognition thread. */
+    private void configureOfflineVoice(TextToSpeech engine, String selected, int index, int generation) {
+        try {
+            String engineName = selected.isEmpty() ? engine.getDefaultEngine() : selected;
+            if (!attemptedVoiceEngines.add(engineName == null ? "" : engineName)) {
+                mainHandler.post(() -> advanceVoiceEngine(engine, index, generation));
+                return;
+            }
+            Voice current = engine.getVoice();
+            boolean preserveEngineVoice = offlineChinese(current);
+            Voice offline = selectedOfflineVoice(current, preserveEngineVoice ? null : engine.getVoices());
+            // MultiTTS owns its selected voice. Do not overwrite a valid engine default
+            // with the first alphabetically enumerated voice or a redundant setVoice call.
+            if (offline == null || (!preserveEngineVoice && engine.setVoice(offline) != TextToSpeech.SUCCESS)
+                    || !offlineChinese(engine.getVoice())) {
+                mainHandler.post(() -> advanceVoiceEngine(engine, index, generation));
+                return;
+            }
+            int speechRate = Math.max(80, Math.min(240, GameProfile.settings(context)
+                    .getInt(PREF_TTS_RATE, DEFAULT_TTS_RATE_PERCENT)));
+            if (engine.setSpeechRate(speechRate / 100f) != TextToSpeech.SUCCESS)
+                throw new IllegalStateException("Offline speech rate rejected");
+            engine.setAudioAttributes(new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_GAME)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
+            installTtsListener(engine);
+            String voiceName = engine.getVoice().getName();
+            String label = engineName;
+            try {
+                label = context.getPackageManager().getApplicationLabel(
+                        context.getPackageManager().getApplicationInfo(engineName, 0)).toString();
+            } catch (android.content.pm.PackageManager.NameNotFoundException | NullPointerException ignored) {}
+            final String engineLabel = label;
+            final boolean usedFallback = index > 0 || !requestedVoiceEngine.isEmpty()
+                    && !requestedVoiceEngine.equals(engineName);
+            mainHandler.post(() -> {
+                synchronized (audioLock) {
+                    if (closed || generation != ttsPreparationGeneration || tts != engine) return;
+                    offlineTtsReady = true;
+                    ttsReady = true;
+                    if (dynamicVoiceProbe) {
+                        speechPreparationFinished = true;
+                        speechStatus = "系统语音已就绪（" + engineLabel
+                                + (usedFallback ? "，自动选用" : "") + "）。";
+                    }
+                    ttsAuditState = "AlertTts status=ready offline=true engine=" + engineName
+                            + " voice=" + voiceName + " ratePercent=" + speechRate
+                            + " fallback=" + usedFallback
+                            + " voiceSource=" + (preserveEngineVoice ? "engine_default" : "offline_fallback");
+                }
+                auditAudio(ttsAuditState);
+                finishPendingDynamic(true);
+            });
+        } catch (RuntimeException error) {
+            auditAudio("AlertTts status=voice_failed candidate=" + index
+                    + " reason=" + error.getClass().getSimpleName());
+            mainHandler.post(() -> advanceVoiceEngine(engine, index, generation));
+        }
+    }
+
+    private void advanceVoiceEngine(TextToSpeech engine, int index, int generation) {
+        if (closed || generation != ttsPreparationGeneration || ttsReady) return;
+        ttsPreparationGeneration++;
+        synchronized (audioLock) { if (tts == engine) tts = null; }
+        try { engine.shutdown(); } catch (RuntimeException ignored) {}
+        prepareVoiceEngine(index + 1);
+    }
+
+    private void installTtsListener(TextToSpeech engine) {
+        engine.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+            @Override public void onStart(String id) {
+                CueDispatcher.PlaybackCallback callback = speechCallbacks.get(id);
+                if (callback != null) {
+                    Runnable waiting = speechStartTimeouts.remove(id);
+                    if (waiting != null) mainHandler.removeCallbacks(waiting);
+                    callback.onStarted(SystemClock.elapsedRealtime());
+                    CueRequest request = speechRequests.get(id);
+                    // Synthesis and playback have separate deadlines. A 4 s synthesis budget
+                    // must not cut speech that has already started and is still playing.
+                    long duration = request == null ? 30_000 : Math.min(30_000, Math.max(4000,
+                            request.speech.length() * 700L + 3000));
+                    mainHandler.postDelayed(() -> timeoutDynamicSpeech(id, callback, engine, "PLAYBACK_TIMEOUT"), duration);
+                }
+            }
+            @Override public void onDone(String id) {
+                AssistantUtterance assistant = assistantUtterances.get(id);
+                if (assistant != null) {
+                    boolean readyForPlayback;
+                    synchronized (audioLock) {
+                        readyForPlayback = isCurrentAssistantLocked(assistant)
+                                && assistant.reply.group.synthesisReady(
+                                assistant.segment.index);
+                        if (readyForPlayback)
+                            mainHandler.removeCallbacks(
+                                    assistant.synthesisTimeout);
+                    }
+                    if (!readyForPlayback) return;
+                    logAssistantSegment("ready", assistant);
+                    notifyAssistantTtsTiming(assistant, "synthesis-ready");
+                    try {
+                        assistantAudioWorker.execute(
+                                () -> playAssistantFile(assistant));
+                    } catch (RuntimeException rejected) {
+                        failAssistantSegment(assistant, "worker_rejected", false, true);
+                    }
+                    return;
+                }
+                CueDispatcher.PlaybackCallback callback = speechCallbacks.remove(id);
+                clearDynamicDeadline(id);
+                if (callback != null)
+                    callback.onFinished(SystemClock.elapsedRealtime(), true);
+            }
+            @Override public void onError(String id) { onError(id, TextToSpeech.ERROR); }
+            @Override public void onError(String id, int errorCode) {
+                AssistantUtterance assistant = assistantUtterances.get(id);
+                if (assistant != null) {
+                    failAssistantSegment(assistant, "synthesis_error", false, true);
+                    Log.w(TAG, "Offline assistant TTS synthesis failed for " + id);
+                    return;
+                }
+                failDynamicSpeech(id, engine, "ENGINE_ERROR:" + errorCode);
+                Log.w(TAG, "TTS failed for " + id + " code=" + errorCode);
+            }
+            @Override public void onStop(String id, boolean interrupted) {
+                AssistantUtterance assistant = assistantUtterances.get(id);
+                if (assistant != null) {
+                    failAssistantSegment(assistant, "synthesis_stopped", false, true);
+                    return;
+                }
+                CueDispatcher.PlaybackCallback callback = speechCallbacks.remove(id);
+                clearDynamicDeadline(id);
+                if (callback != null)
+                    callback.onFinished(SystemClock.elapsedRealtime(), false);
+            }
+        });
+    }
+
+    void setAudioAuditListener(Consumer<String> listener) {
+        audioAuditListener = listener;
+        if (listener != null && ttsAuditState != null) listener.accept(ttsAuditState);
+    }
+
+    private void auditAudio(String message) {
+        Log.i(TAG, message);
+        Consumer<String> listener = audioAuditListener;
+        if (listener != null) {
+            try { listener.accept(message); }
+            catch (RuntimeException ignored) { Log.w(TAG, "Audio audit listener unavailable"); }
+        }
+    }
+
+    @Override public boolean hasPreparedSpeech(CueRequest request) {
+        return !closed && !preparedPcmFailed && request.category == CueRequest.Category.NEAR_ZONE
+                && AlertSpeechCache.get(alertVoiceKey, request.speech) != null;
+    }
+
+    @Override public boolean speakSynchronized(CueRequest request,
+            CueDispatcher.PlaybackCallback tone, CueDispatcher.PlaybackCallback speech) {
+        return enqueuePreparedAlert(request, tone, speech);
+    }
+
+    private boolean enqueuePreparedAlert(CueRequest request,
+            CueDispatcher.PlaybackCallback tone, CueDispatcher.PlaybackCallback speech) {
+        short[] pcm = AlertSpeechCache.get(alertVoiceKey, request.speech);
+        if (closed || !request.playbackAllowedAt(SystemClock.elapsedRealtime())) return false;
+        if (pcm == null && !BundledSpeechCatalog.isFixed(request.speech)
+                && !ReminderGuide.NARRATION_KIND.equals(request.kind)) return false;
+        PreparedAlertPlayback playback = new PreparedAlertPlayback(request, pcm, tone, speech);
+        synchronized (audioLock) {
+            if (closed || preparedAlert != null) return false;
+            preparedAlert = playback;
+        }
+        try {
+            alertAudioWorker.execute(() -> playPreparedAlert(playback));
+            return true;
+        } catch (RuntimeException rejected) {
+            synchronized (audioLock) { if (preparedAlert == playback) preparedAlert = null; }
+            return false;
+        }
+    }
+
+    private short[] preparedTone(CueRequest request) {
+        String style = toneStyles.getOrDefault(request.toneKind, "classic");
+        if (spatialEnabledAtStart && style.equals(nearSoundAtStart)
+                && PresentationAudioPolicy.from(GameProfile.settings(context)).spatial) {
+            short[] spatial = spatialToneCache.get(request.pan,
+                    NearZoneRouting.presentationDistanceLevel(request.distance), request.urgency);
+            if (spatial != null) return spatial;
+        }
+        short[] mono = CueSoundLibrary.render(request.toneKind, style, 48000);
+        float pan = request.hasPan() ? request.pan : request.direction == 1 ? -1f
+                : request.direction == 2 ? 1f : 0f;
+        float[] gains = NearZoneRouting.stereoGains(pan, 1f);
+        short[] stereo = new short[mono.length * 2];
+        for (int i = 0; i < mono.length; i++) {
+            stereo[i * 2] = (short) Math.round(mono[i] * gains[0]);
+            stereo[i * 2 + 1] = (short) Math.round(mono[i] * gains[1]);
+        }
+        return stereo;
+    }
+
+    private void playPreparedAlert(PreparedAlertPlayback playback) {
+        AudioTrack track = null;
+        boolean success = false, started = false, toneFinished = false;
+        try {
+            if (playback.cancelled || closed) return;
+            boolean narration = ReminderGuide.NARRATION_KIND.equals(playback.request.kind);
+            short[] speech = playback.speech != null ? playback.speech
+                    : bundledSpeech.load(playback.request.speech, narration);
+            if (playback.cancelled || closed) return;
+            short[] tone = playback.toneCallback == null ? null : preparedTone(playback.request);
+            short[] mixed = AlertSpeechCache.mix(speech, tone);
+            float speed = narration ? BundledSpeechCatalog.rate(GameProfile.settings(context)
+                    .getInt(PREF_TTS_RATE, DEFAULT_TTS_RATE_PERCENT)) / 100f : 1f;
+            track = new AudioTrack.Builder()
+                    .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                    .setAudioFormat(new AudioFormat.Builder().setSampleRate(48000)
+                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                            .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).build())
+                    .setTransferMode(AudioTrack.MODE_STATIC).setBufferSizeInBytes(mixed.length * 2).build();
+            track.setVolume(volume());
+            if (track.write(mixed, 0, mixed.length, AudioTrack.WRITE_BLOCKING) != mixed.length)
+                throw new IllegalStateException("Incomplete alert PCM write");
+            synchronized (audioLock) {
+                if (closed || playback.cancelled || preparedAlert != playback
+                        || !playback.request.playbackAllowedAt(SystemClock.elapsedRealtime())) return;
+                playback.track = track;
+                if (narration) track.setPlaybackParams(new PlaybackParams().allowDefaults()
+                        .setSpeed(speed).setPitch(1f));
+                track.play();
+            }
+            long at = SystemClock.elapsedRealtime();
+            started = true;
+            if (playback.toneCallback != null) playback.toneCallback.onStarted(at);
+            playback.speechCallback.onStarted(at);
+            auditAudio("AlertPcm started cueId=" + playback.request.cueId + " cache="
+                    + (playback.speech != null ? "hit" : "miss") + " source=bundled paired="
+                    + (tone != null) + " style=" + toneStyles.getOrDefault(playback.request.toneKind, "classic")
+                    + " speechStyle=" + (playback.request.speech.length() <= 2 ? "two_word" : "phrase")
+                    + " frames=" + mixed.length / 2);
+            long deadline = at + (long) (mixed.length * 1000L / (48000 * 2 * speed)) + 2000;
+            boolean routeLogged = false;
+            while (!closed && !playback.cancelled && SystemClock.elapsedRealtime() <= deadline) {
+                long head = Integer.toUnsignedLong(track.getPlaybackHeadPosition());
+                if (!routeLogged && head > 0) {
+                    AudioDeviceInfo routed = track.getRoutedDevice();
+                    auditAudio("AlertPcm route cueId=" + playback.request.cueId
+                            + " outputType=" + (routed == null ? "unknown" : routed.getType()));
+                    routeLogged = true;
+                }
+                if (tone != null && !toneFinished && head >= tone.length / 2) {
+                    toneFinished = true;
+                    playback.toneCallback.onFinished(SystemClock.elapsedRealtime(), true);
+                }
+                if (head >= mixed.length / 2) { success = true; break; }
+                Thread.sleep(10);
+            }
+        } catch (InterruptedException cancelled) {
+            Thread.currentThread().interrupt();
+        } catch (IOException | RuntimeException error) {
+            preparedPcmFailed = true;
+            auditAudio("AlertPcm unavailable cueId=" + playback.request.cueId
+                    + " source=bundled no_network_fallback=true");
+            Log.w(TAG, "AlertPcm failed cueId=" + playback.request.cueId, error);
+        } finally {
+            synchronized (audioLock) { if (preparedAlert == playback) preparedAlert = null; }
+            if (track != null) {
+                stopAssistantTrack(track);
+                try { track.release(); } catch (RuntimeException ignored) {}
+            }
+            if (!playback.cancelled && !closed) {
+                long at = SystemClock.elapsedRealtime();
+                if (playback.toneCallback != null && !toneFinished)
+                    playback.toneCallback.onFinished(at, success && started);
+                playback.speechCallback.onFinished(at, success && started);
+            }
+        }
+    }
+
+    private void cancelPreparedAlert(CueRequest.Category category) {
+        PreparedAlertPlayback playback;
+        synchronized (audioLock) {
+            playback = preparedAlert;
+            if (playback == null || category != null && playback.request.category != category) return;
+            playback.cancelled = true;
+            preparedAlert = null;
+        }
+        stopAssistantTrack(playback.track);
+    }
+
+    void setPreparedAlertForTest(String phrase, short[] pcm) {
+        alertVoiceKey = "instrumented-fixed-phrases";
+        AlertSpeechCache.put(alertVoiceKey, phrase, pcm);
     }
 
     private float volume() {
@@ -525,6 +957,19 @@ final class CuePlayer implements CueDispatcher.Renderer {
                                       CueDispatcher.PlaybackCallback callback) {
         long now = SystemClock.elapsedRealtime();
         if (closed || now > request.expiresAtMs) return false;
+        if (tonePreviewMode) {
+            String style = CueSoundLibrary.valid(GameProfile.settings(context)
+                    .getString(CueSoundLibrary.preferenceKey(request.toneKind), "classic"));
+            String key = request.toneKind + ":" + style;
+            short[] samples = previewToneCache.get(key);
+            if (samples == null) {
+                short[] mono = CueSoundLibrary.render(request.toneKind, style, 48000);
+                samples = new short[mono.length * 2];
+                for (int i = 0; i < mono.length; i++) samples[i * 2] = samples[i * 2 + 1] = mono[i];
+                previewToneCache.put(key, samples);
+            }
+            return enqueueSpatialToneLocked(request, callback, now, samples);
+        }
         PresentationAudioPolicy presentation = PresentationAudioPolicy.from(
                 GameProfile.settings(context));
         if (spatialEnabledAtStart && presentation.spatial
@@ -580,10 +1025,11 @@ final class CuePlayer implements CueDispatcher.Renderer {
                 return false;
             }
             track.play();
-            spatialToneTracks.put(track, new SpatialTonePlayback(request.category, callback));
+            spatialToneTracks.put(track, new SpatialTonePlayback(request.category, callback,
+                    samples.length / 2, now + samples.length * 1000L / (48000 * 2) + 2000));
             if (callback != null) callback.onStarted(now);
             AudioTrack active = track;
-            mainHandler.postDelayed(() -> finishSpatialTone(active), 240);
+            mainHandler.postDelayed(() -> finishSpatialTone(active), samples.length * 1000L / (48000 * 2));
             return true;
         } catch (RuntimeException error) {
             if (track != null) track.release();
@@ -594,8 +1040,16 @@ final class CuePlayer implements CueDispatcher.Renderer {
 
     private void finishSpatialTone(AudioTrack track) {
         SpatialTonePlayback playback;
+        boolean success;
         synchronized (audioLock) {
-            playback = spatialToneTracks.remove(track);
+            playback = spatialToneTracks.get(track);
+            if (playback == null) return;
+            success = Integer.toUnsignedLong(track.getPlaybackHeadPosition()) >= playback.frames;
+            if (!success && SystemClock.elapsedRealtime() < playback.deadlineMs) {
+                mainHandler.postDelayed(() -> finishSpatialTone(track), 10);
+                return;
+            }
+            spatialToneTracks.remove(track);
         }
         if (playback == null) return;
         try {
@@ -605,7 +1059,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
         }
         track.release();
         if (playback.callback != null)
-            playback.callback.onFinished(SystemClock.elapsedRealtime(), true);
+            playback.callback.onFinished(SystemClock.elapsedRealtime(), success);
     }
 
     private void cancelSpatialTones(CueRequest.Category category) {
@@ -654,46 +1108,176 @@ final class CuePlayer implements CueDispatcher.Renderer {
         }
     }
 
+    /** Duration of the configured effect on this device, for preview stop timers. */
+    long hapticDurationMs(CueRequest request) {
+        try {
+            Vibrator vibrator = defaultVibrator();
+            if (vibrator == null || !vibrator.hasVibrator()) return 0;
+            android.content.SharedPreferences preferences = GameProfile.settings(context);
+            boolean distanceHaptic = PresentationAudioPolicy.from(preferences).distanceHaptic;
+            boolean amplitudeControl = vibrator.hasAmplitudeControl();
+            String hapticMode = preferences.getString(HapticPolicy.PREF_MODE, HapticPolicy.MODE_ORIGINAL);
+            String hapticStrength = preferences.getString(HapticPolicy.PREF_STRENGTH,
+                    HapticPolicy.STRENGTH_SYSTEM);
+            HapticPolicy.Pattern pattern = HapticPolicy.create(request,
+                    distanceHaptic, amplitudeControl, hapticMode, hapticStrength);
+            return pattern.durationMs();
+        } catch (RuntimeException error) {
+            Log.w(TAG, "Could not estimate accessibility haptic duration", error);
+            return 0;
+        }
+    }
+
+    /** Stops a haptic only while this player still owns the app's latest request. */
+    void cancelHaptics() {
+        synchronized (HAPTIC_OWNER_LOCK) {
+            if (activeHapticOwner != this) return;
+            activeHapticOwner = null;
+            try {
+                Vibrator vibrator = defaultVibrator();
+                if (vibrator != null) vibrator.cancel();
+            } catch (RuntimeException error) {
+                Log.w(TAG, "Could not cancel accessibility haptic", error);
+            }
+        }
+    }
+
     @Override public boolean speak(CueRequest request, boolean interrupt,
                                    CueDispatcher.PlaybackCallback callback) {
+        if (tonePreviewMode) return false;
         if (request.category == CueRequest.Category.ASSISTANT)
             return synthesizeAssistant(request, callback);
+        if (!dynamicVoiceProbe && (BundledSpeechCatalog.isFixed(request.speech)
+                || ReminderGuide.NARRATION_KIND.equals(request.kind)))
+            return enqueuePreparedAlert(request, null, callback);
+        if (!ttsReady) {
+            if (closed || request.speech == null || !request.playbackAllowedAt(SystemClock.elapsedRealtime()))
+                return false;
+            PendingDynamicSpeech pending = new PendingDynamicSpeech(request, interrupt, callback);
+            PendingDynamicSpeech old;
+            synchronized (audioLock) { old = pendingDynamicSpeech; pendingDynamicSpeech = pending; }
+            if (old != null) old.callback.onFinished(SystemClock.elapsedRealtime(), false);
+            ensureDynamicVoice();
+            mainHandler.postDelayed(() -> {
+                synchronized (audioLock) {
+                    if (pendingDynamicSpeech != pending) return;
+                    pendingDynamicSpeech = null;
+                }
+                pending.callback.onFinished(SystemClock.elapsedRealtime(), false);
+            }, Math.min(5000, Math.max(1, request.expiresAtMs - SystemClock.elapsedRealtime())));
+            return true;
+        }
+        return speakUncached(request, interrupt, callback);
+    }
+
+    private void finishPendingDynamic(boolean ready) {
+        PendingDynamicSpeech pending;
+        synchronized (audioLock) { pending = pendingDynamicSpeech; pendingDynamicSpeech = null; }
+        if (pending == null) return;
+        if (!ready || !pending.request.playbackAllowedAt(SystemClock.elapsedRealtime())
+                || !speakUncached(pending.request, pending.interrupt, pending.callback))
+            pending.callback.onFinished(SystemClock.elapsedRealtime(), false);
+    }
+
+    private boolean speakUncached(CueRequest request, boolean interrupt,
+                                  CueDispatcher.PlaybackCallback callback) {
         TextToSpeech voice;
         String utteranceId = "cue:" + request.cueId;
         Bundle parameters = new Bundle();
         synchronized (audioLock) {
-            if (closed || !ttsReady || tts == null || request.speech == null ||
+            if (closed || !ttsReady || !offlineTtsReady || tts == null || request.speech == null ||
                     SystemClock.elapsedRealtime() > request.expiresAtMs) return false;
             voice = tts;
             parameters.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume());
             speechCallbacks.put(utteranceId, callback);
+            speechRequests.put(utteranceId, request);
         }
         // Keep the remote engine call outside audioLock.  TTS progress
         // callbacks can re-enter the dispatcher and otherwise invert the
         // dispatcher/audio lock order during pause or preemption.
         try {
-            int result = voice.speak(request.speech,
-                    interrupt ? TextToSpeech.QUEUE_FLUSH : TextToSpeech.QUEUE_ADD,
-                    parameters, utteranceId);
+            if (request.category == CueRequest.Category.NEAR_ZONE)
+                auditAudio("AlertTts cueId=" + request.cueId + " cache=miss offline=true");
+            Runnable waiting = () -> timeoutDynamicSpeech(utteranceId, callback, voice, "START_TIMEOUT");
+            speechStartTimeouts.put(utteranceId, waiting);
+            mainHandler.postDelayed(waiting, speechTimeoutMs(request));
+            int result;
+            synchronized (assistantTtsSubmissionLock) {
+                if (closed || speechCallbacks.get(utteranceId) != callback) return false;
+                String spoken = Match3SpeechText.isBoardCue(request.eventKey)
+                        ? Match3SpeechText.forTts(request.speech) : request.speech;
+                if (Match3SpeechText.isBoardCue(request.eventKey))
+                    auditAudio("Match3Tts cueId=" + request.cueId + " source=" + request.speech
+                            + " spoken=" + spoken);
+                result = voice.speak(spoken,
+                        alertQueueMode(request, interrupt, false),
+                        parameters, utteranceId);
+            }
             if (result == TextToSpeech.SUCCESS) {
-                mainHandler.postDelayed(() -> {
-                    // A remote engine can report onStart while waiting tens of
-                    // seconds for synthesis. Bound that wait and release the queue.
-                    if (!speechCallbacks.remove(utteranceId, callback)) return;
-                    Log.w(TAG, "TTS timed out for " + utteranceId);
-                    try { voice.stop(); }
-                    catch (RuntimeException error) {
-                        Log.w(TAG, "Could not stop timed-out speech", error);
-                    }
-                    callback.onFinished(SystemClock.elapsedRealtime(), false);
-                }, speechTimeoutMs(request));
                 return true;
             }
         } catch (RuntimeException error) {
             Log.w(TAG, "Could not queue accessibility speech", error);
         }
         speechCallbacks.remove(utteranceId, callback);
+        clearDynamicDeadline(utteranceId);
+        recoverBoardVoice(request, voice, "SUBMIT_REJECTED");
         return false;
+    }
+
+    private void failDynamicSpeech(String id, TextToSpeech engine, String reason) {
+        CueDispatcher.PlaybackCallback callback = speechCallbacks.remove(id);
+        CueRequest request = speechRequests.get(id);
+        clearDynamicDeadline(id);
+        if (callback == null) return; // Cancelled/retired utterances cannot retire a new engine.
+        recoverBoardVoice(request, engine, reason);
+        callback.onFailed(SystemClock.elapsedRealtime(), reason);
+    }
+
+    /** Retire a broken game voice before another cue can reuse its stale readiness flag. */
+    private void recoverBoardVoice(CueRequest request, TextToSpeech engine, String reason) {
+        if (request == null || !OfflineTtsPolicy.recoverBoardFailure(request.eventKey, reason)) return;
+        final int nextIndex, generation;
+        synchronized (audioLock) {
+            if (closed || tts != engine || !ttsReady) return;
+            ttsReady = false;
+            offlineTtsReady = false;
+            tts = null;
+            generation = ++ttsPreparationGeneration;
+            nextIndex = activeVoiceEngineIndex + 1;
+        }
+        ttsAuditState = "Match3Tts status=recovering reason=" + reason
+                + " next_candidate=" + nextIndex + " saved_engine_unchanged=true";
+        auditAudio(ttsAuditState);
+        mainHandler.post(() -> {
+            try { engine.shutdown(); } catch (RuntimeException ignored) { }
+            if (closed || generation != ttsPreparationGeneration) return;
+            // Each installed engine is attempted once per player. Only a verified offline
+            // Chinese voice may become ready; never loop on the crashing system default.
+            prepareVoiceEngine(nextIndex);
+        });
+    }
+
+    private void clearDynamicDeadline(String id) {
+        Runnable waiting = speechStartTimeouts.remove(id);
+        if (waiting != null) mainHandler.removeCallbacks(waiting);
+        speechRequests.remove(id);
+    }
+
+    private void timeoutDynamicSpeech(String id, CueDispatcher.PlaybackCallback callback, TextToSpeech voice,
+                                      String reason) {
+        // Check and stop atomically against new submissions on the same engine. Old timers
+        // cannot stop a replacement preview, even if a vendor omits its onStop callback.
+        synchronized (assistantTtsSubmissionLock) {
+            if (!speechCallbacks.remove(id, callback)) return;
+            CueRequest request = speechRequests.get(id);
+            clearDynamicDeadline(id);
+            try { voice.stop(); } catch (RuntimeException error) {
+                Log.w(TAG, "Could not stop timed-out dynamic speech", error);
+            }
+            recoverBoardVoice(request, voice, reason);
+        }
+        callback.onFailed(SystemClock.elapsedRealtime(), reason);
     }
 
     private boolean synthesizeAssistant(CueRequest request,
@@ -1212,6 +1796,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
 
     void setAssistantPlaybackListener(AssistantPlaybackListener listener) {
         assistantPlaybackListener = listener;
+        if (listener != null) ensureDynamicVoice();
     }
 
     void setAssistantTtsTimingListener(AssistantTtsTimingListener listener) {
@@ -1236,10 +1821,17 @@ final class CuePlayer implements CueDispatcher.Renderer {
         });
     }
 
-    boolean speechReady() { return ttsReady && !closed; }
+    boolean speechReady() { return !closed && (dynamicVoiceProbe ? ttsReady && offlineTtsReady : bundledReady); }
+
+    boolean speechPreparationFinished() { return speechPreparationFinished; }
+
+    String speechStatusText() { return speechStatus; }
 
     /** Assistant answers require an installed Chinese voice that needs no network. */
-    boolean assistantSpeechReady() { return ttsReady && offlineTtsReady && !closed; }
+    boolean assistantSpeechReady() {
+        ensureDynamicVoice();
+        return ttsReady && offlineTtsReady && !closed;
+    }
 
     static long speechTimeoutMs(CueRequest request) {
         return request.category == CueRequest.Category.SYSTEM
@@ -1247,7 +1839,15 @@ final class CuePlayer implements CueDispatcher.Renderer {
                 ? ReminderGuide.NARRATION_TIMEOUT_MS : SPEECH_TIMEOUT_MS;
     }
 
+    static int alertQueueMode(CueRequest request, boolean interrupt, boolean warming) {
+        // File synthesis shares the engine's queue even on a separate worker. An urgent
+        // uncached phrase must flush that silent job rather than wait behind it.
+        return interrupt || warming || request.category == CueRequest.Category.NEAR_ZONE
+                ? TextToSpeech.QUEUE_FLUSH : TextToSpeech.QUEUE_ADD;
+    }
+
     @Override public void stopSpeech() {
+        cancelPreparedAlert(null);
         TextToSpeech voice;
         AudioTrack track;
         List<AssistantDropEvent> dropped;
@@ -1255,6 +1855,10 @@ final class CuePlayer implements CueDispatcher.Renderer {
             // Some TTS engines do not deliver onStop for every flushed
             // utterance.  Do not retain callbacks from a paused session.
             speechCallbacks.clear();
+            pendingDynamicSpeech = null;
+            for (Runnable waiting : speechStartTimeouts.values()) mainHandler.removeCallbacks(waiting);
+            speechStartTimeouts.clear();
+            speechRequests.clear();
             dropped = cancelAssistantGroupsLocked("stopped");
             track = assistantTrack;
             assistantTrack = null;
@@ -1310,6 +1914,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
     }
 
     @Override public void cancelPendingTone() {
+        cancelPreparedAlert(null);
         synchronized (audioLock) {
             PendingToneQueue.Pending pending = pendingTones.clear();
             if (pending != null && pending.callback != null)
@@ -1319,6 +1924,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
     }
 
     @Override public void cancelPendingTone(CueRequest.Category category) {
+        cancelPreparedAlert(category);
         synchronized (audioLock) {
             PendingToneQueue.Pending pending = pendingTones.clearCategory(category);
             if (pending != null && pending.callback != null)
@@ -1329,81 +1935,77 @@ final class CuePlayer implements CueDispatcher.Renderer {
 
     private boolean vibrateEffect(CueRequest request) {
         try {
-            Vibrator vibrator;
-            if (android.os.Build.VERSION.SDK_INT >= 31) {
-                VibratorManager manager = context.getSystemService(VibratorManager.class);
-                vibrator = manager == null ? null : manager.getDefaultVibrator();
-            } else {
-                vibrator = context.getSystemService(Vibrator.class);
-            }
+            Vibrator vibrator = defaultVibrator();
             if (vibrator == null || !vibrator.hasVibrator()) {
-                Log.w(TAG, "HapticRequest unavailable=no_vibrator cueId=" + request.cueId);
+                auditAudio("HapticRequest unavailable=no_vibrator cueId=" + request.cueId);
                 return false;
             }
-            int direction = request.hapticCode;
-            long[] pattern;
-            int[] amplitudes = null;
-            if (request.category == CueRequest.Category.NEAR_ZONE
-                    && PresentationAudioPolicy.from(GameProfile.settings(context)).distanceHaptic
-                    && Float.isFinite(request.distance)) {
-                if (vibrator.hasAmplitudeControl()) {
-                    int amplitude = PresentationAudioPolicy.distanceHapticAmplitude(
-                            request.distance, request.urgency);
-                    pattern = new long[]{0, NEAR_HAPTIC_ON_MS, NEAR_HAPTIC_GAP_MS,
-                            NEAR_HAPTIC_ON_MS};
-                    amplitudes = new int[]{0, amplitude, 0, amplitude};
-                } else {
-                    long onMs = PresentationAudioPolicy.distanceHapticDurationMs(
-                            request.distance, request.urgency);
-                    pattern = new long[]{0, onMs, NEAR_HAPTIC_GAP_MS, onMs};
-                }
-            } else if (request.category == CueRequest.Category.NEAR_ZONE)
-                pattern = new long[]{0, NEAR_HAPTIC_ON_MS, NEAR_HAPTIC_GAP_MS,
-                        NEAR_HAPTIC_ON_MS};
-            else if (direction == 1) pattern = new long[]{0, 35, 45, 80};
-            else if (direction == 2) pattern = new long[]{0, 80, 45, 35};
-            else if (direction == 3) pattern = new long[]{0, 35};
-            else if (direction == 4) pattern = new long[]{0, 35, 45, 35};
-            else pattern = new long[]{0, 45};
-            VibrationEffect effect = amplitudes == null
-                    ? VibrationEffect.createWaveform(pattern, -1)
-                    : VibrationEffect.createWaveform(pattern, amplitudes, -1);
+            android.content.SharedPreferences preferences = GameProfile.settings(context);
+            boolean distanceHaptic = PresentationAudioPolicy.from(preferences).distanceHaptic;
+            boolean amplitudeControl = vibrator.hasAmplitudeControl();
+            String hapticMode = preferences.getString(HapticPolicy.PREF_MODE, HapticPolicy.MODE_ORIGINAL);
+            String hapticStrength = preferences.getString(HapticPolicy.PREF_STRENGTH,
+                    HapticPolicy.STRENGTH_SYSTEM);
+            HapticPolicy.Pattern pattern = HapticPolicy.create(request,
+                    distanceHaptic, amplitudeControl, hapticMode, hapticStrength);
+            VibrationEffect effect = pattern.amplitudes == null
+                    ? VibrationEffect.createWaveform(pattern.timingsMs, -1)
+                    : VibrationEffect.createWaveform(pattern.timingsMs,
+                    pattern.amplitudes, -1);
             // Untagged short effects become TOUCH and are silently suppressed
             // when touch feedback is off. These are accessibility cues, not
             // taps; keep all system interruption settings in force.
-            if (android.os.Build.VERSION.SDK_INT >= 33) {
-                vibrator.vibrate(effect, VibrationAttributes.createForUsage(
-                        VibrationAttributes.USAGE_ACCESSIBILITY));
-            } else {
-                vibrator.vibrate(effect, new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+            synchronized (HAPTIC_OWNER_LOCK) {
+                if (android.os.Build.VERSION.SDK_INT >= 33) {
+                    vibrator.vibrate(effect, VibrationAttributes.createForUsage(
+                            VibrationAttributes.USAGE_ACCESSIBILITY));
+                } else {
+                    vibrator.vibrate(effect, new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+                }
+                activeHapticOwner = this;
             }
-            long durationMs = 0;
-            for (long part : pattern) durationMs += part;
             // The API is void: submission is not proof the user felt vibration.
-            Log.i(TAG, "HapticRequest cueId=" + request.cueId
-                    + " usage=ACCESSIBILITY durationMs=" + durationMs);
+            auditAudio(HapticPolicy.audit(request, pattern, amplitudeControl,
+                    distanceHaptic, hapticMode, hapticStrength));
             return true;
         } catch (RuntimeException error) {
+            auditAudio("HapticRequest unavailable=" + error.getClass().getSimpleName()
+                    + " cueId=" + request.cueId);
             Log.w(TAG, "Could not request accessibility haptic", error);
             return false;
         }
     }
 
+    private Vibrator defaultVibrator() {
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            VibratorManager manager = context.getSystemService(VibratorManager.class);
+            return manager == null ? null : manager.getDefaultVibrator();
+        }
+        return context.getSystemService(Vibrator.class);
+    }
+
     void close() {
+        cancelPreparedAlert(null);
         TextToSpeech voice;
         List<AssistantDropEvent> dropped;
         synchronized (audioLock) {
             if (closed) return;
             closed = true;
             ttsReady = false;
+            offlineTtsReady = false;
+            audioAuditListener = null;
             voice = tts;
             tts = null;
             ready.clear();
             failed.clear();
             pendingTones.clear();
             speechCallbacks.clear();
+            pendingDynamicSpeech = null;
+            for (Runnable waiting : speechStartTimeouts.values()) mainHandler.removeCallbacks(waiting);
+            speechStartTimeouts.clear();
+            speechRequests.clear();
             dropped = cancelAssistantGroupsLocked("closed");
             if (assistantTrack != null) {
                 stopAssistantTrack(assistantTrack);
@@ -1411,6 +2013,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
             }
             cancelSpatialTones(null);
         }
+        cancelHaptics();
         logAssistantDrops(dropped);
         if (voice != null) {
             synchronized (assistantTtsSubmissionLock) {
@@ -1421,6 +2024,8 @@ final class CuePlayer implements CueDispatcher.Renderer {
                 }
             }
         }
+        alertAudioWorker.shutdownNow();
+        alertCacheWorker.shutdownNow();
         assistantAudioWorker.shutdownNow();
         if (spatialTonePrewarmWorker != null) spatialTonePrewarmWorker.shutdownNow();
         pool.release();

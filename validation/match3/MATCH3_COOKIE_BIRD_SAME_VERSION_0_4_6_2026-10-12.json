@@ -1,0 +1,120 @@
+{
+  "schema": "sensefield.sanitized_same_version_cookie_bird.v1",
+  "date": "2026-10-12",
+  "user_selected_same_version": true,
+  "version_name": "0.4.6",
+  "version_code": 23,
+  "published": false,
+  "independent": false,
+  "source_sha256": "00842bb63e7a1603e0eae9af5267ca0d6d3fd0def5bb3d5ffad14d0a8bb3ef44",
+  "main_apk_sha256": "120c3ec9ab7b89f6d4662e6cfb4d5f609f20ac87ef3f1a15ee6dd99a12fe631f",
+  "main_apk_bytes": 24544063,
+  "tests_apk_sha256": "e8c83ae33269bc70c7adabd24211f8a16b71f74e84a89cbf4b0eb2a9839ddc0a",
+  "jvm": {
+    "tests": 575,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "lint": {
+    "Error": 0,
+    "Warning": 33
+  },
+  "certificate_sha256": "5a42a53a8f06850e89c46ea193931e9853e3ce7cff99551b42e8b414a1eaaf68",
+  "release_instrumentation": {
+    "status": "passed",
+    "executed": 86,
+    "skipped": 0
+  },
+  "feedback_replay": {
+    "status": "passed",
+    "independent": false,
+    "frames": 4,
+    "samples": 324,
+    "complete_output_equal_except_source_sha_to_0_4_7": true,
+    "predictions_sha256": "d97ad13f2049a6f5a30c3e8431c59666698c187088371ed561b43efb1d9392f0",
+    "bird_top_action": "BIRD_COLOR",
+    "bird_top_swap_zero_based": [
+      2,
+      3,
+      2,
+      4
+    ],
+    "bird_top_color": "RED",
+    "bird_top_cookie_contact_cells": 2,
+    "bird_top_direct_cookie_units": 0
+  },
+  "same_implementation": {
+    "passed": true,
+    "previous_source_git_revision": "dce1bef98f8b0dafaa6ba656e39eec0dfe7a5142",
+    "compared_files": 296,
+    "java_assets_and_cpp_unchanged": true,
+    "changed_config_paths": [
+      "android/app/build.gradle",
+      "scripts/build_android_preview.sh",
+      "scripts/verify_android_release.py"
+    ]
+  },
+  "prior_engineering_scope": {
+    "version_name": "0.4.7",
+    "source_sha256": "bedcdc5e3eb7e3d97937eca0650350ca409401d3eb1bf2c0413072be3de7461f",
+    "main_apk_sha256": "d0656e8c856322de3b699f6b49d3c29499f76344e603d96e729894e5b793a5bc",
+    "debug_instrumentation": 111,
+    "release_instrumentation": 86,
+    "historical_samples": [
+      743,
+      604,
+      486
+    ],
+    "software_cost_cold_wall_change_percent": 8.601677091632576,
+    "scope": "historical_same_implementation_not_rerun_on_this_version"
+  },
+  "preserved_environment_failures": [
+    {
+      "stage": "same-version-release-suite",
+      "reason": "install_failed_version_downgrade",
+      "executed": 0
+    },
+    {
+      "stage": "same-version-release-suite-retry",
+      "reason": "missing_flower_private_inputs_and_overlay_permission_after_emulator_reset",
+      "executed": 86,
+      "failures": 5
+    }
+  ],
+  "phone_installed": false,
+  "release_ready": false,
+  "public_manifest_changed": false,
+  "limits": [
+    "development_replay_not_independent_accuracy",
+    "no_observed_action_or_pass_benefit",
+    "cookie_damage_and_goal_mode_unknown",
+    "no_new_phone_soak_or_controlled_thermal"
+  ],
+  "receipt_sha256": {
+    "same-version-release": "0d05e94d3dd2216ef1a15c225a5de0a9bce0990485af47b5ffff8ce4fab2bfdc",
+    "same-version-jvm": "3364c60aaad830e87874e701c0731430f6883fce4e49aeb1d6b633a37cab6b03",
+    "same-version-release-suite": "dd07e8049554bdbb4fb32b4451b2b194064d567ab3a60100745fb454f7e3a392",
+    "same-version-release-suite-retry": "9865e619c85c8c81b9ec518e319dfef2cb309521a949ad3b25a1bdf63105e532",
+    "same-version-implementation-parity.json": "709bf54374f3b7657fd6cba4b0bf72c7499c39d353c8532fce6c8b1510f5fb88",
+    "same-version-archive.json": "c754098a32aaddcbcdb50b92441b3e4fc9fe6193878e2d06f1f4ed034a40495a",
+    "same-version-emulator-reset.json": "7cfe84281a898af316f68ac9d00ff5c5a4bab03c845c4942cdab23cff8464a54",
+    "same-version-emulator-prerequisites.json": "b71a2ff98be00b8f0aae27b9ec1e210f5657309f47b2ee35df377344e29c3950",
+    "same-version-release-suite-final": "698b38d070dc02e4a8ddf3d6b81e5b8ab2b71b71042d57503d91344971201eea",
+    "same-version-release-replay": "e3052f8349d0db07b95266c32d3ae8651a39c5a2f9fee8e927055ebfa55ab9af",
+    "same-version-cover-install": "169594d21af27e715eef17321ea1da9678da9a17a1edb3485d3347ef8065782c"
+  },
+  "cover_install": {
+    "passed": true,
+    "emulator_only": true,
+    "phone_operated": false,
+    "same_version_name": "0.4.6",
+    "same_version_code": 23,
+    "original_apk_sha256": "f28db40ab86895ad653931116160d691bc51849d4dabee1463f9e35dbb449dac",
+    "fixed_installed_apk_sha256": "120c3ec9ab7b89f6d4662e6cfb4d5f609f20ac87ef3f1a15ee6dd99a12fe631f",
+    "uid_preserved": true,
+    "identity_parse_scope": "Android_appId_from_saved_before_middle_after_dumps",
+    "completed_utc": "2026-10-12T11:04:32.492348+00:00"
+  },
+  "specific_engineering_passed": true
+}

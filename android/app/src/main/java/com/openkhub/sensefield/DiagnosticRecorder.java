@@ -8,6 +8,7 @@ import android.graphics.Bitmap;
 import android.media.AudioManager;
 import android.os.BatteryManager;
 import android.os.Build;
+import android.os.Debug;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import android.util.DisplayMetrics;
@@ -34,6 +35,7 @@ final class DiagnosticRecorder {
     static final String PREF_IMAGES = "diagnostic_images";
     static final long IMAGE_PERIOD_MS = 10000;
     static final int CONTEXT_SCREEN_EDGE = 480;
+    private static final int MATCH3_CONTEXT_SCREEN_EDGE = 960;
     static final int CONTEXT_MAP_EDGE = 512;
     static final long CONTEXT_FRAME_BYTES = 2L * 1024 * 1024;
     static final int MAX_IMAGE_JOBS = 8;
@@ -54,11 +56,13 @@ final class DiagnosticRecorder {
         return thread;
     });
     final String sessionId;
+    final DiagnosticGame game;
     final File directory;
     final long startedAtMs;
     volatile boolean finished;
     volatile String failure = "";
     private final Context context;
+    private final boolean allowPortrait;
     private DiagnosticArchive archive;
     private final AtomicInteger pending = new AtomicInteger();
     private final AtomicInteger dropped = new AtomicInteger();
@@ -76,6 +80,8 @@ final class DiagnosticRecorder {
     private volatile long frameSequence;
     private volatile long imageCount;
     private boolean markerPending;
+    private String match3ContextReason;
+    private long match3ContextRevision;
     private long lastContextObservedAtMs = -1;
     private long lastImageObservedAtMs = -1;
     private volatile long contextCopiedFrames;
@@ -85,6 +91,11 @@ final class DiagnosticRecorder {
     private volatile long contextWindows;
     private volatile long contextRateLimited;
     private volatile long contextDeferredFrames;
+    // Written only on the single IO executor, read without the capture lock.
+    // Cumulative job cost includes image encoding, writes and job metadata.
+    private volatile long imageJobsCompleted;
+    private volatile long imageJobWallMicros;
+    private volatile long imageJobCpuMicros;
     private volatile JSONObject lastDeviceSample;
     private volatile JSONObject latestState;
     private volatile LoadSample latestLoadSample = new LoadSample(-1, -1, -1);
@@ -127,30 +138,54 @@ final class DiagnosticRecorder {
     }
 
     static DiagnosticRecorder start(Context context, String sessionId, long startedAtMs) {
-        DiagnosticRecorder recorder = new DiagnosticRecorder(context, sessionId, startedAtMs);
+        return start(context, sessionId, startedAtMs, DiagnosticGame.HONOR);
+    }
+
+    static DiagnosticRecorder start(Context context, String sessionId, long startedAtMs,
+                                    boolean allowPortrait) {
+        return start(context, sessionId, startedAtMs, allowPortrait ? DiagnosticGame.MATCH3 : DiagnosticGame.HONOR);
+    }
+
+    static DiagnosticRecorder start(Context context, String sessionId, long startedAtMs, DiagnosticGame game) {
+        DiagnosticRecorder recorder = new DiagnosticRecorder(context, sessionId, startedAtMs, game);
         current = recorder;
         return recorder;
     }
 
-    private DiagnosticRecorder(Context supplied, String sessionId, long startedAtMs) {
+    private DiagnosticRecorder(Context supplied, String sessionId, long startedAtMs, DiagnosticGame game) {
+        this.game = game;
+        this.allowPortrait = game == DiagnosticGame.MATCH3;
         context = supplied.getApplicationContext();
         this.sessionId = sessionId;
         this.startedAtMs = startedAtMs;
-        latestState = object("state", "starting", "snapshot_at_ms", startedAtMs,
+        latestState = object("game_id", game.id, "state", "starting", "snapshot_at_ms", startedAtMs,
                 "frames_expected", false, "last_frame_arrived_at_ms", -1,
                 "last_frame_observed_at_ms", -1, "last_frame_completed_at_ms", -1,
                 "processed_frames", 0, "landscape_processed_frames", 0);
         imagesEnabled = imagesEnabledPreference(context);
         directory = new File(root(context), "diag-" + System.currentTimeMillis() + "-" + sessionId);
         DisplayMetrics display = context.getResources().getDisplayMetrics();
+        String versionName;
+        try {
+            versionName = context.getPackageManager()
+                    .getPackageInfo(context.getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            versionName = "unknown";
+        }
         JSONObject metadata = object("schema", "sensefield.diagnostics", "schema_version", 1,
+                "game_id", game.id, "game_name", game.label,
                 "session_id", sessionId, "started_elapsed_ms", startedAtMs,
                 "started_wall_ms", System.currentTimeMillis(), "model", Build.MODEL,
+                "app_version", versionName,
                 "manufacturer", Build.MANUFACTURER, "brand", Build.BRAND,
                 "product", Build.PRODUCT, "android_release", Build.VERSION.RELEASE,
                 "sdk", Build.VERSION.SDK_INT, "screen_width_px", display.widthPixels,
                 "screen_height_px", display.heightPixels, "density_dpi", display.densityDpi,
-                "images_enabled", imagesEnabled, "image_period_ms", IMAGE_PERIOD_MS,
+                "images_enabled", imagesEnabled, "portrait_images_allowed", allowPortrait, "image_period_ms", IMAGE_PERIOD_MS,
+                "match3_element_family_limit", Match3UnknownElements.MAX_FAMILIES,
+                "match3_element_cover_reserved_families", Match3UnknownElements.COVER_RESERVED_FAMILIES,
+                "match3_element_samples_per_family", Match3UnknownElements.MAX_SAMPLES_PER_FAMILY,
+                "match3_element_thumbnail_px", 64, "match3_element_scope", "local_diagnostics_only_not_rule_admission",
                 "context_sample_period_ms", DiagnosticImageWindow.SAMPLE_PERIOD_MS,
                 "context_pre_ms", DiagnosticImageWindow.PRE_WINDOW_MS,
                 "context_post_ms", DiagnosticImageWindow.POST_WINDOW_MS,
@@ -158,7 +193,10 @@ final class DiagnosticRecorder {
                 "context_auto_gap_ms", DiagnosticImageWindow.AUTO_WINDOW_GAP_MS,
                 "context_max_frames", DiagnosticImageWindow.MAX_CACHED_FRAMES,
                 "context_frame_bytes_limit", CONTEXT_FRAME_BYTES,
-                "context_screen_edge", CONTEXT_SCREEN_EDGE, "context_map_edge", CONTEXT_MAP_EDGE,
+                "context_screen_edge", game == DiagnosticGame.MATCH3 ? MATCH3_CONTEXT_SCREEN_EDGE : CONTEXT_SCREEN_EDGE,
+                "context_map_edge", game == DiagnosticGame.MATCH3 ? 0 : CONTEXT_MAP_EDGE,
+                "context_resolution_policy", game == DiagnosticGame.MATCH3
+                        ? "full_screen_edge_bounded_by_argb_bytes_no_minimap_no_upscale" : "screen_and_minimap",
                 "image_jobs_limit", MAX_IMAGE_JOBS, "image_job_bytes_limit", MAX_IMAGE_JOB_BYTES,
                 "image_job_budget_scope", "shared across sessions in this app process; peak counters are process lifetime",
                 "image_duration_limit_ms", 1200000, "image_bytes_limit", DiagnosticArchive.IMAGE_LIMIT,
@@ -169,6 +207,19 @@ final class DiagnosticRecorder {
             PackageInfo info = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
             metadata.put("version_name", info.versionName);
             metadata.put("version_code", info.getLongVersionCode());
+            if(game==DiagnosticGame.MATCH3) {
+                Match3VisualCatalog catalog=Match3VisualCatalog.get(context);
+                metadata.put("match3_catalog_id",catalog.id).put("match3_gallery_id",catalog.galleryId)
+                        .put("match3_gallery_sha256",catalog.gallerySha256).put("match3_gallery_status",catalog.galleryStatus)
+                        .put("match3_cover_catalog_id",catalog.coverCatalogId).put("match3_cover_catalog_sha256",catalog.coverCatalogSha256)
+                        .put("match3_cover_catalog_status",catalog.coverCatalogStatus)
+                        .put("match3_board_feedback_id",catalog.boardFeedbackId).put("match3_board_feedback_sha256",catalog.boardFeedbackSha256)
+                        .put("match3_board_feedback_status",catalog.boardFeedbackStatus)
+                        .put("match3_hud_glyph_catalog_id",catalog.hudGlyphCatalogId)
+                        .put("match3_hud_glyph_catalog_sha256",catalog.hudGlyphCatalogSha256)
+                        .put("match3_hud_glyph_catalog_status",catalog.hudGlyphCatalogStatus)
+                        .put("match3_gallery_goals_pending_review",catalog.galleryGoalsPendingReview);
+            }
         } catch (Exception ignored) { /* Diagnostics must not prevent capture. */ }
         IO.execute(() -> {
             try { archive = new DiagnosticArchive(root(context), directory.getName(), metadata.toString(2)); }
@@ -222,9 +273,107 @@ final class DiagnosticRecorder {
         }
     }
 
+    /** Automatic, bounded hint context. It never asserts a human touch or marks a user issue. */
+    void match3HintContext(long revision, boolean invalidated) {
+        synchronized (imageStateLock) {
+            if(game!=DiagnosticGame.MATCH3 || revision<=0 || finished || !failure.isEmpty()
+                    || !imagesEnabled || imageLimit)return;
+            match3ContextReason=invalidated?"match3_hint_invalidated":"match3_hint";
+            match3ContextRevision=revision;
+        }
+    }
+
     void audit(String message) {
         if (message.contains("sessionId=") && !message.contains("sessionId=" + sessionId)) return;
         record("audit", object("message", message));
+    }
+
+    boolean harvestEnabled() { return imagesEnabled && !imageLimit && !finished && failure.isEmpty(); }
+    /** Pixel descriptors obey the same image preference, cancellation generation and shared IO budget. */
+    boolean flywheelSample(JSONObject sample) {
+        synchronized(imageStateLock) {
+            if(!harvestEnabled())return false;
+            String line=object("type","Match3FlywheelSample","at_ms",SystemClock.elapsedRealtime(),"data",sample).toString();
+            long bytes=line.length()*2L;
+            if(!imageBudget.tryAcquire(bytes)) { imageDrops.incrementAndGet();return false; }
+            long generation=imageGeneration;
+            try {
+                IO.execute(()-> {
+                    try { if(archive!=null && imageRequestValid(generation))archive.append(line); }
+                    catch(Exception error) { failed(error); }
+                    finally { imageBudget.release(bytes); }
+                });
+            } catch(RuntimeException error) { imageBudget.release(bytes);throw error; }
+            return true;
+        }
+    }
+
+    /** Small representative crops from the existing processed frame; encoding stays on shared IO. */
+    void elementSample(Bitmap frame,BoardGeometry geometry,Match3UnknownElements.Sample sample) {
+        JSONObject data=object("family_id",sample.familyId,"scope","session_local_diagnostic_only",
+                "sample_number",sample.sampleNumber,"row",sample.row+1,"col",sample.col+1,
+                "observed_at_ms",sample.at,"kind",sample.observation.cell.kind.name(),
+                "appearance_color",sample.observation.cell.kind==Match3Position.Kind.ANIMAL?String.valueOf(sample.observation.cell.color):null,
+                "swap_permission",sample.observation.cell.swapPermission.name(),"rule_supported",false,
+                "reason",sample.reason(),"catalog_admission","requires_independent_identity_cover_and_rule_review");
+        record("Match3ElementObserved",data);
+        synchronized(imageStateLock) {
+            if(finished || !failure.isEmpty() || !imagesEnabled || imageLimit) {
+                record("Match3ElementSample",object("family_id",sample.familyId,"status","images_disabled_or_closed"));return;
+            }
+            int left=(int)geometry.cellLeft(sample.col),top=(int)geometry.cellTop(sample.row);
+            int width=(int)geometry.cellLeft(sample.col+1)-left,height=(int)geometry.cellTop(sample.row+1)-top;
+            final long bytes=64*64*4L+(long)width*height*4;
+            if(!imageBudget.tryAcquire(bytes)) {
+                imageDrops.incrementAndGet();record("Match3ElementSample",object("family_id",sample.familyId,"status","budget_busy"));return;
+            }
+            Bitmap copied=null;
+            boolean submitted=false;
+            try {
+                // Read directly into a bounded 64px thumbnail; never retain the full capture or its bitmap.
+                int[] pixels=new int[64*64];
+                int[] tile=new int[width*height];frame.getPixels(tile,0,width,left,top,width,height);
+                for(int y=0;y<64;y++)for(int x=0;x<64;x++)pixels[y*64+x]=tile[
+                        Math.min(height-1,(2*y+1)*height/128)*width+Math.min(width-1,(2*x+1)*width/128)];
+                copied=Bitmap.createBitmap(pixels,64,64,Bitmap.Config.ARGB_8888);
+                Bitmap crop=copied;long generation=imageGeneration;
+                IO.execute(() -> {
+                    String status="cancelled";
+                    try {
+                        if(archive!=null && imageRequestValid(generation)) {
+                            ByteArrayOutputStream encoded=new ByteArrayOutputStream();
+                            if(crop.compress(Bitmap.CompressFormat.PNG,100,encoded))
+                                status=archive.elementImage(sample.filename(),encoded.toByteArray())?"saved":"limit";
+                        }
+                        if(archive!=null)archive.append(object("type","Match3ElementSample","at_ms",SystemClock.elapsedRealtime(),
+                                "data",object("family_id",sample.familyId,"sample_number",sample.sampleNumber,
+                                        "file","elements/"+sample.filename(),"status",status,"observed_at_ms",sample.at)).toString());
+                    } catch(Exception error) { failed(error); }
+                    finally { crop.recycle();imageBudget.release(bytes); }
+                });
+                submitted=true;
+                copied=null;
+            } finally {
+                if(copied!=null)copied.recycle();
+                if(!submitted)imageBudget.release(bytes);
+            }
+        }
+    }
+
+    void dispatch(CueRequest request, String outcome, String reason, int acceptedChannels) {
+        if (finished || !failure.isEmpty()) return;
+        record("CueDispatch", object("cue_id", request.cueId, "event_key", request.eventKey,
+                "category", request.category == null ? "unknown" : request.category.name(),
+                "kind", request.kind, "priority", request.priority, "requested_channels", request.requestedChannels,
+                "created_at_ms", request.createdAtMs, "expires_at_ms", request.expiresAtMs,
+                "outcome", outcome, "reason", reason,
+                "accepted_channels", acceptedChannels));
+    }
+
+    void playback(CueRequest request, String channel, long atMs, String result) {
+        if (finished || !failure.isEmpty()) return;
+        record("CuePlayback", object("cue_id", request.cueId, "event_key", request.eventKey,
+                "channel", channel, "at_ms", atMs, "result", result));
     }
 
     void profile(GameProfile p, String source, CueSettings cues) {
@@ -278,22 +427,33 @@ final class DiagnosticRecorder {
     private void captureImages(NativeFrameResult f, ByteBuffer pixels, int width, int height,
                                int rowStride, long sequence, long observedAtMs, long completedAtMs) {
         synchronized (imageStateLock) {
-            if (!imagesEnabled || imageLimit || width <= height
+            if (!imagesEnabled || imageLimit || (!allowPortrait && width <= height)
                     || completedAtMs - startedAtMs > 1200000) {
                 clearImageContextLocked();
                 return;
             }
             boolean manual = markerPending;
-            boolean event = f.relation.event == NearZoneRouting.EVENT_NEAR_ENTER;
+            boolean event = f.relation.event == NearZoneRouting.EVENT_NEAR_ENTER
+                    || f.relation.event == NearZoneRouting.EVENT_APPROACH;
+            String relationReason = f.relation.event == NearZoneRouting.EVENT_APPROACH
+                    ? "enemy_approach" : "near_enter";
+            String match3Reason=match3ContextReason;
+            long match3Revision=match3ContextRevision;
+            match3ContextReason=null;
             boolean periodic = completedAtMs >= nextImageAtMs;
             lastImageObservedAtMs = observedAtMs;
             boolean sampleDue = imageWindow.shouldSample(observedAtMs);
             try {
                 ImageSample contextSample = null;
-                if (sampleDue || event || manual) {
+                if (sampleDue || event || manual || match3Reason!=null) {
                     long copyStartedNs = System.nanoTime();
+                    // Match3 has no minimap. Spend its existing per-frame budget on board detail;
+                    // square/wide captures shrink before allocation rather than dropping context.
+                    int screenEdge = game == DiagnosticGame.MATCH3
+                            ? DiagnosticPixels.boundedEdge(width, height, MATCH3_CONTEXT_SCREEN_EDGE, CONTEXT_FRAME_BYTES)
+                            : CONTEXT_SCREEN_EDGE;
                     ImageSample sample = copyImageSample(f, pixels, width, height, rowStride,
-                            sequence, observedAtMs, CONTEXT_SCREEN_EDGE, CONTEXT_MAP_EDGE);
+                            sequence, observedAtMs, screenEdge, game == DiagnosticGame.MATCH3 ? 0 : CONTEXT_MAP_EDGE);
                     long micros = (System.nanoTime() - copyStartedNs) / 1000;
                     contextCopyMicros += micros;
                     maxContextCopyMicros = Math.max(maxContextCopyMicros, micros);
@@ -310,22 +470,26 @@ final class DiagnosticRecorder {
                     }
                 }
 
-                DiagnosticImageWindow.TriggerResult<ImageSample> triggered = event || manual
+                DiagnosticImageWindow.TriggerResult<ImageSample> triggered = event || manual || match3Reason!=null
                         ? imageWindow.trigger(observedAtMs, manual) : null;
                 long currentWindowId = triggered == null
                         ? imageWindow.activeWindowId(observedAtMs) : triggered.id;
                 // Keep the original clear event/periodic image. Queue it before the pre-window
                 // so context cannot consume all admission slots ahead of the triggering frame.
-                if (periodic || event || manual) {
+                boolean match3Accepted=match3Reason!=null && triggered.status==DiagnosticImageWindow.TriggerStatus.ACCEPTED;
+                if (periodic || event || manual || match3Accepted) {
                     ImageSample clearFrame = copyImageSample(f, pixels, width, height, rowStride,
                             sequence, observedAtMs, 960, 768);
-                    enqueueImageLocked(clearFrame, event ? "near_enter" : manual ? "user_marker" : "periodic",
+                    enqueueImageLocked(clearFrame, event ? relationReason : manual ? "user_marker" : match3Accepted?match3Reason:"periodic",
                             currentWindowId);
                     nextImageAtMs = completedAtMs + IMAGE_PERIOD_MS;
                 }
-                if (event || manual) {
+                if (event || manual || match3Reason!=null) {
                     markerPending = false;
-                    exportWindowLocked(triggered, manual ? "user_marker_frame" : "near_enter", completedAtMs, false);
+                    exportWindowLocked(triggered, manual ? "user_marker_frame" : event?relationReason:match3Reason, completedAtMs, false);
+                    if(match3Reason!=null)record("Match3HintImageContext",object("hint_revision",match3Revision,
+                            "window_id",triggered.id,"status",triggered.status.name(),"reason",match3Reason,
+                            "action_evidence","not_observed","scope","sampled_images_not_touch_tracking"));
                 } else if (sampleDue) {
                     if (currentWindowId != 0) {
                         // Use the owned sample without rereading a released ImageReader buffer.
@@ -402,6 +566,8 @@ final class DiagnosticRecorder {
         record("image_request", object("frame_index", sample.sequence, "observed_at_ms", sample.observedAtMs,
                 "reason", reason, "window_id", windowId, "status", "queued", "raw_bytes", sample.bytes));
         IO.execute(() -> {
+            long jobStartedNs = System.nanoTime();
+            long jobCpuStartedNs = Debug.threadCpuTimeNanos();
             try {
                 if (archive == null) return;
                 if (!imageRequestValid(generation)) {
@@ -417,7 +583,12 @@ final class DiagnosticRecorder {
                 appendImageResult(sample, reason, windowId, saved == 2 ? "saved_pair" : saved == 1 ? "partial" : "not_saved");
                 archive.flush();
             } catch (Exception error) { failed(error); }
-            finally { imageBudget.release(sample.bytes); }
+            finally {
+                imageJobWallMicros += Math.max(0, (System.nanoTime() - jobStartedNs) / 1000);
+                imageJobCpuMicros += Math.max(0, (Debug.threadCpuTimeNanos() - jobCpuStartedNs) / 1000);
+                imageJobsCompleted++;
+                imageBudget.release(sample.bytes);
+            }
         });
     }
 
@@ -448,6 +619,7 @@ final class DiagnosticRecorder {
         lastContextObservedAtMs = -1;
         lastImageObservedAtMs = -1;
         markerPending = false;
+        match3ContextReason=null;
     }
 
     private static final class ImageSample {
@@ -561,6 +733,13 @@ final class DiagnosticRecorder {
     /** Published snapshots are immutable and never require the processing lock to read. */
     void publishState(JSONObject state) { if (!finished) latestState = state; }
 
+    /** A local read-only snapshot for same-signature ADB diagnostics; no exported component. */
+    @androidx.annotation.Keep
+    String stateForDiagnostics() {
+        JSONObject state = latestState;
+        return state == null ? "{}" : state.toString();
+    }
+
     private void checkpoint(long nowMs) {
         if (finished || !failure.isEmpty()) return;
         try {
@@ -592,6 +771,7 @@ final class DiagnosticRecorder {
         IO.execute(() -> {
             try {
                 if (archive != null) archive.finish(object("session_id", sessionId,
+                        "game_id", game.id,
                         "ended_at_ms", at, "duration_ms", Math.max(0, at - startedAtMs),
                         "reason", reason, "frame_count", frameSequence, "image_count", imageCount,
                         "interrupted", false, "end_observed", true, "last_state", finalState,
@@ -613,8 +793,17 @@ final class DiagnosticRecorder {
                 "max_context_copy_micros", maxContextCopyMicros, "max_context_frame_bytes", maxContextFrameBytes,
                 "context_windows", contextWindows, "context_rate_limited", contextRateLimited,
                 "context_deferred_frames", contextDeferredFrames,
+                "image_jobs_completed", imageJobsCompleted,
+                "image_job_wall_micros", imageJobWallMicros,
+                "image_job_cpu_micros", imageJobCpuMicros,
                 "image_queue_scope", "shared process budget; peaks cover process lifetime",
                 "pending_image_frames", imageBudget.pendingFrames(), "pending_image_bytes", imageBudget.pendingBytes(),
                 "peak_image_frames", imageBudget.peakFrames(), "peak_image_bytes", imageBudget.peakBytes());
+    }
+
+    /** Schema, completed image jobs, wall/CPU microseconds, pending shared frames/bytes. */
+    long[] imageWorkStats() {
+        return new long[]{1, imageJobsCompleted, imageJobWallMicros, imageJobCpuMicros,
+                imageBudget.pendingFrames(), imageBudget.pendingBytes()};
     }
 }

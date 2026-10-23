@@ -1,0 +1,46 @@
+[Unit]
+Description=SenseField vision-only assistant gateway
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=sensefield-gateway
+Group=sensefield-gateway
+WorkingDirectory=/opt/sensefield-assistant
+Environment=ASSISTANT_GATEWAY_ENV_FILE=/etc/sensefield-assistant/gateway.json
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/sensefield-assistant/.venv/bin/python /opt/sensefield-assistant/serve.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+UMask=0077
+CPUQuota=100%
+CPUAccounting=true
+MemoryMax=512M
+MemoryAccounting=true
+TasksMax=128
+TasksAccounting=true
+LimitCORE=0
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sensefield-assistant
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=100
+
+[Install]
+WantedBy=multi-user.target

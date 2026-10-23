@@ -44,4 +44,4 @@ APK、ZIP 和校验文件保存在本地 `output/releases/0.3.5/`，不纳入文
 
 说明来源：`output/releases/0.3.5/RELEASE_NOTES.md`。发布元数据来源：同目录 `github-release.json` 和 `release-asset-manifest.json`。公开附件中的 APK 名为 `sensefield-0.3.5-arm64-v8a-debug-candidate.apk`，与本地留存 APK 的 SHA-256 相同。GitHub 将 v0.3.5 发布为公开的普通 Release（`draft=false`、`prerelease=false`）并设为 Latest；这描述发布类别，不代表稳定性或功能验收通过。
 
-后续验证与证据边界见[0.3.5 真机复测](../../../validation/HEAT_RETEST_0.3.5_2026-10-02.md)。
+后续验证与证据边界见[0.3.5 真机复测](../../../validation/performance/HEAT_RETEST_0.3.5_2026-10-02.md)。

@@ -9,6 +9,23 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 public final class NearZoneRoutingTest {
+    @Test public void approachPreservesEveryConfiguredNearChannelAndSpeechStyle() {
+        NativeFrameResult.Relation approach = new NativeFrameResult.Relation(
+                NearZoneRouting.STATE_OCCUPIED, NearZoneRouting.EVENT_APPROACH,
+                4, -.707f, .25f, 9, 0, true);
+        for (boolean twoWord : new boolean[] {false, true}) {
+            CueRequest request = NearZoneCuePolicy.request("s", "early", 3,
+                    approach, null, 1000, 7, twoWord);
+            assertEquals(7, request.requestedChannels);
+            assertEquals(NearZoneRouting.speech(4, twoWord), request.speech);
+            assertEquals(1, request.hapticCode);
+            assertEquals(-.707f, request.pan, 1e-6f);
+            assertTrue(BundledSpeechCatalog.isFixed(request.speech));
+            assertTrue(NearZoneCuePolicy.presentationAudit(request, 4, false, twoWord,
+                    approach.event).contains("trigger=APPROACH"));
+        }
+        assertEquals("APPROACH", NearZoneRouting.eventName(5));
+    }
     @Test public void speechNamesEightMinimapSectorsFactually() {
         assertEquals("右方有敌人", NearZoneRouting.speech(1));
         assertEquals("上方有敌人", NearZoneRouting.speech(3));
@@ -34,6 +51,91 @@ public final class NearZoneRoutingTest {
         assertEquals("右下", NearZoneRouting.twoWordSpeech(8));
         assertEquals("附近", NearZoneRouting.twoWordSpeech(0));
         assertEquals("附近", NearZoneRouting.twoWordSpeech(9));
+    }
+
+    @Test public void nearRequestsRespectTheSavedSpeechPreferenceInQuietAndDenseCombat() {
+        for (boolean dense : new boolean[] {false, true}) {
+            NearZoneCombatPolicy.Decision combat = new NearZoneCombatPolicy.Decision(
+                    dense ? 3 : 1, 40, 95, dense, false, false, "none");
+            for (int sector = -1; sector <= 9; sector++) {
+                CueRequest full = NearZoneCuePolicy.request("s", "full", 1,
+                        relation(sector, 0, -1), combat, 100, 7, false);
+                CueRequest shortCue = NearZoneCuePolicy.request("s", "short", 1,
+                        relation(sector, 0, -1), combat, 100, 7, true);
+                assertEquals("Disabled short style must remain full during dense=" + dense,
+                        NearZoneRouting.speech(sector), full.speech);
+                assertEquals(NearZoneRouting.twoWordSpeech(sector), shortCue.speech);
+                assertEquals(2, shortCue.speech.codePointCount(0, shortCue.speech.length()));
+            }
+        }
+    }
+
+    @Test public void liveRequestKeepsNativePositionPriorityChannelsAndEpisode() {
+        NearZoneCombatPolicy.Decision combat = new NearZoneCombatPolicy.Decision(
+                3, 40, 95, true, false, false, "none");
+        CueRequest request = NearZoneCuePolicy.request("s", "cue", 7,
+                relation(4, -707, 125), combat, 5000, 7, false);
+        assertEquals("左上有敌人", request.speech);
+        assertEquals(1, request.hapticCode);
+        assertEquals(-.707f, request.pan, 1e-6f);
+        assertEquals(.125f, request.distance, 1e-6f);
+        assertEquals(2f, request.urgency, 0f);
+        assertEquals(3, request.freshEnemyCount);
+        assertEquals(95, request.priority);
+        assertEquals(7, request.requestedChannels);
+        assertEquals("near:7:12", request.eventKey);
+        assertEquals(6200, request.expiresAtMs);
+        assertTrue(request.playbackAllowedAt(6200));
+        assertFalse(request.playbackAllowedAt(6201));
+    }
+
+    @Test public void unknownAndDiagonalSectorsDoNotInventASideForHaptics() {
+        int[] expected = {0, 2, 2, 3, 1, 1, 1, 4, 2, 0};
+        for (int sector = 0; sector <= 9; sector++) {
+            CueRequest request = NearZoneCuePolicy.request("s", "cue", 1,
+                    relation(sector, 0, -1), null, 100, 4, true);
+            assertEquals(expected[sector], request.hapticCode);
+            assertEquals(NearZoneRouting.twoWordSpeech(sector), request.speech);
+            assertTrue(Float.isNaN(request.distance));
+        }
+        assertEquals(0, NearZoneRouting.hapticDirection(-1));
+    }
+
+    @Test public void presentationAuditRecordsTheSavedPreferenceAndActualStyle() {
+        CueRequest request = NearZoneCuePolicy.request("s", "cue", 1,
+                relation(0, 0, -1), null, 100, 7, true);
+        String audit = NearZoneCuePolicy.presentationAudit(request, 0, false, true);
+        assertTrue(audit.contains("cueId=cue"));
+        assertTrue(audit.contains("policy=saved_speech_style_v2"));
+        assertTrue(audit.contains("dense=false nearTwoWordEnabled=true"));
+        assertTrue(audit.contains("speechStyle=two_word speechChars=2"));
+        assertTrue(audit.contains("hapticCode=0"));
+        assertTrue(audit.contains("distanceMilli=unknown"));
+        assertFalse(audit.contains("NaN"));
+
+        NearZoneCombatPolicy.Decision combat = new NearZoneCombatPolicy.Decision(
+                3, 40, 95, true, false, false, "none");
+        CueRequest full = NearZoneCuePolicy.request("s", "full", 1,
+                relation(4, -707, 125), combat, 100, 7, false);
+        String denseAudit = NearZoneCuePolicy.presentationAudit(full, 4, true, false);
+        assertTrue(denseAudit.contains("dense=true nearTwoWordEnabled=false"));
+        assertTrue(denseAudit.contains("speechStyle=full speechChars=5"));
+    }
+
+    private static NativeFrameResult.Relation relation(int sector, int panMilli, int distanceMilli) {
+        int[] packet = new int[NativeFrameResult.VERSION_2_HEADER_SIZE];
+        packet[0] = NativeFrameResult.MAGIC;
+        packet[1] = NativeFrameResult.VERSION_2;
+        packet[2] = NativeFrameResult.VERSION_2_HEADER_SIZE;
+        packet[3] = NativeFrameResult.VERSIONED_RECORD_STRIDE;
+        packet[16] = NearZoneRouting.STATE_OCCUPIED;
+        packet[17] = NearZoneRouting.EVENT_NEAR_ENTER;
+        packet[18] = sector;
+        packet[19] = panMilli;
+        packet[20] = distanceMilli;
+        packet[21] = 12;
+        packet[23] = 1;
+        return NativeFrameResult.parse(packet).relation;
     }
 
     @Test public void presentationDistanceBinsStayInsideTheCurrentNearZoneScale() {
@@ -130,7 +232,7 @@ public final class NearZoneRoutingTest {
     }
 
     @Test public void nearOutputDefaultsMatchAccessibleBaseline() {
-        assertEquals(180, CuePlayer.DEFAULT_TTS_RATE_PERCENT);
+        assertEquals(100, CuePlayer.DEFAULT_TTS_RATE_PERCENT);
         assertEquals(100, CuePlayer.NEAR_HAPTIC_ON_MS);
         assertEquals(140, CuePlayer.NEAR_HAPTIC_GAP_MS);
     }

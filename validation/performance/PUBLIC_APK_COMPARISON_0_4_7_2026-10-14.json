@@ -1,0 +1,353 @@
+{
+  "schema": "sensefield.public-apk-comparison/1",
+  "date_local": "2026-10-14",
+  "base_commit": "8e30cdef8d9dfe604dcfc24400cbfca2911d9514",
+  "status": "retained_production_stage_engineering_comparison_passed",
+  "production_apks_rebuilt": false,
+  "independent": false,
+  "baseline": {
+    "version_name": "0.4.6",
+    "version_code": 23,
+    "apk_sha256": "535a653a927f57744922951f63ec9014041e04959823404bb1662a6d80b4f080",
+    "bytes": 24586457,
+    "landed_source_commit": "29cb75b8e1cc154c903570f7d8213e33279c6ba6",
+    "archived_source_receipt_file_sha256": "35b9f711d9d22647cce7f0d5620ff5bae5a378c2d6dd6f1a4163ba3d4c647364",
+    "source_digest_kind": "archived_source_receipt_file_sha256"
+  },
+  "candidate": {
+    "version_name": "0.4.7",
+    "version_code": 24,
+    "apk_sha256": "a0c8365938475b4e37b08c48bb33c2ff1e410604706fc29555e7bbd5d687467d",
+    "bytes": 24589117,
+    "engineering_source_sha256": "1d6c8b0dc1efc576b28929c9b004e8d9a65ce31536451549eb34f50799cc610f",
+    "same_frozen_candidate": true
+  },
+  "producer": {
+    "apk_sha256": "e50623d91569042379d8465f1c17e65ee58e37117905a01d8ec78f6eccc59edf",
+    "bytes": 3312541,
+    "certificate_sha256": "5a42a53a8f06850e89c46ea193931e9853e3ce7cff99551b42e8b414a1eaaf68",
+    "same_on_both_versions": true,
+    "no_application_classes_or_native_libraries_copied": true,
+    "contract_resolution_before_timing": true,
+    "contracts": {
+      "public": {
+        "apk_sha256": "535a653a927f57744922951f63ec9014041e04959823404bb1662a6d80b4f080",
+        "mapping_sha256": "0e3408d958e2d1ad813882589ea6f210f127f57a55df2fcd3addaab6b115f540",
+        "r8_map_id": "9e0af89c5c65cbdd3a1f5410d55a99dd16f839bfa7d97acc929ebaf8bf9fa6cb"
+      },
+      "candidate": {
+        "apk_sha256": "a0c8365938475b4e37b08c48bb33c2ff1e410604706fc29555e7bbd5d687467d",
+        "mapping_sha256": "ea1c30b4ca56dc292cd8006742bd330b3108e067b7f9a3dd0567629029029fcb",
+        "r8_map_id": "ce7d5f6da941abf60a8718b70cbac8eceaa7a80e109acb83bb8b48bd3fd6339f"
+      }
+    },
+    "source_files_sha256": {
+      "tools/apk_contract.py": "9f14fbf8d792f0b2106fd2510bbca8c287227b43fc0f22a49fc5abdf430a6537",
+      "scripts/compare_original_apks.py": "83336570677e2ef27bc7e952f9a50977432ae4a6fe061dbe70cd0e3c8a91a097",
+      "tools/android-apk-comparison/src/main/java/com/openkhub/apkreplay/OriginalApkReplayTest.java": "98dd3a98732f37919ec4930b687548b26e94d96ee59d4d28da646ce9a19b4026",
+      "tools/android-apk-comparison/build.gradle": "78f182efbf34f9dacf739a77e0d580314e340cdad45ed50fe1623757e56140a3",
+      "tools/android-apk-comparison/settings.gradle": "adfba41316bb8b68a16493d05cdfd4607b7692ad8a50c6e5fad2ac96c3f46ff5",
+      "tools/android-apk-comparison/src/main/AndroidManifest.xml": "2b8925314c0d1e8ff32161e67955139900f7d9fae078497b9cb30164351afca6",
+      "tools/android-apk-comparison/gradle.properties": "198cfb414a6067fc813ba6dd9d8d927a5d9bd005567dc4bba8784a8deec518b9"
+    }
+  },
+  "protocol": {
+    "created_utc": "2026-10-13T18:55:38.198384+00:00",
+    "quality_review_sha256": "f163b1c94305ec28bb97c6d06852e0d628836ceab73da8e7bebc1935116f94a0",
+    "protocol_sha256": "b27579f81a1a20137b9ba5ed805cb7c11f6db03d2df4d483d1ecc654c4e095bc",
+    "workloads": [
+      "public-perception-sequence-v1",
+      "public-honor-sequence-v1"
+    ],
+    "purpose": "functional",
+    "orders": [
+      "A/B",
+      "B/A",
+      "A/B"
+    ],
+    "warmups": 6,
+    "measured_batches": 15,
+    "per_frame_repeats": 1,
+    "max_each_pair_wall_worker_p95_increase_percent": 10,
+    "all_samples_retained": true,
+    "cpu_improvement_required": false
+  },
+  "scope": {
+    "match3": "retained production geometry, timestamped HUD and sampler, ranking; immediate geometry and per-observed-board ranking; original windows/times/gaps; excludes live confirmation/admission and hint lifecycle",
+    "honor": "loaded production profile, retained JNI processing/work counters and retained diagnostic/frame parsers; raw packets, tracking, locator and relation/events compared",
+    "wall_worker": "production calls plus the same cached reflection wrapper; decode and report export outside frame timing",
+    "process_cpu": "whole measured batches, with common harness work and first-batch Honor diagnostic export",
+    "excluded": [
+      "capture",
+      "bitmap decode",
+      "UI",
+      "audio",
+      "live hint admission/lifecycle",
+      "report disk writes",
+      "physical heat",
+      "independent release accuracy",
+      "player acceptance or level completion"
+    ]
+  },
+  "quality": {
+    "visual": {
+      "frames": 26,
+      "semantics_equal": false,
+      "cells": 2106,
+      "changed_cells": 22,
+      "difference_sha256": "f22114fe01888c3b542689db205a4faf2f5b0b5e759d1f54ab1b43d31978f4d5",
+      "non_cell_geometry_hud_motion_equal": true,
+      "ranked_frames_changed": 14,
+      "first_actions_changed": 11,
+      "label_partitions": {
+        "train": {
+          "n": 4,
+          "baseline_full": 0,
+          "candidate_full": 4
+        },
+        "development_replay": {
+          "n": 18,
+          "baseline_full": 0,
+          "candidate_full": 18
+        }
+      },
+      "candidate_existing_rankings_equal": true,
+      "review": "Only yellow horizontal appearances recover full known state; coordinates/HUD/motion unchanged. Ranked actions gain the restored line permissions. Additional five timeline occurrences have crops reviewed for appearance consistency but do not add labelled accuracy evidence.",
+      "reference_sha256": {
+        "baseline": "24678fde1a2fee8059ae4cfa064bcf136118d4d26ccffdbfd1997f02994c78ac",
+        "candidate": "0f3fe9b336242977f391d679ff7d2c23046165d8c9ea5eec7fab126425271d8c"
+      }
+    },
+    "historical": {
+      "frames": 10,
+      "semantics_equal": true,
+      "cells": 743,
+      "changed_cells": 0,
+      "difference_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "non_cell_geometry_hud_motion_equal": true,
+      "ranked_frames_changed": 0,
+      "first_actions_changed": 0,
+      "labelled": {
+        "baseline": {
+          "n": 743,
+          "correct": 699,
+          "miss": 25,
+          "misclassify": 2,
+          "false_swap": 1,
+          "swap_miss": 4
+        },
+        "candidate": {
+          "n": 743,
+          "correct": 699,
+          "miss": 25,
+          "misclassify": 2,
+          "false_swap": 1,
+          "swap_miss": 4
+        }
+      },
+      "review": "All exported state, permission, geometry, goals and ranked actions are equal.",
+      "reference_sha256": {
+        "baseline": "6eec70974e5ede09f7c37939d8416ae084decaa5041af378ba6a2ba9e81607b8",
+        "candidate": "0e43a66adc450d330c0cd0bb7f6fbbc2f15d108d4a82b45d10faef615de39cea"
+      }
+    },
+    "three-game": {
+      "frames": 10,
+      "semantics_equal": true,
+      "cells": 756,
+      "changed_cells": 0,
+      "difference_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "non_cell_geometry_hud_motion_equal": true,
+      "ranked_frames_changed": 0,
+      "first_actions_changed": 0,
+      "review": "All exported state, permission, geometry, goals and ranked actions are equal.",
+      "reference_sha256": {
+        "baseline": "cea23a57abf63092af727050327ce4c91b1ebd6e50096624bcdaa8fb361e32fd",
+        "candidate": "03dfdb35f664420a21a6e5f5a3e91dcacdbb182e9b1bf662bacb947398551106"
+      }
+    },
+    "sequence": {
+      "frames": 64,
+      "semantics_equal": false,
+      "cells": 4779,
+      "changed_cells": 27,
+      "difference_sha256": "f752e29a16fb390adcc6f3d45dfeec4b5d1eb025027d839d0f981daa70b77470",
+      "non_cell_geometry_hud_motion_equal": true,
+      "ranked_frames_changed": 19,
+      "first_actions_changed": 11,
+      "review": "Only yellow horizontal appearances recover full known state; coordinates/HUD/motion unchanged. Ranked actions gain the restored line permissions. Additional five timeline occurrences have crops reviewed for appearance consistency but do not add labelled accuracy evidence.",
+      "reference_sha256": {
+        "baseline": "23e85a76d7fd4e574483699363bf0db9e57e357e3e05d4ba5c99e6c0ea5a1030",
+        "candidate": "d32e4f1592fbfe1b45ae12d93fa600e358c344c714bd694164267b43185e8265"
+      }
+    },
+    "honor": {
+      "frames": 12,
+      "semantics_equal": true,
+      "inferences_equal": true,
+      "cache_reuses_equal": true,
+      "model_profile_equal": true,
+      "review": "Complete normalized native packets, raw observations, tracking, locator and relation/event decisions are equal; cost and clock-explained freshness retained in raw reports.",
+      "reference_sha256": {
+        "baseline": "4ed563558a0ecc17ecc2a4f62221b43b1956537f014748c8f2d17cb891139687",
+        "candidate": "b2cfe5eec787d643856250b33543fa1f66ba09abe7c46fb4cda89f11e96d602f"
+      }
+    }
+  },
+  "costs": {
+    "sequence": {
+      "workload": "public-perception-sequence-v1",
+      "frames": 64,
+      "measured_samples_per_execution": 960,
+      "measured_samples_total": 5760,
+      "pairs": [
+        {
+          "baseline_wall_p95_ms": 11.150125,
+          "candidate_wall_p95_ms": 9.499792,
+          "wall_p95_change_percent": -14.801026894317326,
+          "baseline_worker_p95_ms": 10.632751,
+          "candidate_worker_p95_ms": 9.190456,
+          "worker_p95_change_percent": -13.564645687649424,
+          "baseline_process_cpu_ms": 8100,
+          "candidate_process_cpu_ms": 6574,
+          "process_cpu_change_percent": -18.839506172839503,
+          "passed": true
+        },
+        {
+          "baseline_wall_p95_ms": 12.343875,
+          "candidate_wall_p95_ms": 9.695916,
+          "wall_p95_change_percent": -21.451602515417566,
+          "baseline_worker_p95_ms": 11.586127,
+          "candidate_worker_p95_ms": 9.259334,
+          "worker_p95_change_percent": -20.08257806944459,
+          "baseline_process_cpu_ms": 8561,
+          "candidate_process_cpu_ms": 6641,
+          "process_cpu_change_percent": -22.4272865319472,
+          "passed": true
+        },
+        {
+          "baseline_wall_p95_ms": 11.214833,
+          "candidate_wall_p95_ms": 9.640417,
+          "wall_p95_change_percent": -14.038693219952547,
+          "baseline_worker_p95_ms": 10.567667,
+          "candidate_worker_p95_ms": 9.217166,
+          "worker_p95_change_percent": -12.779556736600417,
+          "baseline_process_cpu_ms": 8074,
+          "candidate_process_cpu_ms": 6575,
+          "process_cpu_change_percent": -18.56576665840971,
+          "passed": true
+        }
+      ],
+      "median_wall_p95_change_percent": -14.801026894317326,
+      "median_worker_p95_change_percent": -13.564645687649424,
+      "median_process_cpu_change_percent": -18.839506172839503,
+      "max_wall_p95_increase_percent": -14.038693219952547,
+      "max_worker_p95_increase_percent": -12.779556736600417,
+      "receipt_sha256": "fa5ed364ddf35ed1ba1407bcc3d917e703754c598be70c3aa5c20b629c34c801",
+      "all_samples_retained": true,
+      "each_version_matches_frozen_reference": true,
+      "actual_target_art_filter": "speed",
+      "candidate_and_standard_test_restored": true,
+      "settings_preserved": true,
+      "passed": true
+    },
+    "honor": {
+      "workload": "public-honor-sequence-v1",
+      "frames": 12,
+      "measured_samples_per_execution": 180,
+      "measured_samples_total": 1080,
+      "pairs": [
+        {
+          "baseline_wall_p95_ms": 116.665,
+          "candidate_wall_p95_ms": 115.102584,
+          "wall_p95_change_percent": -1.3392328461835246,
+          "baseline_worker_p95_ms": 35.384198,
+          "candidate_worker_p95_ms": 35.378789,
+          "worker_p95_change_percent": -0.01528648466188054,
+          "baseline_process_cpu_ms": 10830,
+          "candidate_process_cpu_ms": 10775,
+          "process_cpu_change_percent": -0.5078485687903922,
+          "passed": true
+        },
+        {
+          "baseline_wall_p95_ms": 115.798084,
+          "candidate_wall_p95_ms": 115.959416,
+          "wall_p95_change_percent": 0.13932182159421824,
+          "baseline_worker_p95_ms": 35.337958,
+          "candidate_worker_p95_ms": 35.349402,
+          "worker_p95_change_percent": 0.03238444054973755,
+          "baseline_process_cpu_ms": 10743,
+          "candidate_process_cpu_ms": 10757,
+          "process_cpu_change_percent": 0.13031741599180968,
+          "passed": true
+        },
+        {
+          "baseline_wall_p95_ms": 137.996667,
+          "candidate_wall_p95_ms": 116.465875,
+          "wall_p95_change_percent": -15.602400020284557,
+          "baseline_worker_p95_ms": 39.46213,
+          "candidate_worker_p95_ms": 35.358423,
+          "worker_p95_change_percent": -10.399101619704766,
+          "baseline_process_cpu_ms": 11037,
+          "candidate_process_cpu_ms": 10755,
+          "process_cpu_change_percent": -2.5550421310138627,
+          "passed": true
+        }
+      ],
+      "median_wall_p95_change_percent": -1.3392328461835246,
+      "median_worker_p95_change_percent": -0.01528648466188054,
+      "median_process_cpu_change_percent": -0.5078485687903922,
+      "max_wall_p95_increase_percent": 0.13932182159421824,
+      "max_worker_p95_increase_percent": 0.03238444054973755,
+      "receipt_sha256": "5fe5df2e45b46f7cf0b365d2d87a71c59df41e5e6cb601d64798769b687d9790",
+      "all_samples_retained": true,
+      "each_version_matches_frozen_reference": true,
+      "actual_target_art_filter": "speed",
+      "candidate_and_standard_test_restored": true,
+      "settings_preserved": true,
+      "passed": true
+    }
+  },
+  "checks": {
+    "new_tool_unit_tests": 10,
+    "existing_benchmark_unit_tests": 8,
+    "instrumented_reference_executions": 10,
+    "instrumented_cost_executions": 12,
+    "instrumented_failures": 0,
+    "instrumented_skips": 0,
+    "r8_fingerprints_verified_against_actual_apks": true,
+    "both_original_apk_signatures_and_producer_match": true,
+    "measurement_source_files_unchanged_during_runs": true,
+    "candidate_engineering_source_unchanged": true,
+    "prior_complete_candidate_gates_remain_bound_to_same_apk": true
+  },
+  "failures_preserved": [
+    {
+      "scope": "prior new-test versus original public Release",
+      "failure": "NoSuchMethodError: q(Bitmap) in class v8; no valid costs",
+      "status": "Original attempt retained; resolved using one DEX/map-bound reflection producer without rebuilding the public APK"
+    },
+    {
+      "scope": "first new runner attempt",
+      "failure": "ADB shell find -exec semicolon was not escaped; settings read failed before any production test execution; final settings check also failed",
+      "receipt_sha256": "43211b4b6351bcd0336f2c9455c4342add48d504e24778f6e370ffa9eeaa86d9",
+      "status": "Original failed receipt retained; literal terminator escaped; separate v2 reference succeeded"
+    }
+  ],
+  "remaining": {
+    "phone": "offline; only emulator connected, mDNS empty; no physical phone action in this round",
+    "independent_accuracy": "pending separated, human-labelled new games; developer positives are 4 train and 18 same-session replay",
+    "frontend_hint_audio_and_heat": "pending on final bytes; original 43 C stop line and paired 3 x 15 minute conditions retained",
+    "public_distribution": "0.4.6 unchanged; no new public Release/manifest/tag"
+  },
+  "evidence": {
+    "protocol_sha256": "b27579f81a1a20137b9ba5ed805cb7c11f6db03d2df4d483d1ecc654c4e095bc",
+    "experiment_freeze_sha256": "35e4e68cad76b46f65885353286be2f235f8973121b5ceace6f2daf41c8e01d2",
+    "quality_review_sha256": "f163b1c94305ec28bb97c6d06852e0d628836ceab73da8e7bebc1935116f94a0",
+    "input_freeze_sha256": "92a3406ad9cd6890cfee94af649ffd0f6e3e77908475f753ec6de1d20d8642b1",
+    "new_tool_tests_log_sha256": "40e6a3053d86436d6aa245501343227a2e81436f4f14da71a21257468605aff6",
+    "existing_gate_tests_log_sha256": "60bb849356ffbc091f601e17fc6ae0b2eb5e26d734d433da020c6e775efbf97f",
+    "raw_evidence_location": "ignored local validation/private, not published"
+  },
+  "passed": true
+}

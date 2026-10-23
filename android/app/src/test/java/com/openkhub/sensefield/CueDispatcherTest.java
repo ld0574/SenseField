@@ -22,11 +22,16 @@ public final class CueDispatcherTest {
         CueDispatcher.PlaybackCallback toneCallback;
         boolean stopped;
         boolean autoStartSpeech = true;
+        boolean autoFinishSpeech;
+        boolean failImmediately;
         boolean autoStartTone = true;
         boolean acceptHaptics = true;
         int tones;
         int haptics;
         int assistantCancels;
+        boolean preparedSpeech;
+        boolean acceptSynchronized = true;
+        int synchronizedStarts;
         final List<String> started = new ArrayList<>();
         final Map<String, CueDispatcher.PlaybackCallback> speechCallbacks = new HashMap<>();
         @Override public boolean playTone(CueRequest request,
@@ -45,10 +50,25 @@ public final class CueDispatcherTest {
             this.callback = callback;
             speechCallbacks.put(request.cueId, callback);
             started.add(request.cueId);
+            if (failImmediately) { callback.onFailed(request.createdAtMs,"test_failure"); return false; }
             if (autoStartSpeech) callback.onStarted(request.createdAtMs);
+            if (autoFinishSpeech) callback.onFinished(request.createdAtMs, true);
             return true;
         }
         @Override public void stopSpeech() { stopped = true; }
+        @Override public boolean hasPreparedSpeech(CueRequest request) { return preparedSpeech; }
+        @Override public boolean speakSynchronized(CueRequest request,
+                CueDispatcher.PlaybackCallback tone, CueDispatcher.PlaybackCallback speech) {
+            synchronizedStarts++;
+            if (!acceptSynchronized) return false;
+            toneCallback = tone;
+            callback = speech;
+            speechCallbacks.put(request.cueId, speech);
+            started.add(request.cueId);
+            if (autoStartTone) tone.onStarted(request.createdAtMs);
+            if (autoStartSpeech) speech.onStarted(request.createdAtMs);
+            return true;
+        }
         @Override public void cancelAssistantSpeech() {
             assistantCancels++;
             stopped = true;
@@ -80,6 +100,92 @@ public final class CueDispatcherTest {
                 CueRequest.CHANNEL_SPEECH, 4, 0, 0, "测试");
     }
 
+    @Test public void synchronousCompletionStillReportsAcceptedSpeech() {
+        FakeRenderer renderer = new FakeRenderer(); renderer.autoFinishSpeech = true;
+        Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, new MutableClock());
+        assertTrue(dispatcher.submit(request("sync", "sync", 70, 10000)).audioQueued());
+        assertFalse(dispatcher.isSpeaking());
+        assertEquals(1, java.util.Collections.frequency(events.events, "sync:SPEECH:COMPLETED"));
+    }
+
+    @Test public void synchronousRendererFailureDoesNotAlsoReportUnavailable() {
+        FakeRenderer renderer=new FakeRenderer();renderer.failImmediately=true;
+        Events events=new Events();
+        CueDispatcher dispatcher=new CueDispatcher(renderer,new FakePolicy(),events,new MutableClock());
+        assertFalse(dispatcher.submit(request("failure","failure",70,10000)).audioQueued());
+        assertEquals(1,java.util.Collections.frequency(events.events,"failure:SPEECH:FAILED"));
+        assertFalse(events.events.contains("failure:SPEECH:UNAVAILABLE"));
+        assertFalse(dispatcher.isSpeaking());
+    }
+
+    @Test public void toneCallbackReportsOneStartAndOneTerminalWithoutDispatcherLock() {
+        FakeRenderer renderer=new FakeRenderer();Events events=new Events();
+        CueDispatcher dispatcher=new CueDispatcher(renderer,new FakePolicy(),events,new MutableClock());
+        dispatcher.submit(request("tone","tone","tone",CueRequest.Category.NEAR_ZONE,
+                CueRequest.CHANNEL_TONE,10000,""));
+        renderer.toneCallback.onStarted(1);renderer.toneCallback.onFinished(2,true);
+        renderer.toneCallback.onFinished(3,false);renderer.toneCallback.onStarted(4);
+        assertEquals(1,java.util.Collections.frequency(events.events,"tone:TONE:STARTED"));
+        assertEquals(1,java.util.Collections.frequency(events.events,"tone:TONE:COMPLETED"));
+        assertFalse(events.events.contains("tone:TONE:FAILED"));
+    }
+
+    @Test public void completedSpeechIgnoresRepeatedAndLateCallbacksWithoutBlockingNextCue() {
+        MutableClock clock = new MutableClock(); FakeRenderer renderer = new FakeRenderer();
+        Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+        dispatcher.submit(request("first", "first", 70, 10000));
+        CueDispatcher.PlaybackCallback old = renderer.callback;
+        old.onStarted(10);
+        old.onFinished(100, true);
+        clock.now = 1000;
+        dispatcher.submit(request("next", "next", 70, 10000));
+        old.onStarted(1001);
+        old.onFinished(1002, false);
+        assertEquals(1, java.util.Collections.frequency(events.events, "first:SPEECH:STARTED"));
+        assertEquals(1, java.util.Collections.frequency(events.events, "first:SPEECH:COMPLETED"));
+        assertFalse(events.events.contains("first:SPEECH:FAILED"));
+        assertTrue(dispatcher.isSpeaking());
+    }
+
+    @Test public void disabledSpeechCannotStartFromDelayedRendererCallback() {
+        FakeRenderer renderer = new FakeRenderer(); renderer.autoStartSpeech = false;
+        FakePolicy policy = new FakePolicy(); Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, policy, events, new MutableClock());
+        dispatcher.submit(request("disabled", "disabled", 70, 10000));
+        policy.channels = CueRequest.CHANNEL_VISUAL;
+        renderer.callback.onStarted(100);
+        renderer.callback.onFinished(101, true);
+        assertTrue(renderer.stopped);
+        assertTrue(events.events.contains("disabled:SPEECH:SETTINGS_DISABLED"));
+        assertFalse(events.events.contains("disabled:SPEECH:STARTED"));
+        assertFalse(events.events.contains("disabled:SPEECH:COMPLETED"));
+    }
+
+    @Test public void lifecycleClearsGiveActiveAndQueuedSpeechOneTerminalState() {
+        for (String operation : List.of("CLEAR_CATEGORY", "CLEAR_ALL", "PAUSED", "CLOSED")) {
+            FakeRenderer renderer = new FakeRenderer(); Events events = new Events();
+            MutableClock clock = new MutableClock();
+            CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+            dispatcher.submit(request("active", "active", 70, 10000));
+            CueDispatcher.PlaybackCallback old = renderer.callback;
+            clock.now = 600;
+            dispatcher.submit(request("queued", "queued", 70, 10000));
+            switch (operation) {
+                case "CLEAR_CATEGORY": dispatcher.clearCategory(CueRequest.Category.PLAYER_STATE); break;
+                case "CLEAR_ALL": dispatcher.clearAll(); break;
+                case "PAUSED": dispatcher.pause(); dispatcher.resume(); break;
+                default: dispatcher.close();
+            }
+            old.onStarted(700); old.onFinished(701, true); old.onFinished(702, false);
+            assertTrue(operation, events.events.contains("active:SPEECH:CANCELLED_" + operation));
+            assertTrue(operation, events.events.contains("queued:SPEECH:CANCELLED_" + operation));
+            assertFalse(events.events.contains("active:SPEECH:COMPLETED"));
+            assertFalse(renderer.started.contains("queued"));
+        }
+    }
+
     private static CueRequest request(String id, String key, String kind,
                                       CueRequest.Category category, int channels,
                                       long expires, String speech) {
@@ -105,6 +211,127 @@ public final class CueDispatcherTest {
                                     long expires) {
         return new CueRequest("session", id, id, "ALERT", category, priority,
                 0, expires, CueRequest.CHANNEL_SPEECH, 0, 0, 0, "警报");
+    }
+
+    @Test public void cancelOneHintPreservesUnrelatedSpeechAndRejectsItsLateCompletion() {
+        MutableClock clock = new MutableClock(); FakeRenderer renderer = new FakeRenderer();
+        Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+        dispatcher.submit(request("old-hint", "hint1", 70, 10000));
+        CueDispatcher.PlaybackCallback old = renderer.speechCallbacks.get("old-hint");
+        clock.now = 2000;
+        dispatcher.submit(request("status", "status", 70, 10000));
+        dispatcher.cancelCue("old-hint", "BOARD_CHANGED");
+        assertTrue(events.events.contains("old-hint:SPEECH:CANCELLED_BOARD_CHANGED"));
+        assertTrue(renderer.started.contains("status"));
+        clock.now = 4000;
+        dispatcher.submit(request("next-hint", "hint2", 70, 10000));
+        dispatcher.cancelCue("next-hint", "REPLACED");
+        old.onFinished(4500, true);
+        assertFalse(events.events.contains("old-hint:SPEECH:COMPLETED"));
+        assertFalse(renderer.started.contains("next-hint"));
+        assertFalse(events.events.contains("status:SPEECH:CANCELLED_REPLACED"));
+    }
+
+    @Test public void preparedNearToneAndSpeechUseOneSubmissionAndKeepHaptics() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        renderer.preparedSpeech = true;
+        Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+        CueDispatcher.DispatchResult result = dispatcher.submit(new CueRequest("session", "paired",
+                "paired", "NEAR_ZONE", CueRequest.Category.NEAR_ZONE,
+                NearZoneRouting.NEAR_PRIORITY, 0, 1200, NearZoneRouting.nearChannels(true),
+                NearZoneRouting.TONE_NEAR, 0, 0, NearZoneRouting.speech(4), -1f));
+        assertEquals(7, result.acceptedChannels);
+        assertEquals(1, renderer.synchronizedStarts);
+        assertEquals(0, renderer.tones);
+        assertEquals(1, renderer.haptics);
+        assertEquals(List.of("paired"), renderer.started);
+        assertTrue(events.events.contains("paired:TONE:STARTED"));
+        assertTrue(events.events.contains("paired:SPEECH:STARTED"));
+    }
+
+    @Test public void cacheMissOrRejectedPairFallsBackToImmediateToneAndNormalSpeech() {
+        for (boolean cached : new boolean[]{false, true}) {
+            FakeRenderer renderer = new FakeRenderer();
+            renderer.preparedSpeech = cached;
+            renderer.acceptSynchronized = false;
+            CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(),
+                    new Events(), new MutableClock());
+            assertTrue(dispatcher.submit(near("fallback", 1, 1200, 0)).audioQueued());
+            assertEquals(cached ? 1 : 0, renderer.synchronizedStarts);
+            assertEquals(1, renderer.tones);
+            assertEquals(List.of("fallback"), renderer.started);
+        }
+    }
+
+    @Test public void preparedPairNeverAddsAChannelThatThePlayerDisabled() {
+        for (int channel : new int[]{CueRequest.CHANNEL_TONE, CueRequest.CHANNEL_SPEECH}) {
+            FakeRenderer renderer = new FakeRenderer();
+            renderer.preparedSpeech = true;
+            FakePolicy policy = new FakePolicy();
+            policy.channels = channel;
+            CueDispatcher dispatcher = new CueDispatcher(renderer, policy, new Events(), new MutableClock());
+            assertEquals(channel, dispatcher.submit(near("single", 1, 1200, 0)).acceptedChannels);
+            assertEquals(0, renderer.synchronizedStarts);
+            assertEquals(channel == CueRequest.CHANNEL_TONE ? 1 : 0, renderer.tones);
+            assertEquals(channel == CueRequest.CHANNEL_SPEECH ? 1 : 0, renderer.started.size());
+        }
+    }
+
+    @Test public void busyPreparedNearCueStillPlaysImmediateTonesAndKeepsOnlyLatestWaitingVoice() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        renderer.preparedSpeech = true;
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), new Events(), clock);
+        dispatcher.submit(near("first", 1, 1200, 0));
+        clock.now = 100;
+        dispatcher.submit(near("second", 2, 1300, 0));
+        clock.now = 200;
+        dispatcher.submit(near("third", 3, 1400, 0));
+        assertEquals(1, renderer.synchronizedStarts);
+        assertEquals(2, renderer.tones);
+        assertEquals(List.of("third"), dispatcher.pendingCueIdsForTest());
+        renderer.speechCallbacks.get("first").onFinished(300, true);
+        assertEquals(List.of("first", "third"), renderer.started);
+    }
+
+    @Test public void pairedLateCallbacksCannotStartOrDrainAfterPauseClearOrClose() {
+        for (int cancellation = 0; cancellation < 3; cancellation++) {
+            FakeRenderer renderer = new FakeRenderer();
+            renderer.preparedSpeech = true;
+            renderer.autoStartTone = false;
+            renderer.autoStartSpeech = false;
+            Events events = new Events();
+            CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, new MutableClock());
+            dispatcher.submit(near("cancelled", 1, 1200, 0));
+            CueDispatcher.PlaybackCallback tone = renderer.toneCallback, speech = renderer.callback;
+            if (cancellation == 0) { dispatcher.pause(); dispatcher.resume(); }
+            else if (cancellation == 1) dispatcher.clearCategory(CueRequest.Category.NEAR_ZONE);
+            else dispatcher.close();
+            tone.onStarted(100); speech.onStarted(100);
+            tone.onFinished(200, true); speech.onFinished(200, true);
+            assertFalse(events.events.contains("cancelled:TONE:STARTED"));
+            assertFalse(events.events.contains("cancelled:SPEECH:STARTED"));
+            assertFalse(dispatcher.isSpeaking());
+            assertTrue(dispatcher.pendingCueIdsForTest().isEmpty());
+        }
+    }
+
+    @Test public void preparedAlertExplicitlyPreemptsAssistantAndIgnoresItsLateResponse() {
+        FakeRenderer renderer = new FakeRenderer();
+        renderer.preparedSpeech = true;
+        Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, new MutableClock());
+        dispatcher.submit(assistant("reply", 5000, () -> true));
+        CueDispatcher.PlaybackCallback old = renderer.callback;
+        dispatcher.submit(near("urgent", 1, 1200, 0));
+        assertEquals(1, renderer.assistantCancels);
+        assertEquals(1, renderer.synchronizedStarts);
+        old.onFinished(200, true);
+        assertFalse(events.events.contains("reply:SPEECH:COMPLETED"));
+        assertTrue(dispatcher.isSpeaking());
     }
 
     @Test public void nearZoneCuesAreNotReplayedAndDistinctEpisodesBothPlay() {
@@ -529,5 +756,35 @@ public final class CueDispatcherTest {
         assertTrue(dispatcher.submit(near("first", 1, 10000, 0f)).audioQueued());
         clock.now = 10;
         assertTrue(dispatcher.submit(near("second", 2, 10000, 0f)).audioQueued());
+    }
+
+    @Test public void lowerPriorityReturnWithinDedupeWindowStillSpeaksAfterCurrentCue() {
+        MutableClock clock = new MutableClock();
+        FakeRenderer renderer = new FakeRenderer();
+        Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+        CueRequest first = new CueRequest("session", "first", CueEventKeys.nearZone(0, 1),
+                "NEAR_ZONE", CueRequest.Category.NEAR_ZONE, 97, 0, 1200,
+                NearZoneRouting.nearChannels(false), NearZoneRouting.TONE_NEAR, 0, 0,
+                "右方有敌人", 1f);
+        assertTrue(dispatcher.submit(first).audioQueued());
+        CueDispatcher.PlaybackCallback firstPlayback = renderer.callback;
+
+        clock.now = 200;
+        CueRequest returned = new CueRequest("session", "returned", CueEventKeys.nearZone(0, 2),
+                "NEAR_ZONE", CueRequest.Category.NEAR_ZONE, 85, 200, 1400,
+                NearZoneRouting.nearChannels(false), NearZoneRouting.TONE_NEAR, 0, 0,
+                "左上有敌人", -.7f);
+        CueDispatcher.DispatchResult result = dispatcher.submit(returned);
+        assertTrue((result.acceptedChannels & CueRequest.CHANNEL_SPEECH) != 0);
+        assertEquals(2, renderer.tones);
+        assertTrue(dispatcher.pendingCueIdsForTest().contains("returned"));
+        assertFalse(renderer.stopped);
+
+        clock.now = 800;
+        firstPlayback.onFinished(800, true);
+        assertEquals(List.of("first", "returned"), renderer.started);
+        assertTrue(events.events.contains("returned:SPEECH:STARTED"));
+        assertFalse(events.events.contains("returned:DROPPED:deduplicated"));
     }
 }

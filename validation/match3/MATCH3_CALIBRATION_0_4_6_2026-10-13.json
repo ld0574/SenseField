@@ -1,0 +1,239 @@
+{
+  "baseline_revision": "c6826e03f1213bd4929546300f0abd8f4695e07c",
+  "version_name": "0.4.6",
+  "version_code": 23,
+  "source_sha256": "08f64ba0e60d3c54ad9589b2664eb3a8d5dba9f9484ae9631c148442affac5b1",
+  "source_files": [
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/BoardGeometry.java",
+      "sha256": "dbd4d413da4ac3f0ad42a963a3de29f2cb30161f6460cdc8f940949b85f6388b"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/Match3LiveService.java",
+      "sha256": "bf88b88ab35f41691db065eb1591759212258db81b7e22f393f1c89fbf3bac55"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/Match3ToolsActivity.java",
+      "sha256": "e928923c4c9d402984ae04228435eab82ea10e01e2af43bf3760387c6e9d0c91"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/Match3BoardPreview.java",
+      "sha256": "9c4e31e306aafb3a91ec8e0a51a646830c12e595c307077c5add441fa6df4e9d"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/Match3Calibration.java",
+      "sha256": "d215139c864f4ca11c8c0f8cbd5a4a9d1224655920058eebd2f793534bf24571"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/UiActivity.java",
+      "sha256": "51174e4df29b0d2758f76b2461b52da132fffcfcd2706a20670e3598b6e54edd"
+    },
+    {
+      "path": "android/app/src/main/java/com/openkhub/sensefield/UiKit.java",
+      "sha256": "3e0e572bf1eec0fb6ffa3ceae45ed2ff29c0fcdc961cf28253e9c91ee4c62e68"
+    },
+    {
+      "path": "android/app/src/androidTest/java/com/openkhub/sensefield/Match3CalibrationInstrumentedTest.java",
+      "sha256": "fccdccb983a3bbc17b1d0364c4252fda84d1758062da53ab6994266657c4157e"
+    },
+    {
+      "path": "android/app/src/androidTest/java/com/openkhub/sensefield/Match3GeometryInstrumentedTest.java",
+      "sha256": "4973348e9660c92b159240ba633639c2af3b6a266f1df9d81fd557864d2b867b"
+    },
+    {
+      "path": "android/app/src/androidTest/java/com/openkhub/sensefield/Match3UiInstrumentedTest.java",
+      "sha256": "c9a790409bff9ad5b89cba64686f1c9af79a4cf5cf79f234bd85c2b1c40a62f3"
+    },
+    {
+      "path": "android/app/src/androidTest/java/com/openkhub/sensefield/UiQualityInstrumentedTest.java",
+      "sha256": "5fd46edd08236d3e13530a19f66d169dcd4c65c837d0bbbefdd15362b73248e4"
+    },
+    {
+      "path": "android/app/src/test/java/com/openkhub/sensefield/Match3GeometryTest.java",
+      "sha256": "ad5febced7224c167f1781a455053ad28b2b10975acf5c84e355318000d393b7"
+    },
+    {
+      "path": "scripts/verify_match3_regression.py",
+      "sha256": "f8946435f79d339eb251708d5322aefa5ca6699a6ac2a7839e0730600a3cfe6e"
+    },
+    {
+      "path": "android/app/build.gradle",
+      "sha256": "c728dc61cc6b8d668f6e292dfb29796ae82cfb781657ab5ceaf29768f54ee8e3"
+    },
+    {
+      "path": "android/app/proguard-rules.pro",
+      "sha256": "d0d1acfaaec97d82068fcf62f89d3379a9f7d02cd94d46ca04da3b42b8005275"
+    },
+    {
+      "path": "android/app/src/main/AndroidManifest.xml",
+      "sha256": "48f91451d37fcae37fc266bfbc0ad3f6b851d6c051a3d40609d80469a56f2457"
+    }
+  ],
+  "jvm": {
+    "tests": 600,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "suites": 76
+  },
+  "lint": {
+    "debug": {
+      "Warning": 31
+    },
+    "release": {
+      "Warning": 31
+    }
+  },
+  "artifacts": [
+    {
+      "name": "app-debug-androidTest.apk",
+      "bytes": 1252222,
+      "sha256": "914ac3575dbf57af11c0ca1286e0c3f6cd6711093b715e391f6524181faa3ace",
+      "zip_crc_valid": true
+    },
+    {
+      "name": "app-debug.apk",
+      "bytes": 29290480,
+      "sha256": "3da33f75b5ef17fe47eae3b97c33f8fd0602e4b4d710be0ba101df52cafa5b1c",
+      "zip_crc_valid": true
+    },
+    {
+      "name": "app-release-unsigned.apk",
+      "bytes": 24559039,
+      "sha256": "21509a8b84f08ae0629a347336621fb1c4e7da0e3b77b181ae0313054a6d41d4",
+      "zip_crc_valid": true
+    }
+  ],
+  "existing_delivery": {
+    "path": "output/releases/0.4.6/gitee-upload/sensefieldv0.4.6.apk",
+    "bytes": 24556047,
+    "sha256": "340e3b0f8547944287eea311207d5ebbee5ac28757f8009a982cbbcd84f9e56d",
+    "overwritten": false
+  },
+  "date": "2026-10-13",
+  "scope": "engineering_only; local_API34_arm64_emulator; synthetic_screenshots",
+  "baseline_reproductions": {
+    "tests": 2,
+    "failures": 2,
+    "cases": [
+      "automatic_screenshot_persisted_live_candidate",
+      "preview_pointer_down_not_consumed"
+    ]
+  },
+  "android": {
+    "executed": 22,
+    "skipped": 0
+  },
+  "python": {
+    "tests_passed": 14,
+    "subtests_passed": 8,
+    "files": [
+      "tests/test_match3_regression_gate.py",
+      "tests/test_check_public_repo.py"
+    ]
+  },
+  "layout": {
+    "cells": [
+      {
+        "cell": "320-font100",
+        "width_dp": 320,
+        "height_dp": 800,
+        "font_scale": 1.0,
+        "executed": 1,
+        "skipped": 0,
+        "passed": true,
+        "screenshots": [
+          {
+            "file": "screenshots/match3-calibration-320-font100/match3-calibration-controls.png",
+            "sha256": "8e2df66ef6f965a5f3fe03d68a3e9e6d8635f1a080d4a04ef0b5aa476b4167c1",
+            "bytes": 189961
+          },
+          {
+            "file": "screenshots/match3-calibration-320-font100/match3-calibration-grid.png",
+            "sha256": "caf87b84dce4ee71249fc002db7cb2f1697fef581ddb9fd3d28fa0efb8977ef8",
+            "bytes": 60738
+          }
+        ]
+      },
+      {
+        "cell": "320-font200",
+        "width_dp": 320,
+        "height_dp": 800,
+        "font_scale": 2.0,
+        "executed": 1,
+        "skipped": 0,
+        "passed": true,
+        "screenshots": [
+          {
+            "file": "screenshots/match3-calibration-320-font200/match3-calibration-controls.png",
+            "sha256": "e2b6989b91397a808e1dd14561ec21c32186ca253a82cb697194cc558ed20c63",
+            "bytes": 132622
+          },
+          {
+            "file": "screenshots/match3-calibration-320-font200/match3-calibration-grid.png",
+            "sha256": "b11e59d0f00629954ff5434b7992d1841965a8a916fa622e8c07c959e22d1e04",
+            "bytes": 57340
+          }
+        ]
+      },
+      {
+        "cell": "432-font100",
+        "width_dp": 432,
+        "height_dp": 800,
+        "font_scale": 1.0,
+        "executed": 1,
+        "skipped": 0,
+        "passed": true,
+        "screenshots": [
+          {
+            "file": "screenshots/match3-calibration-432-font100/match3-calibration-controls.png",
+            "sha256": "299277a8078533dff91cabe31c5090e45101f93b240ac17487bc14202a651f57",
+            "bytes": 195689
+          },
+          {
+            "file": "screenshots/match3-calibration-432-font100/match3-calibration-grid.png",
+            "sha256": "12ee5a3397a2f8e71d693c5af46260d52676385c29e1ee84d97da42e2a6f391c",
+            "bytes": 67068
+          }
+        ]
+      },
+      {
+        "cell": "landscape-font200",
+        "width_dp": 800,
+        "height_dp": 360,
+        "font_scale": 2.0,
+        "executed": 1,
+        "skipped": 0,
+        "passed": true,
+        "screenshots": [
+          {
+            "file": "screenshots/match3-calibration-landscape-font200/match3-calibration-controls.png",
+            "sha256": "0a0300dabc0c9db5c6d594c725663ec632ded438038e386d45b82439e4b24be7",
+            "bytes": 95833
+          },
+          {
+            "file": "screenshots/match3-calibration-landscape-font200/match3-calibration-grid.png",
+            "sha256": "a43a5bcb7d9a83c19e7c58434578e526d2367b55f8df6ad8ff2b524cd6737016",
+            "bytes": 62151
+          }
+        ]
+      }
+    ],
+    "total_checks": 4,
+    "total_screenshots": 8,
+    "visual_review_screenshots": 6,
+    "emulator_configuration_restored": true
+  },
+  "builds": {
+    "debug": "passed",
+    "debug_android_test": "passed",
+    "minified_unsigned_release": "passed"
+  },
+  "independent_effectiveness_verified": false,
+  "honor_manual_selection_implemented": false,
+  "public_repository_check": {
+    "status": "passed",
+    "candidate_count": 1709,
+    "relative_links_checked": 161
+  }
+}
