@@ -1,0 +1,14 @@
+{
+  "name": "tingye-judgment-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "听野 L2 判断层可替换后端（ADR-0001 D2）：JudgmentClient + EdgeOne/OpenRouter/Local 三实现",
+  "main": "src/factory.js",
+  "scripts": {
+    "test": "node src/contract-test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {}
+}

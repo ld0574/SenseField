@@ -1,0 +1,85 @@
+{
+ "C0_baseline_port": {
+  "p50_ms": 102.5,
+  "p95_ms": 163.0,
+  "train_cost": "无训练（移植 Java 逻辑+10帧学模板）",
+  "grid_acc": 0.9434,
+  "per_class": {
+   "bear": 1.0,
+   "bird": 1.0,
+   "bomb": 1.0,
+   "cat": 1.0,
+   "chicken": 1.0,
+   "empty": 0.0,
+   "fox": 1.0,
+   "frog": 1.0,
+   "horse": 1.0,
+   "obstacle": 1.0
+  },
+  "special_recall": 1.0,
+  "n_cells": 6978
+ },
+ "C1_multiscale_template": {
+  "p50_ms": 160.6,
+  "p95_ms": 281.6,
+  "train_cost": "无训练（素材当模板）",
+  "grid_acc": 0.8773,
+  "per_class": {
+   "bear": 1.0,
+   "bird": 0.7913,
+   "bomb": 1.0,
+   "cat": 1.0,
+   "chicken": 0.6366,
+   "empty": 0.0,
+   "fox": 1.0,
+   "frog": 1.0,
+   "horse": 1.0,
+   "obstacle": 1.0
+  },
+  "special_recall": 1.0,
+  "n_cells": 6978
+ },
+ "C2_mobilenetv3_cell": {
+  "p50_ms": 726.1,
+  "p95_ms": 1074.4,
+  "train_cost": "20 epochs CPU（实测见 c2_train2.log）",
+  "grid_acc": 0.9996,
+  "per_class": {
+   "bear": 1.0,
+   "bird": 0.9987,
+   "bomb": 1.0,
+   "cat": 0.9987,
+   "chicken": 1.0,
+   "empty": 1.0,
+   "fox": 0.9988,
+   "frog": 1.0,
+   "horse": 1.0,
+   "obstacle": 1.0
+  },
+  "special_recall": 1.0,
+  "n_cells": 6978
+ },
+ "C3_yolov8n_whole_screen": {
+  "p50_ms": 54.5,
+  "p95_ms": 79.5,
+  "train_cost": "50 epochs CPU（见 train 输出，超 60min 降 10 并标注）",
+  "grid_acc": 0.0566,
+  "per_class": {
+   "bear": 0.0,
+   "bird": 0.0,
+   "bomb": 0.0,
+   "cat": 0.0,
+   "chicken": 0.0,
+   "empty": 1.0,
+   "fox": 0.0,
+   "frog": 0.0,
+   "horse": 0.0,
+   "obstacle": 0.0
+  },
+  "special_recall": 0.0,
+  "n_cells": 6978
+ },
+ "C4_vlm_skipped": {
+  "note": "无 OPENROUTER_API_KEY，按书内约定跳过，记 BLOCKED.md"
+ }
+}
