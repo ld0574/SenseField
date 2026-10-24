@@ -1142,3 +1142,96 @@ native 库（本树默认单 ABI）。
 3. 读屏辅助没开时那句补充提示有没有真的念出来。
 
 本轮不做：版本号、打包发布、push、装手机。
+
+
+## 开工回执：疏密档位接「一次念几条」（2026-10-16 08:36 实测）
+
+- 理解的目标：把「逐条读」每轮念几条的条数接到 App 已有的提示方案档位（精简／标准／详细）上，
+  并让设置面板显示的档数与实际档名取值一致——面板三个按钮保持三个，「自定义」是派生态不是第四个可点按钮。
+- 执行顺序：读任务书 → 自量分支／HEAD／工作树 → 起跑前 90 秒空窗实测 → 改码 → 反向验证红→绿 → 门禁终读 → 留痕。
+- 最大风险：只把档位读到链路中段、链尾没人锁，就会得出「接上了」的空转结论；靠删一行看有没有测试变红来防。
+- 实测分支 feature/sensefield-dev，HEAD ceda918；与口述的 ea069af→17bd38c 都不一致，说明这棵树仍在被并发提交。
+- 阻断：任务书 `_scratch_diag/goal_brief_density_limit_20261016.md` 与判卷脚本 `_scratch_diag/_tmp_gate_tally.py`
+  两份输入都不在盘上，书是唯一真理且七条冻结红名只写在书里，无法凭口述补全，按纪律停手。详见 BLOCKED.md。
+
+### 停手段读数（2026-10-16 08:39 实测）
+
+- 本轮按纪律停在读任务书这一步：书与判卷脚本均不在盘上。已落 BLOCKED.md 追加段（实测 mtime 08:38:53，388→441 行，CRLF 0）与凭证 _scratch_diag/_tmp_blocked_evidence_density_083853_20261016.md（实测 mtime 08:39:14）。未改生产代码、未跑构建、未 commit／push／tag。
+
+
+## 落地：养老场景「可信标签」MVP——四类纯 JVM 旁挂＋KPI 门禁（2026-10-25 实测）
+
+- 理解的目标：按领导方向书（游戏辅助→养老护理）落地 0-6 月重点方案一「可信内容沙箱＋动态风险
+  标签」的 MVP：五档风险标签判定引擎＋播报纪律，先落纯逻辑层，不接播放路径。
+- 执行顺序：摸架构（读屏服务/播报链路/门禁/旁挂先例）→ 实现四类 → 单测＋KPI 门禁 → 反向验证
+  红→绿 → 基线隔离读数＋终读 → 设计文档＋留痕。
+- 实测分支 feature/sensefield-dev，HEAD c7cc887（合并 origin/feature/sensefield-dev 后）；main
+  已另有合并提交 25d6fb2（feature/sensefield-dev → main）。
+
+### 交付物（全部为新增文件，生产既有代码零改动）
+
+- `ElderRiskLabel`：五档（RED/YELLOW/REVIEW/GREEN/NEUTRAL）＋播报紧迫度＋去重指纹；
+- `ElderRiskRules`：8 组红规则／3 组黄规则／3 组 REVIEW 兜底／15 条官方服务签名／AOSP 白名单
+  （政务/医院包名由部署期配置补充，不臆造）；
+- `ElderRiskLabelEngine`：归一去空白挡插字符绕过、全组命中才生效、证据窗口 18 字有界、
+  20k 字符封顶、null/空输入 fail-silent 判 NEUTRAL；可信包名与诈骗话术并存时内容证据优先；
+- `ElderRiskAnnouncementPolicy`：可注入时钟——红立即＋10 分钟冷却重播一次、黄 30 分钟一次、
+  REVIEW/GREEN/NEUTRAL 永不播报；
+- 测试三类 26 条：引擎 13＋节流 8＋KPI 门禁 5；
+- 设计文档 `docs/design/养老场景可信标签MVP.md`（挂入 docs/README.md 索引）。
+
+### KPI 门禁（落地书 0-6 月指标固化进测试）
+
+高风险召回 ≥95%：30 条合成高危语料（含插字/换行变体）全中＝100%；高危误报 <2%：50 条无害
+文本（政务/医疗/家庭/银行扣款/社区通知）误报 0；涉资金/保健品近失样本落 REVIEW（白名单＋
+人工兜底承接层），不惊扰不冒进。语料为脱敏合成话术，不收真实案件原文。
+
+### 反向验证：红绿两段都在
+
+1. RED-06 档位突变 RED→REVIEW：`highRiskRecallMeetsFloor` 红（召回跌破 95%）；
+2. 红冷却常量突变 10 分钟→0：`cooldownConstantsMatchDocumentedDiscipline`＋
+   `sameRedInsideCooldownHolds` 红。第一版冷却测试引用生产常量，突变时测试跟着常量一起变，
+   没咬住（自洽空转）——已改为文档纪律字面毫秒值并新增常量锁，突变即红；
+3. 恢复后三类 26 条全绿。
+
+### 门禁读数（本机 Windows；中文路径须 subst 映射 ASCII 盘符才能跑 JVM 门禁）
+
+- 本机坑位入册：仓库路径含中文，AGP 直接拒绝构建；`-Pandroid.overridePathCheck=true` 只过
+  编译检查，测试 worker 仍 `ClassNotFoundException`。`subst W: "<仓库路径>"` 后从 `W:/android`
+  跑门禁可绿——本机跑门禁的既知解法。
+- 基线（本轮 7 文件移出后）：tests=630 skipped=0 failures=8。其中 7 条为历史记录过的 Windows
+  临时目录 FileSystemException 环境红（AsrModelStore 6＋AssistantTtsCache 1，即先例所说「恒 7」）；
+  另 1 条 `PauseableRecorderLoopTest.invalidationDropsPartialFrameInsteadOfJoiningAcrossRoutes`
+  为时序波动（终读自愈通过）。
+- 终读（含本轮）：tests=656 skipped=0 failures=7 errors=0——656 = 630 + 26，失败仅剩既存
+  「恒 7」，本轮零新增失败。
+
+### 本地证明了什么，接入轮才能证什么
+
+本地已证：五档判定语义、插字符绕过防护、证据窗口有界、播报节流与 fail-silent、KPI 语料上的
+召回/误报、突变咬合力。接入轮才能证：挂上 `SenseFieldReaderService` 节点文本流后的真实窗口
+判定、RED/YELLOW 走 CueRequest.SYSTEM 通道的实际播报、REVIEW 队列进诊断导出、真机脱敏回放
+复核。本轮不做：版本号、打包发布、装手机。
+
+### 补记（2026-10-25 01:15 实测）：assembleDebug 绿＋native 缓存清空根因＋CMakeLists 缓存覆盖
+
+- `:app:assembleDebug --offline` **BUILD SUCCESSFUL**，app-debug.apk 22,086,459 字节，含 native 库。
+- **native 缓存被 gradle 清空的根因（金丝雀实证）**：`configureCMakeDebug` 任务每次重跑前会
+  清空其声明的输出目录（`app/.cxx/Debug/<hash>/<abi>/`），四个固定第三方包（ncnn／speexdsp／
+  webrtcvad／sherpa-onnx）的缓存恰好全在里面——网络受限机器每次构建都要重新下载，下载失败
+  就永久失败。此前一轮误判为 OneDrive 干扰（把 .cxx 挪出 OneDrive 用 junction 指回后金丝雀
+  照样被吃），实为 gradle 任务输出清理语义。
+- 处置：`CMakeLists.txt` 新增 `MAPASSIST_THIRD_PARTY_CACHE_ROOT` 环境变量——设置后四个依赖的
+  缓存根移到该目录（持久、不被清空）；不设置时取值回落 `CMAKE_BINARY_DIR`，行为与原来完全
+  一致。五个包（含 sherpa 的 c-api.h，raw.githubusercontent 不通时用 fastly.jsdelivr 镜像取
+  同一 commit 文件）逐一 SHA-256 核验匹配后预置于 `C:/Android/cxx-cache/tpc`。这是本轮唯一
+  的既有文件改动（构建脚本，8 行），修正前文「生产既有代码零改动」的说法。
+- `:app:lintDebug`：offline 模式缺 androidTest lint model 依赖（androidx.test:runner 等，
+  本机 gradle 缓存里没有）；放开 offline 需联网拉取，结果见下轮补记。
+
+### 门禁终读（2026-10-25 01:16 实测）
+
+- `:app:lintDebug`（放开 offline 联网拉取 androidTest lint model 后）**BUILD SUCCESSFUL**，
+  1m 5s。至此 CONTRIBUTING 要求的 `assembleDebug lintDebug` 双绿。
+- 本轮完整门禁：JVM 单测 656 = 630 + 26（failures 恒为既存 Windows「恒 7」）＋ assembleDebug
+  绿 ＋ lintDebug 绿 ＋ KPI 门禁（召回 100%／高危误报 0%）＋ 突变反向验证红→绿两段。
