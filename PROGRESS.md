@@ -1275,3 +1275,28 @@ native 库（本树默认单 ABI）。
   append 静默）；全量门禁 tests=674（669+5）failures=7 恒白名单 skipped=0。
 - assembleDebug / lintDebug 均绿（lintDebug 1m5s）。
 - 真机验证仍待下一轮；BLOCKED.md 已补记。
+
+
+## 遗漏检查（2026-10-25 17:xx 实测）——发现并修复一个高危接线 bug
+
+领导要求检查遗漏。对照任务书逐条复核，发现四类问题，其一为高危：
+
+1. **高危（已修）**：`elderRiskLabelsEnabled()` 原为静态方法，经 `instance.get()` 取 Context；
+   而 `onServiceConnected` 里该调用（原 75 行）在 `instance` 赋值（原 93 行）**之前**执行——
+   首次连接时 `instance.get()` 为 null，`GameProfile.settings(null)` 抛 NPE 且在 try 块外，
+   **整个无障碍服务连接失败**（读屏功能全挂）。本机无真机、assemble/lint 不执行代码，
+   故未暴露。修复：改为实例方法直接 `GameProfile.settings(this)`，调用点行为不变。
+2. 死代码（已清）：`EVIDENCE_WINDOW_RADIUS`／`REVIEW_FLUSH_MS` 两个从未使用的常量；
+   `AuditEntry.speech` 字段（audit 只接 REVIEW 档，REVIEW 永不播，字段恒空串）——
+   JSON 输出同步去掉 speech 字段，测试断言不受影响。
+3. 不可达分支（已修）：`recordAudit` 原 `label==null && reason.startsWith("tier-silent")`
+   分支永不命中（label 为 null 只出现在 catch 路径，reason 是 "exception:…"），且 catch 的
+   异常事件审计被静默丢弃。改为 label==null 一律留痕（tier=SILENT），异常事件进 JSONL。
+4. 文档偏差（补记）：审计文件实际落 `getExternalFilesDir(null)/elder-risk-events.jsonl`，
+   与早前文档建议的 `DiagnosticRecorder.root()` 不同——后者是对局诊断会话目录，养老审计
+   独立于对局生命周期，ExternalFilesDir 更合理；家属/护工端读取也无需诊断导出。
+   另：`ElderRiskAuditLog` 带 Android import（Context/Log），非零依赖——它在服务胶水层，
+   纯 JVM 约束只属于 `ElderRiskMonitor`（已复核 import 全为 java.util.*）。
+
+修复后读数：ElderRisk 44 条全绿；全量门禁 tests=674 failures=7 恒白名单 skipped=0；
+assembleDebug 绿。真机回归（服务能否正常连接＋开关能否开）仍属下一轮。

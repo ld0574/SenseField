@@ -24,7 +24,7 @@ import java.util.function.LongSupplier;
  */
 public final class ElderRiskMonitor {
 
-    /** 审计事件一行。 */
+    /** 审计事件一行。audit 只接 REVIEW 档与异常事件，speech 字段无意义（REVIEW 永不播）。 */
     public final class AuditEntry {
         public final String tier;
         public final String ruleId;
@@ -32,7 +32,6 @@ public final class ElderRiskMonitor {
         public final String pkg;
         public final long tsMs;
         public final String decision;
-        public final String speech;
 
         AuditEntry(ElderRiskLabel label, String reason) {
             this.tier = label == null ? "SILENT" : label.tier.name();
@@ -41,16 +40,13 @@ public final class ElderRiskMonitor {
             this.pkg = package_ == null ? "" : package_;
             this.tsMs = nowMs();
             this.decision = reason;
-            this.speech = label == null || label.announceKind() == ElderRiskLabel.Announce.NONE
-                    ? "" : label.explanation;
         }
 
         public String toJson() {
             return String.format(Locale.ROOT,
                     "{\"tier\":\"%s\",\"ruleId\":\"%s\",\"evidence\":\"%s\","
-                            + "\"pkg\":\"%s\",\"tsMs\":%d,\"decision\":\"%s\",\"speech\":\"%s\"}",
-                    tier, ruleId, esc(evidence), pkg, tsMs,
-                    esc(decision), esc(speech));
+                            + "\"pkg\":\"%s\",\"tsMs\":%d,\"decision\":\"%s\"}",
+                    tier, ruleId, esc(evidence), pkg, tsMs, esc(decision));
         }
 
         private static String esc(String s) {
@@ -74,15 +70,11 @@ public final class ElderRiskMonitor {
         }
     }
 
-    /** 阈值：REVIEW/GREEN/NEUTRAL 事件也落审计的窗口大小。 */
-    static final int EVIDENCE_WINDOW_RADIUS = 18;
-
     private final LongSupplier clock;
     private final ElderRiskLabelEngine engine = new ElderRiskLabelEngine();
     private final ElderRiskAnnouncementPolicy policy;
     private final Map<String, AuditEntry> reviewEntries = new HashMap<>();
     private String package_ = "";
-    private final long REVIEW_FLUSH_MS = 5 * 60 * 1000L;
 
     public ElderRiskMonitor(LongSupplier clock) {
         this.clock = clock;
@@ -139,16 +131,11 @@ public final class ElderRiskMonitor {
         return reviewEntries.size();
     }
 
-    /** 注册一条非 RED/YELLOW 的审计行；不发音但留痕。 */
+    /** 注册一条审计行：REVIEW 档与异常事件（label=null）留痕，其余档不进审计。 */
     private void recordAudit(ElderRiskLabel label, String reason) {
-        if (label == null && reason.startsWith("tier-silent")) {
-            addToReview(label, reason);
-            return;
-        }
-        if (label != null && (label.tier == ElderRiskLabel.Tier.REVIEW)) {
+        if (label == null || label.tier == ElderRiskLabel.Tier.REVIEW) {
             addToReview(label, reason);
         }
-        // RED/YELLOW 由 policy 决定是否播，AUDIT 只接 REVIEW 档（GREEN/NEUTRAL 不进审计避免污染）
     }
 
     private void addToReview(ElderRiskLabel label, String reason) {

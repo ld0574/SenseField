@@ -28,12 +28,14 @@ public class SenseFieldReaderService extends AccessibilityService {
     private static volatile String latestPackage = "";
     private static volatile long latestAt;
     private static volatile boolean connected;
-    /** 养老风险标签开关，GameProfile.settings 统一 key，默认关。 */
+    /** 养老风险标签开关，GameProfile.settings 统一 key，默认关。
+     *  实例方法用 this 取 Context——静态走 instance.get() 在 onServiceConnected
+     *  首次调用时 instance 尚未赋值，会把 null 传给 settings() 抛 NPE 且在 try 外，
+     *  直接挂掉整个服务连接（2026-10-25 遗漏检查发现，已改）。 */
     static final String PREF_ELDER_RISK_LABELS = "elder_risk_labels_enabled";
-    static boolean elderRiskLabelsEnabled() {
-        return GameProfile.settings(SenseFieldReaderService.instance.get()
-                == null ? null : SenseFieldReaderService.instance.get()).getBoolean(
-                PREF_ELDER_RISK_LABELS, false);
+
+    private boolean elderRiskLabelsEnabled() {
+        return GameProfile.settings(this).getBoolean(PREF_ELDER_RISK_LABELS, false);
     }
 
     /** 线程安全的 ElderRiskMonitor；null 代表开关关闭不占用资源。 */
