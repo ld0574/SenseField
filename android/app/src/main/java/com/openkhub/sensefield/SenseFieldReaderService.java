@@ -40,6 +40,8 @@ public class SenseFieldReaderService extends AccessibilityService {
     private ElderRiskMonitor monitor;
     /** 自持播报播放器；开关开时才创建，onDestroy 时 release。 */
     private CuePlayer player;
+    /** 审计 JSONL 追加写入器；开关开时才创建，onDestroy 时关闭。 */
+    private ElderRiskAuditLog auditLog;
     static boolean isConnected() { return connected; }
 
     /** 判定入口取用的最新压缩状态。 */
@@ -74,6 +76,7 @@ public class SenseFieldReaderService extends AccessibilityService {
             try {
                 monitor = new ElderRiskMonitor(SystemClock::elapsedRealtime);
                 player = new CuePlayer(this);
+                auditLog = ElderRiskAuditLog.open(this);
                 Log.i(TAG, "养老风险标签已启用");
             } catch (Exception e) {
                 Log.w(TAG, "养老风险标签初始化失败: " + e.getMessage());
@@ -180,6 +183,16 @@ public class SenseFieldReaderService extends AccessibilityService {
             } catch (Exception ex) {
                 Log.w(TAG, "养老监控异常: " + ex.getMessage());
             }
+            /* REVIEW 档留痕到 JSONL：每次窗口变化都冲洗一次，保持文件只增不积。 */
+            try {
+                java.util.List<String> rows = monitor.flushAuditQueue();
+                if (!rows.isEmpty() && auditLog != null) {
+                    auditLog.appendLines(rows);
+                    Log.i(TAG, "养老审计已写入 " + rows.size() + " 行");
+                }
+            } catch (Exception ex) {
+                Log.w(TAG, "养老审计写入失败: " + ex.getMessage());
+            }
         }
     }
 
@@ -250,6 +263,7 @@ public class SenseFieldReaderService extends AccessibilityService {
         if (uiHandler != null) uiHandler.removeCallbacksAndMessages(null);
         removeRowOverlay();
         if (player != null) { try { player.stopSpeech(); } catch (Exception ignored) {} player = null; }
+        if (auditLog != null) { try { auditLog.close(); } catch (Exception ignored) {} auditLog = null; }
         monitor = null;
         if (instance.get() == this) instance.clear();
         connected = false;

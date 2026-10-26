@@ -1260,3 +1260,18 @@ native 库（本树默认单 ABI）。
   恢复后全绿。
 - CMakeLists.txt 缓存覆盖改动本轮未动（已在 HEAD 8e789eb 提交）。
 - 开关真机验证未做（按任务书，下一轮）。
+
+
+## 补记：审计落盘 + 新增 5 条 ElderRiskAuditLogTest（2026-10-25 16:xx）
+
+- 发现漏项：ElderRiskMonitor.flushAuditQueue() 上轮定义了但 SenseFieldReaderService 未调用，
+  REVIEW 档审计只在内存里排队永不落盘。本轮修复：
+  - 新建 ElderRiskAuditLog（纯 Java File I/O，零 Android 特性依赖）写 ExternalFilesDir/
+    elder-risk-events.jsonl，单例追加模式；提供 openAt(File) 供测试直接指定路径。
+  - SenseFieldReaderService.captureNow 末尾调 flushAuditQueue() 并 appendLines 到 auditLog；
+    onDestroy 调 auditLog.close()。
+  - 修一个空行过滤漏洞：原实现未跳过纯空白字符串，导致测试断言失败；改为 trim 后非空才写。
+- 新增测试：ElderRiskAuditLogTest 5 条（写文件、追加增长、空行/空白跳过、null 列表、close 后
+  append 静默）；全量门禁 tests=674（669+5）failures=7 恒白名单 skipped=0。
+- assembleDebug / lintDebug 均绿（lintDebug 1m5s）。
+- 真机验证仍待下一轮；BLOCKED.md 已补记。
