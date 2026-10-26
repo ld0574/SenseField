@@ -2,6 +2,7 @@ package com.openkhub.sensefield;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.content.SharedPreferences;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
@@ -27,6 +28,18 @@ public class SenseFieldReaderService extends AccessibilityService {
     private static volatile String latestPackage = "";
     private static volatile long latestAt;
     private static volatile boolean connected;
+    /** 养老风险标签开关，GameProfile.settings 统一 key，默认关。 */
+    static final String PREF_ELDER_RISK_LABELS = "elder_risk_labels_enabled";
+    static boolean elderRiskLabelsEnabled() {
+        return GameProfile.settings(SenseFieldReaderService.instance.get()
+                == null ? null : SenseFieldReaderService.instance.get()).getBoolean(
+                PREF_ELDER_RISK_LABELS, false);
+    }
+
+    /** 线程安全的 ElderRiskMonitor；null 代表开关关闭不占用资源。 */
+    private ElderRiskMonitor monitor;
+    /** 自持播报播放器；开关开时才创建，onDestroy 时 release。 */
+    private CuePlayer player;
     static boolean isConnected() { return connected; }
 
     /** 判定入口取用的最新压缩状态。 */
@@ -55,6 +68,17 @@ public class SenseFieldReaderService extends AccessibilityService {
         info.flags = AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
                 | AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
         /* capabilities（含 canRetrieveWindowContent）来自 XML 元数据，setServiceInfo 不会清除 */
+
+        /* 养老风险标签：开关开时启动引擎与播报播放器。 */
+        if (elderRiskLabelsEnabled()) {
+            try {
+                monitor = new ElderRiskMonitor(SystemClock::elapsedRealtime);
+                player = new CuePlayer(this);
+                Log.i(TAG, "养老风险标签已启用");
+            } catch (Exception e) {
+                Log.w(TAG, "养老风险标签初始化失败: " + e.getMessage());
+            }
+        }
 
         /* Android 14（API 34）+：只观察不消费触摸屏事件——「连续触屏点读」的坐标来源。
          * 观察模式不干扰游戏本身的触摸处理。低版本无此能力，点读降级为截图预览内点读。 */
@@ -132,6 +156,31 @@ public class SenseFieldReaderService extends AccessibilityService {
         latestState = sb.toString();
         latestPackage = pkg;
         latestAt = SystemClock.elapsedRealtime();
+        /* 养老风险标签：把节点文本喂入引擎，有播报需求时走自持播放器。 */
+        if (monitor != null) {
+            try {
+                ElderRiskMonitor.Outcome o = monitor.onScreenCaptured(pkg, lines,
+                        elderRiskLabelsEnabled());
+                if (o != null && o.announce && player != null) {
+                    try {
+                        player.speak(new CueRequest(latestPackage,
+                                "elder:" + SystemClock.elapsedRealtime(),
+                                "elder-risk", "ELDER-RISK",
+                                CueRequest.Category.SYSTEM, 50,
+                                SystemClock.elapsedRealtime(),
+                                SystemClock.elapsedRealtime() + 60_000,
+                                CueRequest.CHANNEL_SPEECH,
+                                0, 0, 0, o.speech),
+                                true, null);
+                        Log.i(TAG, "养老标签已播报 (" + o.reason + ")");
+                    } catch (Exception ex) {
+                        Log.w(TAG, "养老播报失败: " + ex.getMessage());
+                    }
+                }
+            } catch (Exception ex) {
+                Log.w(TAG, "养老监控异常: " + ex.getMessage());
+            }
+        }
     }
 
     private void walk(AccessibilityNodeInfo node, int depth, int screenHeight, List<String> out) {
@@ -200,6 +249,8 @@ public class SenseFieldReaderService extends AccessibilityService {
     public void onDestroy() {
         if (uiHandler != null) uiHandler.removeCallbacksAndMessages(null);
         removeRowOverlay();
+        if (player != null) { try { player.stopSpeech(); } catch (Exception ignored) {} player = null; }
+        monitor = null;
         if (instance.get() == this) instance.clear();
         connected = false;
         latestState = latestPackage = "";

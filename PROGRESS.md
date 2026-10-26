@@ -1235,3 +1235,28 @@ native 库（本树默认单 ABI）。
   1m 5s。至此 CONTRIBUTING 要求的 `assembleDebug lintDebug` 双绿。
 - 本轮完整门禁：JVM 单测 656 = 630 + 26（failures 恒为既存 Windows「恒 7」）＋ assembleDebug
   绿 ＋ lintDebug 绿 ＋ KPI 门禁（召回 100%／高危误报 0%）＋ 突变反向验证红→绿两段。
+
+
+## 任务 0 基线（2026-10-25 14:xx 实测）
+
+- HEAD 8e789eb（本轮已推送）。JVM 门禁：tests=656 skipped=0 failures=7 errors=0，白名单 AsrModelStoreTest＋AssistantTtsCacheTest 恒 7，与文档一致。本机 subst W: 可用。
+- 执行顺序：任务 1（ElderRiskMonitor 纯 JVM）→ 任务 2（读屏接线）→ 任务 3（设置开关）→ 任务 4（终读／反向验证／提交）。
+- 最大风险：真机验收下一轮；本机无法验证播报与 JSONL，靠 assembleDebug 覆盖 Android 侧。
+
+
+## 任务 1-4 落地（2026-10-25 15:xx 实测）
+
+- 任务 1：ElderRiskMonitor（纯 JVM 零 Android import）已建；13 条测试覆盖红首次播、
+  冷却内静默、黄低频、REVIEW 只留痕、开关关时不评估不落盘、null/空输入 fail-silent、
+  flushAuditQueue 返回 JSON 行并清空状态、当前包名记录等；全绿。
+- 任务 2：SenseFieldReaderService 薄接线——onServiceConnected 开关开时 init monitor+player；
+  captureNow 末尾喂节点文本给 monitor，有 Outcome 时经 player.speak 走 Category.SYSTEM 播报；
+  onDestroy stopSpeech 释放。
+- 任务 3：AppSettingsActivity 加"养老风险标签（实验）" CheckBox 开关行，绑定
+  PREF_ELDER_RISK_LABELS（= "elder_risk_labels_enabled"），默认关，附 UiKit.hint 说明。
+- 任务 4 门禁：tests=669（656+13）、failures=7（白名单恒 7）、skipped=0；
+  assembleDebug 绿（app-debug.apk 约 22MB）；lintDebug 绿（1m5s）。
+- 反向验证：突变 ElderRiskMonitor.java:105（RED 档改 return null）→ redFirstTime 测试红；
+  恢复后全绿。
+- CMakeLists.txt 缓存覆盖改动本轮未动（已在 HEAD 8e789eb 提交）。
+- 开关真机验证未做（按任务书，下一轮）。

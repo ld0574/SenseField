@@ -101,14 +101,19 @@ webrtcvad／sherpa-onnx）恰好缓存在里面——网络受限机器上每次
 - `:app:assembleDebug` 绿，app-debug.apk 22,086,459 字节（含 native 库）；`:app:lintDebug`
   需联网拉取 androidTest lint model 依赖，读数见 PROGRESS 当轮记录。
 
-## 九、接入路线（下一轮，未启动）
+## 九、接入路线（本轮已完成）
 
-1. **读屏挂接**：`SenseFieldReaderService.captureNow` 已产出节点文本行，接入时把
-   `label` 列表喂给引擎；事件频率用现有 2 秒节流。
-2. **播报挂接**：RED/YELLOW 走 `CueRequest.Category.SYSTEM` 通道（播报文案已由引擎给全）；
-   先过离线 TTS 可用性检查。
-3. **家属/护工端**：REVIEW 队列与高风险推送进诊断导出（JSONL 留痕已有 DiagnosticArchive 惯例）。
-4. **真机回测**：接入后用领导真机录屏的脱敏文本回放跑一轮召回/误报复核；本 KPI 语料随之扩充。
+1. **读屏挂接**：SenseFieldReaderService.captureNow 末尾把节点文本列表喂给
+   ElderRiskMonitor.onScreenCaptured；开关通过 GameProfile.settings(this) 读取键
+   elder_risk_labels_enabled，默认关。每次窗口变化读取一次（不注册 listener，
+   避免 Service 与 Preferences 生命周期耦合），对性能无影响。
+2. **播报挂接**：开关开时 onServiceConnected 自持 new CuePlayer(this)；
+   monitor 返回的 RED/YELLOW Outcome 经 player.speak(CueRequest(...Category.SYSTEM...), true, null) 播报；
+   onDestroy 调 player.stopSpeech() 释放。不借对局链路（CueDispatcher），音频审计下一轮加。
+3. **设置开关**：AppSettingsActivity 在"实验与反馈" section 末尾内联 CheckBox
+   "养老风险标签（实验）"，绑定同一 SharedPreferences 键，附 UiKit.hint 说明隐私范围。
+4. **真机回测**（下一轮）：本机无 Android 设备（adb 枚举为空），需真机手动开开关后
+   跑脱敏文本回放复核召回/误报；本 KPI 语料随之扩充。
 
 ## 十、与方案二/三的接口预留
 
