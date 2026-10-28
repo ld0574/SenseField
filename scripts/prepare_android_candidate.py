@@ -116,7 +116,7 @@ def prepare(apk: Path, output: Path, apk_url: str, docs: Path) -> dict:
         (publishing / "上传说明.md").write_text(
             "这是本地候选，尚未公开发布。先核对 validation/current-package/ 的最终工程报告。\n"
             "只上传版本根目录的 APK、installation-guide.txt、latest.json 和 SHA256SUMS.txt。\n"
-            "Gitee 下载字节核对一致后再更新公网 latest.json；生成本地清单不会改变公网版本。\n"
+            "将 APK 部署到清单指定的同源地址并核对下载字节后，再更新公网 latest.json；生成本地清单不会改变公网版本。\n"
             "独立准确率、真机温升与实际发声按最终报告范围登记。\n", encoding="utf-8")
         receipt = staged / "validation/current-package"
         receipt.mkdir(parents=True)

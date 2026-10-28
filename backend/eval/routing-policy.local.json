@@ -1,0 +1,27 @@
+{
+  "_note": "P3 阈值寻优骨架（routing-policy.local.json）——结构与创作工具④导出的 jev-config.json 的 thresholds 一致。当前值是保守占位：本地 Laya 把握度塌缩（见 specs/eval-dual-run.md），等领导确认标注后跑 sweep.js 得到实测阈值再覆盖。",
+  "_riskTiers": {
+    "read_only": "只读/播报类（announce_match/scan_board/read_menu/wait）：允许较低门槛",
+    "mutating": "改变游戏状态/消耗道具的操作：高门槛（当前评测集无此类帧，待补标定）",
+    "payment": "触发付费等高影响操作：最高门槛且强制人工确认（同上）"
+  },
+  "channel": { "endpoint": "http://127.0.0.1:8080/v1/systemone", "model": "laya--local" },
+  "questions": {
+    "_comment": "与创作工具默认五问一致，此处省略，实际部署时从 jev-config.json 合并"
+  },
+  "thresholds": {
+    "next_action": { "high": 0.9, "mid": 0.5, "low": 0.3 },
+    "danger_level": { "high": 0.9, "mid": 0.5, "low": 0.3 },
+    "should_interrupt": { "high": 0.9, "mid": 0.5, "low": 0.3 },
+    "announce_rank": { "high": 0.9, "mid": 0.5, "low": 0.3 },
+    "scene_changed": { "high": 0.9, "mid": 0.5, "low": 0.3 }
+  },
+  "harnessRules": {
+    "uncertainSpeech": "我没看清当前局面，请让我重新扫描",
+    "neverSilent": true,
+    "whitelistRequired": true,
+    "paymentRequiresManualConfirm": true
+  },
+  "generated_at": "2026-10-02T00:00:00.000Z",
+  "calibrated": false
+}

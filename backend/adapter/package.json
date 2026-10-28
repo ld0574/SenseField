@@ -1,0 +1,17 @@
+{
+  "name": "tingye-local-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "薄适配服务：把 Laya（本地判别式模型）包装成 POST /v1/systemone 兼容端点（P1 第三步）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "probe": "node probe.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@receptron/laya": "^0.1.2"
+  }
+}
