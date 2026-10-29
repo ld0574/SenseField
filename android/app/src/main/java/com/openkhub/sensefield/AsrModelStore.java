@@ -231,11 +231,16 @@ final class AsrModelStore {
                     || !verified(tokensNew, spec.tokensBytes, spec.tokensHash)) throw new IOException("model_extracted_checksum");
             Files.move(modelNew.toPath(), model.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             Files.move(tokensNew.toPath(), tokens.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            Files.delete(partial.toPath()); remember(model, tokens); progress.update(100);
-            return new File[]{model, tokens};
         } finally {
             Files.deleteIfExists(modelNew.toPath()); Files.deleteIfExists(tokensNew.toPath());
         }
+        // The archive handle is closed only after the block above returns, and Windows
+        // refuses to unlink a file that is still open. Deleting inside the
+        // try-with-resources scope therefore failed the whole download on Windows and
+        // left the .part behind; Android allowed it silently and reused a stale file.
+        Files.delete(partial.toPath());
+        remember(model, tokens); progress.update(100);
+        return new File[]{model, tokens};
     }
     private void remember(File model, File tokens) {
         verifiedThisProcess = true; modelModified = model.lastModified(); tokensModified = tokens.lastModified();
