@@ -166,6 +166,11 @@ final class DiagnosticArchive implements AutoCloseable {
             out.putNextEntry(new ZipEntry("feedback.txt"));
             out.write((feedback == null ? "" : feedback).getBytes(StandardCharsets.UTF_8));
             out.closeEntry();
+            // The statement travels with the files: a package forwarded through a chat
+            // app must still say what it holds and what it deliberately does not.
+            out.putNextEntry(new ZipEntry(DiagnosticPrivacyNotice.FILE_NAME));
+            out.write(DiagnosticPrivacyNotice.TEXT.getBytes(StandardCharsets.UTF_8));
+            out.closeEntry();
         } catch (IOException error) { Files.deleteIfExists(temporary.toPath()); throw error; }
         Files.move(temporary.toPath(), zip.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
     }
