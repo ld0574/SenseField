@@ -1,0 +1,28 @@
+{
+  "_note": "P3 阈值标定 v1（2026-10-04）。数据来源：50 帧双跑 + 10 帧机器推导标注（state 内嵌 potential_matches 事实，annotation-machine.csv，待领导抽查）。样本量 n=10 且零负样本，统计强度弱——derived 为寻优输出，recommended 为保守建议。",
+  "channel": { "endpoint": "https://ai-gateway.edgeone.link/v1/systemone", "model": "@makers/jev", "fallback": { "endpoint": "https://openrouter.ai/api/v1/systemone", "model": "typesafe/jev-1.13" } },
+  "questions": { "_comment": "五问定义见创作工具④导出的 jev-config.json，此处不重复" },
+  "thresholds": {
+    "next_action": {
+      "read_only_tier": {
+        "derived": { "en": 0.30, "zh": 0.30, "basis": "10/10 正确、0 错误率 @ 全部阈值档；n=10" },
+        "recommended": { "en": 0.50, "zh": 0.50, "basis": "n=10 无负样本，取中位保守档" }
+      },
+      "mutating_tier": { "high": 0.9, "mid": 0.5, "low": 0.3, "note": "评测集无此类帧，保守默认+强制人工确认" },
+      "payment_tier": { "high": 0.95, "mid": 0.7, "low": 0.5, "note": "最高门槛+强制人工确认，待真实帧补标定" }
+    },
+    "danger_level": { "high": 0.9, "mid": 0.5, "low": 0.3, "note": "云端 EN 低置信 32%、ZH 30%——主观题型，待人工标注定" },
+    "should_interrupt": { "high": 0.9, "mid": 0.5, "low": 0.3, "note": "ZH 档云端低置信 92%（把握度塌缩）——中文档位此问仅作参考，阈值待重标" },
+    "announce_rank": { "high": 0.9, "mid": 0.5, "low": 0.3, "note": "云端低置信 64-76%——主要走中/低档，符合播报类操作的代价结构" },
+    "scene_changed": { "high": 0.9, "mid": 0.5, "low": 0.3, "note": "两端分布都散，待标注" }
+  },
+  "harnessRules": {
+    "uncertainSpeech": "我没看清当前局面，请让我重新扫描",
+    "neverSilent": true,
+    "whitelistRequired": true,
+    "paymentRequiresManualConfirm": true,
+    "localBackendPolicy": "本地 Laya 把握度塌缩（两种语言均 78-100% 低置信）→ 本地永远走「没看清」档，仅作断网可用性兜底"
+  },
+  "generated_at": "2026-10-04T00:00:00.000Z",
+  "calibrated": "machine-derived-partial-pending-review"
+}

@@ -49,6 +49,19 @@ public class Match3LiveService extends Service {
     static final String EXTRA_START_REQUEST_ID = "match3_start_request_id";
     private static volatile StartResult lastStartResult;
 
+    /**
+     * 战报的只读取数出口。战报原先只在 {@code s.diagnostics.audit("Match3RoundDigest " + …)} 那一句里
+     * 现算现丢，唯一的消费者是诊断日志，玩家那一头取不到（不播、不显示、不导出）。本字段只把
+     * <b>同一处、同一批瞬时读数</b>（visibleRuns／cascadeWaitingFrames／processedFrames／该轮 goalKey）
+     * 交给同一个纯生成器 {@link Match3RoundDigest#digest} 的结果留一份逐字快照：那句 audit 一字未改，
+     * 战报的生成时机与内容口径都没动。读取只返回文本，不写回、不参与任何识别、评分或播报决策，
+     * 也不留任何用户目录、机型或身份字段——文件名与界面由调用方自己拼。
+     */
+    private static volatile String lastRoundDigest = "";
+
+    /** 最近一轮落定的战报文本逐字快照；还没有落定过任何一轮时返回空串（空串＝没有战报，不是零封战报）。 */
+    static String roundDigestSnapshot() { return lastRoundDigest; }
+
     /** Acknowledges this request only once the projection and frame listener are ready. */
     static final class StartResult {
         final String requestId;
@@ -73,6 +86,8 @@ public class Match3LiveService extends Service {
     private Handler handler;
     private CuePlayer player;
     private CueDispatcher dispatcher;
+    /** 与 dispatcher 同生命周期：提交侧的通道位决定只能问它，不能在 Service 里另算一套。 */
+    private Match3LiveCuePolicy cuePolicy;
 
     // Recognition belongs to one projection. The main thread only publishes
     // the latest mode-command revision; mode changes still run on the worker.
@@ -86,6 +101,7 @@ public class Match3LiveService extends Service {
         final Match3GeometryConfirmation geometryConfirmation = new Match3GeometryConfirmation();
         volatile Match3Hint currentHint;
         volatile String hintCueId;
+        volatile String finishingHintCueId;
         long boardRevision, lastHintSpokenRevision = -1;
         int hintAttempts;
         char[][] lastStableMatrix;
@@ -399,7 +415,9 @@ public class Match3LiveService extends Service {
                             "ranking_scope", s.currentHint.value == null ? "basic" : s.currentHint.value.evidence(),
                             "from_row", s.currentHint.swap.fromRow + 1, "from_col", s.currentHint.swap.fromCol + 1,
                             "to_row", s.currentHint.swap.toRow + 1, "to_col", s.currentHint.swap.toCol + 1,
-                            "origin", "board_top_left_one_based"),
+                            "origin", "board_top_left_one_based",
+                            // 诊断读数，不进播报：这一格按 BoardPan 映射出来的立体声 pan。
+                            "pan_reading", hintPanReading(s)),
                     "highlight_suppressed", s.visualSuppressed,
                     "highlight_visible", s.overlay != null && s.overlay.renderedHint() != null,
                     "highlight_visible_ms", s.overlay == null ? 0 : s.overlay.visibleDurationMs(),
@@ -628,6 +646,13 @@ public class Match3LiveService extends Service {
                 invalidateHint(s,"GOAL_CHANGED");
         }
         if(goalsConfirming && s.currentHint == null) { recommendationGate(s,"goal_confirming");return; }
+        // An invalidated exchange loses its rectangle immediately. Finish only
+        // the sentence already heard, then select from fresh confirmed evidence;
+        // never show a new direction underneath the preceding spoken direction.
+        if (s.currentHint == null && hintSpeechFinishing(s)) {
+            recommendationGate(s, "speech_finishing");
+            return;
+        }
         if (s.currentHint == null && s.lastSwaps != null && !s.lastSwaps.isEmpty()) {
             s.currentHint = new Match3Hint(s.diagnostics.sessionId, ++s.hintRevision, s.frameAt,
                     s.geometry, s.rankedMoves.get(0),s.goals.key());
@@ -643,6 +668,14 @@ public class Match3LiveService extends Service {
             s.outcomes.begin(hint.revision,position,s.goals,hint.value,s.frameAt);
             s.diagnostics.match3HintContext(hint.revision,false);
             updateHintOverlay(s, hint);
+            // Round settled: fold the instantaneous counters into one audit-only digest through the
+            // existing DiagnosticRecorder.audit entry. It never announces, opens a file, or shares.
+            s.diagnostics.audit("Match3RoundDigest " + Match3RoundDigest.digest(
+                    s.visibleRuns, s.cascadeWaitingFrames, s.processedFrames, hint.goalKey));
+            // 只读取数出口的数据源：把上面那句 audit 同一批瞬时读数、同一个纯生成器算出的战报留一份
+            // 逐字快照。audit 本身一字未改，生成时机（同一分支的同一处）与内容口径（同入参同生成器）未动。
+            lastRoundDigest = Match3RoundDigest.digest(
+                    s.visibleRuns, s.cascadeWaitingFrames, s.processedFrames, hint.goalKey);
         }
         if (changed && s.lastSwaps.isEmpty())
             s.diagnostics.audit("Match3Status state=no_swap speech=silent");
@@ -747,13 +780,32 @@ public class Match3LiveService extends Service {
         s.currentHint = null;
         s.hintPosition=null;s.hintGoals=null;
         String cueId = s.hintCueId; s.hintCueId = null;
-        if (dispatcher != null && cueId != null) dispatcher.cancelCue(cueId, reason);
+        boolean finishStarted = Match3HintPlaybackPolicy.finishStartedSentence(reason);
+        if (dispatcher != null && cueId != null) {
+            if (dispatcher.retireCue(cueId, reason, finishStarted)) {
+                s.finishingHintCueId = cueId;
+                s.diagnostics.audit("Match3SpeechFinishing cue_id=" + cueId + " reason=" + reason
+                        + " replacement=after_completion old_highlight=hidden");
+            }
+        }
+        if (!finishStarted && s.finishingHintCueId != null) {
+            if (dispatcher != null) dispatcher.cancelCue(s.finishingHintCueId, reason);
+            s.finishingHintCueId = null;
+        }
         if (s.overlay != null) s.overlay.clear();
         if (s.overlayFilter != null) s.overlayFilter.retire();
         if (old != null) s.diagnostics.audit("Match3HintCleared revision=" + old.revision
                 + " reason=" + reason + " highlight_visible_ms=" + visibleMs);
         if(old!=null && ("BOARD_MOTION".equals(reason) || "HINT_EVIDENCE_CHANGED".equals(reason)))
             s.diagnostics.match3HintContext(old.revision,true);
+    }
+
+    private boolean hintSpeechFinishing(Session s) {
+        String cueId = s.finishingHintCueId;
+        if (cueId == null) return false;
+        if (dispatcher != null && dispatcher.isCueSpeaking(cueId)) return true;
+        s.finishingHintCueId = null;
+        return false;
     }
 
     private void invalidateBoard(Session s, String reason) {
@@ -835,6 +887,9 @@ public class Match3LiveService extends Service {
         if (hint == null || !s.boardValid || now - s.frameAt > 5000
                 || now - s.lastAnnounceAt < MIN_ANNOUNCE_GAP_MS
                 || s.hintAttempts >= 3 || !repeat && s.lastHintSpokenRevision == hint.revision) return;
+        // A slow voice can exceed the idle repeat interval. Repeating the same
+        // hint must not flush its active or not-yet-started utterance either.
+        if (dispatcher != null && dispatcher.isCueSpeaking(s.hintCueId)) return;
         // Initial status speech can be ahead of this one; the playback guard rejects old boards.
         ensureDispatcher(s);
         String cueId = hint.sessionId + ":hint:" + hint.revision + ":" + now;
@@ -843,8 +898,9 @@ public class Match3LiveService extends Service {
         s.diagnostics.audit("Match3Speech: " + hint.speech);
         CueDispatcher.DispatchResult result = dispatcher.submit(new CueRequest(hint.sessionId, cueId, "m3live:hint:" + hint.revision,
                 "消消乐交换提示", CueRequest.Category.SYSTEM, 70, now, now + 10000,
-                Match3LiveCuePolicy.REQUESTED_CHANNELS, 0, 0, 0, hint.speech,
-                Float.NaN, Float.NaN, 0, -1, () -> active == s && !s.projectionStopped
+                cuePolicy.hintRequestedChannels(), 0, 0, 0, hint.speech,
+                Match3LiveCuePolicy.hintPanOf(hint.swap.fromRow, hint.swap.fromCol, rows(s), cols(s)),
+                Float.NaN, 0, -1, () -> active == s && !s.projectionStopped
                         && s.currentHint == hint && SystemClock.elapsedRealtime() - s.frameAt <= 5000));
         if (result.audioQueued() || "channels_disabled".equals(result.reason)
                 || "category_disabled".equals(result.reason)) s.lastHintSpokenRevision = hint.revision;
@@ -935,6 +991,21 @@ public class Match3LiveService extends Service {
     private int rows(Session s) { return s.sampler == null ? 8 : s.sampler.rowCount(); }
     private int cols(Session s) { return s.sampler == null ? 8 : s.sampler.colCount(); }
 
+    /**
+     * 当前推荐格子的立体声 pan 诊断读数（只作观测，不进播报链）。
+     *
+     * <p>口径与播报侧完全同源：{@code maybeAnnounceHint} 提交的 {@link CueRequest#pan} 槽现在喂
+     * {@link Match3LiveCuePolicy#hintPanOf}，也就是这里的 {@link BoardPan#readingOf} 背后同一个
+     * {@code BoardPan.panOf} 与同一套行列／盘面尺寸入参，所以读数与玩家听到的左右偏置不可能相反。
+     * 读数本身仍只是观测值：值是 [-1,1] 的三位小数（最左列 -1.000、最右列 1.000），
+     * 盘尺寸不可用或列越界时为 unknown（对应提交侧的 NaN＝不猜居中），没有推荐格子时为 no_hint。
+     */
+    private String hintPanReading(Session s) {
+        if (s.currentHint == null) return "no_hint";
+        return BoardPan.readingOf(s.currentHint.swap.fromRow, s.currentHint.swap.fromCol,
+                rows(s), cols(s));
+    }
+
     private void announce(Session s, String speech) {
         try {
             projectionSession.runIfCurrent(s.generation, s.projection, () -> {
@@ -972,7 +1043,8 @@ public class Match3LiveService extends Service {
                         });
                     }
                 });
-                dispatcher = new CueDispatcher(player, new Match3LiveCuePolicy(new CueSettings(this)),
+                cuePolicy = new Match3LiveCuePolicy(new CueSettings(this));
+                dispatcher = new CueDispatcher(player, cuePolicy,
                         new CueDispatcher.Listener() {
                             @Override public void onDispatch(CueRequest request,
                                     CueDispatcher.DispatchResult result) {

@@ -21,8 +21,20 @@ else:
     from prepare_bundled_speech import catalog, expected
 
 CERT = "5a42a53a8f06850e89c46ea193931e9853e3ce7cff99551b42e8b414a1eaaf68"
-VERSION_NAME = "0.4.7"
-VERSION_CODE = 24
+
+
+def configured_version(build_gradle: Path | None = None) -> tuple[str, int]:
+    """Use the same checked-in version as Gradle, without accepting CLI overrides."""
+    path = build_gradle or Path(__file__).resolve().parents[1] / "android/app/build.gradle"
+    source = path.read_text(encoding="utf-8")
+    names = re.findall(r'''^\s*versionName\s+['"]([0-9]+\.[0-9]+\.[0-9]+)['"]\s*(?://[^\n]*)?$''', source, re.M)
+    codes = re.findall(r"^\s*versionCode\s+([1-9][0-9]*)\s*(?://[^\n]*)?$", source, re.M)
+    if len(names) != 1 or len(codes) != 1:
+        raise ValueError("Gradle must declare one literal release versionName and positive versionCode")
+    return names[0], int(codes[0])
+
+
+VERSION_NAME, VERSION_CODE = configured_version()
 REQUIRED_LIBRARIES = {"libmapassist.so", "libmapassist_jni.so", "libmatch3_math_jni.so", "libondevice_asr_jni.so",
                       "libonnxruntime.so", "libpresentation_audio_jni.so", "libsherpa-onnx-c-api.so"}
 

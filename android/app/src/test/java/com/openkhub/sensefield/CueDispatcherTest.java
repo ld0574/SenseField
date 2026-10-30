@@ -338,6 +338,65 @@ public final class CueDispatcherTest {
         assertFalse(events.events.contains("status:SPEECH:CANCELLED_REPLACED"));
     }
 
+    @Test public void retiredStartedHintFinishesBeforeReplacementSpeech() {
+        MutableClock clock = new MutableClock(); FakeRenderer renderer = new FakeRenderer();
+        Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+        dispatcher.submit(request("hint", "hint", 70, 10000));
+        clock.now = 2000;
+        assertTrue(dispatcher.retireCue("hint", "HINT_EVIDENCE_CHANGED", true));
+        assertTrue(dispatcher.isCueSpeaking("hint"));
+        assertFalse(renderer.stopped);
+        dispatcher.submit(request("replacement", "replacement", 70, 15000));
+        assertEquals(List.of("hint"), renderer.started);
+        clock.now = 8000;
+        renderer.speechCallbacks.get("hint").onFinished(clock.now, true);
+        assertEquals(List.of("hint", "replacement"), renderer.started);
+        assertTrue(events.events.contains("hint:SPEECH:COMPLETED"));
+        assertFalse(events.events.contains("hint:SPEECH:CANCELLED_HINT_EVIDENCE_CHANGED"));
+        assertFalse(dispatcher.isCueSpeaking("hint"));
+    }
+
+    @Test public void retiredHintThatHasNotStartedCannotSpeakLater() {
+        for (boolean behindStatus : new boolean[]{false, true}) {
+            MutableClock clock = new MutableClock(); FakeRenderer renderer = new FakeRenderer();
+            Events events = new Events();
+            CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+            if (behindStatus) dispatcher.submit(request("status", "status", 70, 10000));
+            else renderer.autoStartSpeech = false;
+            clock.now = 1000;
+            dispatcher.submit(request("stale", "stale", 70, 10000));
+            CueDispatcher.PlaybackCallback late = renderer.speechCallbacks.get("stale");
+            assertFalse(dispatcher.retireCue("stale", "BOARD_MOTION", true));
+            assertTrue(events.events.contains("stale:SPEECH:CANCELLED_BOARD_MOTION"));
+            if (behindStatus) {
+                assertFalse(renderer.stopped);
+                renderer.speechCallbacks.get("status").onFinished(5000, true);
+                assertFalse(renderer.started.contains("stale"));
+            } else {
+                assertTrue(renderer.stopped);
+                late.onStarted(5000); late.onFinished(8000, true);
+                assertFalse(events.events.contains("stale:SPEECH:STARTED"));
+                assertFalse(events.events.contains("stale:SPEECH:COMPLETED"));
+            }
+            assertFalse(dispatcher.isSpeaking());
+        }
+    }
+
+    @Test public void sessionStopStillCancelsAHintAllowedToFinishDuringBoardRefresh() {
+        MutableClock clock = new MutableClock(); FakeRenderer renderer = new FakeRenderer();
+        Events events = new Events();
+        CueDispatcher dispatcher = new CueDispatcher(renderer, new FakePolicy(), events, clock);
+        dispatcher.submit(request("hint", "hint", 70, 10000));
+        assertTrue(dispatcher.retireCue("hint", "BOARD_MOTION", true));
+        assertFalse(dispatcher.retireCue("hint", "SERVICE_STOPPED", false));
+        assertTrue(renderer.stopped);
+        renderer.speechCallbacks.get("hint").onFinished(8000, true);
+        assertFalse(dispatcher.isSpeaking());
+        assertTrue(events.events.contains("hint:SPEECH:CANCELLED_SERVICE_STOPPED"));
+        assertFalse(events.events.contains("hint:SPEECH:COMPLETED"));
+    }
+
     @Test public void preparedNearToneAndSpeechUseOneSubmissionAndKeepHaptics() {
         MutableClock clock = new MutableClock();
         FakeRenderer renderer = new FakeRenderer();

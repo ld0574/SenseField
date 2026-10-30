@@ -18,8 +18,8 @@ final class JevThresholds {
     }
 
     enum Decision {
-        /** 高置信：自动执行（仍必须过白名单校验）。 */
-        AUTO_EXECUTE,
+        /** 高置信：直接播报，不用确认（仍必须过白名单校验）。 */
+        DIRECT_ANNOUNCE,
         /** 中置信：先播报请求确认，不直接执行。 */
         CONFIRM,
         /** 低置信：不执行、不猜，出声播报「没看清」。 */
@@ -32,7 +32,7 @@ final class JevThresholds {
      */
     Decision decide(JevAnswer answer) {
         double c = answer.surety();
-        if (c >= high) return Decision.AUTO_EXECUTE;
+        if (c >= high) return Decision.DIRECT_ANNOUNCE;
         if (c >= mid) return Decision.CONFIRM;
         return Decision.UNCERTAIN;
     }
@@ -48,7 +48,7 @@ final class JevThresholds {
     /** 播报文案（无障碍底线：低置信必须出声，静默失败视为验收不通过）。 */
     static String speechFor(Decision decision, JevAnswer answer) {
         switch (decision) {
-            case AUTO_EXECUTE:
+            case DIRECT_ANNOUNCE:
             case CONFIRM:
                 return describe(answer);
             default:

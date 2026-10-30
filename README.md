@@ -14,6 +14,7 @@
   <a href="https://github.com/ld0574/SenseField/releases/download/v0.4.7/sensefieldv0.4.7.apk"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD%E5%AE%89%E5%8D%93%E5%AE%89%E8%A3%85%E5%8C%85-236874?style=for-the-badge&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj4gPHBhdGggZD0iTTIxIDE1djRhMiAyIDAgMCAxLTIgMkg1YTIgMiAwIDAgMS0yLTJ2LTQiLz4gPHBvbHlsaW5lIHBvaW50cz0iNyAxMCAxMiAxNSAxNyAxMCIvPiA8bGluZSB4MT0iMTIiIHgyPSIxMiIgeTE9IjE1IiB5Mj0iMyIvPgo8L3N2Zz4%3D" alt="下载安卓安装包" align="middle"></a>
   <a href="https://ld0574.github.io/SenseField/"><img src="https://img.shields.io/badge/%E5%90%AC%E9%87%8E%E5%AE%98%E7%BD%91-236874?style=for-the-badge&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj4gPGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiLz4gPHBhdGggZD0iTTEyIDJhMTQuNSAxNC41IDAgMCAwIDAgMjAgMTQuNSAxNC41IDAgMCAwIDAtMjAiLz4gPHBhdGggZD0iTTIgMTJoMjAiLz4KPC9zdmc%2B" alt="听野官网" align="middle"></a>
   <a href="https://ld0574.github.io/SenseField/#voices"><img src="https://img.shields.io/badge/%E7%94%A8%E6%88%B7%E5%BF%83%E5%A3%B0%E4%B8%8E%E6%B8%B8%E6%88%8F%E9%80%82%E9%85%8D%E5%8F%8D%E9%A6%88-236874?style=for-the-badge&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj4gPHBhdGggZD0iTTcuOSAyMEE5IDkgMCAxIDAgNCAxNi4xTDIgMjJaIi8%2BCjwvc3ZnPg%3D%3D" alt="用户心声与游戏适配反馈" align="middle"></a>
+  <a href="https://ld0574.github.io/SenseField/#demo"><img src="https://img.shields.io/badge/3%E5%88%86%E9%92%9F%E5%AE%9E%E6%9C%BA%E6%BC%94%E7%A4%BA-236874?style=for-the-badge&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIxMCIvPjxwb2x5Z29uIHBvaW50cz0iMTAgOCAxNiAxMiAxMCAxNiAxMCA4Ii8%2BPC9zdmc%2B" alt="3 分钟实机演示" align="middle"></a>
 </p>
 
 <p align="center">
@@ -24,7 +25,8 @@
 
 <p align="center">
   罕见·无界黑客松参赛项目<br>
-  赛题：遗传性视网膜色素变性+游戏辅助工具
+  赛题：遗传性视网膜色素变性+游戏辅助工具<br>
+  2026 罕见·无界黑客松 · 十强赛手团队 · 最佳人气奖
 </p>
 
 ---

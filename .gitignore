@@ -85,6 +85,7 @@ docs/**
 !docs/references/
 !docs/releases/
 !docs/releases/0.4.7/
+!docs/releases/0.4.9/
 !docs/requirements/
 !docs/research/
 !docs/README.md
@@ -108,6 +109,9 @@ docs/**
 !docs/releases/0.4.7/RELEASE_NOTES.md
 !docs/releases/0.4.7/UPDATE_SUMMARY.txt
 !docs/releases/0.4.7/installation-guide.txt
+!docs/releases/0.4.9/RELEASE_NOTES.md
+!docs/releases/0.4.9/UPDATE_SUMMARY.txt
+!docs/releases/0.4.9/installation-guide.txt
 !docs/releases/GITHUB发布检查清单.md
 !docs/releases/README.md
 !docs/releases/版本命名规范.md
@@ -126,6 +130,7 @@ validation/**
 !validation/match3/holdout/
 !validation/match3/holdout/examples/
 !validation/protocols/
+!validation/protocols/**
 !validation/FINAL_EVIDENCE.example.json
 !validation/LATENCY.example.csv
 !validation/README.md
@@ -164,3 +169,31 @@ android/app/src/main/assets/sensevoice/tokens.txt
 # Generated assistant credentials and backend private keys are server-local.
 deploy/assistant/runtime/
 /demo-video
+!docs/development/assistant-online-deployment.md
+# ===== feature/sensefield-dev 本地工作区追加规则 =====
+node_modules/
+bower_components/
+playwright-report/
+test-results/
+allure-results/
+allure-report/
+
+# Agent 工具内部文件
+.arts/
+.codeartsdoer/
+.merkle-snapshot.json
+
+# 训练数据集与训练过程产物（权重已由上方 *.pt/*.pth 规则排除）
+research/board-recognition/data/synth/
+research/board-recognition/models/yolo_dataset/
+research/board-recognition/models/yolo_runs/
+research/board-recognition/data/real/
+# 本地判卷依赖包，非数据资产
+research/board-recognition/models/*.whl
+
+# 本地装机验证用的 debug APK，不对外（§12 口径 A）
+delivery/SenseField-0.3.5-alpha.11-*.apk
+delivery/SenseField-0.3.5-alpha.12-*.apk
+
+# ===== origin/main 追加规则 =====
+!docs/development/assistant-native-deployment.md

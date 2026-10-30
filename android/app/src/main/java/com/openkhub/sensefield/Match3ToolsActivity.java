@@ -23,8 +23,12 @@ import android.widget.Toast;
 
 import org.json.JSONObject;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -32,10 +36,13 @@ import java.util.Map;
 /** Optional screenshot calibration, learning and inspection; live geometry is confirmed automatically. */
 public final class Match3ToolsActivity extends UiActivity {
     private static final int REQ_PICK_IMAGE = 2001;
+    private static final int REQ_SAVE_ROUND_DIGEST = 2002;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Bitmap screenshot;
     private Uri screenshotUri;
+    /** 玩家按下「保存这一盘战报」后落到缓存里、等他亲手在创建文档界面里选位置的那份文本。 */
+    private File preparedDigest;
     private BoardGeometry screenshotGeometry;
     private Match3BoardPreview preview;
     private Button selectBoard, saveBoard;
@@ -180,6 +187,20 @@ public final class Match3ToolsActivity extends UiActivity {
         Button props = UiKit.button(this, "播报屏幕下方道具栏", false);
         props.setOnClickListener(v -> announcePropBar());
         coach.addView(props);
+        // 兑现 Match3Gate.gatedSpeech 低置信那句「要我从上往下逐条读吗」：给玩家一颗真能把那一条读出来的按钮。
+        // 放在本卡片（不挂在 JevSettings.enabled 门后）是因为逐条读全程本地，判定层未启用也要能用。
+        Button readAloud = UiKit.button(this, "逐条读这一屏", false);
+        readAloud.setOnClickListener(v -> readAloudThisScreen());
+        coach.addView(readAloud);
+        // 战报的两个玩家出口。战报原先唯一的消费者是 Match3LiveService 里那句 audit（只进诊断日志），
+        // 这里只做「接到手」这一件事：文本逐字取自只读取数出口，本卡片一个字也不拼，
+        // 念走 announce 既有通道、存走第 15 份书验收过的那条创建文档路。
+        Button digestSpeak = UiKit.button(this, "念这一盘战报", false);
+        digestSpeak.setOnClickListener(v -> announceRoundDigest());
+        coach.addView(digestSpeak);
+        Button digestSave = UiKit.button(this, "保存这一盘战报", false);
+        digestSave.setOnClickListener(v -> saveRoundDigest());
+        coach.addView(digestSave);
 
         if (JevSettings.enabled(this)) {
         /* ---------- 读屏判定（无障碍树→Jev，领导方案 P0） ---------- */
@@ -249,10 +270,16 @@ public final class Match3ToolsActivity extends UiActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQ_PICK_IMAGE || resultCode != RESULT_OK || data == null || data.getData() == null) {
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) {
             return;
         }
-        loadScreenshot(data.getData(), true);
+        if (requestCode == REQ_PICK_IMAGE) {
+            loadScreenshot(data.getData(), true);
+            return;
+        }
+        if (requestCode == REQ_SAVE_ROUND_DIGEST) {
+            writeDigestToChosenDocument(data.getData());
+        }
     }
 
     private void loadScreenshot(Uri uri, boolean tellUser) {
@@ -451,11 +478,21 @@ public final class Match3ToolsActivity extends UiActivity {
                     +(value.reason.isEmpty()?"":"，"+value.reason)+"。";
             sb.append("  ").append(speech).append('\n');
             // A single complete suggestion replaces the old burst of five QUEUE_FLUSH requests.
-            if(spoken==1)announce(speech);
+            // 结果语义接进这同一条请求的同一个字符串、跟在解说之后，不再 announce 第二次：同类别、
+            // 非 100 优先级的语音有 speech_cooldown（下方 isEmpty 支的注释写明了这一点），紧跟着的
+            // 第二条会被整条吞掉。OutcomePhrase 无读数时出空串，整条文案与改前逐字相同。
+            if(spoken==1)announce(speech + OutcomePhrase.forSwap(s));
         }
         if (moves.isEmpty()) {
-            announce(goals.finished()?"截图中的目标已经完成。":goals.hudVerified && goals.steps==0
-                    ?"截图中的剩余步数已经用完。":"没有找到可直接消除的交换。");
+            // 任务书六：整盘解说只挂「没找到可推荐」这一支，追加在既有那句之后；
+            // 既有三句文案逐字不动，正常推荐路径（上面 spoken==1 那一支）不受影响。
+            // 解说合进同一条播报请求而不是再 announce 一次：CueDispatcher 对同类别、
+            // 非 100 优先级的语音有 speech_cooldown（Match3LiveCuePolicy 强制 ≥1500ms），
+            // 紧接着的第二条会被整条吞掉，等于没播。通道仍是 announce() 里既有的
+            // Match3LiveCuePolicy.REQUESTED_CHANNELS（只有 CHANNEL_SPEECH），未新增触觉或视觉。
+            announce((goals.finished()?"截图中的目标已经完成。":goals.hudVerified && goals.steps==0
+                    ?"截图中的剩余步数已经用完。":"没有找到可直接消除的交换。")
+                    + Match3Narrator.narrate(board, position.rows, position.cols));
             for (String line : scan) {
                 sb.append("  ").append(line).append('\n');
             }
@@ -582,7 +619,8 @@ public final class Match3ToolsActivity extends UiActivity {
                             .append("（").append(decisionLabel(d)).append("）\n");
                     if ("next_action".equals(e.getKey()) || "danger_level".equals(e.getKey())
                             || "should_interrupt".equals(e.getKey())) {
-                        announce(e.getKey() + "：" + JevThresholds.speechFor(d, a));
+                        // 白名单闸门第一次真的被查询：名单外的 next_action 不许念成一句指令。
+                        announce(gatedAnnouncement(e.getKey(), d, a));
                     }
                 }
                 String text = sb.toString();
@@ -598,7 +636,7 @@ public final class Match3ToolsActivity extends UiActivity {
 
     private static String decisionLabel(JevThresholds.Decision d) {
         switch (d) {
-            case AUTO_EXECUTE: return "高置信·自动执行";
+            case DIRECT_ANNOUNCE: return "高置信·直接播，不用确认";
             case CONFIRM: return "中置信·先确认";
             default: return "低置信·绝不静默";
         }
@@ -609,6 +647,8 @@ public final class Match3ToolsActivity extends UiActivity {
     private int kbIndex;
     private float gateHigh = 0.85f;
     private float gateMid = 0.60f;
+    /** 本次生效的辅助强度档位名，只供读数面展示；默认值与上面两条默认阈值同档（标准）。 */
+    private String gatePresetLabel = "标准";
 
     private void loadGating() {
         try (InputStream in = getAssets().open("jev/gating.json")) {
@@ -622,6 +662,13 @@ public final class Match3ToolsActivity extends UiActivity {
         } catch (Exception e) {
             // 配置缺失用默认阈值，不阻断
         }
+        // 档位接线（任务书八）：把设置面板已有的四档翻成生效的两条置信线，播报疏密才真的跟着档位走。
+        // 读法沿用现成的 cue_preset，标准档与自定义档等值回传 ⇒ 没调过档位的用户零变化；不新增偏好键。
+        gatePresetLabel = CueSettings.presetLabel(GameProfile.settings(this));
+        float[] intensityLines = Match3Intensity.apply(GameProfile.settings(this)
+                .getString("cue_preset", CueSettings.PRESET_STANDARD), gateHigh, gateMid);
+        gateHigh = intensityLines[0];
+        gateMid = intensityLines[1];
     }
     private boolean regionPick;
     private int[] regionFirst;
@@ -691,24 +738,244 @@ public final class Match3ToolsActivity extends UiActivity {
         output.setText(speech);
     }
 
+    /* ---------- 「逐条读这一屏」：把弃权问句兑现成一条真能听的路 ---------- */
+
+    /** 只读展示行（不进播报通道）：空列表时屏幕上总得有一句交代，读数本身一个字也不补。 */
+    private static final String EMPTY_READ_NOTE = "这一屏没有可逐条读的内容。";
+
+    /**
+     * 状态 → 待播句子列表的纯函数：按钮回调与单测走的是同一条链，所以「回调真调到链」这件事可被 JVM 证伪。
+     *
+     * <p>四条口径：① 句子一律原样取自 {@link LocalReadAloud#sentences(String, int)}（两参版传现值
+     * {@link LocalReadAloud#DEFAULT_LIMIT}，三参版由档位映射传入），本方法一个字也不拼、
+     * 一个字符也不加工；② 状态不新鲜时一条明细也不播，只给既有的「未就绪」固定话术
+     * （{@link DecisionWhy#explain} 的 NOT_READY 分支，与 {@code judgeScreen()} 第二条提前返回同源）；
+     * ③ {@link LocalReadAloud} 返回空列表且本地敏感闸门命中时，只给既有拦截句
+     * {@link Match3LineReader#GATE_BLOCK}，其余空列表情形返回空列表——一条也不播，绝不编造读数；
+     * ④ 全程本地：不新截图、不上云、不注入任何输入事件。
+     */
+    static List<String> readAloudLines(String state, boolean freshState) {
+        return readAloudLines(state, freshState, LocalReadAloud.DEFAULT_LIMIT);
+    }
+
+    /**
+     * 与两参版同一条链，只是把「一次念几条」的上限从外面传进来（疏密档位的落点）。
+     * {@code limit <= 0} 由 {@link LocalReadAloud#sentences(String, int)} 兜底回默认上限，语义一字不变。
+     */
+    static List<String> readAloudLines(String state, boolean freshState, int limit) {
+        if (!freshState) {
+            return java.util.Collections.singletonList(
+                    DecisionWhy.explain(DecisionWhy.Kind.NOT_READY, 0.0d, 0.0d, 0.0d, null));
+        }
+        List<String> lines = LocalReadAloud.sentences(state, limit);
+        if (!lines.isEmpty()) {
+            return lines;
+        }
+        if (Match3Gate.sensitiveHit(state) != null) {
+            return java.util.Collections.singletonList(Match3LineReader.GATE_BLOCK);
+        }
+        return java.util.Collections.emptyList();
+    }
+
+    /** 按钮回调：读已缓存的压缩状态，把 {@link #readAloudLines} 的句子逐句交给既有 announce 通道。 */
+    private void readAloudThisScreen() {
+        final List<String> lines = readAloudLines(SenseFieldReaderService.latestState(),
+                SenseFieldReaderService.hasFreshState(), aloudLimitForPreset());
+        for (String line : lines) {
+            announce(line);
+        }
+        output.setText(lines.isEmpty() ? EMPTY_READ_NOTE : String.join("\n", lines));
+    }
+
+    /**
+     * 玩家已经选过的疏密档位 → 本次逐条读的条数上限。只读既有的 {@code cue_preset} 键，
+     * 读法与默认值和 {@link #loadGating()} 的档位接线同源（不新增偏好键、不新增控件、不改面板）。
+     */
+    private int aloudLimitForPreset() {
+        String preset = GameProfile.settings(this)
+                .getString("cue_preset", CueSettings.PRESET_STANDARD);
+        return ReadAloudDensity.limitFor(preset);
+    }
+
+    /* ---------- 战报的两个玩家出口：听（既有 announce 通道）与存（既有创建文档路） ---------- */
+
+    /**
+     * 战报出口的决议：一份战报文本能不能念、念哪句、该落成什么文件名。两个出口共用这一个纯函数，
+     * 界面侧只做动作，所以「念的是不是原文」「文件名里藏没藏身份」这两件事在 JVM 单测里可证伪。
+     *
+     * <p>四条口径，逐条对着任务书 2 的报警器：① {@code speech} 就是入参 {@code digest} 本身，
+     * 逐字取自 {@link Match3RoundDigest#digest}（经 {@link Match3LiveService#roundDigestSnapshot()}），
+     * 本方法一个字符也不加、不拼、不改标点；② 空盘那句「盘面上没看到连线」是生成器自带的，
+     * 这里不另造话术、也不替玩家补任何数字；③ 文件名只由「消毒过的会话 id ＋调用方给的时刻」拼成，
+     * 形状与第 15 份书验收过的那条保存路一致，会话 id 先过 {@link #safeSessionIdForFile} 消毒
+     * （掺进冒号／目录分隔符／点／空格／非 ASCII 就整串换占位符），于是盘符、目录形状、机型串、
+     * 聊天软件名这些进不到文件名里；id 本身为空也用占位符；
+     * ④ 战报为空（null 或全空白）时 {@code speak} 为假、{@code exportFileName} 为 {@code null}，
+     * 既不念也不创建文档，更不抛异常。</p>
+     *
+     * <p>纯函数：不碰界面、不起线程、不读写文件、不发意图。时刻由调用方传入，本方法不读时钟。</p>
+     */
+    static DigestOutlet digestOutlet(String digest, String sessionId, long exportedAtMillis) {
+        if (digest == null || digest.trim().isEmpty()) {
+            return new DigestOutlet(false, "", null);
+        }
+        return new DigestOutlet(true, digest,
+                "sensefield-" + safeSessionIdForFile(sessionId) + "-" + exportedAtMillis + ".txt");
+    }
+
+    /**
+     * 会话 id 消毒：合法形状只有「字母／数字／{@code -}／{@code _}，最长 36（UUID 的原长）」。
+     * 一旦掺进别的字符——冒号、目录分隔符、点、空格、非 ASCII，盘符／用户目录／机型串／聊天软件名
+     * 这些形状全靠它们落地——<b>整串作废</b>换成占位符：宁可文件名只留时刻，也不留下可疑形状的一半。
+     */
+    static String safeSessionIdForFile(String sessionId) {
+        if (sessionId == null || sessionId.isEmpty()) return NO_SESSION_PLACEHOLDER;
+        if (sessionId.length() > MAX_SESSION_ID_LENGTH) return NO_SESSION_PLACEHOLDER;
+        for (int i = 0; i < sessionId.length(); i++) {
+            char c = sessionId.charAt(i);
+            boolean legal = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+                    || c == '-' || c == '_';
+            if (!legal) return NO_SESSION_PLACEHOLDER;
+        }
+        return sessionId;
+    }
+
+    private static final String NO_SESSION_PLACEHOLDER = "nosession";
+    private static final int MAX_SESSION_ID_LENGTH = 36;
+
+    /** 决议的形状：要不要念、念哪句、落成哪个文件名（{@code null} ＝ 不创建文档）。 */
+    static final class DigestOutlet {
+        final boolean speak;
+        final String speech;
+        final String exportFileName;
+
+        private DigestOutlet(boolean speak, String speech, String exportFileName) {
+            this.speak = speak;
+            this.speech = speech;
+            this.exportFileName = exportFileName;
+        }
+    }
+
+    /** 只读展示行（不进播报通道）：一局都没落定过时屏幕上得有一句交代，但绝不替玩家编一份战报。 */
+    private static final String NO_DIGEST_NOTE = "这一盘还没有战报：开实时辅助打到回合落定，战报会自动生成。";
+
+    /** 「念这一盘战报」的按钮回调：只读取数出口 → {@link #digestOutlet} → 既有 announce 通道。 */
+    private void announceRoundDigest() {
+        DigestOutlet outlet = digestOutlet(Match3LiveService.roundDigestSnapshot(),
+                diagnosticsSessionId(), System.currentTimeMillis());
+        output.setText(outlet.speak ? outlet.speech : NO_DIGEST_NOTE);
+        if (outlet.speak) {
+            announce(outlet.speech);
+        }
+    }
+
+    /**
+     * 「保存这一盘战报」的按钮回调：复用第 15 份书已经验收过的那条路——先把逐字文本落到与诊断包
+     * 同一个 {@code diagnostic-exports} 缓存目录（同一套 {@code System.currentTimeMillis()} 命名），
+     * 再交给既有的 {@code ACTION_CREATE_DOCUMENT} 由玩家亲手选位置。跑在诊断包那条路同一个
+     * {@code DiagnosticRecorder.IO} 上（不起新线程、不新增清单条目、不发网络、不自动分享）。
+     */
+    private void saveRoundDigest() {
+        DigestOutlet outlet = digestOutlet(Match3LiveService.roundDigestSnapshot(),
+                diagnosticsSessionId(), System.currentTimeMillis());
+        if (outlet.exportFileName == null) {
+            output.setText(NO_DIGEST_NOTE);
+            return;
+        }
+        final String text = outlet.speech;
+        final String name = outlet.exportFileName;
+        DiagnosticRecorder.IO.execute(() -> {
+            try {
+                File staged = new File(new File(getCacheDir(), "diagnostic-exports"), name);
+                Files.createDirectories(staged.getParentFile().toPath());
+                Files.write(staged.toPath(), text.getBytes(StandardCharsets.UTF_8));
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    preparedDigest = staged;
+                    try {
+                        Intent target = new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("text/plain");
+                        target.addCategory(Intent.CATEGORY_OPENABLE);
+                        target.putExtra(Intent.EXTRA_TITLE, staged.getName());
+                        startActivityForResult(target, REQ_SAVE_ROUND_DIGEST);
+                        output.setText(text + "\n（请在下一步选择保存位置）");
+                    } catch (RuntimeException error) {
+                        toast("无法打开保存位置，可再按一次保存");
+                    }
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> output.setText("战报落盘失败：" + error));
+            }
+        });
+    }
+
+    /** 玩家亲手选好位置之后才把缓存里那份逐字文本搬过去：这一步由创建文档的返回结果触发，不是自动分享。 */
+    private void writeDigestToChosenDocument(Uri destination) {
+        final File source = preparedDigest;
+        if (source == null || !source.isFile()) {
+            output.setText(NO_DIGEST_NOTE);
+            return;
+        }
+        DiagnosticRecorder.IO.execute(() -> {
+            try (FileInputStream in = new FileInputStream(source);
+                 OutputStream out = getContentResolver().openOutputStream(destination)) {
+                if (out == null) {
+                    runOnUiThread(() -> output.setText("无法写入所选文件，可再按一次保存"));
+                    return;
+                }
+                byte[] buffer = new byte[32768];
+                int read;
+                while ((read = in.read(buffer)) != -1) out.write(buffer, 0, read);
+                runOnUiThread(() -> toast("战报已保存"));
+            } catch (Exception error) {
+                runOnUiThread(() -> output.setText("战报保存失败：" + error));
+            }
+        });
+    }
+
+    /** 会话 id 只读取自既有诊断记录器的公开字段（只读复用，它一个字也没改）；还没有会话时返回 null。 */
+    private static String diagnosticsSessionId() {
+        DiagnosticRecorder recorder = DiagnosticRecorder.current;
+        return recorder == null ? null : recorder.sessionId;
+    }
+
+    /**
+     * 白名单闸门：把「判定答案 → 允许出口的话术」抽成纯函数，供 {@code judgeSample()} 的播报出口与单测共用。
+     *
+     * <p>不在白名单里的 next_action 答案<b>不许念成一句指令</b>，只回落既有兜底话术
+     * {@link JevThresholds#UNCERTAIN_SPEECH}（不新造句子）。白名单问的是「哪些答案可以出口」，
+     * 不是「可以替玩家点哪一格」——本方法只返回一句话，不产生任何操作，也不碰 DIRECT_ANNOUNCE 的语义。
+     * {@code JevThresholds.inWhitelist}／{@code speechFor} 与名单内容一字未改，这里只是第一次有人查它。
+     */
+    static String gatedAnnouncement(String key, JevThresholds.Decision decision, JevAnswer answer) {
+        if ("next_action".equals(key)
+                && !JevThresholds.inWhitelist(answer, JevThresholds.defaultWhitelist())) {
+            return JevThresholds.UNCERTAIN_SPEECH;
+        }
+        return key + "：" + JevThresholds.speechFor(decision, answer);
+    }
+
     /* ---------- 读屏判定（无障碍树→Jev，P0 基线：屏幕类型 Choice＋模态 Noul 扇出） ---------- */
 
     private void judgeScreen() {
         final JevClient client = JevSettings.clientOrNull(this);
         if (client == null) {
-            output.setText("【未运行】判定层未启用或配置不完整（判定自测页上方保存设置）。");
+            output.setText("【未运行】判定层未启用或配置不完整（判定自测页上方保存设置）。\n"
+                    + DecisionWhy.explain(DecisionWhy.Kind.NOT_RUNNING, 0.0d, gateHigh, gateMid, null));
             return;
         }
         if (!SenseFieldReaderService.hasFreshState()) {
             output.setText("【未就绪】读屏状态服务没有可用状态：请点「打开系统无障碍设置」，"
-                    + "找到「听野读屏状态服务」并开启，然后切回本页再试。\n开启后切几次屏幕，服务会自动缓存最新压缩状态。");
+                    + "找到「听野读屏状态服务」并开启，然后切回本页再试。\n开启后切几次屏幕，服务会自动缓存最新压缩状态。\n"
+                    + DecisionWhy.explain(DecisionWhy.Kind.NOT_READY, 0.0d, gateHigh, gateMid, null));
             return;
         }
         final String state = SenseFieldReaderService.latestState();
         final String sensitive = Match3Gate.sensitiveHit(state);
         if (sensitive != null) {
             String block = "本地敏感闸门命中：当前为「" + sensitive + "」相关页面，内容不上云、不播报细节，建议手动处理。";
-            output.setText(block);
+            // 只读展示：说明行是固定话术，命中的原文片段（state）一个字也不带出；播报实参仍是 block。
+            output.setText(block + "\n"
+                    + DecisionWhy.explain(DecisionWhy.Kind.SENSITIVE, 0.0d, gateHigh, gateMid, sensitive));
             announce(block);
             return;
         }
@@ -740,16 +1007,32 @@ public final class Match3ToolsActivity extends UiActivity {
                         .append(r.model).append(" · tokens ").append(r.inputTokens).append("\n\n");
                 List<String> speeches = new ArrayList<>();
                 JevAnswer st = r.answers.get("screen_type");
+                boolean abstained = (st == null);
                 if (st != null) {
                     double c = st.surety();
                     String speech;
-                    if ("ABSTAIN".equals(st.choice)) speech = "这一屏我没看清楚，要我从上往下逐条读吗？";
-                    else if (c >= gateHigh) speech = "当前是「" + st.choice + "」。";
-                    else if (c >= gateMid) speech = "可能是「" + st.choice + "」，这个我不太确定。";
-                    else speech = "这一屏我没看清楚，要我从上往下逐条读吗？";
+                    DecisionWhy.Kind why;
+                    if ("ABSTAIN".equals(st.choice)) {
+                        speech = AnnounceWhy.speech(true, c, gateHigh, gateMid);
+                        why = DecisionWhy.Kind.ABSTAIN;
+                    } else if (c >= gateHigh) {
+                        speech = "当前是「" + st.choice + "」。";
+                        why = DecisionWhy.Kind.HIGH;
+                    } else if (c >= gateMid) {
+                        speech = "可能是「" + st.choice + "」，这个我不太确定。";
+                        why = DecisionWhy.Kind.MID;
+                    } else {
+                        speech = AnnounceWhy.speech(false, c, gateHigh, gateMid);
+                        why = DecisionWhy.Kind.LOW;
+                    }
+                    abstained = why == DecisionWhy.Kind.ABSTAIN || why == DecisionWhy.Kind.LOW;
                     sb.append("[screen_type] ").append(st.choice)
-                      .append(" (conf=").append(String.format(java.util.Locale.US, "%.2f", c)).append(")\n")
-                      .append("→ ").append(speech).append("\n\n");
+                      .append(" (conf=").append(String.format(java.util.Locale.US, "%.2f", c))
+                      .append(" · 档位 ").append(gatePresetLabel)
+                      .append(" 生效线 ").append(String.format(java.util.Locale.US, "%.2f/%.2f",
+                              gateHigh, gateMid)).append(")\n")
+                      .append("→ ").append(speech).append("\n")
+                      .append("· ").append(DecisionWhy.explain(why, c, gateHigh, gateMid, st.choice)).append("\n\n");
                     speeches.add(speech);
                 }
                 JevAnswer modal = r.answers.get("has_modal");
@@ -760,6 +1043,16 @@ public final class Match3ToolsActivity extends UiActivity {
                     speeches.add(0, m);
                 }
                 for (String s : speeches) announce(s);
+                // 兑现「从上往下逐条读」这句问句：只有本轮真的弃权才念。
+                // 只读本地已缓存的压缩状态（不新截图、不上云），生成器内部先过 Match3Gate.sensitiveHit 闸门：
+                // 命中敏感时不逐条念内容，改为念一句固定的闸门话术（Match3LineReader.GATE_BLOCK），
+                // 所以这里永远不会整段静默——玩家至少听得到「这一屏我不逐条读」。句子不含 @[ 坐标，
+                // 走的仍是 announce 的既有 CHANNEL_SPEECH 通道。
+                if (abstained) {
+                    for (String line : Match3LineReader.readGuarded(state)) {
+                        announce(line);
+                    }
+                }
                 String text = sb.toString();
                 runOnUiThread(() -> output.setText(text));
             } catch (Exception e) {
@@ -797,7 +1090,9 @@ public final class Match3ToolsActivity extends UiActivity {
                 JevAnswer a = r.answers.get("icon_meaning");
                 boolean abstain = "ABSTAIN".equals(a.choice);
                 String speech = abstain ? "这个图标我看不出来是什么。" : "这个图标可能是「" + a.choice + "」。";
-                String text = nodeLine + "\n→ " + speech + " (conf=" + a.confidence + ")\n";
+                String text = nodeLine + "\n→ " + speech + " (conf=" + a.confidence + ")\n"
+                        + "· " + DecisionWhy.explain(DecisionWhy.Kind.ICON_DISAMBIG, a.confidence,
+                                gateHigh, gateMid, nodeLine) + "\n";
                 runOnUiThread(() -> output.setText(text));
                 announce(speech);
             } catch (Exception e) {
