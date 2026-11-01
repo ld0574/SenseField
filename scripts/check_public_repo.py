@@ -165,6 +165,8 @@ def is_model_artifact(rel: str, candidates: set[str]) -> bool:
                      ("fixed-ui", "gallery", "vine", "gray", "board-feedback", "hud-glyphs")}:
         return True
     suffix = path.suffix.lower()
+    if suffix == ".npz" and "models" in path.parts:
+        return True
     if suffix in MODEL_WEIGHT_SUFFIXES:
         return True
     if suffix != ".bin":
@@ -233,6 +235,9 @@ def workspace_candidates(root: Path) -> list[str]:
         "docs/development/外部数据引入与预训练.md",
         "docs/references/README.md",
         "docs/releases/0.4.7/RELEASE_NOTES.md",
+        "docs/releases/0.4.8/RELEASE_NOTES.md",
+        "docs/releases/0.4.8/UPDATE_SUMMARY.txt",
+        "docs/releases/0.4.8/installation-guide.txt",
         "docs/releases/0.4.7/UPDATE_SUMMARY.txt",
         "docs/releases/0.4.7/installation-guide.txt",
         "docs/releases/0.4.9/RELEASE_NOTES.md",

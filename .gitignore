@@ -85,6 +85,7 @@ docs/**
 !docs/references/
 !docs/releases/
 !docs/releases/0.4.7/
+!docs/releases/0.4.8/
 !docs/releases/0.4.9/
 !docs/requirements/
 !docs/research/
@@ -112,6 +113,9 @@ docs/**
 !docs/releases/0.4.7/RELEASE_NOTES.md
 !docs/releases/0.4.7/UPDATE_SUMMARY.txt
 !docs/releases/0.4.7/installation-guide.txt
+!docs/releases/0.4.8/RELEASE_NOTES.md
+!docs/releases/0.4.8/UPDATE_SUMMARY.txt
+!docs/releases/0.4.8/installation-guide.txt
 !docs/releases/0.4.9/RELEASE_NOTES.md
 !docs/releases/0.4.9/UPDATE_SUMMARY.txt
 !docs/releases/0.4.9/installation-guide.txt
@@ -154,6 +158,8 @@ validation/**
 research/board-recognition/**/*.md
 
 # Private model weights and training checkpoints stay local.
+/delivery/*.apk
+/research/board-recognition/models/*.npz
 android/app/src/main/assets/match3-fixed-ui-v1.json
 android/app/src/main/assets/match3-gallery-v1.json
 android/app/src/main/assets/match3-vine-v1.json
