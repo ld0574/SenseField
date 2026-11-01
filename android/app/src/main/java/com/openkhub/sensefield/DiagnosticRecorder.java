@@ -41,6 +41,9 @@ final class DiagnosticRecorder {
     static final int MAX_IMAGE_JOBS = 8;
     static final long MAX_IMAGE_JOB_BYTES = 16L * 1024 * 1024;
     private static final long CLEAR_FRAME_BYTES = 6L * 1024 * 1024;
+
+    /** Field list lives in a pure-JVM class; see {@link DiagnosticPrivacySurface}. */
+    static final java.util.List<String> METADATA_FIELDS = DiagnosticPrivacySurface.METADATA_FIELDS;
     // IO is shared across sessions; restarting capture must not multiply its image backlog.
     private static final DiagnosticImageBudget IMAGE_BUDGET = new DiagnosticImageBudget(
             MAX_IMAGE_JOBS, MAX_IMAGE_JOB_BYTES);
@@ -132,9 +135,15 @@ final class DiagnosticRecorder {
         });
     }
 
+    /** Screenshots are opt-in; the decision rule lives in {@link DiagnosticPrivacySurface}. */
+    static boolean imagesEnabled(boolean keyPresent, boolean storedValue) {
+        return DiagnosticPrivacySurface.imagesEnabled(keyPresent, storedValue);
+    }
+
     static boolean imagesEnabledPreference(Context context) {
         android.content.SharedPreferences settings = GameProfile.settings(context);
-        return !settings.contains(PREF_IMAGES) || settings.getBoolean(PREF_IMAGES, true);
+        return imagesEnabled(settings.contains(PREF_IMAGES),
+                settings.getBoolean(PREF_IMAGES, false));
     }
 
     static DiagnosticRecorder start(Context context, String sessionId, long startedAtMs) {
@@ -221,6 +230,7 @@ final class DiagnosticRecorder {
                         .put("match3_gallery_goals_pending_review",catalog.galleryGoalsPendingReview);
             }
         } catch (Exception ignored) { /* Diagnostics must not prevent capture. */ }
+        verifyMetadataShape(metadata);
         IO.execute(() -> {
             try { archive = new DiagnosticArchive(root(context), directory.getName(), metadata.toString(2)); }
             catch (Exception error) { failed(error); }
@@ -237,6 +247,22 @@ final class DiagnosticRecorder {
             catch (JSONException ignored) { /* Nonfinite metrics are unavailable. */ }
         }
         return out;
+    }
+
+    /**
+     * Warns, never throws: a capture session must not die because metadata drifted.
+     * The warning is the audit trail — an undeclared key means a field reached the
+     * package without going through {@link #METADATA_FIELDS}.
+     */
+    private static void verifyMetadataShape(JSONObject metadata) {
+        java.util.LinkedHashSet<String> undeclared = new java.util.LinkedHashSet<>();
+        java.util.Iterator<String> keys = metadata.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            if (!METADATA_FIELDS.contains(key)) undeclared.add(key);
+        }
+        if (!undeclared.isEmpty())
+            Log.w("SenseFieldDiagnostics", "metadata carries undeclared fields: " + undeclared);
     }
 
     private static JSONArray array(Object values) {

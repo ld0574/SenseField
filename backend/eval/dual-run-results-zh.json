@@ -1,0 +1,5155 @@
+{
+  "generated_at": "2026-10-03T10:59:45.414Z",
+  "lang": "zh",
+  "questions": {
+    "next_action": {
+      "type": "choice",
+      "instructions": "根据序列化后的游戏状态，接下来应该为视障玩家做什么？",
+      "criteria": {
+        "announce_match": "播报可消除组合（或最佳走法）的位置",
+        "scan_board": "逐行读取棋盘或屏幕内容",
+        "read_menu": "朗读菜单或对话框选项供玩家选择",
+        "wait": "局面无变化或无可执行操作，继续等待"
+      }
+    },
+    "danger_level": {
+      "type": "score",
+      "instructions": "当前局面对玩家的危险程度如何（计时压力、即将失败、棋子被攻击）？",
+      "criteria": [
+        "安全",
+        "注意：计时或障碍逼近",
+        "危险：即将失败",
+        "紧急：立即行动"
+      ]
+    },
+    "should_interrupt": {
+      "type": "noul",
+      "instructions": "是否必须立即播报，即使会打断当前正在进行的播报？",
+      "criteria": {
+        "true": "必须立即说，可以打断当前播报",
+        "false": "可以等当前播报结束后再说"
+      }
+    },
+    "announce_rank": {
+      "type": "score",
+      "instructions": "最新的变化现在有多重要、必须马上播报吗？",
+      "criteria": [
+        "不必播报",
+        "可说可不说",
+        "普通信息",
+        "重要信息",
+        "必须立即播报"
+      ]
+    },
+    "scene_changed": {
+      "type": "noul",
+      "instructions": "当前 state 相比上一帧是否明显切换了场景或界面？",
+      "criteria": {
+        "true": "与上一帧明显不同（新场景或新界面）",
+        "false": "同一场景延续"
+      }
+    }
+  },
+  "results": [
+    {
+      "id": "m3-with-01",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 13666,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2379,
+              "scan_board": 0.277,
+              "read_menu": 0.2294,
+              "wait": 0.2556
+            },
+            "confidence": 0.0019
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.5986,
+            "probabilities": {
+              "0": 0.2357,
+              "1": 0.229,
+              "2": 0.2364,
+              "3": 0.2989
+            },
+            "confidence": 0.0045
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5817,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.0666,
+            "probabilities": {
+              "0": 0.1722,
+              "1": 0.2005,
+              "2": 0.215,
+              "3": 0.213,
+              "4": 0.1993
+            },
+            "confidence": 0.0019
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.528,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1583,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "announce_match",
+            "probabilities": {
+              "announce_match": 0.91,
+              "wait": 0,
+              "scan_board": 0.09,
+              "read_menu": 0
+            },
+            "confidence": 0.88
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0.46,
+            "probabilities": {
+              "0": 0.55,
+              "1": 0.43,
+              "2": 0.01,
+              "3": 0.01
+            },
+            "confidence": 0.54
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.35,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.03,
+            "probabilities": {
+              "0": 0.15,
+              "1": 0.12,
+              "2": 0.4,
+              "3": 0.21,
+              "4": 0.12
+            },
+            "confidence": 0.27
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.09,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "m3-with-02",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 7407,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2415,
+              "scan_board": 0.2734,
+              "read_menu": 0.2344,
+              "wait": 0.2507
+            },
+            "confidence": 0.0012
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.6739,
+            "probabilities": {
+              "0": 0.2063,
+              "1": 0.2315,
+              "2": 0.2441,
+              "3": 0.3181
+            },
+            "confidence": 0.0096
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5506,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.2857,
+            "probabilities": {
+              "0": 0.1338,
+              "1": 0.1721,
+              "2": 0.2091,
+              "3": 0.2445,
+              "4": 0.2404
+            },
+            "confidence": 0.0144
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5259,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1151,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "announce_match",
+            "probabilities": {
+              "announce_match": 0.92,
+              "scan_board": 0.08,
+              "wait": 0,
+              "read_menu": 0
+            },
+            "confidence": 0.89
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0.17,
+            "probabilities": {
+              "0": 0.83,
+              "1": 0.17,
+              "2": 0,
+              "3": 0
+            },
+            "confidence": 0.83
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.33,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.2,
+            "probabilities": {
+              "0": 0.11,
+              "1": 0.11,
+              "2": 0.38,
+              "3": 0.27,
+              "4": 0.13
+            },
+            "confidence": 0.3
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.09,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "m3-with-03",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 7355,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2387,
+              "scan_board": 0.2785,
+              "read_menu": 0.2299,
+              "wait": 0.2529
+            },
+            "confidence": 0.0019
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.6835,
+            "probabilities": {
+              "0": 0.2102,
+              "1": 0.2243,
+              "2": 0.2372,
+              "3": 0.3282
+            },
+            "confidence": 0.0117
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5704,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.2704,
+            "probabilities": {
+              "0": 0.133,
+              "1": 0.1698,
+              "2": 0.2164,
+              "3": 0.2557,
+              "4": 0.2252
+            },
+            "confidence": 0.0152
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.535,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1035,
+        "answers": {
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.34,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.17,
+            "probabilities": {
+              "0": 0.1,
+              "1": 0.13,
+              "2": 0.39,
+              "3": 0.25,
+              "4": 0.13
+            },
+            "confidence": 0.3
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.09,
+            "probabilities": null
+          },
+          "next_action": {
+            "type": "choice",
+            "choice": "announce_match",
+            "probabilities": {
+              "announce_match": 0.93,
+              "scan_board": 0.07,
+              "wait": 0,
+              "read_menu": 0
+            },
+            "confidence": 0.9
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0.31,
+            "probabilities": {
+              "0": 0.7,
+              "1": 0.3,
+              "2": 0,
+              "3": 0
+            },
+            "confidence": 0.69
+          }
+        }
+      }
+    },
+    {
+      "id": "m3-with-04",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 7029,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2405,
+              "scan_board": 0.2776,
+              "read_menu": 0.2307,
+              "wait": 0.2512
+            },
+            "confidence": 0.0017
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.6624,
+            "probabilities": {
+              "0": 0.2112,
+              "1": 0.2334,
+              "2": 0.2374,
+              "3": 0.3181
+            },
+            "confidence": 0.0091
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5765,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.2374,
+            "probabilities": {
+              "0": 0.1411,
+              "1": 0.1734,
+              "2": 0.2174,
+              "3": 0.2433,
+              "4": 0.2249
+            },
+            "confidence": 0.0113
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5345,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1105,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "announce_match",
+            "probabilities": {
+              "scan_board": 0.1,
+              "announce_match": 0.89,
+              "wait": 0.01,
+              "read_menu": 0
+            },
+            "confidence": 0.86
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0.5,
+            "probabilities": {
+              "0": 0.55,
+              "1": 0.42,
+              "2": 0.01,
+              "3": 0.02
+            },
+            "confidence": 0.5
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.34,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.27,
+            "probabilities": {
+              "0": 0.1,
+              "1": 0.11,
+              "2": 0.36,
+              "3": 0.27,
+              "4": 0.16
+            },
+            "confidence": 0.25
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.09,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "m3-with-05",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 6464,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2371,
+              "scan_board": 0.2792,
+              "read_menu": 0.2279,
+              "wait": 0.2558
+            },
+            "confidence": 0.0022
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.682,
+            "probabilities": {
+              "0": 0.2114,
+              "1": 0.2194,
+              "2": 0.2448,
+              "3": 0.3243
+            },
+            "confidence": 0.011
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5538,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.2008,
+            "probabilities": {
+              "0": 0.1485,
+              "1": 0.1742,
+              "2": 0.2235,
+              "3": 0.2354,
+              "4": 0.2183
+            },
+            "confidence": 0.0088
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5303,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1119,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "announce_match",
+            "probabilities": {
+              "read_menu": 0,
+              "wait": 0,
+              "scan_board": 0.06,
+              "announce_match": 0.94
+            },
+            "confidence": 0.92
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0.62,
+            "probabilities": {
+              "0": 0.42,
+              "1": 0.56,
+              "2": 0.01,
+              "3": 0.01
+            },
+            "confidence": 0.54
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.34,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.31,
+            "probabilities": {
+              "0": 0.08,
+              "1": 0.12,
+              "2": 0.36,
+              "3": 0.28,
+              "4": 0.16
+            },
+            "confidence": 0.27
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.09,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "m3-with-06",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 7973,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2367,
+              "scan_board": 0.2794,
+              "read_menu": 0.2296,
+              "wait": 0.2543
+            },
+            "confidence": 0.0021
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.6685,
+            "probabilities": {
+              "0": 0.2093,
+              "1": 0.2326,
+              "2": 0.2386,
+              "3": 0.3196
+            },
+            "confidence": 0.0096
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5605,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.1855,
+            "probabilities": {
+              "0": 0.1503,
+              "1": 0.1798,
+              "2": 0.2189,
+              "3": 0.2365,
+              "4": 0.2146
+            },
+            "confidence": 0.0077
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5302,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1091,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "announce_match",
+            "probabilities": {
+              "scan_board": 0.09,
+              "announce_match": 0.91,
+              "wait": 0,
+              "read_menu": 0
+            },
+            "confidence": 0.87
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0.24,
+            "probabilities": {
+              "0": 0.77,
+              "1": 0.23,
+              "2": 0,
+              "3": 0
+            },
+            "confidence": 0.76
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.33,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.22,
+            "probabilities": {
+              "0": 0.1,
+              "1": 0.12,
+              "2": 0.38,
+              "3": 0.26,
+              "4": 0.14
+            },
+            "confidence": 0.27
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.09,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "m3-with-07",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 7366,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2391,
+              "scan_board": 0.2792,
+              "read_menu": 0.2277,
+              "wait": 0.2541
+            },
+            "confidence": 0.0021
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.6658,
+            "probabilities": {
+              "0": 0.2104,
+              "1": 0.2326,
+              "2": 0.2376,
+              "3": 0.3193
+            },
+            "confidence": 0.0094
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5755,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.2278,
+            "probabilities": {
+              "0": 0.1438,
+              "1": 0.1759,
+              "2": 0.2118,
+              "3": 0.2456,
+              "4": 0.2229
+            },
+            "confidence": 0.0104
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5396,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1148,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "announce_match",
+            "probabilities": {
+              "wait": 0,
+              "read_menu": 0,
+              "announce_match": 0.92,
+              "scan_board": 0.08
+            },
+            "confidence": 0.88
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0.29,
+            "probabilities": {
+              "0": 0.72,
+              "1": 0.28,
+              "2": 0,
+              "3": 0
+            },
+            "confidence": 0.71
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.33,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.14,
+            "probabilities": {
+              "0": 0.11,
+              "1": 0.13,
+              "2": 0.38,
+              "3": 0.26,
+              "4": 0.12
+            },
+            "confidence": 0.29
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.09,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "m3-with-08",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 10674,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.235,
+              "scan_board": 0.282,
+              "read_menu": 0.2279,
+              "wait": 0.2551
+            },
+            "confidence": 0.0025
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.5961,
+            "probabilities": {
+              "0": 0.2344,
+              "1": 0.2305,
+              "2": 0.2399,
+              "3": 0.2953
+            },
+            "confidence": 0.0039
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5937,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.0834,
+            "probabilities": {
+              "0": 0.1677,
+              "1": 0.1984,
+              "2": 0.216,
+              "3": 0.2186,
+              "4": 0.1993
+            },
+            "confidence": 0.0026
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5301,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1034,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "announce_match",
+            "probabilities": {
+              "wait": 0,
+              "announce_match": 0.89,
+              "scan_board": 0.11,
+              "read_menu": 0
+            },
+            "confidence": 0.85
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0.31,
+            "probabilities": {
+              "0": 0.71,
+              "1": 0.29,
+              "2": 0,
+              "3": 0
+            },
+            "confidence": 0.69
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.34,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 1.85,
+            "probabilities": {
+              "0": 0.18,
+              "1": 0.15,
+              "2": 0.41000000000000003,
+              "3": 0.17,
+              "4": 0.09
+            },
+            "confidence": 0.28
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.09,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "m3-with-09",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 7551,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2378,
+              "scan_board": 0.279,
+              "read_menu": 0.2263,
+              "wait": 0.2569
+            },
+            "confidence": 0.0023
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.6829,
+            "probabilities": {
+              "0": 0.2078,
+              "1": 0.2276,
+              "2": 0.2383,
+              "3": 0.3262
+            },
+            "confidence": 0.0113
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5724,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.2413,
+            "probabilities": {
+              "0": 0.1416,
+              "1": 0.1717,
+              "2": 0.2149,
+              "3": 0.2475,
+              "4": 0.2244
+            },
+            "confidence": 0.0117
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5382,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1100,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "announce_match",
+            "probabilities": {
+              "announce_match": 0.93,
+              "scan_board": 0.07,
+              "wait": 0,
+              "read_menu": 0
+            },
+            "confidence": 0.9
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0.49,
+            "probabilities": {
+              "0": 0.54,
+              "1": 0.44,
+              "2": 0.01,
+              "3": 0.01
+            },
+            "confidence": 0.51
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.32,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.3,
+            "probabilities": {
+              "0": 0.11,
+              "1": 0.1,
+              "2": 0.33999999999999997,
+              "3": 0.28,
+              "4": 0.17
+            },
+            "confidence": 0.23
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.08,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "m3-with-10",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 6883,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2363,
+              "scan_board": 0.2795,
+              "read_menu": 0.2312,
+              "wait": 0.2529
+            },
+            "confidence": 0.002
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.6945,
+            "probabilities": {
+              "0": 0.2094,
+              "1": 0.2205,
+              "2": 0.2362,
+              "3": 0.3339
+            },
+            "confidence": 0.0133
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5696,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.1735,
+            "probabilities": {
+              "0": 0.1514,
+              "1": 0.1766,
+              "2": 0.229,
+              "3": 0.2333,
+              "4": 0.2098
+            },
+            "confidence": 0.0079
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5364,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1433,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "announce_match",
+            "probabilities": {
+              "announce_match": 0.92,
+              "scan_board": 0.08,
+              "read_menu": 0,
+              "wait": 0
+            },
+            "confidence": 0.89
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0.56,
+            "probabilities": {
+              "0": 0.47,
+              "1": 0.51,
+              "2": 0.01,
+              "3": 0.01
+            },
+            "confidence": 0.49
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.34,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.21,
+            "probabilities": {
+              "0": 0.1,
+              "1": 0.12,
+              "2": 0.39,
+              "3": 0.25,
+              "4": 0.14
+            },
+            "confidence": 0.28
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.09,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "m3-none-01",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 6821,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2322,
+              "scan_board": 0.2878,
+              "read_menu": 0.2327,
+              "wait": 0.2473
+            },
+            "confidence": 0.0029
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.6384,
+            "probabilities": {
+              "0": 0.21,
+              "1": 0.2402,
+              "2": 0.2514,
+              "3": 0.2984
+            },
+            "confidence": 0.0058
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.56,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.2295,
+            "probabilities": {
+              "0": 0.1427,
+              "1": 0.1845,
+              "2": 0.2154,
+              "3": 0.2155,
+              "4": 0.242
+            },
+            "confidence": 0.0093
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.535,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1112,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.06,
+              "wait": 0.4,
+              "read_menu": 0.01,
+              "scan_board": 0.53
+            },
+            "confidence": 0.38
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.21,
+            "probabilities": {
+              "0": 0.26,
+              "1": 0.38,
+              "2": 0.24,
+              "3": 0.12
+            },
+            "confidence": 0.26
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.31,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 1.08,
+            "probabilities": {
+              "0": 0.56,
+              "1": 0.09,
+              "2": 0.15,
+              "3": 0.11,
+              "4": 0.09
+            },
+            "confidence": 0.1
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.09,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "m3-none-02",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 6924,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.232,
+              "scan_board": 0.2894,
+              "read_menu": 0.2305,
+              "wait": 0.2481
+            },
+            "confidence": 0.0032
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.6655,
+            "probabilities": {
+              "0": 0.2058,
+              "1": 0.2309,
+              "2": 0.2554,
+              "3": 0.308
+            },
+            "confidence": 0.0081
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5788,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.1983,
+            "probabilities": {
+              "0": 0.1449,
+              "1": 0.1824,
+              "2": 0.2293,
+              "3": 0.2161,
+              "4": 0.2272
+            },
+            "confidence": 0.0085
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5388,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1220,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "wait": 0.32,
+              "scan_board": 0.61,
+              "announce_match": 0.06,
+              "read_menu": 0.01
+            },
+            "confidence": 0.49
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.29,
+            "probabilities": {
+              "0": 0.23,
+              "1": 0.39999999999999997,
+              "2": 0.21,
+              "3": 0.16
+            },
+            "confidence": 0.25
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.33,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 0.95,
+            "probabilities": {
+              "0": 0.61,
+              "1": 0.08,
+              "2": 0.14,
+              "3": 0.08,
+              "4": 0.09
+            },
+            "confidence": 0.21
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.1,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "m3-none-03",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 6551,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2305,
+              "scan_board": 0.2934,
+              "read_menu": 0.2313,
+              "wait": 0.2448
+            },
+            "confidence": 0.0037
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.6502,
+            "probabilities": {
+              "0": 0.2124,
+              "1": 0.2299,
+              "2": 0.2528,
+              "3": 0.3049
+            },
+            "confidence": 0.0068
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5784,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.2517,
+            "probabilities": {
+              "0": 0.1312,
+              "1": 0.1807,
+              "2": 0.2285,
+              "3": 0.2245,
+              "4": 0.2352
+            },
+            "confidence": 0.0129
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5389,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1503,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.05,
+              "scan_board": 0.5,
+              "read_menu": 0.01,
+              "wait": 0.44
+            },
+            "confidence": 0.34
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.13,
+            "probabilities": {
+              "0": 0.27,
+              "1": 0.41,
+              "2": 0.23,
+              "3": 0.09
+            },
+            "confidence": 0.33
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.32,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 1.03,
+            "probabilities": {
+              "0": 0.56,
+              "1": 0.11,
+              "2": 0.15,
+              "3": 0.11,
+              "4": 0.07
+            },
+            "confidence": 0.14
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.1,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "m3-none-04",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 6258,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2449,
+              "scan_board": 0.2811,
+              "read_menu": 0.2291,
+              "wait": 0.2449
+            },
+            "confidence": 0.0021
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.5733,
+            "probabilities": {
+              "0": 0.2369,
+              "1": 0.2395,
+              "2": 0.2371,
+              "3": 0.2866
+            },
+            "confidence": 0.0025
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5684,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.2292,
+            "probabilities": {
+              "0": 0.1508,
+              "1": 0.1725,
+              "2": 0.2039,
+              "3": 0.2424,
+              "4": 0.2304
+            },
+            "confidence": 0.0094
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5375,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1396,
+        "answers": {
+          "announce_rank": {
+            "type": "score",
+            "score": 0.55,
+            "probabilities": {
+              "0": 0.74,
+              "1": 0.07,
+              "2": 0.12,
+              "3": 0.04,
+              "4": 0.03
+            },
+            "confidence": 0.54
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.09,
+            "probabilities": null
+          },
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "wait": 0.39,
+              "read_menu": 0,
+              "announce_match": 0.06,
+              "scan_board": 0.55
+            },
+            "confidence": 0.4
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0.09,
+            "probabilities": {
+              "0": 0.94,
+              "1": 0.03,
+              "2": 0.03,
+              "3": 0
+            },
+            "confidence": 0.91
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.3,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "m3-none-05",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 6499,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2383,
+              "scan_board": 0.2797,
+              "read_menu": 0.2273,
+              "wait": 0.2547
+            },
+            "confidence": 0.0022
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.6774,
+            "probabilities": {
+              "0": 0.1997,
+              "1": 0.235,
+              "2": 0.2534,
+              "3": 0.3119
+            },
+            "confidence": 0.0094
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5855,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.2337,
+            "probabilities": {
+              "0": 0.1418,
+              "1": 0.1765,
+              "2": 0.2178,
+              "3": 0.2342,
+              "4": 0.2298
+            },
+            "confidence": 0.0103
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.542,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1013,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.06,
+              "scan_board": 0.52,
+              "wait": 0.41,
+              "read_menu": 0.01
+            },
+            "confidence": 0.37
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.27,
+            "probabilities": {
+              "0": 0.22,
+              "1": 0.43,
+              "2": 0.21,
+              "3": 0.14
+            },
+            "confidence": 0.29
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.33,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 1.08,
+            "probabilities": {
+              "0": 0.55,
+              "1": 0.1,
+              "2": 0.17,
+              "3": 0.09,
+              "4": 0.09
+            },
+            "confidence": 0.1
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.09,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "m3-none-06",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 6699,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2381,
+              "scan_board": 0.2781,
+              "read_menu": 0.2277,
+              "wait": 0.256
+            },
+            "confidence": 0.0021
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.6527,
+            "probabilities": {
+              "0": 0.2072,
+              "1": 0.2339,
+              "2": 0.2581,
+              "3": 0.3009
+            },
+            "confidence": 0.0068
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5745,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.2198,
+            "probabilities": {
+              "0": 0.1395,
+              "1": 0.1809,
+              "2": 0.23,
+              "3": 0.2195,
+              "4": 0.2301
+            },
+            "confidence": 0.0102
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5399,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 940,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.06,
+              "scan_board": 0.62,
+              "read_menu": 0.01,
+              "wait": 0.31
+            },
+            "confidence": 0.5
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0.83,
+            "probabilities": {
+              "0": 0.41,
+              "1": 0.41,
+              "2": 0.11,
+              "3": 0.07
+            },
+            "confidence": 0.17
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.32,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 0.76,
+            "probabilities": {
+              "0": 0.66,
+              "1": 0.09,
+              "2": 0.15,
+              "3": 0.06,
+              "4": 0.04
+            },
+            "confidence": 0.36
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.09,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "m3-none-07",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 6231,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2424,
+              "scan_board": 0.2846,
+              "read_menu": 0.2266,
+              "wait": 0.2464
+            },
+            "confidence": 0.0026
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.6315,
+            "probabilities": {
+              "0": 0.2117,
+              "1": 0.2454,
+              "2": 0.2426,
+              "3": 0.3002
+            },
+            "confidence": 0.0058
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5716,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.3124,
+            "probabilities": {
+              "0": 0.1232,
+              "1": 0.1659,
+              "2": 0.226,
+              "3": 0.2451,
+              "4": 0.2397
+            },
+            "confidence": 0.0188
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5397,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1148,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "scan_board": 0.54,
+              "announce_match": 0.06,
+              "wait": 0.39,
+              "read_menu": 0.01
+            },
+            "confidence": 0.38
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.02,
+            "probabilities": {
+              "0": 0.34,
+              "1": 0.38,
+              "2": 0.19,
+              "3": 0.09
+            },
+            "confidence": 0.3
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.32,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 1.05,
+            "probabilities": {
+              "0": 0.56,
+              "1": 0.1,
+              "2": 0.16,
+              "3": 0.1,
+              "4": 0.08
+            },
+            "confidence": 0.12
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.09,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "m3-none-08",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 6394,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2271,
+              "scan_board": 0.286,
+              "read_menu": 0.2304,
+              "wait": 0.2566
+            },
+            "confidence": 0.0032
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.6595,
+            "probabilities": {
+              "0": 0.2008,
+              "1": 0.2377,
+              "2": 0.2627,
+              "3": 0.2988
+            },
+            "confidence": 0.0074
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5555,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.2229,
+            "probabilities": {
+              "0": 0.1329,
+              "1": 0.1841,
+              "2": 0.229,
+              "3": 0.2352,
+              "4": 0.2188
+            },
+            "confidence": 0.0119
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5367,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1065,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "wait": 0.37,
+              "scan_board": 0.56,
+              "read_menu": 0,
+              "announce_match": 0.07
+            },
+            "confidence": 0.41
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.34,
+            "probabilities": {
+              "0": 0.21,
+              "1": 0.39,
+              "2": 0.25,
+              "3": 0.15
+            },
+            "confidence": 0.25
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.35,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 0.99,
+            "probabilities": {
+              "0": 0.59,
+              "1": 0.09,
+              "2": 0.13,
+              "3": 0.1,
+              "4": 0.09
+            },
+            "confidence": 0.17
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.1,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "m3-none-09",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 6208,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2308,
+              "scan_board": 0.2849,
+              "read_menu": 0.2352,
+              "wait": 0.2491
+            },
+            "confidence": 0.0025
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.6125,
+            "probabilities": {
+              "0": 0.2233,
+              "1": 0.2313,
+              "2": 0.2551,
+              "3": 0.2903
+            },
+            "confidence": 0.0039
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5718,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.1566,
+            "probabilities": {
+              "0": 0.1569,
+              "1": 0.182,
+              "2": 0.2292,
+              "3": 0.2111,
+              "4": 0.2207
+            },
+            "confidence": 0.0057
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5328,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1085,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "wait": 0.34,
+              "read_menu": 0,
+              "announce_match": 0.07,
+              "scan_board": 0.59
+            },
+            "confidence": 0.45
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0.88,
+            "probabilities": {
+              "0": 0.39,
+              "1": 0.39,
+              "2": 0.15,
+              "3": 0.07
+            },
+            "confidence": 0.12
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.31,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 0.9,
+            "probabilities": {
+              "0": 0.59,
+              "1": 0.09,
+              "2": 0.18,
+              "3": 0.08,
+              "4": 0.06
+            },
+            "confidence": 0.25
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.09,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "m3-none-10",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 6679,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.231,
+              "scan_board": 0.2906,
+              "read_menu": 0.2301,
+              "wait": 0.2482
+            },
+            "confidence": 0.0034
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.6552,
+            "probabilities": {
+              "0": 0.21,
+              "1": 0.2297,
+              "2": 0.2552,
+              "3": 0.305
+            },
+            "confidence": 0.0072
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5608,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.2139,
+            "probabilities": {
+              "0": 0.1467,
+              "1": 0.1825,
+              "2": 0.2191,
+              "3": 0.2134,
+              "4": 0.2382
+            },
+            "confidence": 0.0083
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5353,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1395,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "read_menu": 0.01,
+              "scan_board": 0.58,
+              "wait": 0.35,
+              "announce_match": 0.06
+            },
+            "confidence": 0.45
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.09,
+            "probabilities": {
+              "0": 0.3,
+              "1": 0.42,
+              "2": 0.17,
+              "3": 0.11
+            },
+            "confidence": 0.31
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.33,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 0.99,
+            "probabilities": {
+              "0": 0.59,
+              "1": 0.09,
+              "2": 0.15,
+              "3": 0.09,
+              "4": 0.08
+            },
+            "confidence": 0.17
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.09,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ch-01",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 8834,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2199,
+              "scan_board": 0.3979,
+              "read_menu": 0.179,
+              "wait": 0.2031
+            },
+            "confidence": 0.0395
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.3671,
+            "probabilities": {
+              "0": 0.2955,
+              "1": 0.243,
+              "2": 0.2603,
+              "3": 0.2012
+            },
+            "confidence": 0.0067
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.7376,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.3566,
+            "probabilities": {
+              "0": 0.075,
+              "1": 0.0742,
+              "2": 0.4152,
+              "3": 0.2906,
+              "4": 0.1451
+            },
+            "confidence": 0.1355
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.6844,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1108,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "scan_board": 0.83,
+              "wait": 0.01,
+              "read_menu": 0.01,
+              "announce_match": 0.15
+            },
+            "confidence": 0.78
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 2.84,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.02,
+              "2": 0.05,
+              "3": 0.91
+            },
+            "confidence": 0.84
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 3.84,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.01,
+              "2": 0.01,
+              "3": 0.05,
+              "4": 0.91
+            },
+            "confidence": 0.86
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.08,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ch-02",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 8315,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2068,
+              "scan_board": 0.4218,
+              "read_menu": 0.1786,
+              "wait": 0.1929
+            },
+            "confidence": 0.0514
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.3757,
+            "probabilities": {
+              "0": 0.2852,
+              "1": 0.2732,
+              "2": 0.2224,
+              "3": 0.2193
+            },
+            "confidence": 0.005
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.8966,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.5121,
+            "probabilities": {
+              "0": 0.0565,
+              "1": 0.0675,
+              "2": 0.3781,
+              "3": 0.3033,
+              "4": 0.1947
+            },
+            "confidence": 0.1348
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.778,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1013,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "scan_board": 0.85,
+              "wait": 0.01,
+              "announce_match": 0.13,
+              "read_menu": 0.01
+            },
+            "confidence": 0.8
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 2.86,
+            "probabilities": {
+              "0": 0.01,
+              "1": 0.02,
+              "2": 0.06,
+              "3": 0.91
+            },
+            "confidence": 0.86
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.57,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 3.79,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.01,
+              "2": 0.02,
+              "3": 0.08,
+              "4": 0.87
+            },
+            "confidence": 0.82
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.07,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ch-03",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 7985,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2013,
+              "scan_board": 0.471,
+              "read_menu": 0.1659,
+              "wait": 0.1618
+            },
+            "confidence": 0.0839
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.4092,
+            "probabilities": {
+              "0": 0.2849,
+              "1": 0.27,
+              "2": 0.196,
+              "3": 0.249
+            },
+            "confidence": 0.0068
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.9324,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.4457,
+            "probabilities": {
+              "0": 0.0666,
+              "1": 0.0886,
+              "2": 0.374,
+              "3": 0.2739,
+              "4": 0.1969
+            },
+            "confidence": 0.1067
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.8381,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1036,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.06,
+              "scan_board": 0.92,
+              "wait": 0.01,
+              "read_menu": 0.01
+            },
+            "confidence": 0.89
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 2.83,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.02,
+              "2": 0.07,
+              "3": 0.89
+            },
+            "confidence": 0.83
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.51,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 3.83,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.01,
+              "2": 0.01,
+              "3": 0.06,
+              "4": 0.9
+            },
+            "confidence": 0.86
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.08,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ch-04",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 7866,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2231,
+              "scan_board": 0.4145,
+              "read_menu": 0.1527,
+              "wait": 0.2097
+            },
+            "confidence": 0.0519
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.3891,
+            "probabilities": {
+              "0": 0.2965,
+              "1": 0.2443,
+              "2": 0.2329,
+              "3": 0.2263
+            },
+            "confidence": 0.0043
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.8999,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.4772,
+            "probabilities": {
+              "0": 0.0508,
+              "1": 0.0491,
+              "2": 0.4352,
+              "3": 0.302,
+              "4": 0.1629
+            },
+            "confidence": 0.1807
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.7137,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1216,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "wait": 0.01,
+              "scan_board": 0.86,
+              "announce_match": 0.12,
+              "read_menu": 0.01
+            },
+            "confidence": 0.82
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 2.82,
+            "probabilities": {
+              "0": 0.03,
+              "1": 0.02,
+              "2": 0.06,
+              "3": 0.89
+            },
+            "confidence": 0.82
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.54,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 3.83,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.01,
+              "2": 0.01,
+              "3": 0.06,
+              "4": 0.9
+            },
+            "confidence": 0.86
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.09,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ch-05",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 7843,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2099,
+              "scan_board": 0.4274,
+              "read_menu": 0.1731,
+              "wait": 0.1896
+            },
+            "confidence": 0.0551
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.344,
+            "probabilities": {
+              "0": 0.2843,
+              "1": 0.2833,
+              "2": 0.2364,
+              "3": 0.196
+            },
+            "confidence": 0.008
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.8931,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.5511,
+            "probabilities": {
+              "0": 0.0449,
+              "1": 0.0672,
+              "2": 0.3756,
+              "3": 0.3166,
+              "4": 0.1957
+            },
+            "confidence": 0.1476
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.7429,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 6750,
+        "answers": {
+          "announce_rank": {
+            "type": "score",
+            "score": 3.7,
+            "probabilities": {
+              "0": 0.03,
+              "1": 0.02,
+              "2": 0.02,
+              "3": 0.09,
+              "4": 0.84
+            },
+            "confidence": 0.75
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.07,
+            "probabilities": null
+          },
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "wait": 0.01,
+              "announce_match": 0.1,
+              "read_menu": 0,
+              "scan_board": 0.89
+            },
+            "confidence": 0.85
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 2.88,
+            "probabilities": {
+              "0": 0.01,
+              "1": 0.01,
+              "2": 0.05,
+              "3": 0.93
+            },
+            "confidence": 0.88
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.51,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ch-06",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 7797,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2105,
+              "scan_board": 0.4577,
+              "read_menu": 0.1661,
+              "wait": 0.1657
+            },
+            "confidence": 0.0754
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.3844,
+            "probabilities": {
+              "0": 0.2781,
+              "1": 0.2996,
+              "2": 0.1821,
+              "3": 0.2402
+            },
+            "confidence": 0.0119
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.9407,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.4934,
+            "probabilities": {
+              "0": 0.0543,
+              "1": 0.0913,
+              "2": 0.3435,
+              "3": 0.3286,
+              "4": 0.1824
+            },
+            "confidence": 0.1178
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.727,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1052,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "wait": 0.01,
+              "read_menu": 0.01,
+              "announce_match": 0.07,
+              "scan_board": 0.91
+            },
+            "confidence": 0.88
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 2.82,
+            "probabilities": {
+              "0": 0.03,
+              "1": 0.02,
+              "2": 0.06,
+              "3": 0.89
+            },
+            "confidence": 0.82
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.52,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 3.79,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.01,
+              "2": 0.02,
+              "3": 0.08,
+              "4": 0.87
+            },
+            "confidence": 0.82
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.07,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ch-07",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 8171,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.208,
+              "scan_board": 0.3988,
+              "read_menu": 0.1999,
+              "wait": 0.1933
+            },
+            "confidence": 0.0387
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.3326,
+            "probabilities": {
+              "0": 0.293,
+              "1": 0.2678,
+              "2": 0.2529,
+              "3": 0.1863
+            },
+            "confidence": 0.0094
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.7792,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.5573,
+            "probabilities": {
+              "0": 0.0583,
+              "1": 0.0817,
+              "2": 0.3458,
+              "3": 0.273,
+              "4": 0.2413
+            },
+            "confidence": 0.1084
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.7127,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1194,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.09,
+              "scan_board": 0.89,
+              "wait": 0.01,
+              "read_menu": 0.01
+            },
+            "confidence": 0.86
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 2.88,
+            "probabilities": {
+              "0": 0.01,
+              "1": 0.01,
+              "2": 0.05,
+              "3": 0.93
+            },
+            "confidence": 0.88
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.52,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 3.76,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.01,
+              "2": 0.01,
+              "3": 0.07,
+              "4": 0.89
+            },
+            "confidence": 0.8
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.08,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ch-08",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 7439,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2088,
+              "scan_board": 0.4487,
+              "read_menu": 0.1594,
+              "wait": 0.183
+            },
+            "confidence": 0.0693
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.3973,
+            "probabilities": {
+              "0": 0.2807,
+              "1": 0.2556,
+              "2": 0.2494,
+              "3": 0.2143
+            },
+            "confidence": 0.0033
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.9418,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.4621,
+            "probabilities": {
+              "0": 0.0723,
+              "1": 0.0618,
+              "2": 0.3758,
+              "3": 0.3117,
+              "4": 0.1784
+            },
+            "confidence": 0.1297
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.6993,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1174,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.12,
+              "read_menu": 0.01,
+              "wait": 0.01,
+              "scan_board": 0.86
+            },
+            "confidence": 0.82
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 2.86,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.02,
+              "2": 0.06,
+              "3": 0.9
+            },
+            "confidence": 0.86
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 3.82,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.01,
+              "2": 0.01,
+              "3": 0.06,
+              "4": 0.9
+            },
+            "confidence": 0.85
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.08,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ch-09",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 7676,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.2037,
+              "scan_board": 0.4305,
+              "read_menu": 0.176,
+              "wait": 0.1897
+            },
+            "confidence": 0.0564
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.3415,
+            "probabilities": {
+              "0": 0.2769,
+              "1": 0.2856,
+              "2": 0.2566,
+              "3": 0.1809
+            },
+            "confidence": 0.0104
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.861,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.5105,
+            "probabilities": {
+              "0": 0.0569,
+              "1": 0.0842,
+              "2": 0.3647,
+              "3": 0.28,
+              "4": 0.2142
+            },
+            "confidence": 0.1141
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.7347,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1100,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "scan_board": 0.93,
+              "wait": 0.01,
+              "read_menu": 0.01,
+              "announce_match": 0.05
+            },
+            "confidence": 0.91
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 2.9,
+            "probabilities": {
+              "0": 0.01,
+              "1": 0.01,
+              "2": 0.04,
+              "3": 0.93
+            },
+            "confidence": 0.9
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.52,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 3.74,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.01,
+              "2": 0.02,
+              "3": 0.1,
+              "4": 0.85
+            },
+            "confidence": 0.78
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.07,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ch-10",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 7681,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.213,
+              "scan_board": 0.437,
+              "read_menu": 0.1535,
+              "wait": 0.1965
+            },
+            "confidence": 0.0633
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.3909,
+            "probabilities": {
+              "0": 0.2835,
+              "1": 0.2561,
+              "2": 0.2465,
+              "3": 0.214
+            },
+            "confidence": 0.0036
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.9153,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.4098,
+            "probabilities": {
+              "0": 0.0627,
+              "1": 0.0616,
+              "2": 0.4365,
+              "3": 0.2817,
+              "4": 0.1576
+            },
+            "confidence": 0.158
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.7106,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1036,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "read_menu": 0.01,
+              "wait": 0.01,
+              "scan_board": 0.88,
+              "announce_match": 0.1
+            },
+            "confidence": 0.85
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 2.85,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.02,
+              "2": 0.05,
+              "3": 0.91
+            },
+            "confidence": 0.85
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.51,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 3.82,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.01,
+              "2": 0.01,
+              "3": 0.06,
+              "4": 0.9
+            },
+            "confidence": 0.85
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.08,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ax-01",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 5700,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "announce_match": 0.2241,
+              "scan_board": 0.1906,
+              "read_menu": 0.3891,
+              "wait": 0.1962
+            },
+            "confidence": 0.0349
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.591,
+            "probabilities": {
+              "0": 0.2426,
+              "1": 0.2489,
+              "2": 0.1836,
+              "3": 0.325
+            },
+            "confidence": 0.0145
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.6818,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.067,
+            "probabilities": {
+              "0": 0.1042,
+              "1": 0.1691,
+              "2": 0.4246,
+              "3": 0.1596,
+              "4": 0.1425
+            },
+            "confidence": 0.0864
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.6883,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 986,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "scan_board": 0,
+              "wait": 0.01,
+              "announce_match": 0,
+              "read_menu": 0.99
+            },
+            "confidence": 0.99
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0,
+            "probabilities": {
+              "0": 1,
+              "1": 0,
+              "2": 0,
+              "3": 0
+            },
+            "confidence": 1
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.28,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 0.53,
+            "probabilities": {
+              "0": 0.69,
+              "1": 0.11,
+              "2": 0.19,
+              "3": 0.01,
+              "4": 0
+            },
+            "confidence": 0.56
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.24,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ax-02",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 6722,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "announce_match",
+            "probabilities": {
+              "announce_match": 0.2851,
+              "scan_board": 0.1919,
+              "read_menu": 0.2548,
+              "wait": 0.2682
+            },
+            "confidence": 0.0075
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.7028,
+            "probabilities": {
+              "0": 0.2193,
+              "1": 0.2025,
+              "2": 0.2343,
+              "3": 0.3439
+            },
+            "confidence": 0.0166
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5535,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.234,
+            "probabilities": {
+              "0": 0.1203,
+              "1": 0.1835,
+              "2": 0.2488,
+              "3": 0.2367,
+              "4": 0.2107
+            },
+            "confidence": 0.0175
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.578,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1233,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "read_menu": 0.96,
+              "scan_board": 0.01,
+              "wait": 0.03,
+              "announce_match": 0
+            },
+            "confidence": 0.95
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0,
+            "probabilities": {
+              "0": 1,
+              "1": 0,
+              "2": 0,
+              "3": 0
+            },
+            "confidence": 1
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.23,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 0.69,
+            "probabilities": {
+              "0": 0.57,
+              "1": 0.18,
+              "2": 0.22,
+              "3": 0.02,
+              "4": 0.01
+            },
+            "confidence": 0.43
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.37,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ax-03",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 5917,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "announce_match": 0.2486,
+              "scan_board": 0.2237,
+              "read_menu": 0.2683,
+              "wait": 0.2594
+            },
+            "confidence": 0.0016
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.5646,
+            "probabilities": {
+              "0": 0.2424,
+              "1": 0.2256,
+              "2": 0.2568,
+              "3": 0.2751
+            },
+            "confidence": 0.0019
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.7156,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.1524,
+            "probabilities": {
+              "0": 0.1352,
+              "1": 0.2192,
+              "2": 0.2366,
+              "3": 0.176,
+              "4": 0.233
+            },
+            "confidence": 0.0124
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5841,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1149,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "wait": 0,
+              "scan_board": 0,
+              "announce_match": 0,
+              "read_menu": 1
+            },
+            "confidence": 0.99
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.41,
+            "probabilities": {
+              "0": 0.32,
+              "1": 0.03,
+              "2": 0.58,
+              "3": 0.07
+            },
+            "confidence": 0.27
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.39,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.42,
+            "probabilities": {
+              "0": 0.12,
+              "1": 0.08,
+              "2": 0.24,
+              "3": 0.39,
+              "4": 0.17
+            },
+            "confidence": 0.23
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.48,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ax-04",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 5169,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "announce_match": 0.2627,
+              "scan_board": 0.1959,
+              "read_menu": 0.3045,
+              "wait": 0.2369
+            },
+            "confidence": 0.009
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.6591,
+            "probabilities": {
+              "0": 0.1949,
+              "1": 0.2588,
+              "2": 0.2387,
+              "3": 0.3077
+            },
+            "confidence": 0.0095
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.7212,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.273,
+            "probabilities": {
+              "0": 0.0872,
+              "1": 0.1748,
+              "2": 0.3026,
+              "3": 0.2488,
+              "4": 0.1867
+            },
+            "confidence": 0.044
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.6595,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 2272,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "read_menu": 1,
+              "wait": 0,
+              "scan_board": 0,
+              "announce_match": 0
+            },
+            "confidence": 0.99
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0.01,
+            "probabilities": {
+              "0": 1,
+              "1": 0,
+              "2": 0,
+              "3": 0
+            },
+            "confidence": 0.99
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.35,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 0.94,
+            "probabilities": {
+              "0": 0.54,
+              "1": 0.1,
+              "2": 0.26,
+              "3": 0.07,
+              "4": 0.03
+            },
+            "confidence": 0.22
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.49,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ax-05",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 5923,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "announce_match": 0.2678,
+              "scan_board": 0.2024,
+              "read_menu": 0.2793,
+              "wait": 0.2505
+            },
+            "confidence": 0.0051
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.5425,
+            "probabilities": {
+              "0": 0.2334,
+              "1": 0.2406,
+              "2": 0.2762,
+              "3": 0.2498
+            },
+            "confidence": 0.0015
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.6852,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 1.9988,
+            "probabilities": {
+              "0": 0.1205,
+              "1": 0.207,
+              "2": 0.3608,
+              "3": 0.1766,
+              "4": 0.1351
+            },
+            "confidence": 0.0522
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.6312,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1638,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "wait": 0.01,
+              "scan_board": 0.08,
+              "announce_match": 0.01,
+              "read_menu": 0.9
+            },
+            "confidence": 0.86
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0,
+            "probabilities": {
+              "0": 1,
+              "1": 0,
+              "2": 0,
+              "3": 0
+            },
+            "confidence": 1
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.35,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 1.46,
+            "probabilities": {
+              "0": 0.34,
+              "1": 0.07,
+              "2": 0.42,
+              "3": 0.13,
+              "4": 0.04
+            },
+            "confidence": 0.21
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.47,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ax-06",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 5345,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "announce_match": 0.2697,
+              "scan_board": 0.2153,
+              "read_menu": 0.2758,
+              "wait": 0.2391
+            },
+            "confidence": 0.0035
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.2736,
+            "probabilities": {
+              "0": 0.255,
+              "1": 0.3471,
+              "2": 0.267,
+              "3": 0.1308
+            },
+            "confidence": 0.0374
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.6169,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 1.7269,
+            "probabilities": {
+              "0": 0.1478,
+              "1": 0.2905,
+              "2": 0.3642,
+              "3": 0.0821,
+              "4": 0.1154
+            },
+            "confidence": 0.0904
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.6558,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1352,
+        "answers": {
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.39,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.78,
+            "probabilities": {
+              "0": 0.05,
+              "1": 0.06,
+              "2": 0.19,
+              "3": 0.48,
+              "4": 0.22
+            },
+            "confidence": 0.44
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.2,
+            "probabilities": null
+          },
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "announce_match": 0.26,
+              "wait": 0.05,
+              "read_menu": 0.4,
+              "scan_board": 0.29
+            },
+            "confidence": 0.2
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.46,
+            "probabilities": {
+              "0": 0.14,
+              "1": 0.28,
+              "2": 0.54,
+              "3": 0.03
+            },
+            "confidence": 0.39
+          }
+        }
+      }
+    },
+    {
+      "id": "ax-07",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 6415,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "announce_match",
+            "probabilities": {
+              "announce_match": 0.3051,
+              "scan_board": 0.2418,
+              "read_menu": 0.3014,
+              "wait": 0.1518
+            },
+            "confidence": 0.024
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.6859,
+            "probabilities": {
+              "0": 0.1872,
+              "1": 0.2471,
+              "2": 0.2582,
+              "3": 0.3074
+            },
+            "confidence": 0.0108
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.7631,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 1.9734,
+            "probabilities": {
+              "0": 0.1447,
+              "1": 0.2736,
+              "2": 0.2541,
+              "3": 0.119,
+              "4": 0.2086
+            },
+            "confidence": 0.029
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.6066,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1009,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "announce_match": 0,
+              "scan_board": 0.03,
+              "wait": 0.03,
+              "read_menu": 0.9400000000000001
+            },
+            "confidence": 0.91
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0.01,
+            "probabilities": {
+              "0": 1,
+              "1": 0,
+              "2": 0,
+              "3": 0
+            },
+            "confidence": 0.99
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.29,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 3.25,
+            "probabilities": {
+              "0": 0.05,
+              "1": 0.04,
+              "2": 0.08,
+              "3": 0.27,
+              "4": 0.56
+            },
+            "confidence": 0.38
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.54,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ax-08",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 4491,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "announce_match",
+            "probabilities": {
+              "announce_match": 0.3335,
+              "scan_board": 0.2186,
+              "read_menu": 0.1986,
+              "wait": 0.2492
+            },
+            "confidence": 0.0147
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.3331,
+            "probabilities": {
+              "0": 0.2716,
+              "1": 0.2374,
+              "2": 0.3771,
+              "3": 0.1138
+            },
+            "confidence": 0.0546
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.7086,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 1.8647,
+            "probabilities": {
+              "0": 0.217,
+              "1": 0.1374,
+              "2": 0.3522,
+              "3": 0.1505,
+              "4": 0.1429
+            },
+            "confidence": 0.0464
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.6583,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1669,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "announce_match": 0.03,
+              "scan_board": 0.12,
+              "read_menu": 0.81,
+              "wait": 0.04
+            },
+            "confidence": 0.75
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0,
+            "probabilities": {
+              "0": 1,
+              "1": 0,
+              "2": 0,
+              "3": 0
+            },
+            "confidence": 1
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.29,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 0.82,
+            "probabilities": {
+              "0": 0.55,
+              "1": 0.14,
+              "2": 0.25,
+              "3": 0.04,
+              "4": 0.02
+            },
+            "confidence": 0.31
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.31,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ax-09",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 6495,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "announce_match",
+            "probabilities": {
+              "announce_match": 0.2741,
+              "scan_board": 0.2265,
+              "read_menu": 0.2542,
+              "wait": 0.2453
+            },
+            "confidence": 0.0017
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.5878,
+            "probabilities": {
+              "0": 0.1757,
+              "1": 0.2568,
+              "2": 0.3714,
+              "3": 0.1961
+            },
+            "confidence": 0.032
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5973,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.1002,
+            "probabilities": {
+              "0": 0.1161,
+              "1": 0.204,
+              "2": 0.3327,
+              "3": 0.1582,
+              "4": 0.1891
+            },
+            "confidence": 0.0388
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.6584,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1316,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "read_menu": 0.97,
+              "announce_match": 0,
+              "wait": 0.01,
+              "scan_board": 0.02
+            },
+            "confidence": 0.96
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0.01,
+            "probabilities": {
+              "0": 1,
+              "1": 0,
+              "2": 0,
+              "3": 0
+            },
+            "confidence": 0.99
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.28,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 0.77,
+            "probabilities": {
+              "0": 0.61,
+              "1": 0.09,
+              "2": 0.24,
+              "3": 0.05,
+              "4": 0.01
+            },
+            "confidence": 0.36
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.35,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ax-10",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 5346,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "announce_match": 0.2457,
+              "scan_board": 0.2154,
+              "read_menu": 0.2761,
+              "wait": 0.2628
+            },
+            "confidence": 0.003
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.4845,
+            "probabilities": {
+              "0": 0.2548,
+              "1": 0.2321,
+              "2": 0.2868,
+              "3": 0.2263
+            },
+            "confidence": 0.0032
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.707,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.1783,
+            "probabilities": {
+              "0": 0.1256,
+              "1": 0.1942,
+              "2": 0.3126,
+              "3": 0.1115,
+              "4": 0.2561
+            },
+            "confidence": 0.0458
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.6168,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1019,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "wait": 0.01,
+              "scan_board": 0.01,
+              "announce_match": 0,
+              "read_menu": 0.98
+            },
+            "confidence": 0.98
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0,
+            "probabilities": {
+              "0": 1,
+              "1": 0,
+              "2": 0,
+              "3": 0
+            },
+            "confidence": 1
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.24,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 0.44,
+            "probabilities": {
+              "0": 0.77,
+              "1": 0.06,
+              "2": 0.16,
+              "3": 0.01,
+              "4": 0
+            },
+            "confidence": 0.63
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.32,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ax-11",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 6548,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "announce_match": 0.2578,
+              "scan_board": 0.2287,
+              "read_menu": 0.3312,
+              "wait": 0.1823
+            },
+            "confidence": 0.0167
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.7004,
+            "probabilities": {
+              "0": 0.1681,
+              "1": 0.2243,
+              "2": 0.3465,
+              "3": 0.261
+            },
+            "confidence": 0.0241
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.7242,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.0934,
+            "probabilities": {
+              "0": 0.1352,
+              "1": 0.1956,
+              "2": 0.2994,
+              "3": 0.1803,
+              "4": 0.1895
+            },
+            "confidence": 0.0215
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5756,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1184,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "announce_match": 0,
+              "wait": 0,
+              "read_menu": 1,
+              "scan_board": 0
+            },
+            "confidence": 0.99
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.74,
+            "probabilities": {
+              "0": 0.19,
+              "1": 0.01,
+              "2": 0.67,
+              "3": 0.13
+            },
+            "confidence": 0.47
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.46,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 1.24,
+            "probabilities": {
+              "0": 0.42,
+              "1": 0.08,
+              "2": 0.36,
+              "3": 0.11,
+              "4": 0.03
+            },
+            "confidence": 0
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.57,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ax-12",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 4669,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "announce_match",
+            "probabilities": {
+              "announce_match": 0.3384,
+              "scan_board": 0.2269,
+              "read_menu": 0.182,
+              "wait": 0.2527
+            },
+            "confidence": 0.0183
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.532,
+            "probabilities": {
+              "0": 0.161,
+              "1": 0.3044,
+              "2": 0.3763,
+              "3": 0.1583
+            },
+            "confidence": 0.0509
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.6856,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.1739,
+            "probabilities": {
+              "0": 0.1135,
+              "1": 0.224,
+              "2": 0.2228,
+              "3": 0.2544,
+              "4": 0.1853
+            },
+            "confidence": 0.02
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.7225,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1005,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "wait": 0.29,
+              "announce_match": 0.11,
+              "scan_board": 0.58,
+              "read_menu": 0.02
+            },
+            "confidence": 0.44
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.66,
+            "probabilities": {
+              "0": 0.01,
+              "1": 0.49,
+              "2": 0.34,
+              "3": 0.16
+            },
+            "confidence": 0.32
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.36,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.92,
+            "probabilities": {
+              "0": 0.04,
+              "1": 0.03,
+              "2": 0.17,
+              "3": 0.5,
+              "4": 0.26
+            },
+            "confidence": 0.5
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.22,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ax-13",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 5286,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "announce_match": 0.2702,
+              "scan_board": 0.2281,
+              "read_menu": 0.2815,
+              "wait": 0.2202
+            },
+            "confidence": 0.004
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.3409,
+            "probabilities": {
+              "0": 0.2663,
+              "1": 0.2943,
+              "2": 0.2717,
+              "3": 0.1678
+            },
+            "confidence": 0.0148
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.6914,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.3482,
+            "probabilities": {
+              "0": 0.0833,
+              "1": 0.1834,
+              "2": 0.2652,
+              "3": 0.238,
+              "4": 0.2301
+            },
+            "confidence": 0.037
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.639,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1077,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "scan_board": 0,
+              "announce_match": 0,
+              "wait": 0.02,
+              "read_menu": 0.98
+            },
+            "confidence": 0.97
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0.04,
+            "probabilities": {
+              "0": 0.98,
+              "1": 0.02,
+              "2": 0,
+              "3": 0
+            },
+            "confidence": 0.96
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.21,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.92,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.06,
+              "2": 0.16,
+              "3": 0.5,
+              "4": 0.26
+            },
+            "confidence": 0.49
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.49,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ax-14",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 5346,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "announce_match": 0.2657,
+              "scan_board": 0.2541,
+              "read_menu": 0.2771,
+              "wait": 0.2031
+            },
+            "confidence": 0.0048
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.466,
+            "probabilities": {
+              "0": 0.2522,
+              "1": 0.2525,
+              "2": 0.2723,
+              "3": 0.223
+            },
+            "confidence": 0.0018
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.7874,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 1.8573,
+            "probabilities": {
+              "0": 0.1579,
+              "1": 0.3283,
+              "2": 0.2091,
+              "3": 0.1079,
+              "4": 0.1968
+            },
+            "confidence": 0.0404
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.6963,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1273,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "announce_match": 0,
+              "scan_board": 0.01,
+              "wait": 0.01,
+              "read_menu": 0.98
+            },
+            "confidence": 0.98
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0,
+            "probabilities": {
+              "0": 1,
+              "1": 0,
+              "2": 0,
+              "3": 0
+            },
+            "confidence": 1
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.41,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.56,
+            "probabilities": {
+              "0": 0.06,
+              "1": 0.08,
+              "2": 0.25,
+              "3": 0.45,
+              "4": 0.16
+            },
+            "confidence": 0.36
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.51,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "ax-15",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 6455,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "announce_match": 0.2516,
+              "scan_board": 0.2187,
+              "read_menu": 0.2881,
+              "wait": 0.2416
+            },
+            "confidence": 0.0036
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.4162,
+            "probabilities": {
+              "0": 0.2968,
+              "1": 0.2361,
+              "2": 0.2212,
+              "3": 0.2459
+            },
+            "confidence": 0.0045
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.6327,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.1551,
+            "probabilities": {
+              "0": 0.1292,
+              "1": 0.1771,
+              "2": 0.3234,
+              "3": 0.15,
+              "4": 0.2203
+            },
+            "confidence": 0.0345
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5894,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1045,
+        "answers": {
+          "danger_level": {
+            "type": "score",
+            "score": 0.02,
+            "probabilities": {
+              "0": 0.99,
+              "1": 0.01,
+              "2": 0,
+              "3": 0
+            },
+            "confidence": 0.98
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.21,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 1.87,
+            "probabilities": {
+              "0": 0.05,
+              "1": 0.19,
+              "2": 0.62,
+              "3": 0.13,
+              "4": 0.01
+            },
+            "confidence": 0.63
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.52,
+            "probabilities": null
+          },
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "wait": 0,
+              "scan_board": 0,
+              "read_menu": 1,
+              "announce_match": 0
+            },
+            "confidence": 0.99
+          }
+        }
+      }
+    },
+    {
+      "id": "edge-01",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 2532,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "wait",
+            "probabilities": {
+              "announce_match": 0.143,
+              "scan_board": 0.1643,
+              "read_menu": 0.1526,
+              "wait": 0.5401
+            },
+            "confidence": 0.1384
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.1853,
+            "probabilities": {
+              "0": 0.3716,
+              "1": 0.2058,
+              "2": 0.2882,
+              "3": 0.1343
+            },
+            "confidence": 0.0468
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.74,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.2268,
+            "probabilities": {
+              "0": 0.0496,
+              "1": 0.1134,
+              "2": 0.4821,
+              "3": 0.2702,
+              "4": 0.0847
+            },
+            "confidence": 0.1859
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5817,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 709,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "wait",
+            "probabilities": {
+              "wait": 0.99,
+              "read_menu": 0.01,
+              "announce_match": 0,
+              "scan_board": 0
+            },
+            "confidence": 0.98
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0.01,
+            "probabilities": {
+              "0": 0.99,
+              "1": 0.01,
+              "2": 0,
+              "3": 0
+            },
+            "confidence": 0.99
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.33,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 0.18,
+            "probabilities": {
+              "0": 0.88,
+              "1": 0.06,
+              "2": 0.04,
+              "3": 0.01,
+              "4": 0.01
+            },
+            "confidence": 0.85
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.38,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "edge-02",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 8734,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "wait",
+            "probabilities": {
+              "announce_match": 0.2429,
+              "scan_board": 0.2485,
+              "read_menu": 0.236,
+              "wait": 0.2727
+            },
+            "confidence": 0.0011
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.4857,
+            "probabilities": {
+              "0": 0.2321,
+              "1": 0.2758,
+              "2": 0.2663,
+              "3": 0.2258
+            },
+            "confidence": 0.0027
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5382,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.0653,
+            "probabilities": {
+              "0": 0.1456,
+              "1": 0.2215,
+              "2": 0.2372,
+              "3": 0.2135,
+              "4": 0.1822
+            },
+            "confidence": 0.0086
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5956,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1096,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0,
+              "scan_board": 0.9,
+              "read_menu": 0.04,
+              "wait": 0.06
+            },
+            "confidence": 0.87
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0,
+            "probabilities": {
+              "0": 1,
+              "1": 0,
+              "2": 0,
+              "3": 0
+            },
+            "confidence": 1
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.26,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 0.35,
+            "probabilities": {
+              "0": 0.81,
+              "1": 0.05,
+              "2": 0.13,
+              "3": 0.01,
+              "4": 0
+            },
+            "confidence": 0.71
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.14,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "edge-03",
+      "lang": "en",
+      "local": {
+        "elapsedMs": 4726,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "announce_match": 0.1939,
+              "scan_board": 0.1894,
+              "read_menu": 0.4026,
+              "wait": 0.2141
+            },
+            "confidence": 0.041
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.4985,
+            "probabilities": {
+              "0": 0.2176,
+              "1": 0.3005,
+              "2": 0.2476,
+              "3": 0.2343
+            },
+            "confidence": 0.0054
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.6791,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.2181,
+            "probabilities": {
+              "0": 0.1022,
+              "1": 0.12,
+              "2": 0.4282,
+              "3": 0.157,
+              "4": 0.1927
+            },
+            "confidence": 0.0937
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.6384,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1261,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "wait": 0,
+              "read_menu": 1,
+              "announce_match": 0,
+              "scan_board": 0
+            },
+            "confidence": 0.99
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0,
+            "probabilities": {
+              "0": 1,
+              "1": 0,
+              "2": 0,
+              "3": 0
+            },
+            "confidence": 1
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.27,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 0.55,
+            "probabilities": {
+              "0": 0.66,
+              "1": 0.16,
+              "2": 0.17,
+              "3": 0.01,
+              "4": 0
+            },
+            "confidence": 0.54
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.24,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "edge-04",
+      "lang": "mixed",
+      "local": {
+        "elapsedMs": 6547,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "scan_board",
+            "probabilities": {
+              "announce_match": 0.245,
+              "scan_board": 0.2667,
+              "read_menu": 0.2279,
+              "wait": 0.2604
+            },
+            "confidence": 0.0013
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.6533,
+            "probabilities": {
+              "0": 0.1986,
+              "1": 0.25,
+              "2": 0.2508,
+              "3": 0.3005
+            },
+            "confidence": 0.0076
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.5685,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.1693,
+            "probabilities": {
+              "0": 0.1477,
+              "1": 0.1847,
+              "2": 0.236,
+              "3": 0.2141,
+              "4": 0.2176
+            },
+            "confidence": 0.0077
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.5377,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1136,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "announce_match",
+            "probabilities": {
+              "announce_match": 0.7,
+              "wait": 0.12,
+              "read_menu": 0.01,
+              "scan_board": 0.17
+            },
+            "confidence": 0.62
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.74,
+            "probabilities": {
+              "0": 0.14,
+              "1": 0.39,
+              "2": 0.06,
+              "3": 0.41
+            },
+            "confidence": 0
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.46,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.95,
+            "probabilities": {
+              "0": 0.17,
+              "1": 0.04,
+              "2": 0.06,
+              "3": 0.15,
+              "4": 0.58
+            },
+            "confidence": 0.12
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.09,
+            "probabilities": null
+          }
+        }
+      }
+    },
+    {
+      "id": "edge-05",
+      "lang": "zh",
+      "local": {
+        "elapsedMs": 6344,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "announce_match": 0.2848,
+              "scan_board": 0.2354,
+              "read_menu": 0.3122,
+              "wait": 0.1676
+            },
+            "confidence": 0.0183
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 1.6121,
+            "probabilities": {
+              "0": 0.2196,
+              "1": 0.2452,
+              "2": 0.2385,
+              "3": 0.2966
+            },
+            "confidence": 0.0046
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.717,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 2.0829,
+            "probabilities": {
+              "0": 0.0969,
+              "1": 0.1822,
+              "2": 0.4384,
+              "3": 0.1062,
+              "4": 0.1764
+            },
+            "confidence": 0.104
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.6238,
+            "probabilities": null
+          }
+        }
+      },
+      "cloud": {
+        "elapsedMs": 1118,
+        "answers": {
+          "next_action": {
+            "type": "choice",
+            "choice": "read_menu",
+            "probabilities": {
+              "wait": 0,
+              "scan_board": 0.01,
+              "announce_match": 0,
+              "read_menu": 0.99
+            },
+            "confidence": 0.98
+          },
+          "danger_level": {
+            "type": "score",
+            "score": 0.45,
+            "probabilities": {
+              "0": 0.68,
+              "1": 0.24,
+              "2": 0.02,
+              "3": 0.06
+            },
+            "confidence": 0.55
+          },
+          "should_interrupt": {
+            "type": "noul",
+            "noul": 0.45,
+            "probabilities": null
+          },
+          "announce_rank": {
+            "type": "score",
+            "score": 3.19,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.04,
+              "2": 0.07,
+              "3": 0.46,
+              "4": 0.41
+            },
+            "confidence": 0.47
+          },
+          "scene_changed": {
+            "type": "noul",
+            "noul": 0.42,
+            "probabilities": null
+          }
+        }
+      }
+    }
+  ]
+}

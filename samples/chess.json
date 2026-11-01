@@ -1,0 +1,20 @@
+{
+  "_note": "模拟样例，供测试判定用，非真实抓取。棋子前缀 b=黑方 r=红方，null=空位；9 列 × 10 行，行 0 在黑方底线",
+  "game": "chess",
+  "turn": "red",
+  "board": [
+    ["b車", "b馬", "b象", "b士", "b將", "b士", "b象", "b馬", "b車"],
+    [null, null, null, null, null, null, null, null, null],
+    [null, "b炮", null, null, null, null, null, "b炮", null],
+    ["b兵", null, "b兵", null, "b兵", null, "b兵", null, "b兵"],
+    [null, null, null, null, null, null, null, null, null],
+    [null, null, null, null, null, null, null, null, null],
+    ["r兵", null, "r兵", null, "r兵", null, "r兵", null, "r兵"],
+    [null, "r炮", null, null, null, null, null, "r炮", null],
+    [null, null, null, null, null, null, null, null, null],
+    ["r車", "r馬", "r相", "r仕", "r帥", "r仕", "r相", "r馬", "r車"]
+  ],
+  "last_move": "炮二平五",
+  "in_check": false,
+  "captured_recently": null
+}

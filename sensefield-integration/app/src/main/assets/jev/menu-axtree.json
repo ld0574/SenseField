@@ -1,0 +1,81 @@
+{
+  "state": {
+    "_note": "模拟样例，供测试判定用，非真实抓取。游戏菜单界面的无障碍树节选（Android AccessibilityNodeInfo 序列化）",
+    "package": "com.example.match3game",
+    "activity": "com.example.match3game.MainActivity",
+    "nodes": [
+      {
+        "id": "lbl_level",
+        "text": "第 12 关",
+        "content_desc": null,
+        "clickable": false,
+        "bounds": [
+          420,
+          200,
+          660,
+          260
+        ]
+      },
+      {
+        "id": "lbl_coins",
+        "text": "金币 1280",
+        "content_desc": null,
+        "clickable": false,
+        "bounds": [
+          60,
+          200,
+          300,
+          260
+        ]
+      },
+      {
+        "id": "btn_start",
+        "text": "开始游戏",
+        "content_desc": "开始一局新的消消乐",
+        "clickable": true,
+        "bounds": [
+          360,
+          900,
+          720,
+          1020
+        ]
+      },
+      {
+        "id": "btn_continue",
+        "text": "继续冒险 第 12 关",
+        "content_desc": "继续上次进度",
+        "clickable": true,
+        "bounds": [
+          360,
+          1080,
+          720,
+          1200
+        ]
+      },
+      {
+        "id": "btn_settings",
+        "text": "设置",
+        "content_desc": "打开设置菜单",
+        "clickable": true,
+        "bounds": [
+          360,
+          1260,
+          720,
+          1380
+        ]
+      },
+      {
+        "id": "btn_shop",
+        "text": "商店",
+        "content_desc": "进入商店",
+        "clickable": true,
+        "bounds": [
+          100,
+          1500,
+          300,
+          1620
+        ]
+      }
+    ]
+  }
+}

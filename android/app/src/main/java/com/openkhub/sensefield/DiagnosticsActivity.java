@@ -96,15 +96,15 @@ public final class DiagnosticsActivity extends UiActivity {
         UiKit.add(recording, UiKit.withHint(images, match3
                 ? "帮助核对棋盘、交换和高亮；只存手机，不自动上传"
                 : "帮助查漏报／误报；只存在手机里，不自动上传"), 8);
-        UiKit.add(recording, UiKit.hint(this, "两款游戏共用此保存设置。"), 12);
+        UiKit.add(recording, UiKit.hint(this, "两款游戏共用此保存设置。默认关闭；勾选后才开始保存画面。"), 12);
         // The complete recording and privacy terms stay available, folded until requested.
         UiKit.add(recording, UiKit.details(this, "记录范围与隐私",
-                match3 ? "记录棋盘识别、交换推荐、语音播放和高亮状态。首次使用默认保存画面，每约 10 秒保存截图；标记问题时有上限地保存前后短时采样。"
-                        : "首次使用默认保存画面。每约 10 秒保存背景截图；提醒时另存当时画面，并有上限地保存前后短时采样。",
+                match3 ? "默认只记录棋盘识别、交换推荐、语音播放和高亮状态，不保存画面。勾选“保存游戏画面”后，约每 10 秒保存一张截图；标记问题时有上限地保存前后短时采样。"
+                        : "默认只记录识别与提醒状态，不保存画面。勾选“保存游戏画面”后，约每 10 秒保存一张背景截图；提醒时另存当时画面，并有上限地保存前后短时采样。",
                 match3 ? "交换位置不对、推荐无助于通关或语音中断时，可展开听野通知点“标记问题”。结束后补充关卡和问题描述。"
                         : "漏报等问题请及时下拉通知栏，展开听野通知后点“标记问题”（部分手机要点右侧箭头）。",
                 "每局最多 20 分钟或 60 MB，两款游戏合计仅留最近 3 局。采样可能不完整，不等于录像。",
-                "画面可能包含昵称、聊天等信息。只保存在手机内，不自动上传；分享前请确认愿意提供这些内容。"), 0);
+                "画面可能包含昵称、聊天等信息。只保存在手机内，不自动上传；分享前请确认愿意提供这些内容。完整说明随诊断包一起导出为 PRIVACY.txt。"), 0);
         UiKit.add(page, recording, UiKit.GAP_SECTION);
 
         LinearLayout export = UiKit.card(this);
