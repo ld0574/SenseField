@@ -243,6 +243,10 @@ public final class CapturePermissionsActivity extends UiActivity {
             toast("提醒音量为 0 或已静音，请调高媒体音量并在声音配置中测试");
             return;
         }
+        if (!GameModelPreparation.ready(this, "hok")) {
+            GameModelPreparation.prepare(this, "hok", this::requestCapture);
+            return;
+        }
         try { GameProfile.load(this); }
         catch (IOException | JSONException error) { toast("配置无效，请先检查配置"); return; }
         attemptedForStart = true;

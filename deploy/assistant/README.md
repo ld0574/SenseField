@@ -85,3 +85,5 @@ bash deploy/assistant/start.sh restart
 在私有配置中以字符串调整，修改后重启。有效公开请求尝试在调用模型前计数；额度保存在 `deploy/assistant/runtime/public-quota.sqlite3`，不要在更新时清空。存储仅包含安装标识哈希与计数。
 
 助手默认关闭，用户按需授权。公开入口不接收音频；语音识别在手机完成。截图和文本通过 HTTPS 发往服务端及模型提供商，响应时间受网络和上游服务影响。APK 与语音模型分发见 [CDN 发布](CDN发布.md)。
+
+游戏识别资源的私有目录部署、下载凭证和新旧版本共存见 [游戏模型按需下载](../../docs/development/game-models.md)。更新客户端前须同时部署资源目录并增加 Nginx 下载路由。

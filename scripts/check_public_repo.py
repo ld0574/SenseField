@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -160,6 +161,9 @@ def is_secret_file(rel: str) -> bool:
 def is_model_artifact(rel: str, candidates: set[str]) -> bool:
     """Recognize model weights/graphs without treating every .bin as a model."""
     path = PurePosixPath(rel.replace("\\", "/"))
+    if path.name in {f"match3-{name}-v1.json" for name in
+                     ("fixed-ui", "gallery", "vine", "gray", "board-feedback", "hud-glyphs")}:
+        return True
     suffix = path.suffix.lower()
     if suffix in MODEL_WEIGHT_SUFFIXES:
         return True
@@ -217,6 +221,8 @@ def workspace_candidates(root: Path) -> list[str]:
         "docs/development/android-adb-diagnostics.md",
         "docs/development/android-cue-diagnostics.md",
         "docs/development/app-update.md",
+        "docs/development/game-models.md",
+        "docs/validation/model-distribution-audit-2026-11-01.md",
         "docs/development/match3-diagnostics-audit.md",
         "docs/development/match3-element-evidence.md",
         "docs/development/match3-flywheel.md",
@@ -297,6 +303,14 @@ def scan(root: Path, candidates: list[str]) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     normalized_candidates = {item.replace("\\", "/") for item in candidates}
+    indexed_payload_names = set()
+    index = root / "android/app/src/main/assets/game-models.json"
+    if index.is_file():
+        try:
+            for pack in json.loads(index.read_text())["packs"].values():
+                indexed_payload_names.update(item["name"] for item in pack["files"])
+        except (ValueError, KeyError, TypeError):
+            errors.append("invalid game resource integrity index")
     for rel in candidates:
         path = root / rel
         if not path.is_file():
@@ -308,7 +322,7 @@ def scan(root: Path, candidates: list[str]) -> tuple[list[str], list[str]]:
             errors.append(f"private or binary artifact is public: {rel}")
         if is_secret_file(normalized):
             errors.append(f"secret or environment file is public: {rel}")
-        if is_model_artifact(normalized, normalized_candidates):
+        if is_model_artifact(normalized, normalized_candidates) or path.name in indexed_payload_names:
             errors.append(f"model weight or graph is public: {rel}")
         size = path.stat().st_size
         if size > MAX_FILE_BYTES:

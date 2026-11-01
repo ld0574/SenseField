@@ -347,17 +347,18 @@ final class Match3VisualCatalog {
         for (int i = 0; i < array.length(); i++) patterns.add(new Pattern(array.getJSONObject(i)));
         return new PatternList(patterns);
     }
+    static synchronized void resourcesPrepared() { loaded = null; }
     static Match3VisualCatalog get(Context context) {
         Match3VisualCatalog catalog = loaded;
         if (catalog != null) return catalog;
         synchronized (Match3VisualCatalog.class) {
-            if (loaded == null) try (java.io.InputStream input = context.getAssets().open("match3-fixed-ui-v1.json")) {
+            if (loaded == null) try (java.io.InputStream input = new java.io.FileInputStream(GameModelStore.file(context, "match3", "match3-fixed-ui-v1.json"))) {
                 java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream(); byte[] buffer = new byte[4096]; int n;
                 while ((n = input.read(buffer)) > 0) { if (output.size() + n > 327680) throw new IllegalArgumentException("Catalog size"); output.write(buffer,0,n); }
                 byte[] fixedBytes=output.toByteArray();
                 JSONObject json = new JSONObject(new String(fixedBytes, StandardCharsets.UTF_8));
                 byte[] gallery=null;
-                try(java.io.InputStream extra=context.getAssets().open("match3-gallery-v1.json")) {
+                try(java.io.InputStream extra=new java.io.FileInputStream(GameModelStore.file(context, "match3", "match3-gallery-v1.json"))) {
                     java.io.ByteArrayOutputStream data=new java.io.ByteArrayOutputStream();
                     int count;while((count=extra.read(buffer))>0) {
                         data.write(buffer,0,count);if(data.size()>1048576)break;
@@ -374,7 +375,7 @@ final class Match3VisualCatalog {
                 }
                 List<byte[]> supplements=new ArrayList<>();
                 for(String name:new String[]{"match3-vine-v1.json","match3-gray-v1.json"})
-                    try(java.io.InputStream extra=context.getAssets().open(name)) {
+                    try(java.io.InputStream extra=new java.io.FileInputStream(GameModelStore.file(context, "match3", name))) {
                         java.io.ByteArrayOutputStream data=new java.io.ByteArrayOutputStream();
                         int count;while((count=extra.read(buffer))>0) {
                             if(data.size()+count>COVER_CATALOG_MAXIMUM_BYTES)throw new IllegalArgumentException("Cover catalog size");
@@ -383,7 +384,7 @@ final class Match3VisualCatalog {
                         supplements.add(data.toByteArray());
                     } catch(java.io.IOException absent) { }
                 byte[] feedback=null;
-                try(java.io.InputStream extra=context.getAssets().open("match3-board-feedback-v1.json")) {
+                try(java.io.InputStream extra=new java.io.FileInputStream(GameModelStore.file(context, "match3", "match3-board-feedback-v1.json"))) {
                     java.io.ByteArrayOutputStream data=new java.io.ByteArrayOutputStream();int count;
                     while((count=extra.read(buffer))>0) {
                         data.write(buffer,0,count);if(data.size()>65536)break;
@@ -392,7 +393,7 @@ final class Match3VisualCatalog {
                 } catch(java.io.IOException absent) { }
                 Match3VisualCatalog candidate = withBoardFeedback(json,gallery,supplements,feedback,rules.sha256);
                 byte[] hudGlyphs=null;
-                try(java.io.InputStream extra=context.getAssets().open("match3-hud-glyphs-v1.json")) {
+                try(java.io.InputStream extra=new java.io.FileInputStream(GameModelStore.file(context, "match3", "match3-hud-glyphs-v1.json"))) {
                     java.io.ByteArrayOutputStream data=new java.io.ByteArrayOutputStream();
                     int count;while((count=extra.read(buffer))>0) {
                         data.write(buffer,0,count);if(data.size()>4096)break;

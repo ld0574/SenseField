@@ -252,6 +252,12 @@ bool copy_asset_name(JNIEnv *env, jstring value, const char *fallback,
     if (!chars) return false;
     destination.assign(chars);
     env->ReleaseStringUTFChars(value, chars);
+    // Production models live in app-private no-backup storage; APK asset names
+    // remain accepted for isolated instrumentation fixtures.
+    if (!destination.empty() && destination.front() == '/') {
+        return destination.size() < 2048 && destination.find("/no_backup/game-models/") != std::string::npos
+                && destination.find("..") == std::string::npos;
+    }
     return valid_asset_name(destination);
 }
 
@@ -273,14 +279,18 @@ bool load_yolox(AAssetManager *assets, Session &session) {
     session.yolox.opt.use_fp16_arithmetic = session.yolox_half_arithmetic;
     session.yolox.opt.use_vulkan_compute = false;
     session.yolox.register_custom_layer("YoloV5Focus", YoloV5Focus_layer_creator);
-    const int param_status = session.yolox.load_param(assets, session.yolox_param_asset.c_str());
+    const int param_status = session.yolox_param_asset.front() == '/'
+            ? session.yolox.load_param(session.yolox_param_asset.c_str())
+            : session.yolox.load_param(assets, session.yolox_param_asset.c_str());
     if (param_status != 0) {
         __android_log_print(ANDROID_LOG_ERROR, kLogTag,
                             "Could not load %s (status %d)",
                             session.yolox_param_asset.c_str(), param_status);
         return false;
     }
-    const int model_status = session.yolox.load_model(assets, session.yolox_bin_asset.c_str());
+    const int model_status = session.yolox_bin_asset.front() == '/'
+            ? session.yolox.load_model(session.yolox_bin_asset.c_str())
+            : session.yolox.load_model(assets, session.yolox_bin_asset.c_str());
     if (model_status != 0) {
         __android_log_print(ANDROID_LOG_ERROR, kLogTag,
                             "Could not load %s (status %d)",

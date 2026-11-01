@@ -236,6 +236,8 @@ public final class Match3ToolsActivity extends UiActivity {
             section.findViewWithTag("ui_details_body").setVisibility(
                     savedInstanceState.getBoolean(key) ? View.VISIBLE : View.GONE);
         }
+        if (!GameModelPreparation.ready(this, "match3"))
+            GameModelPreparation.prepare(this, "match3", () -> {});
     }
 
     /* ---------- 选截图 ---------- */

@@ -68,6 +68,13 @@ if (!assistantDefaultEndpoint.isEmpty()) {
     }
 }
 
+// Only the small integrity index is public/bundled. Payload names are excluded
+// even if a release engineer has private resources in the local assets tree.
+def gameModelIndex = new JsonSlurper().parse(file('src/main/assets/game-models.json'))
+def gameModelPayloadNames = gameModelIndex.packs.values().collectMany { pack ->
+    pack.files.collect { it.name }
+}
+
 android {
     namespace 'com.openkhub.sensefield'
     compileSdk 36
@@ -108,7 +115,7 @@ android {
     androidResources {
         noCompress += ['ogg']
         // Keep licenses and metadata in the APK; pinned speech weights come from CDN.
-        ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:model.int8.onnx:tokens.txt'
+        ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:*.param:*.bin:*.onnx:*.tflite:*.ort:*.mnn:*.pt:*.pth:*.safetensors:tokens.txt:' + gameModelPayloadNames.join(':')
     }
 
     signingConfigs {

@@ -6,6 +6,16 @@ from pathlib import Path
 from scripts.check_public_repo import git_candidates, scan, workspace_candidates
 
 
+def test_indexed_future_game_template_cannot_be_published(tmp_path):
+    import json
+    assets = tmp_path / "android/app/src/main/assets"
+    assets.mkdir(parents=True)
+    (assets / "game-models.json").write_text(json.dumps({"packs": {"future-game": {"files": [{"name": "new-learned-template.json"}]}}}))
+    (assets / "new-learned-template.json").write_text("{}")
+    errors, _ = scan(tmp_path, ["android/app/src/main/assets/new-learned-template.json"])
+    assert any("model weight or graph" in error for error in errors)
+
+
 def test_public_check_rejects_model_artifacts_but_allows_other_bin_files(
     tmp_path: Path,
 ) -> None:

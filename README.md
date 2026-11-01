@@ -89,7 +89,7 @@ cd android
 ./gradlew assembleDebug
 ```
 
-上面生成开发用 Debug 包。模型权重未纳入 Git；需按 `android/app/src/main/assets/` 中对应 metadata 提供匹配文件，才能运行相应识别。预合成语音的准备与校验见[离线语音开发说明](docs/development/offline-speech.md)。干净克隆不等于已具备全部运行素材。
+上面生成开发用 Debug 包。游戏模型和识别模板由应用在首次使用相应游戏时下载，校验通过后在本机离线复用，不再放进 APK。开发与部署见[游戏模型按需下载](docs/development/game-models.md)。预合成语音的准备与校验见[离线语音开发说明](docs/development/offline-speech.md)。
 
 正式交付在仓库根目录运行：
 
@@ -148,4 +148,4 @@ python -m pip install -e '.[test]'
 
 ## 开源许可
 
-本项目自有代码和材料按 [Apache License 2.0](LICENSE) 授权。第三方代码、模型、音频、商标及游戏内容遵循各自的权利和许可，详见[第三方声明](THIRD_PARTY_NOTICES.md)。
+本项目公开代码按 [Apache License 2.0](LICENSE) 授权。后续未公开的自训游戏模型、检查点与识别模板独立分发，不在代码开源授权范围内，见[模型分发与许可边界](MODEL_POLICY.md)。历史已公开材料的既有许可不追溯撤销。第三方代码、模型、音频、商标及游戏内容遵循各自的权利和许可，详见[第三方声明](THIRD_PARTY_NOTICES.md)。

@@ -97,6 +97,9 @@ docs/**
 !docs/development/android-adb-diagnostics.md
 !docs/development/android-cue-diagnostics.md
 !docs/development/app-update.md
+!docs/development/game-models.md
+!docs/validation/
+!docs/validation/model-distribution-audit-2026-11-01.md
 !docs/development/match3-diagnostics-audit.md
 !docs/development/match3-element-evidence.md
 !docs/development/match3-flywheel.md
@@ -150,6 +153,12 @@ validation/**
 research/board-recognition/**/*.md
 
 # Private model weights and training checkpoints stay local.
+android/app/src/main/assets/match3-fixed-ui-v1.json
+android/app/src/main/assets/match3-gallery-v1.json
+android/app/src/main/assets/match3-vine-v1.json
+android/app/src/main/assets/match3-gray-v1.json
+android/app/src/main/assets/match3-board-feedback-v1.json
+android/app/src/main/assets/match3-hud-glyphs-v1.json
 *.pt
 *.pth
 *.onnx

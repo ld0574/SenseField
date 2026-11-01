@@ -306,13 +306,11 @@ final class GameProfile {
     }
 
     private static void requireAsset(Context context, String name) throws IOException {
-        try (InputStream ignored = context.getAssets().open(name)) {
-            // A local imported profile can enable the experimental recognizer
-            // only when its private model assets were included in the APK.
+        try (InputStream ignored = new FileInputStream(GameModelStore.file(context, "hok", name))) {
+            // Imported profiles must bind to a fully verified private game pack.
         } catch (IOException missing) {
             throw new IOException(
-                    "当前配置启用了实验小地图识别，但 APK 未包含本地模型文件 " + name + "。"
-                            + "请按团队本地运行文档放置模型后重新构建。",
+                    "游戏识别资源尚未准备完成，请联网重新开始辅助。",
                     missing);
         }
     }
@@ -390,12 +388,13 @@ final class GameProfile {
             requireAsset(context, binAsset);
             if (!runtimeParamSha256.equals(sha256Asset(context, paramAsset)) ||
                     !runtimeSha256.equals(sha256Asset(context, binAsset))) {
-                throw new IOException("APK 中的 YOLOX param/bin 文件与所选 metadata 的 "
+                throw new IOException("本地缓存的 YOLOX param/bin 文件与所选 metadata 的 "
                         + "SHA-256 不一致。");
             }
             return new YoloxBinding(
                     parseYoloxModelData(metadata, fallbackConfidence, profileClassThresholds),
-                    paramAsset, binAsset);
+                    GameModelStore.file(context, "hok", paramAsset).getAbsolutePath(),
+                    GameModelStore.file(context, "hok", binAsset).getAbsolutePath());
         } catch (JSONException malformed) {
             throw new IOException("APK 模型 metadata 的 classes 或分类阈值无效。", malformed);
         }
@@ -1139,7 +1138,7 @@ final class GameProfile {
         } catch (NoSuchAlgorithmException error) {
             throw new IOException("SHA-256 is unavailable", error);
         }
-        try (InputStream stream = context.getAssets().open(assetName)) {
+        try (InputStream stream = new FileInputStream(GameModelStore.file(context, "hok", assetName))) {
             byte[] buffer = new byte[64 * 1024];
             for (int count; (count = stream.read(buffer)) != -1; ) {
                 digest.update(buffer, 0, count);

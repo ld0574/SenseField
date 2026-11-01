@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "packs": {
+    "hok": {
+      "version": "v1-42f515ca02e1d299abda",
+      "files": [
+        {
+          "name": "minimap-yolox-nano-320.param",
+          "bytes": 23751,
+          "sha256": "4649269cae16fef3b64cc366f123ba58259a756b79f7f55d6be20cd3903cae14"
+        },
+        {
+          "name": "minimap-yolox-nano-320.bin",
+          "bytes": 3556684,
+          "sha256": "d5b4b5dcee290122ae823750d247dd7336f656ab2430f86f68ba87f6ad1e4bd3"
+        },
+        {
+          "name": "minimap-yolox-nano-dual-512.param",
+          "bytes": 23755,
+          "sha256": "77ea946b9b6c4360296e9f068010414631f3dccd0368b01087507aa639391da0"
+        },
+        {
+          "name": "minimap-yolox-nano-dual-512.bin",
+          "bytes": 3557464,
+          "sha256": "808ce276487d262acc66164f5eb77bbc1ac92f6d6ec31bb530c19fafc8371bd3"
+        }
+      ]
+    },
+    "match3": {
+      "version": "v1-c938cf0874c45af478cd",
+      "files": [
+        {
+          "name": "match3-fixed-ui-v1.json",
+          "bytes": 325689,
+          "sha256": "84ad215d12037e217b17f3cc84039ef73013e259457c1d308452757957c46f0d"
+        },
+        {
+          "name": "match3-gallery-v1.json",
+          "bytes": 315620,
+          "sha256": "3a7427fcd6fb669d39a4e26b43e433b6a677ebb706885b24476738e3ba74d3ec"
+        },
+        {
+          "name": "match3-vine-v1.json",
+          "bytes": 65507,
+          "sha256": "bdb49a634dc01e83ae161aaff7d87dd1d5c381ff55e6bc7de69fa976cb1da1d4"
+        },
+        {
+          "name": "match3-gray-v1.json",
+          "bytes": 5452,
+          "sha256": "3f1c4926093062805b3dad84818c07121d3a7ab192bdd79a46a52ea49621e6b8"
+        },
+        {
+          "name": "match3-board-feedback-v1.json",
+          "bytes": 47805,
+          "sha256": "4ba456f8894cd6b858a0cfd9e8a9b4ffba0a4284dacc10413c1e8939b996672c"
+        },
+        {
+          "name": "match3-hud-glyphs-v1.json",
+          "bytes": 779,
+          "sha256": "350ce3c1f8277692e70e8884d28b0193197a50734c39f4fd09dcc8942d0bcba8"
+        }
+      ]
+    }
+  }
+}

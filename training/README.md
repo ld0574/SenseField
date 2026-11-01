@@ -45,4 +45,4 @@ python3 training/verify_yolox_ncnn.py --help
 
 模型 metadata、类别顺序、profile 和 Android 解码必须匹配。输入尺寸、均值归一化、置信度与 NMS 配置一并记录；更换模型后重新进行一致性核对，不能混用旧 profile 与新权重。
 
-模型权重不提交到 Git。安卓构建按 metadata 准备本地资源，正式包要求见 [内置资源与构建](../docs/development/offline-speech.md)，仓库检查使用 `python3 scripts/check_public_repo.py`。
+模型权重不提交到 Git、不打进 APK；按游戏分包下载和服务端部署见 [游戏模型按需下载](../docs/development/game-models.md)。私有回归仍按 metadata 准备本地资源，正式包要求见 [内置资源与构建](../docs/development/offline-speech.md)，仓库检查使用 `python3 scripts/check_public_repo.py`。

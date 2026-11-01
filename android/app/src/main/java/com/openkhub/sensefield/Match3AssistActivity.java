@@ -103,6 +103,10 @@ public final class Match3AssistActivity extends UiActivity {
         if (CaptureService.isRunning()) {
             toast("请先停止王者荣耀辅助，再开始消消乐识别"); return;
         }
+        if (!GameModelPreparation.ready(this, "match3")) {
+            GameModelPreparation.prepare(this, "match3", this::startLive);
+            return;
+        }
         authorizationPending = true;
         refreshStatus();
         if (GameProfile.settings(this).getBoolean("match3_hint_highlight_enabled", true)

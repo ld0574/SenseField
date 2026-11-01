@@ -96,6 +96,9 @@ def verify(apk: Path, allow_fixture: bool):
     groups = defaultdict(int)
     libraries = {}
     with ZipFile(apk) as archive:
+        for name in archive.namelist():
+            if name.startswith('assets/') and Path(name).suffix.lower() in {'.param', '.bin', '.onnx', '.tflite', '.ort', '.mnn', '.pt', '.pth', '.safetensors'}:
+                raise ValueError("Private game model payload must not be bundled")
         present = {Path(x.filename).name for x in archive.infolist() if x.filename.startswith('lib/')}
         if present != REQUIRED_LIBRARIES:
             raise ValueError("Missing/unexpected native runtime")
@@ -110,8 +113,15 @@ def verify(apk: Path, allow_fixture: bool):
         for stem in ['minimap-yolox-nano-320', 'minimap-yolox-nano-dual-512']:
             sidecar = json.loads(archive.read(f'assets/{stem}.metadata.json'))
             for ext in ['bin', 'param']:
-                if hashlib.sha256(archive.read(f'assets/{stem}.{ext}')).hexdigest() != sidecar['runtime'][ext + '_sha256']:
-                    raise ValueError("Minimap model checksum mismatch")
+                if f'assets/{stem}.{ext}' in archive.namelist():
+                    raise ValueError("Private minimap model must not be bundled")
+        game_models = json.loads(archive.read('assets/game-models.json'))
+        if game_models.get('schema') != 1 or not game_models.get('packs'):
+            raise ValueError("Missing game model integrity index")
+        for pack in game_models['packs'].values():
+            for item in pack['files']:
+                if f"assets/{item['name']}" in archive.namelist():
+                    raise ValueError("Private game resource must not be bundled")
         audio = json.loads(archive.read('assets/speech/manifest.json'))
         if audio.get('test_fixture', False) != allow_fixture or not allow_fixture and not audio.get('source_selected_by_user'):
             raise ValueError("Real release cannot contain synthetic audio")

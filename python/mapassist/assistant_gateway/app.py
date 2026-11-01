@@ -20,6 +20,7 @@ from .asr import FunAsrStreamingRecognizer, MockStreamingRecognizer
 from .sensevoice import SenseVoiceRecognizer
 from .audio import AudioProtocolError, AudioWebSocketSession, GenerationHighWater, validate_start
 from .config import GatewaySettings, safe_configuration_status
+from .game_models import attach_game_models
 from .public_access import PublicVisionQuota, installation_key
 from .local_proxy import LocalProxyPeerMiddleware
 from .errors import GatewayError
@@ -352,6 +353,7 @@ def create_app(
         else None
     )
     app.add_middleware(HttpBodyLimitMiddleware)
+    attach_game_models(app, settings, public_quota, _secure_scheme, _authorization_matches)
     if settings.local_tls_proxy:
         app.add_middleware(LocalProxyPeerMiddleware)
 

@@ -11,6 +11,8 @@ from urllib.parse import urlsplit
 
 @dataclass(frozen=True)
 class GatewaySettings:
+    game_models_dir: Path | None = None
+    game_models_public: bool = False
     public_access: bool = False
     public_quota_db: Path | None = None
     public_global_daily: int = 1000
@@ -118,7 +120,13 @@ class GatewaySettings:
         if thinking_raw not in {"0", "1"}:
             raise ValueError("ASSISTANT_GATEWAY_VISION_DISABLE_THINKING must be 0 or 1")
         quota_path = os.environ.get("ASSISTANT_GATEWAY_PUBLIC_QUOTA_DB", "").strip()
+        game_models_dir = os.environ.get("ASSISTANT_GATEWAY_GAME_MODELS_DIR", "").strip()
+        game_models_public = os.environ.get("ASSISTANT_GATEWAY_GAME_MODELS_PUBLIC", "0")
+        if game_models_public not in {"0", "1"}:
+            raise ValueError("ASSISTANT_GATEWAY_GAME_MODELS_PUBLIC must be 0 or 1")
         return cls(
+            game_models_dir=Path(game_models_dir).expanduser() if game_models_dir else None,
+            game_models_public=game_models_public == "1",
             public_access=public_raw == "1",
             public_quota_db=Path(quota_path).expanduser() if quota_path else None,
             public_global_daily=int(os.environ.get("ASSISTANT_GATEWAY_PUBLIC_GLOBAL_DAILY", "1000")),
