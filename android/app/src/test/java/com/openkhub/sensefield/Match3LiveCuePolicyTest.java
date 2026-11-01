@@ -43,13 +43,20 @@ public final class Match3LiveCuePolicyTest {
         @Override public long dedupeWindowMs(CueRequest.Category category) { return 1200; }
     }
 
-    @Test public void liveRequestsAndPolicyAllowSpeechOnlyUnderSavedSystemSettings() {
+    /**
+     * 合同（书 24 起）：存储的通道位原样算数，语音位恒在。
+     * 旧合同「这里只回语音」已随产品要求作废，故 :51-53 与 :60 三条期望值按新合同改写。
+     */
+    @Test public void liveRequestsAndPolicyFollowSavedChannelsWithSpeechAlwaysOn() {
         StoredPolicy stored = new StoredPolicy();
         Match3LiveCuePolicy policy = new Match3LiveCuePolicy(stored);
 
         assertEquals(CueRequest.CHANNEL_SPEECH, Match3LiveCuePolicy.REQUESTED_CHANNELS);
-        assertEquals(CueRequest.CHANNEL_SPEECH, policy.enabledChannels());
-        assertEquals(CueRequest.CHANNEL_SPEECH,
+        assertEquals(CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH
+                        | CueRequest.CHANNEL_HAPTIC | CueRequest.CHANNEL_VISUAL,
+                policy.enabledChannels());
+        assertEquals(CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH
+                        | CueRequest.CHANNEL_HAPTIC | CueRequest.CHANNEL_VISUAL,
                 policy.enabledChannels(CueRequest.Category.SYSTEM));
         assertEquals(1500, policy.dedupeWindowMs(CueRequest.Category.SYSTEM));
 
@@ -57,10 +64,16 @@ public final class Match3LiveCuePolicyTest {
         assertFalse(policy.categoryEnabled(CueRequest.Category.SYSTEM));
         stored.systemEnabled = true;
         stored.channels = CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_HAPTIC;
-        assertEquals(0, policy.enabledChannels(CueRequest.Category.SYSTEM));
+        assertEquals(CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_SPEECH
+                        | CueRequest.CHANNEL_HAPTIC,
+                policy.enabledChannels(CueRequest.Category.SYSTEM));
     }
 
-    @Test public void speechSettingCanDisableLiveAnnouncementsWithoutToneOrHapticFallback() {
+    /**
+     * 合同（书 24 起）：把语音位关掉不再拦停实况提示——语音位恒在，掩码也不再回收音效／触觉位。
+     * 旧合同「存储关语音 ⇒ channels_disabled」已作废，故 :72-76 四条期望值按新合同改写。
+     */
+    @Test public void storedSpeechOffStillAnnouncesBecauseSpeechBitIsAlwaysGranted() {
         StoredPolicy stored = new StoredPolicy();
         stored.channels = CueRequest.CHANNEL_TONE | CueRequest.CHANNEL_HAPTIC;
         Match3LiveCuePolicy policy = new Match3LiveCuePolicy(stored);
@@ -69,11 +82,12 @@ public final class Match3LiveCuePolicyTest {
                 () -> 100);
         CueDispatcher.DispatchResult result = dispatcher.submit(request());
 
-        assertEquals("DROPPED", result.outcome);
-        assertEquals("channels_disabled", result.reason);
+        assertEquals("ACCEPTED", result.outcome);
+        assertEquals("none", result.reason);
+        assertEquals(CueRequest.CHANNEL_SPEECH, result.acceptedChannels);
         assertEquals(0, renderer.tones);
         assertEquals(0, renderer.haptics);
-        assertEquals(0, renderer.speech);
+        assertEquals(1, renderer.speech);
     }
 
     @Test public void allowedLiveAnnouncementRendersSpeechOnly() {

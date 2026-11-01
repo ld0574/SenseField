@@ -256,12 +256,12 @@ public class JevMultiScenarioTest {
     public void thresholdTiersAndWhitelistAndNeverSilent() {
         JevThresholds t = JevThresholds.DEFAULT;
 
-        assertEquals(JevThresholds.Decision.AUTO_EXECUTE, t.decide(answer(JevQuestion.TYPE_CHOICE, 0.95)));
+        assertEquals(JevThresholds.Decision.DIRECT_ANNOUNCE, t.decide(answer(JevQuestion.TYPE_CHOICE, 0.95)));
         assertEquals(JevThresholds.Decision.CONFIRM, t.decide(answer(JevQuestion.TYPE_CHOICE, 0.70)));
         assertEquals(JevThresholds.Decision.UNCERTAIN, t.decide(answer(JevQuestion.TYPE_CHOICE, 0.30)));
 
         // noul 用 |2p−1|：p=0.97 → 把握度 0.94 → 自动档；p=0.55 → 0.10 → 没看清
-        assertEquals(JevThresholds.Decision.AUTO_EXECUTE, t.decide(noul(0.97)));
+        assertEquals(JevThresholds.Decision.DIRECT_ANNOUNCE, t.decide(noul(0.97)));
         assertEquals(JevThresholds.Decision.UNCERTAIN, t.decide(noul(0.55)));
 
         // 白名单：Jev 说该按什么不算数，白名单说了算
@@ -283,5 +283,32 @@ public class JevMultiScenarioTest {
 
     private static JevAnswer noul(double p) {
         return new JevAnswer("q", JevQuestion.TYPE_NOUL, null, 0d, p, null, null);
+    }
+
+    /* ---------- 场景 5 的改名续账（任务书 45）---------- */
+
+    /**
+     * 高置信档产出的必须是改名后的那一格，并且阈值、槽位、出口句子与改名前逐字相同：
+     * 这一条锁的是"改的只是标识符"，不是行为。
+     */
+    @Test
+    public void renamedHighTierDecisionKeepsThresholdSlotAndSpeechUnchanged() {
+        JevThresholds t = JevThresholds.DEFAULT;
+
+        // ① 新枚举名在高置信档被产出（decide 的返回值形状）：0.95 与恰好等于 high 的 0.90 是同一格
+        assertEquals(JevThresholds.Decision.DIRECT_ANNOUNCE, t.decide(answer(JevQuestion.TYPE_CHOICE, 0.95)));
+        assertEquals(JevThresholds.Decision.DIRECT_ANNOUNCE, t.decide(answer(JevQuestion.TYPE_CHOICE, 0.90)));
+        // 差一点就掉档：阈值一位都没动
+        assertEquals(JevThresholds.Decision.CONFIRM, t.decide(answer(JevQuestion.TYPE_CHOICE, 0.8999)));
+
+        // 优先级与槽位：仍是三档里的第一格，名字读得出"直接播报"这层意思
+        assertEquals("DIRECT_ANNOUNCE", JevThresholds.Decision.DIRECT_ANNOUNCE.name());
+        assertEquals(0, JevThresholds.Decision.DIRECT_ANNOUNCE.ordinal());
+        assertEquals(JevThresholds.Decision.CONFIRM, JevThresholds.Decision.values()[1]);
+        assertEquals(JevThresholds.Decision.UNCERTAIN, JevThresholds.Decision.values()[2]);
+
+        // 出口句子由答案决定，与改名前逐字相同（这里钉的是 describe 的那条 choice 直出）
+        JevAnswer a = answer(JevQuestion.TYPE_CHOICE, 0.95);
+        assertEquals("announce_match", JevThresholds.speechFor(t.decide(a), a));
     }
 }

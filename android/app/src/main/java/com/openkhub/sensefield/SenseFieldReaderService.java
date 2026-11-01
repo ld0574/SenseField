@@ -19,6 +19,8 @@ import java.util.List;
  */
 public class SenseFieldReaderService extends AccessibilityService {
     private static final String TAG = "ScreenReader";
+    /** Distinct from the capture notification id; reuses the existing capture channel. */
+    private static final int READER_FOREGROUND_NOTIFICATION_ID = 105;
     private static final int MAX_NODES = 60;
     private static final int MAX_DEPTH = 14;
     private static final int MAX_TEXT = 60;
@@ -28,6 +30,19 @@ public class SenseFieldReaderService extends AccessibilityService {
     private static volatile long latestAt;
     private static volatile boolean connected;
     static boolean isConnected() { return connected; }
+
+    /* 清单里本服务（.SenseFieldReaderService）一个 foregroundServiceType 都没有——这条清单事实
+     * 由 HyperOsForegroundPromotionTest 逐字锁 AndroidManifest.xml 原文，改清单不改常量都会红。 */
+    static final String MANIFEST_DECLARED_TYPES = HyperOsHealthSnapshot.FGS_UNDECLARED_TYPES;
+
+    /**
+     * 前台抬升被系统拒绝时的降级读数，挂在既有 {@code device} 事件面上。
+     * 空串只表示「本轮没观测到被拒」，不表示抬升成功。
+     */
+    private static volatile String fgsDegradationReading =
+            HyperOsHealthSnapshot.NO_FGS_DEGRADATION_READING;
+
+    static String fgsDegradationReading() { return fgsDegradationReading; }
 
     /** 判定入口取用的最新压缩状态。 */
     static String latestState() {
@@ -66,6 +81,29 @@ public class SenseFieldReaderService extends AccessibilityService {
         instance = new java.lang.ref.WeakReference<>(this);
         connected = true;
         Log.i(TAG, "读屏状态服务已连接");
+        /* HyperOS（尤其 CN ROM）即使关掉电池优化也会随机撤销无障碍授权：连接成功即复用既有采集
+         * 通知渠道把本服务抬成前台服务，降低被省电策略静默结束的概率。渠道沿用 CaptureService
+         * 已创建的 mapassist_capture，本卷不新增通知渠道。抬升失败只降级读数，绝不影响连接。 */
+        fgsDegradationReading = HyperOsHealthSnapshot.NO_FGS_DEGRADATION_READING;
+        try {
+            android.app.NotificationManager notificationManager =
+                    getSystemService(android.app.NotificationManager.class);
+            if (notificationManager != null) {
+                startForeground(READER_FOREGROUND_NOTIFICATION_ID,
+                        new android.app.Notification.Builder(this, CaptureService.CHANNEL)
+                                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                                .setContentTitle("读屏状态服务运行中")
+                                .setContentText("无障碍读数保持可用，若被系统撤销请在应用内重新开启")
+                                .setOngoing(true)
+                                .build());
+                Log.i(TAG, "读屏状态服务已抬为前台服务");
+            }
+        } catch (RuntimeException declined) {
+            fgsDegradationReading = HyperOsHealthSnapshot.fgsDegradationReading(
+                    SystemClock.elapsedRealtime(), declined.getClass().getSimpleName(),
+                    android.os.Build.VERSION.SDK_INT, MANIFEST_DECLARED_TYPES);
+            Log.w(TAG, "前台抬升被系统拒绝: " + declined.getClass().getSimpleName());
+        }
     }
 
     /* 连续触屏点读：最新一次按下屏幕的坐标（观察模式由系统投递，不消费） */

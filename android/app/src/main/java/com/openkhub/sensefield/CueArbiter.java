@@ -87,6 +87,7 @@ final class CueArbiter {
     private final Set<String> consumedMinimapEvents = new LinkedHashSet<>();
     private boolean visualMemoryEnabled = true;
     private boolean peripheralThreatEnabled = true;
+    private String fieldLossSelfReport = FieldLossPolicy.TIER_NONE;
     private long lastMinimapCueAtMs = CueRouting.NO_MINIMAP_CUE;
 
     synchronized void setVisualMemoryEnabled(boolean enabled) {
@@ -108,6 +109,20 @@ final class CueArbiter {
 
     synchronized boolean isPeripheralThreatEnabled() {
         return peripheralThreatEnabled;
+    }
+
+    /**
+     * 写入玩家自陈的视野受损档位。它与 {@link #setPeripheralThreatEnabled} 正交：类别关时
+     * 自陈档不改变任何一条线索的可派发性与通道集合，永不把关掉的类别顶开或复活。
+     */
+    synchronized void setFieldLossSelfReport(String selfReport) {
+        String incoming = selfReport == null ? FieldLossPolicy.TIER_NONE : selfReport;
+        if (fieldLossSelfReport.equals(incoming)) return;
+        fieldLossSelfReport = incoming;
+    }
+
+    synchronized String fieldLossSelfReport() {
+        return fieldLossSelfReport;
     }
 
     synchronized void reset() {
@@ -144,6 +159,11 @@ final class CueArbiter {
                 frame.cueKind, frame.cueDirection);
         int requestedChannels = CueRouting.directCueRequestedChannels(
                 frame.cueKind, frame.cueDirection);
+        // 自陈视野轴：周边档把边缘线索的通道集合放宽一档，放宽后的掩码照常送进
+        // 下面的输出可用性判断。(!edge || peripheralThreatEnabled) 这道既成类别闸门
+        // 一字未动——类别关时 FieldLossPolicy 原样返回入参掩码，自陈档永不复活它。
+        requestedChannels = FieldLossPolicy.decide(fieldLossSelfReport, edge, requestedChannels,
+                Float.NaN, Float.NaN, Float.NaN, peripheralThreatEnabled).channels;
         boolean directShouldDispatch = false;
         boolean directPresent = rawDirect && (directCategory != CueRequest.Category.VISION_MEMORY
                 || visualMemoryEnabled)

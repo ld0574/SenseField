@@ -12,6 +12,10 @@ final class CueSettings implements CueDispatcher.Policy {
     static final String PREF_CATEGORY_NEAR = "cue_category_near";
     static final String PREF_NEAR_HAPTIC = "cue_near_haptic";
     static final String PREF_FAR_APPEAR = "cue_far_appear";
+    static final String PREF_CATEGORY_PERIPHERAL = "cue_category_peripheral";
+    static final String PREF_CATEGORY_DANGER = "cue_category_danger";
+    /** 玩家自陈视野受损档位；不在对抗性五键表里，也不被任何档位重刷写过。 */
+    static final String PREF_FIELD_LOSS_SELF_REPORT = "cue_field_loss_self_report";
     private static final String PREF_PRESET_REVISION = "cue_preset_revision";
     private static final int PRESET_REVISION = 2;
 
@@ -28,14 +32,25 @@ final class CueSettings implements CueDispatcher.Policy {
             applyPreset(preferences, preset);
         }
         // Installs that saved a preset before the near-zone category existed
-        // get its defaults without rewriting any earlier choice.
+        // get its defaults without rewriting any earlier choice. 本次合同变更：这几路的
+        // 缺省不再按档位给开，一律取对抗性缺省表（关）。
         if (!preferences.contains(PREF_CATEGORY_NEAR)) {
             preferences.edit()
-                    .putBoolean(PREF_CATEGORY_NEAR, true)
-                    .putBoolean(PREF_NEAR_HAPTIC, !PRESET_COMPACT.equals(preset))
-                    .putBoolean(PREF_FAR_APPEAR, PRESET_DETAILED.equals(preset))
+                    .putBoolean(PREF_CATEGORY_NEAR, CompetitiveDefaults.CATEGORY_NEAR_DEFAULT)
+                    .putBoolean(PREF_NEAR_HAPTIC, CompetitiveDefaults.NEAR_HAPTIC_DEFAULT)
+                    .putBoolean(PREF_FAR_APPEAR, CompetitiveDefaults.FAR_APPEAR_DEFAULT)
                     .apply();
         }
+    }
+
+    /**
+     * 档位重刷用的缺省写入：只在「从未存过这个键」时落缺省值。已存过值的用户一律原样保留，
+     * 所以选档位不再等于替玩家把对抗性那几路打开或关掉。
+     */
+    private static void putDefaultUnlessSet(SharedPreferences preferences,
+                                            SharedPreferences.Editor edit,
+                                            String key, boolean defaultValue) {
+        if (!preferences.contains(key)) edit.putBoolean(key, defaultValue);
     }
 
     static void applyPreset(SharedPreferences preferences, String preset) {
@@ -43,16 +58,22 @@ final class CueSettings implements CueDispatcher.Policy {
                 .putInt(PREF_PRESET_REVISION, PRESET_REVISION);
         boolean compact = PRESET_COMPACT.equals(preset);
         boolean detailed = PRESET_DETAILED.equals(preset);
-        edit.putBoolean(PREF_CATEGORY_NEAR, true)
-                .putBoolean(PREF_NEAR_HAPTIC, !compact)
-                .putBoolean(PREF_FAR_APPEAR, detailed);
+        // 对抗性五键：缺省一律关，且只补缺、不覆盖已存值（见上面的 putDefaultUnlessSet）。
+        putDefaultUnlessSet(preferences, edit, CompetitiveDefaults.CATEGORY_NEAR,
+                CompetitiveDefaults.CATEGORY_NEAR_DEFAULT);
+        putDefaultUnlessSet(preferences, edit, CompetitiveDefaults.NEAR_HAPTIC,
+                CompetitiveDefaults.NEAR_HAPTIC_DEFAULT);
+        putDefaultUnlessSet(preferences, edit, CompetitiveDefaults.FAR_APPEAR,
+                CompetitiveDefaults.FAR_APPEAR_DEFAULT);
+        putDefaultUnlessSet(preferences, edit, CompetitiveDefaults.CATEGORY_PERIPHERAL,
+                CompetitiveDefaults.CATEGORY_PERIPHERAL_DEFAULT);
+        putDefaultUnlessSet(preferences, edit, CompetitiveDefaults.CATEGORY_DANGER,
+                CompetitiveDefaults.CATEGORY_DANGER_DEFAULT);
         edit.putBoolean("cue_channel_visual", true)
                 .putBoolean("cue_channel_tone", !compact)
                 .putBoolean("cue_channel_speech", true)
                 .putBoolean("cue_channel_haptic", true)
                 .putBoolean("cue_category_vision", true)
-                .putBoolean("cue_category_peripheral", true)
-                .putBoolean("cue_category_danger", detailed)
                 .putBoolean("cue_category_player", true)
                 .putBoolean("cue_category_system", true)
                 .putBoolean("cue_speak_appear", detailed)
@@ -85,13 +106,16 @@ final class CueSettings implements CueDispatcher.Policy {
         if (category == CueRequest.Category.VISION_MEMORY)
             return preferences.getBoolean("cue_category_vision", true);
         if (category == CueRequest.Category.PERIPHERAL_THREAT)
-            return preferences.getBoolean("cue_category_peripheral", true);
+            return preferences.getBoolean(CompetitiveDefaults.CATEGORY_PERIPHERAL,
+                    CompetitiveDefaults.CATEGORY_PERIPHERAL_DEFAULT);
         if (category == CueRequest.Category.DANGER)
-            return preferences.getBoolean("cue_category_danger", false);
+            return preferences.getBoolean(CompetitiveDefaults.CATEGORY_DANGER,
+                    CompetitiveDefaults.CATEGORY_DANGER_DEFAULT);
         if (category == CueRequest.Category.PLAYER_STATE)
             return preferences.getBoolean("cue_category_player", true);
         if (category == CueRequest.Category.NEAR_ZONE)
-            return preferences.getBoolean(PREF_CATEGORY_NEAR, true);
+            return preferences.getBoolean(PREF_CATEGORY_NEAR,
+                    CompetitiveDefaults.CATEGORY_NEAR_DEFAULT);
         return preferences.getBoolean("cue_category_system", true);
     }
 
@@ -171,8 +195,8 @@ final class CueSettings implements CueDispatcher.Policy {
     }
 
     boolean nearHapticEnabled() {
-        return preferences.getBoolean(PREF_NEAR_HAPTIC, !PRESET_COMPACT.equals(
-                preferences.getString("cue_preset", PRESET_STANDARD)));
+        return preferences.getBoolean(PREF_NEAR_HAPTIC,
+                CompetitiveDefaults.NEAR_HAPTIC_DEFAULT);
     }
 
     int nearRequestedChannels() {
@@ -182,7 +206,15 @@ final class CueSettings implements CueDispatcher.Policy {
 
     /** Whether the distant new-portrait tone stays on while near-zone cues run. */
     boolean farAppearPreference() {
-        return preferences.getBoolean(PREF_FAR_APPEAR, PRESET_DETAILED.equals(
-                preferences.getString("cue_preset", PRESET_STANDARD)));
+        return preferences.getBoolean(PREF_FAR_APPEAR,
+                CompetitiveDefaults.FAR_APPEAR_DEFAULT);
+    }
+
+    /**
+     * 玩家自陈的视野受损档位，缺省「未自陈／无受限」。这一路不是敌人定位的功能开关，
+     * 也不进对抗性五键表；本卷不写它，只读。这不是医疗建议，取值代表玩家自己的申报。
+     */
+    String fieldLossSelfReport() {
+        return preferences.getString(PREF_FIELD_LOSS_SELF_REPORT, FieldLossPolicy.TIER_NONE);
     }
 }

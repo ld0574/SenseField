@@ -278,7 +278,7 @@ public class JudgmentSelfTestActivity extends UiActivity {
 
     private static String decisionLabel(JevThresholds.Decision d) {
         switch (d) {
-            case AUTO_EXECUTE: return "高置信·自动执行（仍需过白名单）";
+            case DIRECT_ANNOUNCE: return "高置信·直接播，不用确认";
             case CONFIRM: return "中置信·先确认";
             default: return "低置信·绝不静默";
         }
