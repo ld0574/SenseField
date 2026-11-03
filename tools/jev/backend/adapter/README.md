@@ -27,7 +27,7 @@ node probe.js        # P1 六问探针（真实实测输出）
 
 1. Laya 不返回 `confidence` / `legend` → 适配层按官方公式补算并在响应
    `engineNote` 中注明：choice `(pmax−1/n)/(1−1/n)`；score 为 MAD 公式。
-   因此**本地实现的阈值不能照搬云端标定值**（ADR-0001 §5 与 BLOCKED.md 第 4 条）。
+   因此**本地实现的阈值不能照搬云端标定值**（ADR-0001 §5）。
 2. `usage.output_tokens` 恒为 0（判别式无文本生成）。
 3. state 超 512 token 会被 Laya 截断（模型输入上限）。
 

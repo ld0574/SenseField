@@ -4,7 +4,7 @@
 - **日期**：2026-10-02
 - **决策人**：项目组
 - **影响范围**：听野无障碍游戏辅助工具 · L2 判断层
-- **相关文件**：`无障碍判定创作工具.html`、`samples/*.json`、`PROGRESS.md`、`BLOCKED.md`
+- **相关文件**：`tools/jev/无障碍判定创作工具.html`、`tools/jev/samples/*.json`
 
 ---
 

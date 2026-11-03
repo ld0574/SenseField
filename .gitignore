@@ -155,6 +155,11 @@ validation/**
 # Internal task diaries and historical research notes.
 /BLOCKED.md
 /PROGRESS.md
+/BLOCKED_追加片段.md
+/_chk*.js
+/tools/jev/_chk*.js
+/delivery/
+/sensefield-integration/
 research/board-recognition/**/*.md
 
 # Private model weights and training checkpoints stay local.

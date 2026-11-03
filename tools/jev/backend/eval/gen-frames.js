@@ -78,7 +78,7 @@ function match3Frames() {
 }
 
 function chessFrame(i) {
-  const base = JSON.parse(fs.readFileSync(path.join(__dirname, '../../sensefield-integration/app/src/main/assets/jev/chess.json'), 'utf8')).state;
+  const base = JSON.parse(fs.readFileSync(path.join(__dirname, '../../../../android/app/src/main/assets/jev/chess.json'), 'utf8')).state;
   const board = base.board.map(row => row.slice());
   const plies = 1 + rand(3);
   for (let p = 0; p < plies; p++) {

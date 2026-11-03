@@ -2,7 +2,7 @@
 
 /* OpenRouter 渠道（ADR-0001 D2：备选渠道）。
  * 铁律 2：endpoint 与 model 字符串只允许出现在本文件内部。
- * 注：/api/v1/systemone 路由已实测存在（404 阴性对照，见 BLOCKED.md 第 6 条）。 */
+ * /api/v1/systemone 为该客户端使用的协议路由。 */
 
 const { postSystemOne } = require('../protocol');
 

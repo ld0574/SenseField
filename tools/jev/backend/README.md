@@ -13,7 +13,7 @@ JudgmentClient（接口约定：judge(state, questions) -> JudgmentResponse）
 ```
 
 - `src/protocol.js` — 共享契约层：请求构造 / 真发送 / 响应校验 / 统一错误模型。**不含任何 endpoint / model 字面量。**
-- `src/clients/*` — 三个实现。**endpoint 与 model 字符串只允许出现在这三个文件里**（铁律 2；本仓 grep 验收按 BLOCKED.md 第 6 条默认：限定 `backend/src` 源码目录）。
+- `src/clients/*` — 三个实现。服务地址与模型标识集中在客户端实现中，协议层和调用方不绑定具体渠道。
 - `src/factory.js` — 后端选择的唯一注入点。
 - `src/contract-test.js` — P0 契约测试：固定 state＋choice/score/noul 三问，三后端逐个断言。
 

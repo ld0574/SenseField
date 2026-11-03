@@ -8,7 +8,7 @@ const { createJudgmentClient } = require('../src/factory');
 const fs = require('fs');
 
 const LOCAL = process.env.LOCAL_BACKEND_URL || 'http://127.0.0.1:8080';
-const ASSETS = '../../sensefield-integration/app/src/main/assets/jev';
+const ASSETS = '../../../../android/app/src/main/assets/jev';
 
 function questions() {
   return {
