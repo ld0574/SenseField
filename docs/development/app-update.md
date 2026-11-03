@@ -34,6 +34,8 @@ python3 scripts/build_app_update_manifest.py \
 
 工具通过 Android SDK 读取包身份，计算实际大小及 SHA-256。`release_notes` 最多三行、合计 100 字符，完整说明放在版本文档中。上传顺序为 APK、公开下载核对、固定清单，最后刷新缓存。
 
+签名构建默认使用对应版本的 Gitee Release APK 地址。交付目录根部的 APK 用于上传 Gitee；`cdn/apk/latest.json` 用于更新网站 `/apk/latest.json`，其中不附带 APK。构建地址校验与客户端 `ReleaseDownloadPolicy` 一致，固定清单可指向本项目 Gitee Release，无需把 APK 改为自有网站托管。
+
 ## 本地更新链路验证
 
 可用隔离的 HTTPS fixture 验证清单获取与下载：

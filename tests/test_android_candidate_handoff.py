@@ -56,6 +56,8 @@ def test_one_handoff_binds_manifest_checksums_and_source_to_verified_copy(handof
     receipt = json.loads((output / "validation/current-package/release-package.json").read_text())
     assert manifest["apk_sha256"] == receipt["sha256"] == result["sha256"]
     assert manifest["version_code"] == receipt["version_code"] == VERSION_CODE
+    assert (output / "cdn/apk/latest.json").read_bytes() == (output / "latest.json").read_bytes()
+    assert not list((output / "cdn").rglob("*.apk"))
     for line in (output / "SHA256SUMS.txt").read_text().splitlines():
         digest, name = line.split("  ")
         assert candidate.sha(output / name) == digest
@@ -151,15 +153,19 @@ def test_final_rename_failure_leaves_no_export_and_can_be_marked_failed(handoff,
     ("https://updates.example/latest.json", "https://other.example/app.apk"),
     ("https://888413.xyz/apk/latest.json", "https://gitee.com/other/SenseField/releases/download/0.4.7/app.apk"),
     ("https://888413.xyz/apk/latest.json", "https://gitee.com/leda/SenseField/releases/download/0.4.7/app.apk?token=x"),
-    # 历史上这里对「固定清单指向听野 Gitee Release」开过例外；客户端没有这个例外，
-    # 且 Gitee 附件会 302 到 foruda.gitee.com，重定向后仍然跨源，因此必须一律拒绝。
-    ("https://888413.xyz/apk/latest.json", "https://gitee.com/leda/SenseField/releases/download/0.4.7/sensefieldv0.4.7.apk"),
+    ("https://other.example/apk/latest.json", "https://gitee.com/leda/SenseField/releases/download/0.4.8/sensefieldv0.4.8.apk"),
+    ("https://888413.xyz/other/latest.json", "https://gitee.com/leda/SenseField/releases/download/0.4.8/sensefieldv0.4.8.apk"),
+    ("https://888413.xyz/apk/latest.json", "https://gitee.com/leda/SenseField/releases/download/0.4.8/model.zip"),
+    ("https://888413.xyz/apk/latest.json", "https://gitee.com:8443/leda/SenseField/releases/download/0.4.8/app.apk"),
+    ("https://888413.xyz/apk/latest.json", "https://foruda.gitee.com/attach_file/123/app.apk"),
+    ("https://888413.xyz/apk/latest.json", "https://gitee.com.evil.test/leda/SenseField/releases/download/0.4.8/app.apk"),
 ])
 def test_cross_origin_and_invalid_download_addresses_fail_before_build(index, apk):
     with pytest.raises(ValueError):
         candidate.validate_urls(index, apk)
 
 
-def test_download_policy_requires_strict_same_origin():
+def test_download_policy_accepts_same_origin_or_owned_gitee_release():
     candidate.validate_urls("https://updates.example/latest.json", "https://updates.example/sensefieldv0.4.7.apk")
     candidate.validate_urls("https://888413.xyz/apk/latest.json", "https://888413.xyz/apk/sensefieldv0.4.8.apk")
+    candidate.validate_urls("https://888413.xyz/apk/latest.json", "https://gitee.com/leda/SenseField/releases/download/0.4.8/sensefieldv0.4.8.apk")

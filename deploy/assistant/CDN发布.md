@@ -16,12 +16,14 @@ APK 由 Gitee Release 分发，应用通过固定网站清单发现更新。源�
 ## 发布顺序
 
 1. 准备完整模型、内置语音和本机签名配置，执行 `bash scripts/build_android_preview.sh`。
-2. 核对构建输出的 APK、配套 `latest.json` 和 SHA-256。当前版本为 `0.4.7 / versionCode 24`；新版本同步源码、脚本与说明。
+2. 核对构建输出的 APK、配套 `latest.json` 和 SHA-256。公开版为 `0.4.7 / versionCode 24`，当前候选为 `0.4.8 / versionCode 28`；生成候选不改变公网版本。
 3. 将最终 APK 上传至对应 Gitee Release。公开下载后核对字节数和 SHA-256，与本地最终文件一致。
-4. 再将工具生成的清单发布到固定 `latest.json` 地址，设置 `Cache-Control: no-cache` 并刷新缓存。
+4. 再将候选目录的 `cdn/apk/latest.json` 发布到网站 `/apk/latest.json`，设置 `Cache-Control: no-cache` 并刷新缓存。CDN 目录只含清单；APK 上传到 Gitee，不上传到网站。
 5. 从公开入口读取清单，核对版本、APK URL、大小与摘要，并在手机完成更新安装验证。
 
 构建工具只准备本地产物，不自动上传。不要先发布指向尚未就绪 APK 的清单。
+
+默认构建清单中的 APK 地址为 `https://gitee.com/leda/SenseField/releases/download/<版本>/sensefieldv<版本>.apk`。客户端支持固定网站清单指向本项目 Gitee Release，并验证 Gitee 附件与 `foruda.gitee.com` 的受支持跳转、文件大小、SHA-256 和安装包身份。其他跨站地址继续拒绝。
 
 ## 独立生成版本清单
 

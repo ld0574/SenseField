@@ -35,13 +35,9 @@ def write_json(path: Path, data: dict) -> None:
 
 
 def validate_urls(index_url: str, apk_url: str) -> None:
-    """清单与 APK 必须严格同源——与客户端 AppUpdateClient 的规则保持一致。
+    """与客户端 ReleaseDownloadPolicy 一致：同源，或固定清单指向本项目 Gitee APK。
 
-    历史上这里对 ``888413.xyz`` → ``gitee.com/leda/SenseField`` 开过例外，
-    但客户端 AppUpdateClient.validateSameOriginApkUrl 没有这个例外，会以
-    「更新 APK 下载地址无效。」拒绝该清单；而且 Gitee 附件下载会 302 到
-    ``foruda.gitee.com``，重定向之后仍然跨源。例外因此只会产出必然失败的清单，
-    已删除。工具放行的每一种组合，客户端都必须能接受。
+    Gitee 后续的附件路径及 foruda 跳转由客户端另行校验；清单只保存稳定 Release 地址。
     """
     validate_apk_url(index_url)
     validate_apk_url(apk_url)
@@ -49,9 +45,14 @@ def validate_urls(index_url: str, apk_url: str) -> None:
     if index.query or index.fragment or apk.query or apk.fragment:
         raise ValueError("更新地址不能带查询参数或片段。")
     origin = lambda url: (url.scheme, url.hostname, url.port or 443)
-    if origin(index) != origin(apk):
+    owned_index = origin(index) == ("https", "888413.xyz", 443) and index.path == "/apk/latest.json"
+    project_apk = origin(apk) == ("https", "gitee.com", 443) and re.fullmatch(
+        r"/leda/SenseField/releases/download/[A-Za-z0-9][A-Za-z0-9._-]*/"
+        r"[A-Za-z0-9][A-Za-z0-9._-]*\.apk", apk.path
+    ) is not None
+    if origin(index) != origin(apk) and not (owned_index and project_apk):
         raise ValueError(
-            "APK 必须与版本清单严格同源，客户端不接受跨源下载地址"
+            "APK 必须与版本清单同源，或由固定清单指向听野 Gitee Release"
             f"（清单 {origin(index)}，APK {origin(apk)}）。"
         )
 
@@ -99,6 +100,7 @@ def prepare(apk: Path, output: Path, apk_url: str, docs: Path) -> dict:
                 or manifest["version_name"] != package["version_name"]):
             raise ValueError("APK 在核验与清单生成之间变化。")
         write_json(staged / "latest.json", manifest)
+        write_json(staged / "cdn/apk/latest.json", manifest)
         guide = (docs / "installation-guide.txt").read_text(encoding="utf-8")
         guide += (f"\n文件：{target.name}\nbytes：{package['bytes']}\nSHA-256：{package['sha256']}\n"
                   f"证书SHA-256：{package['certificate_sha256']}\n")
@@ -115,8 +117,9 @@ def prepare(apk: Path, output: Path, apk_url: str, docs: Path) -> dict:
             (publishing / name).write_text(body, encoding="utf-8")
         (publishing / "上传说明.md").write_text(
             "这是本地候选，尚未公开发布。先核对 validation/current-package/ 的最终工程报告。\n"
-            "只上传版本根目录的 APK、installation-guide.txt、latest.json 和 SHA256SUMS.txt。\n"
-            "将 APK 部署到清单指定的同源地址并核对下载字节后，再更新公网 latest.json；生成本地清单不会改变公网版本。\n"
+            f"APK 上传到清单指定地址（默认听野 Gitee Release）：{apk_url}\n"
+            "CDN 只上传 cdn/apk/latest.json 到网站 /apk/latest.json，不上传 APK。\n"
+            "先核对 Gitee 附件下载字节，再更新公网 latest.json；生成本地清单不会改变公网版本。\n"
             "独立准确率、真机温升与实际发声按最终报告范围登记。\n", encoding="utf-8")
         receipt = staged / "validation/current-package"
         receipt.mkdir(parents=True)
@@ -139,7 +142,7 @@ def prepare(apk: Path, output: Path, apk_url: str, docs: Path) -> dict:
             prior = Path(previous) / "validation/current-package"
             if prior.is_dir():
                 shutil.copytree(prior, history / "current-package")
-        names = [target.name, "installation-guide.txt", "latest.json"]
+        names = [target.name, "installation-guide.txt", "latest.json", "cdn/apk/latest.json"]
         (staged / "SHA256SUMS.txt").write_text("".join(f"{sha(staged / name)}  {name}\n" for name in names), encoding="utf-8")
         # Every check and file write completed before the ready directory appears.
         state_path.unlink()
