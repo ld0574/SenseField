@@ -52,6 +52,8 @@ bash deploy/assistant/start.sh restart
 
 更新源码时保留 `.venv`、`deploy/assistant/runtime/` 与 `/etc/sensefield-assistant/gateway.json`。APK 与服务端分开交付；包含协议或提示词调整时同步更新服务器源码并重启。
 
+现有线上项目位于 `/data/wwwroot/sf/`。常规更新直接覆盖该目录下的源码并用原管理方式重启，不重新运行初始化向导、不替换已配置的 Nginx 站点。本版增量更新与模型路径核对见 [0.4.8 服务端更新](../../docs/releases/0.4.8/SERVER_UPDATE.md)。
+
 后台启动不会自动配置开机恢复。需要进程守护时，让现有面板或服务管理器执行 `bash deploy/assistant/start.sh --foreground`，避免重复启动多个实例。
 
 ## 连通性验证

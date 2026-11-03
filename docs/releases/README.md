@@ -2,7 +2,7 @@
 
 当前版本为 [听野 0.4.7](0.4.7/RELEASE_NOTES.md)，Android `versionCode 24`，支持 Android 10 及以上的 arm64 设备。
 
-下一测试候选为 [0.4.8 / versionCode 28](0.4.8/RELEASE_NOTES.md)，合并消消乐开发分支并接入游戏模型按需下载。先部署模型下载服务，再进行真机首下载和离线复用验收；构建候选不会改变公网更新清单。
+当前公开测试版为 [0.4.8 / versionCode 28](0.4.8/RELEASE_NOTES.md)，[GitHub Release](https://github.com/ld0574/SenseField/releases/tag/v0.4.8)。现有 `/data/wwwroot/sf/` 服务按 [本版更新说明](0.4.8/SERVER_UPDATE.md) 原地更新，确认模型首次下载后再切换网站清单；0.4.7 继续作为 Latest。
 
 此前已有 0.4.9 / code26 的预发布记录，本次保留该记录。0.4.9 用户需手动覆盖安装 0.4.8 / code28；内部升级序号递增，版本名称按本次交付要求回归 0.4.8。
 

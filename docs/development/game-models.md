@@ -26,6 +26,8 @@ ASR 继续使用现有第三方 SenseVoice 分片下载与校验机制，保留�
 
 ## 服务器部署
 
+现有项目根目录继续使用 `/data/wwwroot/sf/`，不迁移。下面的 `/var/lib/...` 是首次部署私有模型时的示例数据目录，不是项目安装目录；已经设置的模型路径、私有配置和 Nginx 站点均复用。已有部署的增量步骤见 [0.4.8 服务端更新](../releases/0.4.8/SERVER_UPDATE.md)。
+
 1. 先更新 Python 源码。将 `output/model-packs/` 内容传到 **Web 静态目录之外** 的 `/var/lib/sensefield-assistant/game-models/`，确保服务进程可读写该根目录，以便生成私有签名密钥。不要把整个目录映射到 Nginx `alias`。
 2. 在现有服务器私有配置 JSON 中新增以下字段，保留现有 Key、模型供应商和其他配置：
 

@@ -116,6 +116,7 @@ docs/**
 !docs/releases/0.4.8/RELEASE_NOTES.md
 !docs/releases/0.4.8/UPDATE_SUMMARY.txt
 !docs/releases/0.4.8/installation-guide.txt
+!docs/releases/0.4.8/SERVER_UPDATE.md
 !docs/releases/0.4.9/RELEASE_NOTES.md
 !docs/releases/0.4.9/UPDATE_SUMMARY.txt
 !docs/releases/0.4.9/installation-guide.txt
