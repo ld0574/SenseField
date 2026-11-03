@@ -1,6 +1,7 @@
 package com.openkhub.sensefield;
 
 import android.content.Context;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.net.ConnectivityManager;
 import android.net.Network;
@@ -91,12 +92,12 @@ final class HyperOsSystemProbe {
             AccessibilityManager manager = (AccessibilityManager)
                     context.getSystemService(Context.ACCESSIBILITY_SERVICE);
             if (manager == null) return false;
-            String serviceId = context.getPackageName() + "/" + SenseFieldReaderService.class.getName();
+            ComponentName serviceId = new ComponentName(context, SenseFieldReaderService.class);
             List<AccessibilityServiceInfo> enabled =
                     manager.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK);
             if (enabled == null) return false;
             for (AccessibilityServiceInfo info : enabled) {
-                if (info != null && serviceId.equals(info.getId())) return true;
+                if (info != null && serviceId.equals(ComponentName.unflattenFromString(info.getId()))) return true;
             }
             return false;
         } catch (RuntimeException unreadable) {

@@ -70,9 +70,6 @@ public final class CaptureService extends Service {
     private static final long DISPLAY_CHECK_PERIOD_MS = 500;
     private final Object processingLock = new Object();
     private final FrameProcessingPolicy frameProcessing = new FrameProcessingPolicy();
-    /** One-shot budget for re-asking projection consent after the system releases it. */
-    private final HyperOsHealthSnapshot.ReauthLatch projectionReauthLatch =
-            new HyperOsHealthSnapshot.ReauthLatch();
     private long lastLoadSampleAtMs = -1;
     private long loadSkippedFrames;
     private long totalProcessingWallMs;
@@ -509,9 +506,9 @@ public final class CaptureService extends Service {
                         // Do not let a delayed callback from an older capture
                         // session stop a newer start command.
                         stopSelfResult(stopThroughStartId);
-                        // Recovery layer: the system released the projection, so read the
-                        // vendor-OS state out and hand the player one guidance action.
-                        attemptProjectionRecoveryAfterRevocation();
+                        // A lock, system stop chip, or another recorder can end consent.
+                        // Record it without immediately opening another consent screen.
+                        recordProjectionRevocation();
                     }
                 };
                 projection.registerCallback(projectionCallback, worker);
@@ -529,10 +526,7 @@ public final class CaptureService extends Service {
                         .putBoolean("capture_waiting_for_image", false)
                         .apply();
                 captureHealth.start(SystemClock.elapsedRealtime());
-                // A fresh consent re-arms the one-shot vendor-OS recovery budget.
                 HyperOsSystemProbe.markProjectionGranted(this);
-                HyperOsSystemProbe.resetGuidanceEdge();
-                projectionReauthLatch.reset();
                 if (diagnostics != null) diagnostics.noteHyperOsProjection(
                         HyperOsHealthSnapshot.ProjectionStatus.ACTIVE);
                 publishDiagnosticStateLocked();
@@ -752,21 +746,15 @@ public final class CaptureService extends Service {
         worker.postDelayed(recoveryRunnable, delay);
     }
 
-    /**
-     * 投影被系统释放之后的恢复层。只自动重走一次授权流程（复用既有引导页出口），
-     * 额度用完则只落 {@code capture_revoked_final} 读数，不循环重试、不再弹第二次。
-     */
-    private void attemptProjectionRecoveryAfterRevocation() {
+    /** A stopped projection requires a new user action; never replay or re-request consent here. */
+    private void recordProjectionRevocation() {
         synchronized (processingLock) {
             if (diagnostics != null) diagnostics.noteHyperOsProjection(
                     HyperOsHealthSnapshot.ProjectionStatus.REVOKED);
         }
         HyperOsHealthSnapshot snapshot = HyperOsSystemProbe.sample(this,
                 HyperOsHealthSnapshot.ProjectionStatus.REVOKED);
-        String recovery = HyperOsHealthSnapshot.recoveryReadingFor(snapshot, projectionReauthLatch);
-        logHyperOsReading(recovery, snapshot);
-        if (HyperOsHealthSnapshot.REASK_READING.equals(recovery))
-            HyperOsSystemProbe.deliverGuidance(this, snapshot.action());
+        logHyperOsReading("capture_revoked_waiting_for_user", snapshot);
     }
 
     /** 读数落点：与 logCaptureHealth 同一条既有出口（日志＋诊断归档），不新增事件类型。 */

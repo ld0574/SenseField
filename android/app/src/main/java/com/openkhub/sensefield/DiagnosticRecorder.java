@@ -760,11 +760,11 @@ final class DiagnosticRecorder {
                             BatteryManager.BATTERY_STATUS_UNKNOWN);
             int batteryPlugged = battery == null ? -1 :
                     battery.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1);
-            // Vendor-OS silent-stop reading rides this existing periodic chain: no new task,
-            // no new thread. The guidance action leaves through the existing guidance page only.
+            // Sampling is observational. An optional accessibility service may never have
+            // been enabled; opening an authorization activity here interrupts a healthy
+            // projection and can trap HyperOS users in repeated consent screens.
             HyperOsHealthSnapshot hyperOs = HyperOsSystemProbe.sample(context, hyperOsProjection);
             lastHyperOsSnapshot = hyperOs;
-            HyperOsSystemProbe.deliverGuidanceEdge(context, hyperOs.action());
             JSONObject sample = object("battery_temp_tenths_c", batteryTempTenthsC,
                     "battery_level", battery == null ? -1 : battery.getIntExtra(BatteryManager.EXTRA_LEVEL, -1),
                     "battery_status", batteryStatus,

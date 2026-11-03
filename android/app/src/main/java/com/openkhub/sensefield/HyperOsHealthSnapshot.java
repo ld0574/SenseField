@@ -22,10 +22,10 @@ final class HyperOsHealthSnapshot {
     /* AppOpsManager 的模式取值在本类里镜像成普通 int，避免把 android.* 引进纯函数。
      * 镜像表见 android.app.AppOpsManager；读不到时用负值，绝不与「已允许」混同。 */
     static final int OP_MODE_ALLOWED = 0;
-    static final int OP_MODE_DEFAULT = 1;
+    static final int OP_MODE_DEFAULT = 3;
     static final int OP_MODE_ERRORED = 2;
     /** 系统把这个操作判给了别的策略：对本应用即为「后台弹出被拒」。 */
-    static final int OP_MODE_IGNORED = 3;
+    static final int OP_MODE_IGNORED = 1;
     /** 反射读不到现值；按「不确定」处理，不许据此弹引导。 */
     static final int OP_MODE_UNREADABLE = -1;
 

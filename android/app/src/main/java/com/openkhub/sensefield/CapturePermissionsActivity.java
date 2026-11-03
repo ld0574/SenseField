@@ -17,6 +17,7 @@ import android.os.Looper;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import android.provider.Settings;
+import android.util.Log;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.LinearLayout;
@@ -48,6 +49,7 @@ public final class CapturePermissionsActivity extends UiActivity {
     private String pendingStartId;
     private long startDeadlineMs;
     private boolean resumed;
+    private final ProjectionStartGate<Intent> projectionStart = new ProjectionStartGate<>();
     private final Runnable checkStart = this::checkCaptureStart;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -60,6 +62,8 @@ public final class CapturePermissionsActivity extends UiActivity {
         if (savedInstanceState != null) {
             pendingStartId = savedInstanceState.getString("pending_start_id");
             startDeadlineMs = savedInstanceState.getLong("pending_start_deadline_ms");
+            projectionStart.restore(savedInstanceState.getBoolean("projection_request_pending"),
+                    savedInstanceState.getParcelable("pending_projection_result"));
         }
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -190,7 +194,7 @@ public final class CapturePermissionsActivity extends UiActivity {
                 : active ? "本次会话已授权。停止后再次开始需要重新确认。"
                 : ready ? "每次开始新会话时，由系统确认共享整个屏幕。"
                 : "请先完成下方的必要授权，再确认本次屏幕共享。");
-        capture.setEnabled(ready && !active && pendingStartId == null);
+        capture.setEnabled(ready && !active && pendingStartId == null && !projectionStart.pending());
         UiKit.setTextIfChanged(notificationStatus, notificationGranted(this) ? "已允许" : "需要授权，用于查看辅助运行状态");
         UiKit.setTextIfChanged(overlayStatus, Settings.canDrawOverlays(this) ? "已允许"
                 : overlayRequired(this) ? "视觉提示已开启，需要置顶显示授权"
@@ -214,7 +218,7 @@ public final class CapturePermissionsActivity extends UiActivity {
     }
 
     private void requestCapture() {
-        if (pendingStartId != null) return;
+        if (pendingStartId != null || projectionStart.pending()) return;
         if (Match3LiveService.isRunning()) {
             toast("请先停止消消乐实时辅助，再启动王者辅助");
             return;
@@ -251,10 +255,21 @@ public final class CapturePermissionsActivity extends UiActivity {
         catch (IOException | JSONException error) { toast("配置无效，请先检查配置"); return; }
         attemptedForStart = true;
         MediaProjectionManager manager = getSystemService(MediaProjectionManager.class);
-        Intent consent = Build.VERSION.SDK_INT >= 34
-                ? manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
-                : manager.createScreenCaptureIntent();
-        startActivityForResult(consent, REQUEST_PROJECTION);
+        if (!projectionStart.begin()) return;
+        try {
+            if (manager == null) throw new IllegalStateException("projection_manager_unavailable");
+            Intent consent = Build.VERSION.SDK_INT >= 34
+                    ? manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
+                    : manager.createScreenCaptureIntent();
+            Log.i("ProjectionConsent", "game=hok event=requested sdk=" + Build.VERSION.SDK_INT);
+            startActivityForResult(consent, REQUEST_PROJECTION);
+        } catch (RuntimeException error) {
+            projectionStart.cancel();
+            Log.w("ProjectionConsent", "game=hok event=launch_failed error="
+                    + error.getClass().getSimpleName());
+            toast("无法打开系统屏幕共享授权，请返回后重试");
+        }
+        refreshPermissions();
     }
 
     @Override protected void onResume() {
@@ -269,6 +284,16 @@ public final class CapturePermissionsActivity extends UiActivity {
         resumed = false;
         startHandler.removeCallbacks(checkStart);
         super.onPause();
+    }
+
+    @Override protected void onPostResume() {
+        super.onPostResume();
+        startGrantedProjection();
+    }
+
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) startGrantedProjection();
     }
 
     @Override protected void onDestroy() {
@@ -318,6 +343,8 @@ public final class CapturePermissionsActivity extends UiActivity {
         state.putBoolean("attempted_start", attemptedForStart);
         state.putString("pending_start_id", pendingStartId);
         state.putLong("pending_start_deadline_ms", startDeadlineMs);
+        state.putBoolean("projection_request_pending", projectionStart.requested());
+        state.putParcelable("pending_projection_result", projectionStart.waitingResult());
         super.onSaveInstanceState(state);
     }
 
@@ -326,25 +353,41 @@ public final class CapturePermissionsActivity extends UiActivity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != REQUEST_PROJECTION) return;
-        if (resultCode != RESULT_OK || data == null) {
+        boolean granted = resultCode == RESULT_OK && data != null;
+        Log.i("ProjectionConsent", "game=hok event=result granted=" + granted
+                + " resumed=" + resumed + " focused=" + hasWindowFocus());
+        if (!projectionStart.complete(granted ? data : null)) {
+            refreshPermissions();
+            if (granted) return; // A delayed duplicate must never reuse a consent token.
             toast("未授权截屏，辅助未开始");
             return;
         }
+        startGrantedProjection();
+        refreshPermissions();
+    }
+
+    private void startGrantedProjection() {
         if (pendingStartId != null) return;
+        Intent data = projectionStart.take(resumed && !isFinishing() && !isDestroyed(), hasWindowFocus());
+        if (data == null) return;
         pendingStartId = UUID.randomUUID().toString();
         startDeadlineMs = SystemClock.elapsedRealtime() + 15000;
         // Pass this fresh one-use result directly to the foreground service.
         Intent service = new Intent(this, CaptureService.class);
         service.setAction(CaptureService.ACTION_START);
-        service.putExtra(CaptureService.EXTRA_RESULT_CODE, resultCode);
+        service.putExtra(CaptureService.EXTRA_RESULT_CODE, RESULT_OK);
         service.putExtra(CaptureService.EXTRA_RESULT_DATA, data);
         service.putExtra(CaptureService.EXTRA_START_REQUEST_ID, pendingStartId);
         try {
-            // Remain visible until both projection and microphone foreground types are ready.
+            // Android 14+ checks foreground/while-in-use eligibility. The result callback
+            // may run before onResume and before the consent window gives focus back.
+            Log.i("ProjectionConsent", "game=hok event=service_start foreground=true");
             startForegroundService(service);
             refreshPermissions();
             if (resumed) checkCaptureStart();
         } catch (RuntimeException error) {
+            Log.w("ProjectionConsent", "game=hok event=service_start_failed error="
+                    + error.getClass().getSimpleName());
             pendingStartId = null;
             toast("系统未能启动辅助，请检查授权后重试");
             refreshPermissions();

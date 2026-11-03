@@ -254,17 +254,16 @@ public final class HyperOsHealthSnapshotTest {
     }
 
     /**
-     * 采集这一跳真的挂在既有 device 周期采样链上：sampleDevice 体内取读数、送引导，
-     * 且仍由既有 record("device", …) 落盘。摘掉任意一跳，本条必须变红。
+     * 周期采样保留读数，但不能把可选无障碍服务未开启误当成截屏故障并抢占游戏。
      */
     @Test
-    public void deviceSamplingChainItselfProducesTheReadingAndRoutesTheGuidance() throws IOException {
+    public void deviceSamplingRecordsGuidanceWithoutOpeningAuthorizationScreens() throws IOException {
         String body = methodBody(codeLinesOnly(sourceOf("DiagnosticRecorder.java")),
                 "private synchronized void sampleDevice(long now)");
         assertTrue("采样链里没有取读数这一跳: " + body,
                 body.contains("HyperOsSystemProbe.sample(context, hyperOsProjection)"));
-        assertTrue("采样链里没有把引导动作送出去这一跳: " + body,
-                body.contains("HyperOsSystemProbe.deliverGuidanceEdge(context, hyperOs.action())"));
+        assertFalse("周期诊断不能打断游戏并反复打开授权页: " + body,
+                body.contains("deliverGuidance"));
         assertTrue("读数没进 device 事件: " + body, body.contains("HyperOsHealthSnapshot.READING_KEY"));
         assertTrue("引导动作没进 device 事件: " + body, body.contains("HyperOsHealthSnapshot.GUIDANCE_KEY"));
         assertTrue("既有 device 事件落点被换掉: " + body, body.contains("record(\"device\", sample)"));
@@ -344,10 +343,10 @@ public final class HyperOsHealthSnapshotTest {
         }
     }
 
-    /* ---------- ⑨ 投影自动恢复只接在 onStop 之后 ---------- */
+    /* ---------- ⑨ 撤销只记录状态，等待用户主动重新授权 ---------- */
 
     @Test
-    public void recoveryHopSitsInsideOnStopAfterTheExistingRevokedHandling() throws IOException {
+    public void revokedProjectionDoesNotReopenOrReplayConsent() throws IOException {
         String body = methodBody(codeLinesOnly(sourceOf("CaptureService.java")),
                 "@Override public void onStop() {");
         List<String> lines = linesOf(body);
@@ -355,19 +354,24 @@ public final class HyperOsHealthSnapshotTest {
         int revokedLog = indexOfFirstLineContaining(lines,
                 "logCaptureHealth(\"REVOKED\", \"projection_stopped\")");
         int stopped = indexOfFirstLineContaining(lines, "stopSelfResult(stopThroughStartId)");
-        int recovery = indexOfFirstLineContaining(lines, "attemptProjectionRecoveryAfterRevocation()");
+        int recovery = indexOfFirstLineContaining(lines, "recordProjectionRevocation()");
         assertTrue("恢复这一跳必须排在既有撤销处理之后", revoke < revokedLog
                 && revokedLog < stopped && stopped < recovery);
-        // 恢复本体必须坐在 onStop 之后被调用的那个方法里，且只经额度判定发一次。
         String recoveryBody = methodBody(codeLinesOnly(sourceOf("CaptureService.java")),
-                "private void attemptProjectionRecoveryAfterRevocation()");
-        assertTrue("恢复没走额度判定: " + recoveryBody,
-                recoveryBody.contains("HyperOsHealthSnapshot.recoveryReadingFor(snapshot, projectionReauthLatch)"));
-        assertTrue("只有取到额度才送引导: " + recoveryBody,
-                recoveryBody.contains("HyperOsHealthSnapshot.REASK_READING.equals(recovery)"));
-        assertTrue("送引导走既有出口: " + recoveryBody,
-                recoveryBody.contains("HyperOsSystemProbe.deliverGuidance(this, snapshot.action())"));
-        assertTrue("读数不许丢: " + recoveryBody, recoveryBody.contains("logHyperOsReading(recovery, snapshot)"));
+                "private void recordProjectionRevocation()");
+        assertFalse("系统停止共享后不能自动再次弹出授权", recoveryBody.contains("deliverGuidance"));
+        assertTrue("等待用户重新授权的读数不许丢: " + recoveryBody,
+                recoveryBody.contains("logHyperOsReading(\"capture_revoked_waiting_for_user\", snapshot)"));
+    }
+
+    @Test public void appOpsValuesMatchAndroidAndDefaultIsNotDenied() {
+        assertEquals(0, HyperOsHealthSnapshot.OP_MODE_ALLOWED);
+        assertEquals(1, HyperOsHealthSnapshot.OP_MODE_IGNORED);
+        assertEquals(2, HyperOsHealthSnapshot.OP_MODE_ERRORED);
+        assertEquals(3, HyperOsHealthSnapshot.OP_MODE_DEFAULT);
+        assertEquals(Guidance.NONE, read(ProjectionStatus.REVOKED, false, false, true, 3).action());
+        assertEquals(Guidance.PROMPT_BACKGROUND_START,
+                read(ProjectionStatus.REVOKED, false, false, true, 1).action());
     }
 
     /** 终态读数用的名字必须真的落到既有 audit 出口，而不是只写在常量里。 */

@@ -1,4 +1,4 @@
-听野 0.4.8 / code27 测试候选
+听野 0.4.8 / code28 测试候选
 支持 Android 10 及以上的 arm64 手机。
 
 维护者先部署配套 Python 服务、私有游戏资源及 Nginx 下载路由，再开始手机测试。详细说明见 docs/development/game-models.md。

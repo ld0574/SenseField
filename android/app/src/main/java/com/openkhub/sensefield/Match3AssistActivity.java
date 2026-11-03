@@ -11,6 +11,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.provider.Settings;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -28,6 +29,7 @@ public final class Match3AssistActivity extends UiActivity {
     private TextView status;
     private Button start, stop;
     private boolean projectionAfterOverlay, authorizationPending, overlayExplanationOpen, resumed;
+    private final ProjectionStartGate<Intent> projectionStart = new ProjectionStartGate<>();
     private AlertDialog overlayExplanation;
     private String pendingStartId;
     private long startDeadlineMs;
@@ -49,6 +51,8 @@ public final class Match3AssistActivity extends UiActivity {
             overlayExplanationOpen = state.getBoolean("overlay_explanation_open");
             pendingStartId = state.getString("pending_start_id");
             startDeadlineMs = state.getLong("start_deadline_ms");
+            projectionStart.restore(state.getBoolean("projection_request_pending"),
+                    state.getParcelable("pending_projection_result"));
         }
         UiKit.configureWindow(this);
         ScrollView scroll = new ScrollView(this);
@@ -77,6 +81,7 @@ public final class Match3AssistActivity extends UiActivity {
         stop.setOnClickListener(v -> {
             pendingStartId = null;
             authorizationPending = projectionAfterOverlay = false;
+            projectionStart.cancel();
             startService(new Intent(this, Match3LiveService.class).setAction(Match3LiveService.ACTION_STOP));
             UiKit.setTextIfChanged(status, "正在停止");
             stop.setEnabled(false);
@@ -150,11 +155,16 @@ public final class Match3AssistActivity extends UiActivity {
             toast("本机不支持录屏"); refreshStatus(); return;
         }
         try {
+            if (!projectionStart.begin()) return;
             Intent consent = Build.VERSION.SDK_INT >= 34 ? manager.createScreenCaptureIntent(
                     android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay())
                     : manager.createScreenCaptureIntent();
+            Log.i("ProjectionConsent", "game=match3 event=requested sdk=" + Build.VERSION.SDK_INT);
             startActivityForResult(consent, REQ_PROJECTION);
         } catch (RuntimeException unavailable) {
+            projectionStart.cancel();
+            Log.w("ProjectionConsent", "game=match3 event=launch_failed error="
+                    + unavailable.getClass().getSimpleName());
             authorizationPending = false;
             toast("无法打开录屏授权，请重试"); refreshStatus();
         }
@@ -167,25 +177,43 @@ public final class Match3AssistActivity extends UiActivity {
             projectionAfterOverlay = false;
             if (proceed) requestProjection();
         } else if (requestCode == REQ_PROJECTION) {
-            authorizationPending = false;
-            if (resultCode != RESULT_OK || data == null) {
+            boolean granted = resultCode == RESULT_OK && data != null;
+            Log.i("ProjectionConsent", "game=match3 event=result granted=" + granted
+                    + " resumed=" + resumed + " focused=" + hasWindowFocus());
+            if (!projectionStart.complete(granted ? data : null)) {
+                if (granted) return;
+                authorizationPending = false;
                 toast("录屏授权已取消"); refreshStatus(); return;
             }
-            pendingStartId = UUID.randomUUID().toString();
-            startDeadlineMs = SystemClock.elapsedRealtime() + 5000;
-            Intent service = new Intent(this, Match3LiveService.class)
-                    .setAction(Match3LiveService.ACTION_START)
-                    .putExtra(Match3LiveService.EXTRA_START_REQUEST_ID, pendingStartId)
-                    .putExtra(Match3LiveService.EXTRA_RESULT_CODE, resultCode)
-                    .putExtra(Match3LiveService.EXTRA_FULL_DISPLAY, true)
-                    .putExtra(Match3LiveService.EXTRA_DATA, data);
-            try { startForegroundService(service); }
-            catch (RuntimeException failed) {
-                pendingStartId = null;
-                toast("无法启动实时识别，请重新授权后重试");
-            }
+            startGrantedProjection();
             refreshStatus();
         }
+    }
+
+    private void startGrantedProjection() {
+        if (pendingStartId != null) return;
+        Intent data = projectionStart.take(resumed && !isFinishing() && !isDestroyed(), hasWindowFocus());
+        if (data == null) return;
+        authorizationPending = false;
+        pendingStartId = UUID.randomUUID().toString();
+        startDeadlineMs = SystemClock.elapsedRealtime() + 5000;
+        Intent service = new Intent(this, Match3LiveService.class)
+                .setAction(Match3LiveService.ACTION_START)
+                .putExtra(Match3LiveService.EXTRA_START_REQUEST_ID, pendingStartId)
+                .putExtra(Match3LiveService.EXTRA_RESULT_CODE, RESULT_OK)
+                .putExtra(Match3LiveService.EXTRA_FULL_DISPLAY, true)
+                .putExtra(Match3LiveService.EXTRA_DATA, data);
+        try {
+            Log.i("ProjectionConsent", "game=match3 event=service_start foreground=true");
+            startForegroundService(service);
+        }
+        catch (RuntimeException failed) {
+            Log.w("ProjectionConsent", "game=match3 event=service_start_failed error="
+                    + failed.getClass().getSimpleName());
+            pendingStartId = null;
+            toast("无法启动实时识别，请重新授权后重试");
+        }
+        refreshStatus();
     }
 
     private void checkStart() {
@@ -219,12 +247,21 @@ public final class Match3AssistActivity extends UiActivity {
     @Override protected void onPause() {
         resumed = false; handler.removeCallbacks(refresh); super.onPause();
     }
+    @Override protected void onPostResume() {
+        super.onPostResume(); startGrantedProjection();
+    }
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) startGrantedProjection();
+    }
     @Override protected void onSaveInstanceState(Bundle state) {
         state.putBoolean("projection_after_overlay", projectionAfterOverlay);
         state.putBoolean("authorization_pending", authorizationPending);
         state.putBoolean("overlay_explanation_open", overlayExplanationOpen);
         state.putString("pending_start_id", pendingStartId);
         state.putLong("start_deadline_ms", startDeadlineMs);
+        state.putBoolean("projection_request_pending", projectionStart.requested());
+        state.putParcelable("pending_projection_result", projectionStart.waitingResult());
         super.onSaveInstanceState(state);
     }
     @Override protected void onDestroy() {
