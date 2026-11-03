@@ -164,6 +164,7 @@ validation/**
 research/board-recognition/**/*.md
 
 # Private model weights and training checkpoints stay local.
+/game-models/
 /delivery/*.apk
 /research/board-recognition/models/*.npz
 android/app/src/main/assets/match3-fixed-ui-v1.json

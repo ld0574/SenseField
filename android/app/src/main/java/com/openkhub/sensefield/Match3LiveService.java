@@ -1037,7 +1037,9 @@ public class Match3LiveService extends Service {
                             if (active != s || s.projectionStopped) return;
                             android.widget.Toast.makeText(this,
                                     message.startsWith("Match3Tts status=recovering")
-                                            ? "语音引擎异常，正在尝试其他离线中文语音。"
+                                            ? message.contains("action=reconnect")
+                                                    ? "语音暂时异常，正在重连当前语音引擎。"
+                                                    : "语音引擎异常，正在尝试其他离线中文语音。"
                                             : "离线中文语音暂不可用，请检查听野的语音设置。",
                                     android.widget.Toast.LENGTH_LONG).show();
                         });

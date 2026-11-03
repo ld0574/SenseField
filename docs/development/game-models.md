@@ -26,24 +26,26 @@ ASR 继续使用现有第三方 SenseVoice 分片下载与校验机制，保留�
 
 ## 服务器部署
 
-现有项目根目录继续使用 `/data/wwwroot/sf/`，不迁移。下面的 `/var/lib/...` 是首次部署私有模型时的示例数据目录，不是项目安装目录；已经设置的模型路径、私有配置和 Nginx 站点均复用。已有部署的增量步骤见 [0.4.8 服务端更新](../releases/0.4.8/SERVER_UPDATE.md)。
+现有项目根目录继续使用 `/data/wwwroot/sf/`，私有模型放在 `/data/wwwroot/sf/game-models/`，与源码一起交付。完整私有包没有外层 `source/`，按 [0.4.8 服务端更新](../releases/0.4.8/SERVER_UPDATE.md) 执行停止、覆盖、启动即可。
 
-1. 先更新 Python 源码。将 `output/model-packs/` 内容传到 **Web 静态目录之外** 的 `/var/lib/sensefield-assistant/game-models/`，确保服务进程可读写该根目录，以便生成私有签名密钥。不要把整个目录映射到 Nginx `alias`。
-2. 在现有服务器私有配置 JSON 中新增以下字段，保留现有 Key、模型供应商和其他配置：
+覆盖包只交付 `bundle-index.json` 和按版本存储的载荷，不覆盖本机运行索引、签名密钥或配额数据库。`start.sh start` 自动校验载荷、合并索引并保留旧版本。首次启动默认使用项目内的模型目录；默认分发模式跟随此启动器现有的 `ASSISTANT_GATEWAY_PUBLIC_ACCESS`，复用持久化配额。显式配置始终优先，私有配置文件不被改写。
+
+需要自定义目录或仅使用连接码的部署，可以在现有私有配置中设置下面字段；常规覆盖更新无需添加：
 
 ```json
 {
-  "ASSISTANT_GATEWAY_GAME_MODELS_DIR": "/var/lib/sensefield-assistant/game-models",
+  "ASSISTANT_GATEWAY_GAME_MODELS_DIR": "/data/wwwroot/sf/game-models",
   "ASSISTANT_GATEWAY_GAME_MODELS_PUBLIC": "0"
 }
 ```
 
-`0` 为默认值，只允许现有设备 Bearer 连接码领取凭证；对应手机使用自定义服务配置。现有公开体验服务若要让普通安装用户免连接码下载，需明确改为 `1`，并保持 `ASSISTANT_GATEWAY_PUBLIC_ACCESS=1` 与持久化配额数据库。此模式提供有期限、有配额的分发，不能当作付费权益认证。
+`0` 只允许设备 Bearer 连接码领取凭证；`1` 复用已启用的公开访问和持久化配额。通用 CLI 的默认策略仍是 `0`；现有公开体验启动器默认跟随公开访问模式。公开分发有期限和配额，不能当作付费权益认证。
 
-Docker 部署需额外挂载私有模型目录到容器中相应路径并赋予 UID 10001 访问权限；只读容器内不能临时创建签名密钥，应使用可写的私有卷。systemd 部署推荐使用上面的 StateDirectory 子目录，沿用服务用户和 0700 权限。
+Docker 部署需额外挂载私有模型目录到容器中相应路径并赋予 UID 10001 访问权限；只读容器内不能临时创建签名密钥，应使用可写的私有卷。systemd 部署需允许原服务用户读写该路径。新目录使用 0700 权限；已有其他私有路径时，可沿用该路径和 `.download-key`，无需为使用新版客户端而强制迁移。
 
-3. Nginx 增加 `/v1/game-models/` 代理路径，见仓库三份 Nginx 示例。必须透传 `Authorization`、`X-SenseField-Installation`、`Range`，关闭缓存；该下载路径允许更长的连续传输，不修改画面理解接口的时限。
-4. 重启现有服务。先验证客户端首次下载，再断网重启应用验证缓存复用，然后发布瘦身 APK。未部署资源时返回明确的 `models_unconfigured`；不能先发布一个没有资源下载服务的新客户端。
+现有 Nginx 模型路由已接通，覆盖更新不修改它。新站点参考三份 Nginx 示例：代理 `/v1/game-models/`，透传 `Authorization`、`X-SenseField-Installation`、`Range` 并关闭缓存，拒绝 `/game-models/` 静态访问。随包目录权限为 0700、载荷权限为 0600，不把模型目录映射为静态 `alias`。
+
+发布前仍应由维护者验证客户端首次下载和离线复用；这些验收不属于每次更新所需的手工操作。未部署资源时返回明确的 `models_unconfigured`。
 
 ## 扩展游戏
 

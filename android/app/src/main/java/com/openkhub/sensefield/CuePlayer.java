@@ -123,8 +123,10 @@ final class CuePlayer implements CueDispatcher.Renderer {
     private volatile Consumer<String> audioAuditListener;
     private volatile int ttsPreparationGeneration;
     private final Set<String> attemptedVoiceEngines = ConcurrentHashMap.newKeySet();
+    private final OfflineTtsPolicy.BoardRecovery boardVoiceRecovery = new OfflineTtsPolicy.BoardRecovery();
     private List<String> voiceEngines = Collections.emptyList();
     private int activeVoiceEngineIndex = -1;
+    private String activeVoiceEngineName = "";
     /**
      * Adaptive Audio Context: the noise floor handed over by {@link VoiceActivityGate} is
      * classified here and only its <em>channel</em> half is used. The gain half of
@@ -593,6 +595,10 @@ final class CuePlayer implements CueDispatcher.Renderer {
     }
 
     private void prepareVoiceEngine(int index) {
+        prepareVoiceEngine(index, null);
+    }
+
+    private void prepareVoiceEngine(int index, String reconnectEngine) {
         if (closed) return;
         if (index >= voiceEngines.size()) {
             if (dynamicVoiceProbe) {
@@ -604,7 +610,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
             finishPendingDynamic(false);
             return;
         }
-        String selected = voiceEngines.get(index);
+        String selected = reconnectEngine == null ? voiceEngines.get(index) : reconnectEngine;
         activeVoiceEngineIndex = index;
         int generation = ++ttsPreparationGeneration;
         final TextToSpeech[] holder = new TextToSpeech[1];
@@ -617,7 +623,8 @@ final class CuePlayer implements CueDispatcher.Renderer {
                     return;
                 }
                 try {
-                    alertCacheWorker.execute(() -> configureOfflineVoice(voice, selected, index, generation));
+                    alertCacheWorker.execute(() -> configureOfflineVoice(voice, selected, index, generation,
+                            reconnectEngine != null));
                 } catch (RuntimeException stopped) {
                     if (!closed) advanceVoiceEngine(voice, index, generation);
                 }
@@ -707,10 +714,11 @@ final class CuePlayer implements CueDispatcher.Renderer {
     }
 
     /** Voice discovery and synthesis never hold the lock used by the recognition thread. */
-    private void configureOfflineVoice(TextToSpeech engine, String selected, int index, int generation) {
+    private void configureOfflineVoice(TextToSpeech engine, String selected, int index, int generation,
+                                       boolean reconnecting) {
         try {
             String engineName = selected.isEmpty() ? engine.getDefaultEngine() : selected;
-            if (!attemptedVoiceEngines.add(engineName == null ? "" : engineName)) {
+            if (!attemptedVoiceEngines.add(engineName == null ? "" : engineName) && !reconnecting) {
                 mainHandler.post(() -> advanceVoiceEngine(engine, index, generation));
                 return;
             }
@@ -744,6 +752,7 @@ final class CuePlayer implements CueDispatcher.Renderer {
             mainHandler.post(() -> {
                 synchronized (audioLock) {
                     if (closed || generation != ttsPreparationGeneration || tts != engine) return;
+                    activeVoiceEngineName = engineName == null ? "" : engineName;
                     offlineTtsReady = true;
                     ttsReady = true;
                     if (dynamicVoiceProbe) {
@@ -857,38 +866,6 @@ final class CuePlayer implements CueDispatcher.Renderer {
         }
     }
 
-    /**
-     * Line prefix that carries one {@link BroadcastSoundMeter} sentence out through the
-     * <em>existing</em> audio-audit listener slot. The persistent outlet recognises the reading by
-     * this prefix, so no new listener field, bus, singleton, or broadcast is introduced.
-     */
-    static final String BROADCAST_METER_AUDIT_PREFIX = "BroadcastMeter sentence=";
-
-    /**
-     * Additive on-screen outlet for {@link BroadcastSoundMeter}: one broadcast, one sentence.
-     * It reuses the app's existing player-visible text outlet for audio events — the same short
-     * toast channel the audio-audit listener already drives from
-     * {@code Match3LiveService} and {@code Match3SettingsActivity} — so no new setting control,
-     * window, permission, or storage key is introduced and no cue's order, duration, tone or
-     * haptic branch is touched. A fully silent or unavailable reading never reaches the screen.
-     */
-    private void reportBroadcastMeter(String sentence) {
-        if (closed || sentence == null || sentence.isEmpty()) return;
-        // Second outlet, additive: the transient toast below stays exactly as it was, and the same
-        // sentence additionally rides the audit listener slot already installed by CaptureService,
-        // which folds it into the persistent status line.
-        auditAudio(BROADCAST_METER_AUDIT_PREFIX + sentence);
-        mainHandler.post(() -> {
-            if (closed) return;
-            try {
-                android.widget.Toast.makeText(context, sentence,
-                        android.widget.Toast.LENGTH_SHORT).show();
-            } catch (RuntimeException ignored) {
-                Log.w(TAG, "Broadcast meter outlet unavailable");
-            }
-        });
-    }
-
     @Override public boolean hasPreparedSpeech(CueRequest request) {
         return !closed && !preparedPcmFailed && request.category == CueRequest.Category.NEAR_ZONE
                 && AlertSpeechCache.get(alertVoiceKey, request.speech) != null;
@@ -950,9 +927,6 @@ final class CuePlayer implements CueDispatcher.Renderer {
             if (playback.cancelled || closed) return;
             short[] tone = playback.toneCallback == null ? null : preparedTone(playback.request);
             short[] mixed = AlertSpeechCache.mix(speech, tone);
-            // Read the very buffer that is about to be handed to the audio system, before it is
-            // consumed, so a hearing-impaired player gets one on-screen line per broadcast.
-            String broadcastMeter = BroadcastSoundMeter.describe(mixed);
             float speed = narration ? BundledSpeechCatalog.rate(GameProfile.settings(context)
                     .getInt(PREF_TTS_RATE, DEFAULT_TTS_RATE_PERCENT)) / 100f : 1f;
             track = new AudioTrack.Builder()
@@ -965,7 +939,6 @@ final class CuePlayer implements CueDispatcher.Renderer {
             track.setVolume(volume());
             if (track.write(mixed, 0, mixed.length, AudioTrack.WRITE_BLOCKING) != mixed.length)
                 throw new IllegalStateException("Incomplete alert PCM write");
-            reportBroadcastMeter(broadcastMeter);
             synchronized (audioLock) {
                 if (closed || playback.cancelled || preparedAlert != playback
                         || !playback.request.playbackAllowedAt(SystemClock.elapsedRealtime())) return;
@@ -1107,7 +1080,6 @@ final class CuePlayer implements CueDispatcher.Renderer {
     private boolean enqueueSpatialToneLocked(CueRequest request,
                                              CueDispatcher.PlaybackCallback callback,
                                              long now, short[] samples) {
-        String broadcastMeter = BroadcastSoundMeter.describe(samples);
         AudioTrack track = null;
         try {
             int minBuffer = AudioTrack.getMinBufferSize(48_000,
@@ -1132,7 +1104,6 @@ final class CuePlayer implements CueDispatcher.Renderer {
                 track.release();
                 return false;
             }
-            reportBroadcastMeter(broadcastMeter);
             track.play();
             spatialToneTracks.put(track, new SpatialTonePlayback(request.category, callback,
                     samples.length / 2, now + samples.length * 1000L / (48000 * 2) + 2000));
@@ -1402,23 +1373,30 @@ final class CuePlayer implements CueDispatcher.Renderer {
     private void recoverBoardVoice(CueRequest request, TextToSpeech engine, String reason) {
         if (request == null || !OfflineTtsPolicy.recoverBoardFailure(request.eventKey, reason)) return;
         final int nextIndex, generation;
+        final String engineName, reconnectEngine;
         synchronized (audioLock) {
             if (closed || tts != engine || !ttsReady) return;
+            engineName = activeVoiceEngineName;
+            OfflineTtsPolicy.BoardRecovery.Action action = boardVoiceRecovery.onFailure(
+                    engineName, request.eventKey, reason);
+            reconnectEngine = action == OfflineTtsPolicy.BoardRecovery.Action.RECONNECT ? engineName : null;
             ttsReady = false;
             offlineTtsReady = false;
             tts = null;
             generation = ++ttsPreparationGeneration;
-            nextIndex = activeVoiceEngineIndex + 1;
+            nextIndex = activeVoiceEngineIndex + (reconnectEngine == null ? 1 : 0);
         }
         ttsAuditState = "Match3Tts status=recovering reason=" + reason
+                + " action=" + (reconnectEngine == null ? "fallback" : "reconnect")
+                + " engine=" + engineName
                 + " next_candidate=" + nextIndex + " saved_engine_unchanged=true";
         auditAudio(ttsAuditState);
         mainHandler.post(() -> {
             try { engine.shutdown(); } catch (RuntimeException ignored) { }
             if (closed || generation != ttsPreparationGeneration) return;
-            // Each installed engine is attempted once per player. Only a verified offline
-            // Chinese voice may become ready; never loop on the crashing system default.
-            prepareVoiceEngine(nextIndex);
+            // A synthesis failure gets one rebind of the exact engine, including when
+            // it came from the system-default slot. Never replay the now-stale hint.
+            prepareVoiceEngine(nextIndex, reconnectEngine);
         });
     }
 

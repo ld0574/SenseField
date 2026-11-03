@@ -1,0 +1,55 @@
+plugins {
+    id 'com.android.application'
+}
+
+// This helper has no dependency on :app or its R8 mapping. Android requires its
+// certificate to match the installed app before instrumentation can run.
+def signingInputs = [
+    store: System.getenv('SENSEFIELD_KEYSTORE_PATH'),
+    alias: System.getenv('SENSEFIELD_KEY_ALIAS'),
+    storePassword: System.getenv('SENSEFIELD_KEYSTORE_PASSWORD'),
+    keyPassword: System.getenv('SENSEFIELD_KEY_PASSWORD')
+]
+def signingReady = signingInputs.values().every { it != null && !it.trim().isEmpty() }
+
+android {
+    namespace 'com.openkhub.sensefield.diagnosticshelper'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.openkhub.sensefield.diagnosticshelper'
+        minSdk 29
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+    }
+
+    signingConfigs {
+        if (signingReady) {
+            release {
+                storeFile file(signingInputs.store)
+                storePassword signingInputs.storePassword
+                keyAlias signingInputs.alias
+                keyPassword signingInputs.keyPassword
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (signingReady) signingConfig signingConfigs.release
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+tasks.matching { it.name == 'preReleaseBuild' }.configureEach {
+    doFirst {
+        if (!signingReady) throw new GradleException(
+                'The diagnostic helper needs all four SENSEFIELD_* signing variables '
+                + 'and the same certificate as the installed app.')
+    }
+}

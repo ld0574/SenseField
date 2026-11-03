@@ -76,6 +76,51 @@ def test_direct_start_cannot_expose_plaintext_on_an_external_interface(args, cle
     assert error.value.code == 2
 
 
+@pytest.mark.parametrize("public_access, model_override, expected", [
+    ("1", None, True), ("0", None, False), ("1", "0", False), ("0", "1", True),
+])
+def test_bundled_models_start_without_editing_private_configuration(
+        tmp_path, monkeypatch, clean_environment, public_access, model_override, expected):
+    import hashlib
+    import shutil
+
+    app = tmp_path / "app"
+    deploy = app / "deploy/assistant"
+    deploy.mkdir(parents=True)
+    shutil.copy2(ROOT / "deploy/assistant/install-game-models.py", deploy / "install-game-models.py")
+    models = app / "game-models"
+    payload = models / "hok/v1/model.bin"
+    payload.parent.mkdir(parents=True)
+    payload.write_bytes(b"model")
+    index = {"schema": 1, "packs": {"hok": {"version": "v1", "files": [
+        {"name": "model.bin", "bytes": 5, "sha256": hashlib.sha256(b"model").hexdigest()},
+    ]}}}
+    (models / "bundle-index.json").write_text(json.dumps(index))
+    path, values = old_configuration(tmp_path)
+    values["ASSISTANT_GATEWAY_PUBLIC_ACCESS"] = public_access
+    if model_override is not None:
+        values["ASSISTANT_GATEWAY_GAME_MODELS_PUBLIC"] = model_override
+    path.chmod(0o600)
+    path.write_text(json.dumps(values))
+    path.chmod(0o400)
+    original = path.read_bytes()
+    monkeypatch.setattr(start, "ROOT", app)
+    monkeypatch.setattr(start, "DEPLOY_DIR", deploy)
+    monkeypatch.setattr(start, "RUNTIME_DIR", deploy / "runtime")
+    shutil.copy2(ROOT / "deploy/assistant/serve.py", deploy / "serve.py")
+    captured = {}
+    monkeypatch.setattr(cli, "main", lambda: captured.update(
+        settings=GatewaySettings.from_env(require_tls=False, local_tls_proxy=True)))
+
+    start.main(["--foreground", "--config", str(path)])
+
+    assert captured["settings"].game_models_dir == models.resolve()
+    assert captured["settings"].game_models_public is expected
+    assert captured["settings"].vision_api_key == values["ASSISTANT_GATEWAY_VISION_API_KEY"]
+    assert (models / "game-models.json").is_file()
+    assert path.read_bytes() == original
+
+
 @pytest.mark.parametrize("condition", ["missing", "readable_by_others", "invalid"])
 def test_invalid_private_configuration_fails_without_starting_or_echoing_its_contents(
         tmp_path, monkeypatch, clean_environment, capsys, condition):

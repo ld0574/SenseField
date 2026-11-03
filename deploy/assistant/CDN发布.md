@@ -7,7 +7,7 @@ APK 由 Gitee Release 分发，应用通过固定网站清单发现更新。源�
 | 资源 | 地址 |
 | --- | --- |
 | 固定版本清单 | `https://888413.xyz/apk/latest.json` |
-| 当前 APK | `https://gitee.com/leda/SenseField/releases/download/0.4.7/sensefieldv0.4.7.apk` |
+| 当前 APK | `https://gitee.com/leda/SenseField/releases/download/0.4.8/sensefieldv0.4.8.apk` |
 | 语音模型分片一 | `https://gitee.com/leda/SenseField/releases/download/0.4.1/sensevoice-int8-v1.zip.part01` |
 | 语音模型分片二 | `https://gitee.com/leda/SenseField/releases/download/0.4.1/sensevoice-int8-v1.zip.part02` |
 
@@ -16,7 +16,7 @@ APK 由 Gitee Release 分发，应用通过固定网站清单发现更新。源�
 ## 发布顺序
 
 1. 准备完整模型、内置语音和本机签名配置，执行 `bash scripts/build_android_preview.sh`。
-2. 核对构建输出的 APK、配套 `latest.json` 和 SHA-256。公开版为 `0.4.7 / versionCode 24`，当前候选为 `0.4.8 / versionCode 28`；生成候选不改变公网版本。
+2. 核对构建输出的 APK、配套 `latest.json` 和 SHA-256。2026-11-04 本轮修订前公网清单为 `0.4.8 / versionCode 29`，本轮修订为 `0.4.8 / versionCode 30`；生成候选不改变公网版本。
 3. 将最终 APK 上传至对应 Gitee Release。公开下载后核对字节数和 SHA-256，与本地最终文件一致。
 4. 再将候选目录的 `cdn/apk/latest.json` 发布到网站 `/apk/latest.json`，设置 `Cache-Control: no-cache` 并刷新缓存。CDN 目录只含清单；APK 上传到 Gitee，不上传到网站。
 5. 从公开入口读取清单，核对版本、APK URL、大小与摘要，并在手机完成更新安装验证。
@@ -29,10 +29,10 @@ APK 由 Gitee Release 分发，应用通过固定网站清单发现更新。源�
 
 ```sh
 python3 scripts/build_app_update_manifest.py \
-  --apk output/releases/0.4.7/sensefieldv0.4.7.apk \
-  --apk-url https://gitee.com/leda/SenseField/releases/download/0.4.7/sensefieldv0.4.7.apk \
-  --output output/releases/0.4.7/latest.json \
-  --notes-file docs/releases/0.4.7/UPDATE_SUMMARY.txt
+  --apk output/releases/0.4.8/sensefieldv0.4.8.apk \
+  --apk-url https://gitee.com/leda/SenseField/releases/download/0.4.8/sensefieldv0.4.8.apk \
+  --output output/releases/0.4.8/latest.json \
+  --notes-file docs/releases/0.4.8/UPDATE_SUMMARY.txt
 ```
 
 清单由最终 APK 自动读取包身份、计算字节数和摘要。更新摘要最多三行、100 字符；完整说明放在 Release 页面和使用指引中。

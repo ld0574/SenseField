@@ -366,15 +366,6 @@ public final class CaptureService extends Service {
                     if (message.startsWith("AlertTts status=") && worker != null) worker.post(() -> {
                         if (!stopping && audioSessionId.equals(auditSessionId)) refreshNotification();
                     });
-                    // Second hop for the same reading, riding the slot this lambda already occupies:
-                    // hand the broadcast-sound sentence to the assistant this service already holds,
-                    // so it folds into the persistent status line instead of only flashing a toast.
-                    if (message.startsWith(CuePlayer.BROADCAST_METER_AUDIT_PREFIX)
-                            && audioSessionId.equals(auditSessionId)) {
-                        AssistantController current = assistant;
-                        if (current != null) current.showSoundIndicator(message.substring(
-                                CuePlayer.BROADCAST_METER_AUDIT_PREFIX.length()));
-                    }
                 });
                 cueSettings = new CueSettings(this);
                 cueDispatcher = new CueDispatcher(cuePlayer, cueSettings,

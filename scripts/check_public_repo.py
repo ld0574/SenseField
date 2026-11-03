@@ -24,6 +24,7 @@ FORBIDDEN_PREFIXES = (
     ".secrets/",
     "secrets/",
     "model-cache/",
+    "game-models/",
     "model_cache/",
     "modelcache/",
     "models-cache/",
@@ -275,7 +276,7 @@ def workspace_candidates(root: Path) -> list[str]:
         ".git", ".gradle", ".idea", ".pytest_cache", ".venv", ".vscode",
         "__pycache__", "build", "output", "deps", "video", "envsecrets",
         ".secrets", "secrets", "model-cache", "model_cache", "modelcache",
-        "models-cache", "models_cache",
+        "models-cache", "models_cache", "game-models",
     }
     for path in root.rglob("*"):
         if not path.is_file():

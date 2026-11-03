@@ -136,6 +136,7 @@ def test_workspace_fallback_includes_public_docs_but_excludes_local_sources(tmp_
         "output/research/source.pdf",
         "deps/private/source.pdf",
         "models_cache/export.bin",
+        "game-models/hok/v1/metadata.json",
         "docs/plans/internal-plan.md",
         "docs/releases/0.4.6/RELEASE_NOTES.md",
         "docs/requirements/符合度评估书03_听野_项目6_符合度53.0pct.pdf",

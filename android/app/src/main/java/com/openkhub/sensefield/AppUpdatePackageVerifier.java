@@ -72,30 +72,11 @@ public final class AppUpdatePackageVerifier {
         if (!release.getPackageName().equals(archive.packageName)) {
             return invalid("更新安装包名称与当前应用不一致。");
         }
-        if (archive.versionName == null || !release.getVersionName().equals(archive.versionName)) {
-            return invalid("更新安装包版本名称与发布信息不一致。");
-        }
-
         long archiveCode = archive.getLongVersionCode();
         long installedCode = installed.getLongVersionCode();
-        if (archiveCode < installedCode) {
-            return invalid("更新安装包版本低于当前已安装版本。");
-        }
-        if (archiveCode == installedCode
-                && !archive.versionName.equals(installed.versionName)) {
-            return invalid("版本号相同但版本名称不同，已拒绝此更新。");
-        }
-        if (release.getVersionCode() > 0 && archiveCode != release.getVersionCode()) {
-            return invalid("更新安装包版本号与发布信息不一致。");
-        }
-        try {
-            if (AppUpdateClient.compareNumericVersions(archive.versionName,
-                    installed.versionName) < 0) {
-                return invalid("此更新会降低应用版本，已阻止安装。");
-            }
-        } catch (IOException invalidInstalledVersion) {
-            return invalid("无法安全检查当前应用版本。");
-        }
+        Result versionIdentity = verifyVersionIdentity(release, archive.versionName,
+                archiveCode, installed.versionName, installedCode);
+        if (!versionIdentity.valid) return versionIdentity;
 
         Set<String> archiveCertificates = signerDigests(archive.signingInfo);
         Set<String> installedCertificates = signerDigests(installed.signingInfo);
@@ -121,6 +102,26 @@ public final class AppUpdatePackageVerifier {
             }
         }
         return new Result(true, "更新安装包已验证，可以交由 Android 安装器处理。");
+    }
+
+    static Result verifyVersionIdentity(AppUpdateRelease release, String archiveName,
+                                        long archiveCode, String installedName,
+                                        long installedCode) {
+        if (archiveName == null || !release.getVersionName().equals(archiveName)) {
+            return invalid("更新安装包版本名称与发布信息不一致。");
+        }
+        // Android orders upgrades by versionCode. Display names can be corrected
+        // after an incorrectly numbered preview (0.4.9/code26 -> 0.4.8/code28).
+        if (archiveCode < installedCode) {
+            return invalid("更新安装包版本低于当前已安装版本。");
+        }
+        if (archiveCode == installedCode && !archiveName.equals(installedName)) {
+            return invalid("版本号相同但版本名称不同，已拒绝此更新。");
+        }
+        if (release.getVersionCode() > 0 && archiveCode != release.getVersionCode()) {
+            return invalid("更新安装包版本号与发布信息不一致。");
+        }
+        return new Result(true, "安装包版本信息已验证。");
     }
 
     private static Result invalid(String message) {

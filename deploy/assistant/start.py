@@ -24,6 +24,29 @@ PID_FILE = RUNTIME_DIR / "assistant.pid"
 LOG_FILE = RUNTIME_DIR / "assistant.log"
 
 
+def prepare_game_models() -> None:
+    """Merge the overwrite package's index without replacing the live index/key."""
+    bundled = ROOT / "game-models"
+    target_value = os.environ.get("ASSISTANT_GATEWAY_GAME_MODELS_DIR", "").strip()
+    target = Path(target_value).expanduser() if target_value else bundled
+    bundle_index = bundled / "bundle-index.json"
+    if bundle_index.is_file():
+        importer = runpy.run_path(str(DEPLOY_DIR / "install-game-models.py"))
+        importer["install"](bundled, target, index_name="bundle-index.json")
+        # These resources live beside the source but are not static web files.
+        # The server user alone needs filesystem access; API downloads use tickets.
+        if target.resolve() == bundled.resolve():
+            target.chmod(0o700)
+        print("游戏识别资源已校验并合并，已有版本和下载密钥已保留。", flush=True)
+    elif not target_value and not (target / "game-models.json").is_file():
+        return
+    os.environ["ASSISTANT_GATEWAY_GAME_MODELS_DIR"] = str(target.resolve())
+    # Follow this launcher's existing public/private mode; an explicit model
+    # policy is always respected. Credentials and configuration files stay intact.
+    os.environ.setdefault("ASSISTANT_GATEWAY_GAME_MODELS_PUBLIC",
+                          os.environ.get("ASSISTANT_GATEWAY_PUBLIC_ACCESS", "0"))
+
+
 def serve(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     # Read source from the unpacked directory, so starting does not depend on
     # the path of a previously installed systemd service or Python package.
@@ -47,6 +70,10 @@ def serve(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     # CLI/private deployments remain authenticated unless explicitly opted in.
     os.environ.setdefault("ASSISTANT_GATEWAY_PUBLIC_ACCESS", "1")
     os.environ.setdefault("ASSISTANT_GATEWAY_PUBLIC_QUOTA_DB", str(RUNTIME_DIR / "public-quota.sqlite3"))
+    try:
+        prepare_game_models()
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        parser.error("游戏识别资源准备失败；请核对完整更新包和服务用户的目录读写权限。")
     from mapassist.assistant_gateway.cli import main as run_server
     sys.argv = ["听野助手", "--behind-local-proxy", "--host", "127.0.0.1",
                 "--port", str(args.port)]

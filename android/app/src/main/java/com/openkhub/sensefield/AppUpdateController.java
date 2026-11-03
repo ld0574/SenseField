@@ -233,7 +233,9 @@ final class AppUpdateController implements AutoCloseable {
                     downloadedRelease = null;
                     // This file was created in the updater's private directory.
                     file.delete();
-                    setMessage("安装包核验失败，请重新检查更新或联系负责人。");
+                    setMessage(checked == null
+                            ? "Android 无法检查安装包，请重新检查更新或联系负责人。"
+                            : "安装包核验失败：" + checked.message);
                 } else ready.run();
             });
         });

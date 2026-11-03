@@ -52,7 +52,7 @@ bash deploy/assistant/start.sh restart
 
 更新源码时保留 `.venv`、`deploy/assistant/runtime/` 与 `/etc/sensefield-assistant/gateway.json`。APK 与服务端分开交付；包含协议或提示词调整时同步更新服务器源码并重启。
 
-现有线上项目位于 `/data/wwwroot/sf/`。常规更新直接覆盖该目录下的源码并用原管理方式重启，不重新运行初始化向导、不替换已配置的 Nginx 站点。本版增量更新与模型路径核对见 [0.4.8 服务端更新](../../docs/releases/0.4.8/SERVER_UPDATE.md)。
+现有线上项目位于 `/data/wwwroot/sf/`。完整私有包按项目目录直接组织，常规更新就是 `stop → 覆盖 → start`，启动自动校验并合并随包游戏模型，不另行导入、不修改私有配置、不替换已有 Nginx 站点。命令见 [0.4.8 服务端更新](../../docs/releases/0.4.8/SERVER_UPDATE.md)。
 
 后台启动不会自动配置开机恢复。需要进程守护时，让现有面板或服务管理器执行 `bash deploy/assistant/start.sh --foreground`，避免重复启动多个实例。
 
@@ -88,4 +88,4 @@ bash deploy/assistant/start.sh restart
 
 助手默认关闭，用户按需授权。公开入口不接收音频；语音识别在手机完成。截图和文本通过 HTTPS 发往服务端及模型提供商，响应时间受网络和上游服务影响。APK 与语音模型分发见 [CDN 发布](CDN发布.md)。
 
-游戏识别资源的私有目录部署、下载凭证和新旧版本共存见 [游戏模型按需下载](../../docs/development/game-models.md)。更新客户端前须同时部署资源目录并增加 Nginx 下载路由。
+游戏识别资源随完整私有更新包交付，默认目录为项目根下的 `game-models/`。启动时合并 `bundle-index.json`，保留已有版本索引和下载签名密钥；未显式指定模型分发模式时，沿用现有服务的公开／连接码模式。资源只通过带凭证的 `/v1/game-models/` 接口返回，现有 Nginx 路由继续使用；新站点示例见 [增量规则](nginx.game-models.location.conf)。
