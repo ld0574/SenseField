@@ -55,8 +55,9 @@ def package(source: Path, destination: Path) -> dict:
     with zipfile.ZipFile(destination, "x", compression=zipfile.ZIP_DEFLATED) as archive:
         for name, path in zip(FILES, paths):
             data = path.read_bytes()
-            # A single skill folder, with no repository, models, recordings or credentials.
-            info = zipfile.ZipInfo(f"{SKILL}/{name}", date_time=(2026, 11, 14, 0, 0, 0))
+            # The market requires SKILL.md directly at the ZIP root and the
+            # archive basename to match the frontmatter name.
+            info = zipfile.ZipInfo(name, date_time=(2026, 11, 14, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o100644 << 16
             archive.writestr(info, data)
@@ -73,7 +74,7 @@ def package(source: Path, destination: Path) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=ROOT / "skills" / SKILL)
-    parser.add_argument("--output", type=Path, default=ROOT / "output/skills" / f"{SKILL}-1.0.0.zip")
+    parser.add_argument("--output", type=Path, default=ROOT / "output/skills" / f"{SKILL}.zip")
     args = parser.parse_args()
     report = package(args.source, args.output)
     report_path = args.output.with_suffix(".manifest.json")

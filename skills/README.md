@@ -33,6 +33,8 @@ python3 scripts/package_sensefield_skill.py
 
 输出在 `output/skills/`，ZIP 仅包含明确列出的公开文件，附带每个文件的 SHA-256。打包器检查比赛的 30 文件、40 MB 限制。已有同名输出时保留制品并停止，改用新输出路径后再确定交付文件。
 
+市场上传包名为 `sensefield-game-buddy.zip`，ZIP 根目录直接包含 `SKILL.md`。手动安装时将其解压到名为 `sensefield-game-buddy` 的技能目录；不要把宿主的整个技能目录作为解压目的地。
+
 演示图由 `scripts/create_sensefield_skill_demo.py` 生成，使用 Pillow 和 macOS 系统中文字体，仅生成时需要这些依赖；使用 Skill 不需要。图中局面为原创合成示意，不能当作真实玩家测试或模型准确率证据。
 
 ## 参赛与授权

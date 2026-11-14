@@ -95,11 +95,12 @@ def test_package_is_installable_self_contained_and_reproducible(tmp_path):
     assert report["file_count"] <= 30 and report["uncompressed_bytes"] <= 40_000_000
     with zipfile.ZipFile(first) as archive:
         names = archive.namelist()
-        assert "sensefield-game-buddy/SKILL.md" in names
-        assert "sensefield-game-buddy/LICENSE" in names
-        assert all(name.startswith("sensefield-game-buddy/") and ".." not in name for name in names)
-        archive.extractall(tmp_path / "installed")
-    installed = tmp_path / "installed/sensefield-game-buddy"
+        assert "SKILL.md" in names
+        assert "LICENSE" in names
+        assert all(not name.startswith("/") and ".." not in name for name in names)
+        assert sorted(names) == sorted(packager.FILES)
+        installed = tmp_path / "installed/sensefield-game-buddy"
+        archive.extractall(installed)
     result = subprocess.run([sys.executable, str(installed / "scripts/format_cue.py"),
                              "--input", str(installed / "assets/demo-match3-cue.json"),
                              "--svg", str(tmp_path / "card.svg")], cwd=tmp_path,
