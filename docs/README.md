@@ -11,6 +11,7 @@
 | 系统实现 | [技术方案](design/技术方案.md) · [架构图](../assets/sensefield-architecture.png) |
 | 感知与记忆 | [视野记忆](design/视野记忆.md) |
 | 路演展示 | [演示指引](demo/录制说明.md) |
+| 可复用游戏搭子 Skill | [安装、演示与参赛说明](../skills/README.md) |
 | 安装与使用 | [0.4.7 使用说明](releases/0.4.7/installation-guide.txt) |
 | 当前版本 | [0.4.7 更新说明](releases/0.4.7/RELEASE_NOTES.md) |
 

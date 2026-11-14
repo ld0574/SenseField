@@ -1,0 +1,11 @@
+{
+  "rows": 6,
+  "cols": 6,
+  "action": "swap",
+  "source": [4, 3],
+  "target": [4, 4],
+  "source_name": "魔力鸟",
+  "target_name": "河马",
+  "confirmed_legal": true,
+  "evidence": "合成示例：两颗无覆盖、可移动且相邻，魔力鸟可以与普通动物交换"
+}
